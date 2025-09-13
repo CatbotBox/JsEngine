@@ -70,8 +70,8 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
   }
 
   public destroyQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>): void {
-    for (const archtype of entityQuery.archetypes) {
-      archtype.removeAll();
+    for (const archetype of entityQuery.archetypes) {
+      archetype.removeAll();
     }
     for (const entity of entityQuery) {
       setOwner(this._world, entity, undefined);

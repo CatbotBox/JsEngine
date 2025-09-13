@@ -1,5 +1,4 @@
 ﻿import {EntityArchetypeMap} from "./entityArchetypeMap";
-import type {ComponentType} from "./component";
 import type {System} from "./system";
 import {EntityManager} from "./entityManager";
 import {Entity} from "./entity";
@@ -13,7 +12,7 @@ class Time {
 }
 
 export class World {
-  public archetypes: EntityArchetypeMap<ComponentType<any>> = new EntityArchetypeMap();
+  public archetypes: EntityArchetypeMap = new EntityArchetypeMap();
   public world: World = this;
   private _systems: Map<new () => System, System> = new Map();
   private _rootSystemGroup: SystemGroup = this.createSystem(RootSystemGroup);
