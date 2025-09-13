@@ -1,7 +1,7 @@
 ﻿import {System} from "../../../core";
 import {Camera} from "../../camera";
 import {consoleOverride} from "../../../debugging/consoleOverride";
-import {originalConsole} from "../../../debugging/originalConsole";
+import {originalConsole as display} from "../../../debugging/originalConsole";
 import {ConsoleBoundsComputeSystem} from "./consoleBoundsComputeSystem";
 import {Size2d} from "../size2d";
 import {Position2d} from "../position2d";
@@ -27,7 +27,7 @@ export class ConsoleRenderingSystem extends System {
     protected onCreate() {
         this.world.getOrCreateSystem(ConsoleBoundsComputeSystem);
         // remove original console as an output as we using it
-        consoleOverride.removeConsoleEventListener(originalConsole)
+        consoleOverride.removeConsoleEventListener(display)
         this.requireForUpdate(this._cameraQuery)
         this.requireForUpdate(this._objectQuery)
         this.world.getOrCreateSystem(CameraSizingSystem);
@@ -35,7 +35,7 @@ export class ConsoleRenderingSystem extends System {
     }
 
     protected onDestroy() {
-        originalConsole.clear();
+        display.clear();
     }
 
     onUpdate() {
@@ -81,8 +81,8 @@ export class ConsoleRenderingSystem extends System {
             return;
         }
 
-        originalConsole.clear();
-        originalConsole.log(frame);
+        display.clear();
+        display.log(frame);
 
         // swap buffers
         this._bufferIndex = this._bufferIndex === 1 ? 0 : 1;
