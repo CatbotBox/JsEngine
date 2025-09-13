@@ -12,12 +12,12 @@ export abstract class SystemGroup extends System {
   public addSystem<T extends System>(system: new () => T): void {
     const systemInstance = this.world.createSystem(system);
     this._systems.push(systemInstance);
-    this._systems.sort((a, b) => a.updatePriority() - b.updatePriority());
+    this._systems.sort((a, b) => a.priority() - b.priority());
   }
 
   public addSystemInstance<T extends System>(systemInstance: T): void {
     this._systems.push(systemInstance);
-    this._systems.sort((a, b) => a.updatePriority() - b.updatePriority());
+    this._systems.sort((a, b) => a.priority() - b.priority());
   }
 
 

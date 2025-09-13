@@ -11,7 +11,7 @@ type Pending = {
   remove: Set<AnyCT>;
 };
 
-export class EntityChangeBuffer {
+export class EntityCommandBuffer {
   private createOps: Array<Entity> = [];
   private destroyOps: Set<Entity> = new Set();
   private perEntity: Map<Entity, Pending> = new Map();
@@ -59,7 +59,7 @@ export class EntityChangeBuffer {
    * Apply everything in one shot. For each entity, we compute the final set of
    * tokens = (current - removes) ∪ addOrSet and move once via EntityManager.
    */
-  public apply(em: EntityManager): void {
+  public playback(em: EntityManager): void {
     // 1) creations
     for (const entity of this.createOps) {
       // em.realizeEntity(this.normalizeMap(comps));

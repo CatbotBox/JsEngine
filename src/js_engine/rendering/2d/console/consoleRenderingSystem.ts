@@ -15,17 +15,18 @@ import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 export class ConsoleRenderingSystem extends System {
 
   private _cameraQuery = this.createEntityQuery([Camera, Size2d, Position2d, Bounds2d])
-  private _objectQuery = this.createEntityQuery([ConsoleImage, Position2d, Bounds2d])
+  private _objectQuery = this.createEntityQuery([ConsoleImage, Position2d, Bounds2d], [HudElement])
+  private _hudObjectQuery = this.createEntityQuery([ConsoleImage , HudElement])
   private _dualScreenBuffer: [ScreenBuffer, ScreenBuffer] = [new ScreenBuffer(), new ScreenBuffer()];
   private _bufferIndex: 0 | 1 = 0;
 
   private _backgroundChar: string = Ansi.colors.bg.black + Ansi.colors.fg.black + " ";
 
-  override updateGroup() {
+  override systemGroup() {
     return RenderingSystemGroup;
   }
 
-  override updatePriority(): number {
+  override priority(): number {
     return 100; // after camera sizing
   }
 
@@ -36,9 +37,9 @@ export class ConsoleRenderingSystem extends System {
   protected onCreate() {
     this.world.getOrCreateSystem(ConsoleBoundsComputeSystem);
     // remove original console as an output as we using it
-    consoleOverride.removeConsoleEventListener(display)
-    this.requireForUpdate(this._cameraQuery)
-    this.requireForUpdate(this._objectQuery)
+    this.requireAllForUpdate(this._cameraQuery) // always require a camera
+    this.requireAnyForUpdate(this._objectQuery) // and require at least one renderer object
+    this.requireAnyForUpdate(this._hudObjectQuery) // or one hud object
     this.world.getOrCreateSystem(CameraSizingSystem);
     this.enabled = false;
   }
@@ -48,8 +49,6 @@ export class ConsoleRenderingSystem extends System {
   }
 
   onUpdate() {
-    if (!this._cameraQuery.hasEntity()) return;
-
     const cameraEntity = this._cameraQuery.getSingleton({
       camera: Camera,
       position: Position2d,
@@ -60,7 +59,7 @@ export class ConsoleRenderingSystem extends System {
     const cameraBounds = cameraEntity.bounds;
 
     // Only consider on-screen objects
-    const objectEntities = this._objectQuery
+    const imageEntities = this._objectQuery
       .stream({bounds: Bounds2d, img: ConsoleImage})
       .collect()
       .filter(({bounds}) => cameraBounds.intersects(bounds));
@@ -73,14 +72,15 @@ export class ConsoleRenderingSystem extends System {
 
     // Blit each object's image at its top-left corner relative to camera's top-left
     // Painter's algorithm in stream order; add your own z-index if needed.
-    for (const {bounds, img} of objectEntities) {
+    // World-space → screen-space transform.
+    for (const {bounds, img} of imageEntities) {
       // World → screen transform (top-left anchoring)
       const screenX = Math.floor(bounds.xMin - cameraBounds.xMin);
       const screenY = Math.floor(bounds.yMin - cameraBounds.yMin);
 
       // The image is already sized to its visible width via ConsoleImage.size (ANSI stripped)
       // The blitter will clip to the current screen automatically.
-      cur.blit(img.image, screenX, screenY);
+      cur.blit(img, screenX, screenY);
     }
 
     const frame = cur.flush();
@@ -99,11 +99,14 @@ export class ConsoleRenderingSystem extends System {
 
   override onEnable() {
     console.log("Entering Alt Mode")
+    consoleOverride.removeConsoleEventListener(display)
     process.stdout.write(Ansi.modes.altScreenEnter); // alt buffer + save cursor
+    this.update();
   }
 
   override onDisable() {
     console.log("Exiting Alt Mode")
+    consoleOverride.addConsoleEventListener(display)
     process.stdout.write(Ansi.modes.altScreenExit); // back to main + restore cursor
   }
 }

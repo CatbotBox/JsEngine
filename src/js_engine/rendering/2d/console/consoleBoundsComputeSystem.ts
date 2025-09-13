@@ -7,15 +7,15 @@ import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 
 export class ConsoleBoundsComputeSystem extends System {
     private _query = this.createEntityQuery([Position2d, Size2d, Bounds2d])
-    override updateGroup() {
+    override systemGroup() {
         return RenderingSystemGroup;
     }
 
-    override updatePriority(): number {
+    override priority(): number {
         return -10;
     }
     protected onCreate() {
-        this.requireForUpdate(this._query);
+        this.requireAnyForUpdate(this._query);
     }
 
     onUpdate() {

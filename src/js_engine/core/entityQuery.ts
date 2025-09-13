@@ -386,7 +386,6 @@ export class EntityQuery<
         let count = 0;
         const archetypes = this.getCachedArchtypes();
         for (const arch of archetypes) {
-            console.log(arch.componentTypes)
             const n = arch.entityCount;
             count += n;
         }

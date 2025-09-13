@@ -3,7 +3,7 @@ import {DoubleMap} from "../util/doubleMap";
 import {Entity} from "./entity";
 
 export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>> {
-  private _components: ComponentOf<CT>[][];
+  private _componentData: ComponentOf<CT>[][];
   private _componentTypes: CT[];
   private _entities: DoubleMap<Entity, number> = new DoubleMap();
 
@@ -15,7 +15,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     // dedupe, preserve first-appearance order
     const seen = new Set<CT>();
     this._componentTypes = types.filter(t => (seen.has(t) ? false : (seen.add(t), true)));
-    this._components = Array.from({length: this._componentTypes.length}, () => []);
+    this._componentData = Array.from({length: this._componentTypes.length}, () => []);
   }
 
   public addEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>) {
@@ -25,10 +25,10 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     this._componentTypes.forEach((type, idx) => {
       const component = components.get(type);
       if (!component) throw new Error("component of required type is missing");
-      if (this._components[idx].length > nextIndex) {
-        this._components[idx][nextIndex] = component as ComponentOf<CT>;
+      if (this._componentData[idx].length > nextIndex) {
+        this._componentData[idx][nextIndex] = component as ComponentOf<CT>;
       } else {
-        this._components[idx].push(component as ComponentOf<CT>);
+        this._componentData[idx].push(component as ComponentOf<CT>);
       }
     });
   }
@@ -40,7 +40,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     this._componentTypes.forEach((type, idx) => {
       const component = components.get(type);
       if (!component) throw new Error("component of required type is missing");
-      this._components[idx][index] = component as ComponentOf<CT>;
+      this._componentData[idx][index] = component as ComponentOf<CT>;
     });
   }
 
@@ -57,7 +57,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     if (index !== lastIndex) {
       const lastEntity = this._entities.getKey(lastIndex);
       if (lastEntity !== undefined) {
-        this._components.forEach(col => {
+        this._componentData.forEach(col => {
           col[index] = col[lastIndex];
         });
         this._entities.deleteValue(lastIndex);
@@ -81,7 +81,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
   public getDataAtIndex(index: number): Map<CT, ComponentOf<CT>> {
     const map = new Map<CT, ComponentOf<CT>>();
     this._componentTypes.forEach((type, idx) => {
-      const comp = this._components[idx][index];
+      const comp = this._componentData[idx][index];
       if (comp !== undefined) map.set(type, comp);
     });
     return map;

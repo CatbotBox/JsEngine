@@ -50,6 +50,12 @@ export type ComponentChange = {
 };
 
 export class Component {
+  static clone<T extends Component>(clone: T) {
+    const ctor = clone.constructor as ComponentCtor<T>;
+    const copy = new ctor();
+    return Object.assign(copy, clone);
+  }
+
   // /** Per-instance event; raised when a property on this component changes. */
   // public readonly onChange: Event<ComponentChange> = new Event();
 

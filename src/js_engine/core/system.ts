@@ -67,15 +67,16 @@ export abstract class System {
   public world!: World;
   private _enabled = true;
   private _requiredAnyForUpdate: EntityQuery[] | undefined;
+  private _requiredAllForUpdate: EntityQuery[] | undefined;
 
   public constructor() {
   }
 
-  public updatePriority(): number {
+  public priority(): number {
     return 0;
   }
 
-  protected updateGroup(): new () => SystemGroup {
+  protected systemGroup(): new () => SystemGroup {
     const {RootSystemGroup} = require("./rootSystemGroup");
     return RootSystemGroup;
   }
@@ -84,15 +85,15 @@ export abstract class System {
     return this.world.entityManager;
   }
 
-  protected requireForUpdate<
+  protected requireAnyForUpdate<
     IncSpec extends readonly TokenOrCtor[],
     ExcSpec extends readonly TokenOrCtor[] = []
   >(include: IncSpec, exclude?: ExcSpec): void
-  protected requireForUpdate<
+  protected requireAnyForUpdate<
     IncSpec extends readonly TokenOrCtor[],
     ExcSpec extends readonly TokenOrCtor[] = []
   >(query: EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>): void
-  protected requireForUpdate<IncSpec extends readonly TokenOrCtor[], ExcSpec extends readonly TokenOrCtor[] = []>(input: IncSpec | EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>, input2?: ExcSpec): void {
+  protected requireAnyForUpdate<IncSpec extends readonly TokenOrCtor[], ExcSpec extends readonly TokenOrCtor[] = []>(input: IncSpec | EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>, input2?: ExcSpec): void {
     let query = input as unknown as EntityQuery
     if (Array.isArray(input)) {
       const inc = toTokens(input) as TokensOfList<IncSpec>;
@@ -106,17 +107,41 @@ export abstract class System {
     this._requiredAnyForUpdate.push(query);
   }
 
+  protected requireAllForUpdate<
+    IncSpec extends readonly TokenOrCtor[],
+    ExcSpec extends readonly TokenOrCtor[] = []
+  >(include: IncSpec, exclude?: ExcSpec): void
+  protected requireAllForUpdate<
+    IncSpec extends readonly TokenOrCtor[],
+    ExcSpec extends readonly TokenOrCtor[] = []
+  >(query: EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>): void
+  protected requireAllForUpdate<IncSpec extends readonly TokenOrCtor[], ExcSpec extends readonly TokenOrCtor[] = []>(input: IncSpec | EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>, input2?: ExcSpec): void {
+    let query = input as unknown as EntityQuery
+    if (Array.isArray(input)) {
+      const inc = toTokens(input) as TokensOfList<IncSpec>;
+      const exc = toTokens(input2 ?? []) as TokensOfList<ExcSpec>;
+      query = new EntityQuery(this, inc, exc) as unknown as EntityQuery;
+    }
+    if (!this._requiredAllForUpdate) {
+      this._requiredAllForUpdate = [query]
+      return;
+    }
+    this._requiredAllForUpdate.push(query);
+  }
+
 
   public create(): void {
-    const updateGroup = this.world.getOrCreateSystem(this.updateGroup())
+    const updateGroup = this.world.getOrCreateSystem(this.systemGroup())
     updateGroup.addSystemInstance(this)
     this.onCreate();
+    if (this.enabled) this.onEnable();
   }
 
   protected onCreate(): void {
   }
 
   public destroy(): void {
+    if (this.enabled) this.onDisable();
     this.onDestroy();
   }
 
@@ -134,6 +159,10 @@ export abstract class System {
       const update = this._requiredAnyForUpdate.findIndex(query => query.hasEntity())
       if (update === -1) return;
     }
+    if (this._requiredAllForUpdate) {
+      const update = this._requiredAllForUpdate.every(query => query.hasEntity())
+      if (!update) return;
+    }
     this.onUpdate();
   }
 
@@ -144,11 +173,12 @@ export abstract class System {
   public set enabled(v: boolean) {
     if (v === this.enabled) return; // no change
     if (v) {
+      this._enabled = true;
       this.onEnable();
     } else {
       this.onDisable();
+      this._enabled = false;
     }
-    this._enabled = v;
   }
 
   protected onEnable(): void {

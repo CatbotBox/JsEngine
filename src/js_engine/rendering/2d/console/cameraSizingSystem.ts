@@ -8,11 +8,12 @@ export class CameraSizingSystem extends System {
   private _cameraQuery = this.createEntityQuery([Camera, Size2d])
   private _renderingSystem: ConsoleRenderingSystem = undefined!
 
-  override updateGroup() {
+  override systemGroup() {
     return RenderingSystemGroup;
   }
 
   protected onCreate() {
+    this.requireAnyForUpdate(this._cameraQuery)
     this._renderingSystem = this.world.getOrCreateSystem(ConsoleRenderingSystem);
     if (process.stdout.isTTY) {
       process.stdout.on('resize', () => {
@@ -25,11 +26,11 @@ export class CameraSizingSystem extends System {
   }
 
   onUpdate() {
-    if (!this._cameraQuery.hasEntity()) {
-      if (this._renderingSystem.enabled) this._renderingSystem.enabled = false;
-      return;
-    }
-    if (!this._renderingSystem.enabled) this._renderingSystem.enabled = true;
+    // if (!this._cameraQuery.hasEntity()) {
+    //   if (this._renderingSystem.enabled) this._renderingSystem.enabled = false;
+    //   return;
+    // }
+    // if (!this._renderingSystem.enabled) this._renderingSystem.enabled = true;
     const cameraEntity = this._cameraQuery.getSingleton({
       consoleSize: Size2d
     });
