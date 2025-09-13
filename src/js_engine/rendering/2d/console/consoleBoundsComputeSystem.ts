@@ -3,10 +3,17 @@ import {ConsoleImageAnchor, ConsoleImageOffset} from "./components";
 import {Size2d} from "../size2d";
 import {Bounds2d} from "../bounds2d";
 import {Position2d} from "../position2d";
+import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 
 export class ConsoleBoundsComputeSystem extends System {
     private _query = this.createEntityQuery([Position2d, Size2d, Bounds2d])
+    override updateGroup() {
+        return RenderingSystemGroup;
+    }
 
+    override updatePriority(): number {
+        return -10;
+    }
     protected onCreate() {
         this.requireForUpdate(this._query);
     }
