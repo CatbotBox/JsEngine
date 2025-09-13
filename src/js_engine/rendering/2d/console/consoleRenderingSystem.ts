@@ -75,6 +75,7 @@ export class ConsoleRenderingSystem extends System {
       .stream({bounds: Bounds2d, img: ConsoleImage})
       .collect()
       .filter(({bounds}) => cameraBounds.intersects(bounds));
+
     // Blit each object's image at its top-left corner relative to camera's top-left
     // Painter's algorithm in stream order; add your own z-index if needed.
     // World-space → screen-space transform.

@@ -3,8 +3,9 @@ import {DoubleMap} from "../util/doubleMap";
 import {Entity} from "./entity";
 
 export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>> {
-  private _componentData: ComponentOf<CT>[][];
-  private _componentTypes: CT[];
+  private readonly _componentData: ComponentOf<CT>[][];
+  private _componentTypes: Map<CT, number>;
+  private readonly _uniqueTypes: CT[]
   private _entities: DoubleMap<Entity, number> = new DoubleMap();
   // entities after this index are disabled
   private _enabledCount: number = 0;
@@ -23,17 +24,30 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     return this._entities.size;
   }
 
+  public getColumn(token: CT) {
+    const index = this._componentTypes.get(token);
+    if (index === undefined || index === -1) return;
+    return this._componentData[index];
+  }
+
+
   public constructor(types: CT[]) {
     // dedupe, preserve first-appearance order
     const seen = new Set<CT>();
-    this._componentTypes = types.filter(t => (seen.has(t) ? false : (seen.add(t), true)));
-    this._componentData = Array.from({length: this._componentTypes.length}, () => []);
+    const uniqueTypes = types.filter(t => (seen.has(t) ? false : (seen.add(t) || true)));
+    const map = new Map<CT, number>();
+    for (let i = 0; i < uniqueTypes.length; i++) {
+      map.set(uniqueTypes[i], i);
+    }
+    this._componentTypes = map;
+    this._componentData = Array.from({length: uniqueTypes.length}, () => []);
+    this._uniqueTypes = uniqueTypes;
   }
 
   public addEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean) {
     const nextIndex = this._entities.size;
     this._entities.set(entity, nextIndex);
-    this._componentTypes.forEach((type, idx) => {
+    this._uniqueTypes.forEach((type, idx) => {
       const component = components.get(type);
       if (!component) throw new Error("component of required type is missing");
       if (this._componentData[idx].length > nextIndex) {
@@ -56,7 +70,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
       this.setEnabledStateAtIndex(index, enabled);
     }
 
-    this._componentTypes.forEach((type, idx) => {
+    this._uniqueTypes.forEach((type, idx) => {
       const component = components.get(type);
       if (!component) throw new Error("component of required type is missing");
       this._componentData[idx][index] = component as ComponentOf<CT>;
@@ -137,7 +151,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
 
   public getDataAtIndex(index: number): Map<CT, ComponentOf<CT>> {
     const map = new Map<CT, ComponentOf<CT>>();
-    this._componentTypes.forEach((type, idx) => {
+    this._uniqueTypes.forEach((type, idx) => {
       const comp = this._componentData[idx][index];
       if (comp !== undefined) map.set(type, comp);
     });
@@ -151,6 +165,6 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
   }
 
   public get componentTypes(): readonly CT[] {
-    return this._componentTypes;
+    return this._uniqueTypes;
   }
 }

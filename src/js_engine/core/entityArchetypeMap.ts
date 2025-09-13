@@ -1,21 +1,19 @@
 ﻿import type {ComponentType} from "./component";
 import {Event} from "../util/event";
 import {EntityArchetype} from "./entityArchetype";
+import Iterator = NodeJS.Iterator;
 
 export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<any>> {
-  private _byKey: Map<string, EntityArchetype<CT>> = new Map();
+  private _byKey: Map<string, WeakRef<EntityArchetype<CT>>> = new Map();
   private _typeIds: WeakMap<CT, number> = new WeakMap();
   private _nextTypeId = 1;
 
-  public get totalCount(): number {
+
+  public get loadedArchetypes(): number {
     return this._byKey.size;
   }
 
-  public get totalEmpty(): number {
-    return Array.from(this._byKey.values()).filter(arch => arch.entityCount === 0).length;
-  }
-
-  public onCreateArchtype: Event<EntityArchetype<CT>> = new Event();
+  public onCreateArchetype: Event<EntityArchetype<CT>> = new Event();
 
   private keyFor(types: CT[]): string {
     const ids = types.map(t => {
@@ -32,21 +30,22 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
 
   public getOrCreate(componentTypes: CT[]): EntityArchetype<CT> {
     const key = this.keyFor(componentTypes);
-    let arch = this._byKey.get(key);
-    if (!arch) {
-      const uniqTypes = Array.from(new Set(componentTypes));
-      arch = new EntityArchetype<CT>(uniqTypes);
-      this._byKey.set(key, arch);
-      this.onCreateArchtype.invoke(arch);
+    const arch = this._byKey.get(key)?.deref();
+    if (arch) return arch
+
+    const uniqTypes = Array.from(new Set(componentTypes));
+    const archetype = new EntityArchetype<CT>(uniqTypes);
+    this._byKey.set(key, new WeakRef(archetype));
+    this.onCreateArchetype.invoke(archetype);
+    return archetype;
+  }
+
+  public* values(): Iterator<EntityArchetype<CT>> {
+    const kvPair = this._byKey.entries();
+    for (const [key, value] of kvPair) {
+      const arch = value.deref()
+      if (arch) yield arch;
+      else this._byKey.delete(key);
     }
-    return arch;
-  }
-
-  public get(componentTypes: CT[]): EntityArchetype<CT> | undefined {
-    return this._byKey.get(this.keyFor(componentTypes));
-  }
-
-  public* values(): IterableIterator<EntityArchetype<CT>> {
-    yield* this._byKey.values();
   }
 }

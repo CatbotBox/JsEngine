@@ -1,5 +1,5 @@
 ﻿// import {type Component, type ComponentCtor, ComponentType as CT, ComponentType} from "./component";
-// import { EntityArchtype } from "./entityArchtype";
+// import { EntityArchetype } from "./entityArchetype";
 // import { World } from "./world";
 // import {Entity} from "./entity";
 // import {EntityStreamOptions, EntityStreamRow} from "./entityStream";
@@ -44,12 +44,12 @@
 //   return specOrCtors as unknown as TokensFrom<S>;
 // }
 //
-// function hasAll<CT extends AnyCT>(arch: EntityArchtype<CT>, required: readonly CT[]): boolean {
+// function hasAll<CT extends AnyCT>(arch: EntityArchetype<CT>, required: readonly CT[]): boolean {
 //   const have = new Set(arch.componentTypes as readonly CT[]);
 //   for (const t of required) if (!have.has(t)) return false;
 //   return true;
 // }
-// function hasNone<CT extends AnyCT>(arch: EntityArchtype<CT>, excluded: readonly CT[]): boolean {
+// function hasNone<CT extends AnyCT>(arch: EntityArchetype<CT>, excluded: readonly CT[]): boolean {
 //   const have = new Set(arch.componentTypes as readonly CT[]);
 //   for (const t of excluded) if (have.has(t)) return false;
 //   return true;
@@ -61,13 +61,13 @@
 // > {
 //   private _include: readonly TupleToUnion<Inc>[] = [] as const;
 //   private _exclude: readonly TupleToUnion<Exc>[] = [] as const;
-//   private _cachedArchtypes: EntityArchtype<AnyCT>[] = [];
+//   private _cachedArchetypes: EntityArchetype<AnyCT>[] = [];
 //
 //   constructor(private _world: World, include: Inc, exclude?: Exc) {
 //     this._include = include;
 //     this._exclude = exclude ?? ([] as unknown as Exc);
 //     this.refreshCache();
-//     this._world.archtypes.onCreateArchtype.add(this.onArchtypeCreated);
+//     this._world.archetypes.onCreateArchetype.add(this.onArchetypeCreated);
 //   }
 //
 //   // public setInclude(next: Inc): void { this._include = next; this.refreshCache(); }
@@ -78,29 +78,29 @@
 //
 //   public get include(): readonly TupleToUnion<Inc>[] { return this._include; }
 //   public get exclude(): readonly TupleToUnion<Exc>[] { return this._exclude; }
-//   public get archtypes(): readonly EntityArchtype<AnyCT>[] { return this._cachedArchtypes; }
+//   public get archetypes(): readonly EntityArchetype<AnyCT>[] { return this._cachedArchetypes; }
 //
-//   private onArchtypeCreated = (arch: EntityArchtype<AnyCT>) => {
-//     if (this.matches(arch)) this._cachedArchtypes.push(arch);
+//   private onArchetypeCreated = (arch: EntityArchetype<AnyCT>) => {
+//     if (this.matches(arch)) this._cachedArchetypes.push(arch);
 //   };
 //
-//   private matches(arch: EntityArchtype<AnyCT>): boolean {
+//   private matches(arch: EntityArchetype<AnyCT>): boolean {
 //     return hasAll(arch, this._include as readonly AnyCT[]) &&
 //       hasNone(arch, this._exclude as readonly AnyCT[]);
 //   }
 //
 //   private refreshCache(): void {
-//     const next: EntityArchtype<AnyCT>[] = [];
-//     for (const arch of this._world.archtypes.values()) {
-//       const a = arch as EntityArchtype<AnyCT>;
+//     const next: EntityArchetype<AnyCT>[] = [];
+//     for (const arch of this._world.archetypes.values()) {
+//       const a = arch as EntityArchetype<AnyCT>;
 //       if (this.matches(a)) next.push(a);
 //     }
-//     this._cachedArchtypes = next;
+//     this._cachedArchetypes = next;
 //   }
 //
 //   /** Iterate all matching entity handles. */
 //   public forEachEntity(cb: (entity: Entity) => void): void {
-//     for (const arch of this._cachedArchtypes) {
+//     for (const arch of this._cachedArchetypes) {
 //       const n = arch.entityCount;
 //       for (let i = 0; i < n; i++) cb(arch.getEntityAtIndex(i));
 //     }
@@ -108,7 +108,7 @@
 //
 //   /** for..of over entities */
 //   public *[Symbol.iterator](): IterableIterator<Entity> {
-//     for (const arch of this._cachedArchtypes) {
+//     for (const arch of this._cachedArchetypes) {
 //       const n = arch.entityCount;
 //       for (let i = 0; i < n; i++) yield arch.getEntityAtIndex(i);
 //     }
@@ -124,7 +124,7 @@
 //     const spec = toTokenSpec(specOrCtors) as TokensFrom<S>;
 //     const includeEntity = (options?.includeEntity ?? (false as Include)) as Include;
 //     return new EntityQueryStream<TokensFrom<S>, Include>(
-//       this._cachedArchtypes,
+//       this._cachedArchetypes,
 //       spec,
 //       includeEntity
 //     );
@@ -138,7 +138,7 @@
 //   private keys: (keyof Spec)[];
 //
 //   constructor(
-//     private arches: readonly EntityArchtype<AnyCT>[],
+//     private arches: readonly EntityArchetype<AnyCT>[],
 //     private spec: Spec,
 //     private includeEntity: Include
 //   ) {
@@ -148,7 +148,7 @@
 //   public forEach(
 //     cb: (row: EntityStreamRow<Spec> & (Include extends true ? { entity: Entity } : {})) => void
 //   ): void {
-//     for (const arch of this.arches as EntityArchtype<AnyCT>[]) {
+//     for (const arch of this.arches as EntityArchetype<AnyCT>[]) {
 //       const n = arch.entityCount;
 //       for (let i = 0; i < n; i++) {
 //         const data = arch.getDataAtIndex(i) as Map<AnyCT, Component>;
@@ -172,13 +172,8 @@ import {EntityArchetype} from "./entityArchetype";
 import {World} from "./world";
 import {Entity} from "./entity";
 import {ComponentFrom, EntityStreamOptions, EntityStreamRow} from "./entityStream";
-import {
-  AnyCT, IncU,
-  RowFromSpec,
-  TokensFrom,
-  TokenSpec, toTokenSpec,
-  TupleToUnion
-} from "../util/tokenUtils";
+import {AnyCT, IncU, RowFromSpec, TokensFrom, TokenSpec, toTokenSpec, TupleToUnion} from "../util/tokenUtils";
+import {EntityQueryStream} from "./entityQueryStream";
 
 
 // row typing driven by the query:
@@ -230,29 +225,30 @@ export class EntityQuery<
   Inc extends readonly AnyCT[] = readonly [],
   Exc extends readonly AnyCT[] = readonly [],
 > {
-  private _include: readonly TupleToUnion<Inc>[];
-  private _exclude: readonly TupleToUnion<Exc>[];
+  private readonly _include: readonly TupleToUnion<Inc>[];
+  private readonly _exclude: readonly TupleToUnion<Exc>[];
 
   private _lazyLoaded: {
     world: World;
-    cachedArchtypes: EntityArchetype<AnyCT>[]
+    cachedArchetypes: WeakRef<EntityArchetype<AnyCT>>[]
   } = {
     world: undefined!,
-    cachedArchtypes: []
+    cachedArchetypes: []
   }
 
   constructor(private _source: { world: World }, include: Inc, exclude?: Exc) {
     this._include = include;
     this._exclude = exclude ?? ([] as unknown as Exc);
+
   }
 
   private ensureWorldAdded() {
     if (!this._source.world) throw new Error("World not set")
     this._lazyLoaded.world = this._source.world;
     this.getWorld = () => this._lazyLoaded.world;
-    this.getCachedArchtypes = () => this._lazyLoaded.cachedArchtypes;
+    this.getCachedArchetypes = () => this._lazyLoaded.cachedArchetypes;
     this.refreshCache();
-    this._lazyLoaded.world.archetypes.onCreateArchtype.add(this.onArchetypeCreated);
+    this._lazyLoaded.world.archetypes.onCreateArchetype.add(this.onArchetypeCreated);
   }
 
   private getWorld() {
@@ -260,10 +256,11 @@ export class EntityQuery<
     return this._lazyLoaded.world
   }
 
-  private getCachedArchtypes() {
+  private getCachedArchetypes(): WeakRef<EntityArchetype<AnyCT>>[] {
     this.ensureWorldAdded()
-    return this._lazyLoaded.cachedArchtypes
+    return this._lazyLoaded.cachedArchetypes
   }
+
 
   // public setInclude(next: Inc): void { this._include = next; this.refreshCache(); }
   // public setExclude(next: Exc): void { this._exclude = next; this.refreshCache(); }
@@ -273,12 +270,29 @@ export class EntityQuery<
 
   // public get include(): readonly TupleToUnion<Inc>[] { return this._include; }
   // public get exclude(): readonly TupleToUnion<Exc>[] { return this._exclude; }
-  public get archetypes(): readonly EntityArchetype<AnyCT>[] {
-    return this.getCachedArchtypes();
+  public get archetypes(): IterableIterator<EntityArchetype<AnyCT>> {
+    const arr = this.getCachedArchetypes(); // array of refs
+
+    function* iter(): IterableIterator<EntityArchetype<AnyCT>> {
+      // In-place compaction: single pass, no per-item splicing
+      let w = 0; // write index for the next kept ref
+      for (let r = 0; r < arr.length; r++) {
+        const ref = arr[r].deref();
+        if (ref !== undefined) {
+          if (w !== r) arr[w] = arr[r]; // move loaded ref forward only when needed
+          w++;
+          yield ref;
+        }
+        // unloaded refs are skipped
+      }
+      if (w !== arr.length) arr.length = w; // drop all skipped refs in one truncate
+    }
+
+    return iter();
   }
 
   private onArchetypeCreated = (arch: EntityArchetype<AnyCT>) => {
-    if (this.matches(arch)) this.getCachedArchtypes().push(arch);
+    if (this.matches(arch)) this.getCachedArchetypes().push(new WeakRef(arch));
   };
 
   private matches(arch: EntityArchetype<AnyCT>): boolean {
@@ -287,12 +301,12 @@ export class EntityQuery<
   }
 
   private refreshCache(): void {
-    const next: EntityArchetype<AnyCT>[] = [];
+    const next: WeakRef<EntityArchetype<AnyCT>>[] = [];
     for (const arch of this.getWorld().archetypes.values()) {
       const a = arch as EntityArchetype<AnyCT>;
-      if (this.matches(a)) next.push(a);
+      if (this.matches(a)) next.push(new WeakRef(a));
     }
-    this._lazyLoaded.cachedArchtypes = next;
+    this._lazyLoaded.cachedArchetypes = next;
   }
 
   // export class EntityQueryStream<
@@ -304,7 +318,7 @@ export class EntityQuery<
   // private keys: (keyof SpecTokens)[];
   //
   //   constructor(
-  //     private arches: readonly EntityArchtype<AnyCT>[],
+  //     private arches: readonly EntityArchetype<AnyCT>[],
   //     private spec: SpecTokens,
   //     private includeEntity: IncludeEntity
   // ) {
@@ -336,7 +350,7 @@ export class EntityQuery<
   // }
   public getSingletonEntity(options: Omit<EntityStreamOptions, "includeEntity">): Entity {
     let entity: Entity | undefined;
-    for (const arch of this.getCachedArchtypes()) {
+    for (const arch of this.archetypes) {
       const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
       if (entityCount == 0) continue;
       if (entityCount > 1) throw new Error("More than 1 singleton entity found");
@@ -358,7 +372,7 @@ export class EntityQuery<
     const spec = toTokenSpec(specOrCtors);
     const keys = Object.keys(spec) as (keyof S)[];
     let rowData: any = undefined;
-    for (const arch of this.getCachedArchtypes()) {
+    for (const arch of this.archetypes) {
       const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
       if (entityCount == 0) continue;
       if (entityCount > 1) throw new Error("More than 1 singleton entity found");
@@ -379,7 +393,7 @@ export class EntityQuery<
   }
 
   public hasEntity(): boolean {
-    for (const arch of this.getCachedArchtypes()) {
+    for (const arch of this.archetypes) {
       if (arch.entityCount > 0) return true;
     }
     return false;
@@ -387,8 +401,7 @@ export class EntityQuery<
 
   public entityCount(): number {
     let count = 0;
-    const archetypes = this.getCachedArchtypes();
-    for (const arch of archetypes) {
+    for (const arch of this.archetypes) {
       const n = arch.entityCount;
       count += n;
     }
@@ -397,8 +410,7 @@ export class EntityQuery<
 
   public entityCountUnfiltered(): number {
     let count = 0;
-    const archetypes = this.getCachedArchtypes();
-    for (const arch of archetypes) {
+    for (const arch of this.archetypes) {
       const n = arch.entityCountUnfiltered;
       count += n;
     }
@@ -407,19 +419,20 @@ export class EntityQuery<
 
   /** Iterate all matching entity handles. */
   public forEachEntity(cb: (entity: Entity) => void): void {
-    for (const arch of this.getCachedArchtypes()) {
+    for (const arch of this.archetypes) {
       const n = arch.entityCount;
       for (let i = 0; i < n; i++) cb(arch.getEntityAtIndex(i));
     }
   }
 
-  /** for..of over entities */
+  /** for loop over entities */
   public* [Symbol.iterator](): IterableIterator<Entity> {
-    for (const arch of this.getCachedArchtypes()) {
+    for (const arch of this.archetypes) {
       const n = arch.entityCount;
       for (let i = 0; i < n; i++) yield arch.getEntityAtIndex(i);
     }
   }
+
 
   public stream<
     S extends Record<string, TokenOrCtor>,
@@ -430,56 +443,10 @@ export class EntityQuery<
   ): EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc, Exc> {
     const spec = toTokenSpec(specOrCtors);
     return new EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc, Exc>(
-      this.getCachedArchtypes() as EntityArchetype<AnyCT>[],
+      this.archetypes,
       spec,
       options
     );
   }
 }
 
-export class EntityQueryStream<
-  SpecTokens extends Record<string, AnyCT>,
-  IncludeEntity extends boolean,
-  Inc extends readonly AnyCT[],
-  Exc extends readonly AnyCT[],
-> {
-  private keys: (keyof SpecTokens)[];
-
-  constructor(
-    private arches: readonly EntityArchetype<AnyCT>[],
-    private spec: SpecTokens,
-    private options?: EntityStreamOptions<IncludeEntity>
-  ) {
-    this.keys = Object.keys(spec) as (keyof SpecTokens)[];
-  }
-
-  public forEach(
-    cb: (
-      row: RowFromSpec<SpecTokens, IncU<Inc>> &
-        (IncludeEntity extends true ? { entity: Entity } : {})
-    ) => void
-  ): void {
-    for (const arch of this.arches) {
-      const n = this.options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
-      for (let i = 0; i < n; i++) {
-        const data = arch.getDataAtIndex(i) as Map<AnyCT, Component>;
-        const row: any = {};
-        if (this.options?.includeEntity) row.entity = arch.getEntityAtIndex(i);
-
-        for (const k of this.keys) {
-          const token = this.spec[k] as AnyCT;
-          row[k as string] = data.get(token);
-        }
-        cb(row);
-      }
-    }
-  }
-
-  public collect(): (RowFromSpec<SpecTokens, IncU<Inc>> & (IncludeEntity extends true ? { entity: Entity } : {}))[] {
-    const result: (RowFromSpec<SpecTokens, IncU<Inc>> & (IncludeEntity extends true ? {
-      entity: Entity
-    } : {}))[] = [];
-    this.forEach(data => result.push(data));
-    return result;
-  }
-}

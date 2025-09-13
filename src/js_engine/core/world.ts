@@ -25,7 +25,7 @@ export class World {
 
   constructor() {
     // console.log("World initialized");
-    this.archetypes.onCreateArchtype.add((_archtype) => { /* hook point */
+    this.archetypes.onCreateArchetype.add((_archtype) => { /* hook point */
     });
   }
 

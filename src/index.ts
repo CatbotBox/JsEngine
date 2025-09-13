@@ -8,16 +8,14 @@ import {Bounds2d} from "./js_engine/rendering/2d/bounds2d";
 import {ConsoleImage, ConsoleImageAnchor} from "./js_engine/rendering/2d/console/components";
 import {Ansi} from "./js_engine/rendering/2d/console/ansi";
 import {RootSystemGroup} from "./js_engine/core";
-import {OWNER} from "./js_engine/core/symbols";
-import {EntityArchetype} from "./js_engine/core/entityArchetype";
-import {EntityCommandBufferSystem} from "./js_engine/core/entityCommandBufferSystem";
 import {HudElement} from "./js_engine/rendering/hudElement";
+import {EntityCommandBufferSystem} from "./js_engine/core/entityCommandBufferSystem";
 
 
 const world = new World();
 
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
-// const buffer = entityManager
+// const buffer = world.entityManager
 
 
 const cameraEntity = buffer.createEntity("cameraEntity");
@@ -162,9 +160,9 @@ class DebugSystem extends System {
 
   onUpdate() {
     this._query.entityCount();
-    const entities = this._query
-      .stream({}, {includeEntity: true})
-      .collect()
+    // const entities = this._query
+    //   .stream({}, {includeEntity: true})
+    //   .collect()
 
     fpsCounterImage.image = [
       Ansi.colors.fg.green + 'FPS: ' + (Math.round((1000 / this.world.time.deltaTime) * 10) / 10),
@@ -194,14 +192,14 @@ class DebugSystem extends System {
     const entities = this._query
       .stream({}, {includeEntity: true})
       .collect()
-      .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
+      // .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
     // .map(e => {
     //     const archetype =   ((e.entity as any)[OWNER].arch as EntityArchetype);
     //     const data = archetype.getDataAtEntity(e.entity);
     //     const enabled = archetype.isEntityEnabled(e)
     //   });
     console.log("Entities:");
-    console.log(entities)
+    // console.log(entities)
   }
 }
 
