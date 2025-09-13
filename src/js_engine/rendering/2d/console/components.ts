@@ -40,8 +40,6 @@ export class ConsoleImage extends Component {
     for (let row = 0; row < this._image.length; row++) {
       this._pixels.push(ConsoleImage.splitIntoGlyphs(this._image[row], this.transparentChar)); // 1 token == 1 visible glyph (ANSI included)
     }
-    console.log(this._image);
-    console.log(this.pixels);
   }
 
   public get pixels(): (string | undefined)[][] {

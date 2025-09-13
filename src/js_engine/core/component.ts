@@ -1,6 +1,4 @@
-﻿import {Event} from "../util/event";
-
-const OBSERVED = Symbol("observed");
+﻿const OBSERVED = Symbol("observed");
 
 /** If you write to _message inside a setter, we report as 'message' when possible. */
 function publicKeyFor(target: object, key: string): string {

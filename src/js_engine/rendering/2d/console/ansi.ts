@@ -70,6 +70,8 @@
         position: (row: number, col: number) => `\x1b[${row};${col}H`,
         save: "\x1b[s",
         restore: "\x1b[u",
+        hide: "\x1b[?25l",
+        show: "\x1b[?25h",
     },
 
     screen: {

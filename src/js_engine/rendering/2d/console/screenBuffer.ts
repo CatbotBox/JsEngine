@@ -20,6 +20,15 @@ export class ScreenBuffer {
     this.screenBuffer = "";
   }
 
+  public renderDebug({consoleSize}: { consoleSize: Size2d }) {
+    this.width = Math.max(0, consoleSize.x | 0);
+    this.height = Math.max(0, consoleSize.y | 0);
+    this.cells = Array.from({length: this.height}, (_, height) =>
+      Array.from({length: this.width}, (_, width) => String((width + height) % 10))
+    );
+    this.screenBuffer = "";
+  }
+
   /**
    * Blit ANSI-decorated image lines at a destination top-left in SCREEN space.
    * Clipped automatically to the current buffer.

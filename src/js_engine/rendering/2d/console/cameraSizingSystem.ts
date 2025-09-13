@@ -19,7 +19,7 @@ export class CameraSizingSystem extends System {
       process.stdout.on('resize', () => {
         const cameraEntity = this._cameraQuery.getSingleton({consoleSize: Size2d})
         cameraEntity.consoleSize.x = process.stdout.columns;
-        cameraEntity.consoleSize.y = process.stdout.rows;
+        cameraEntity.consoleSize.y = process.stdout.rows - 1; // leave one row for the prompt
         console.log("Resize: " + JSON.stringify(cameraEntity.consoleSize, null, 2));
       });
     }
@@ -50,12 +50,12 @@ export class CameraSizingSystem extends System {
 
     if (process.stdout && process.stdout.isTTY) {
       cameraEntity.consoleSize.x = process.stdout.columns;
-      cameraEntity.consoleSize.y = process.stdout.rows;
+      cameraEntity.consoleSize.y = process.stdout.rows - 1; // leave one row for the prompt
       return
     }
     if (process.stderr && process.stderr.isTTY) {
       cameraEntity.consoleSize.x = process.stderr.columns;
-      cameraEntity.consoleSize.y = process.stderr.rows;
+      cameraEntity.consoleSize.y = process.stderr.rows - 1; // leave one row for the prompt
       return
     }
 
@@ -63,7 +63,7 @@ export class CameraSizingSystem extends System {
     const cols = Number(process.env.COLUMNS);
     const rows = Number(process.env.LINES || process.env.ROWS);
     cameraEntity.consoleSize.x = Number.isFinite(cols) ? cols : defaultSize.columns;
-    cameraEntity.consoleSize.y = Number.isFinite(rows) ? rows : defaultSize.rows;
+    cameraEntity.consoleSize.y = (Number.isFinite(rows) ? rows : defaultSize.rows) - 1; // leave one row for the prompt
 
     console.log("Resize: " + JSON.stringify(cameraEntity.consoleSize, null, 2));
   }
