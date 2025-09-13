@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json && node dist/index.js",
-    "start": "node src/index.ts"
+    "start": "node src/index.ts",
+    "clear-logs": "rm -rf logs/*"
   },
   "devDependencies": {
     "@types/node": "^24.2.1",
