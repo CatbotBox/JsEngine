@@ -3,7 +3,8 @@ import type {ComponentType} from "./component";
 import type {System} from "./system";
 import {EntityManager} from "./EntityManager";
 import {Entity} from "./entity";
-import {clearImmediate} from "node:timers";
+import {SystemGroup} from "./systemGroup";
+import {RootSystemGroup} from "./rootSystemGroup";
 
 
 class Time {
@@ -15,6 +16,7 @@ export class World {
   public archetypes: EntityArchetypeMap<ComponentType<any>> = new EntityArchetypeMap();
   public world: World = this;
   private _systems: Map<new () => System, System> = new Map();
+  private _rootSystemGroup: SystemGroup = this.createSystem(RootSystemGroup);
   public entityManager: EntityManager = new EntityManager(this);
   public time: Time = new Time();
 
@@ -34,8 +36,18 @@ export class World {
     const system = new constructor();
     system.world = this;
     this._systems.set(constructor, system);
-    system.Create();
+    system.create();
     return system;
+  }
+
+  public createSystem<T extends System>(systemClass: new () => T): T {
+    const existing = this._systems.get(systemClass);
+    if (existing !== undefined) throw new Error("System already exists");
+    const systemInstance = new systemClass();
+    systemInstance.world = this;
+    this._systems.set(systemClass, systemInstance);
+    systemInstance.create();
+    return systemInstance;
   }
 
   public tryGetSystem<T extends System>(constructor: new () => T): T | undefined {
@@ -91,9 +103,7 @@ export class World {
 
   public stop(): void {
     this.pause();
-    for (const system of this._systems.values()) {
-      system.Destroy();
-    }
+    this._rootSystemGroup.destroy();
   }
 
   public get targetDeltaTime(): number {
@@ -120,10 +130,7 @@ export class World {
 
 
   private update(): void {
-    for (const s of this._systems.values()) {
-      // console.log("updating system", s.constructor.name);
-      s.update();
-    }
+    this._rootSystemGroup.update();
   }
 
   public* systems(): Iterator<System> {

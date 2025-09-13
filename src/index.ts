@@ -7,6 +7,7 @@ import {Position2d} from "./js_engine/rendering/2d/position2d";
 import {Bounds2d} from "./js_engine/rendering/2d/bounds2d";
 import {ConsoleImage} from "./js_engine/rendering/2d/console/components";
 import {Ansi} from "./js_engine/rendering/2d/console/ansi";
+import {RootSystemGroup} from "./js_engine/core/rootSystemGroup";
 
 
 const world = new World();
@@ -77,7 +78,10 @@ keyboardInput.when({name: 'd'}, () => {
     position.x += 1;
     console.log("right")
 })
-
+keyboardInput.when({name: 'g'}, () => {
+    console.log("g")
+    world.tryGetSystem(RootSystemGroup)!.debug();
+})
 
 let toggle = true;
 keyboardInput.when({name: 'c', ctrl: true}, () => {

@@ -16,6 +16,7 @@ import {
   ToTokens
 } from "../util/tokenUtils";
 import {EntityManager} from "./EntityManager";
+import {SystemGroup} from "./systemGroup";
 
 // type AnyCT = CT<any>;
 // type TokenSpec = Record<string, AnyCT>;
@@ -70,6 +71,15 @@ export abstract class System {
   public constructor() {
   }
 
+  public updatePriority(): number {
+    return 0;
+  }
+
+  protected updateGroup(): new () => SystemGroup {
+    const {RootSystemGroup} = require("./rootSystemGroup");
+    return RootSystemGroup;
+  }
+
   protected get entityManager(): EntityManager {
     return this.world.entityManager;
   }
@@ -96,14 +106,17 @@ export abstract class System {
     this._requiredAnyForUpdate.push(query);
   }
 
-  public Create(): void {
+
+  public create(): void {
+    const updateGroup = this.world.getOrCreateSystem(this.updateGroup())
+    updateGroup.addSystemInstance(this)
     this.onCreate();
   }
 
   protected onCreate(): void {
   }
 
-  public Destroy(): void {
+  public destroy(): void {
     this.onDestroy();
   }
 
