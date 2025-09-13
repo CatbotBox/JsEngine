@@ -1,4 +1,3 @@
-import "./js_engine/debugging/consoleOverride"
 import {System, World} from "./js_engine/core";
 import {keyboardInput} from "./js_engine/input";
 import {Camera} from "./js_engine/rendering/camera";
@@ -82,6 +81,7 @@ keyboardInput.when({name: 'd'}, () => {
 
 let toggle = true;
 keyboardInput.when({name: 'c', ctrl: true}, () => {
+    world.stop()
     process.exit(0);
     // if (toggle) keyboardInput.disable();
     // else keyboardInput.enable();

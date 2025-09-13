@@ -81,11 +81,18 @@ export class World {
     }, this._targetDeltaTime / 10);
   }
 
-  public stopLoop(): void {
+  public pause(): void {
     if (this._timeout !== null) {
       clearInterval(this._timeout as any);
       // this._timeout.unref();
       this._timeout = null;
+    }
+  }
+
+  public stop(): void {
+    this.pause();
+    for (const system of this._systems.values()) {
+      system.Destroy();
     }
   }
 
@@ -97,7 +104,7 @@ export class World {
     if (value === this._targetDeltaTime) return;
     this._targetDeltaTime = value;
     if (this._timeout !== null) {
-      this.stopLoop();
+      this.pause();
       this.startLoop();
     }
   }

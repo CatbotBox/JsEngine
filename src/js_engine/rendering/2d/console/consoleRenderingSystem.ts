@@ -34,6 +34,10 @@ export class ConsoleRenderingSystem extends System {
         this.enabled = false;
     }
 
+    protected onDestroy() {
+        originalConsole.clear();
+    }
+
     onUpdate() {
         if (!this._cameraQuery.hasEntity()) return;
 
