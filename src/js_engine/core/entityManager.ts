@@ -1,13 +1,12 @@
 ﻿import {World} from "./world";
 import {Entity} from "./entity";
 import {Component} from "./component";
-import {ComponentType, type ComponentType as CT} from "./component";
+import {ComponentType} from "./component";
 import type {ComponentCtor} from "./component";
 import {setupComponentEvents} from "./component";
 import type {EntityArchetype} from "./entityArchetype";
 import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
 import {EntityQuery} from "./entityQuery";
-import * as Test from "node:test";
 import {NAME, OWNER} from "./symbols";
 
 

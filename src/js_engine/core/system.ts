@@ -15,7 +15,7 @@ import {
   toTokens,
   ToTokens
 } from "../util/tokenUtils";
-import {EntityManager} from "./EntityManager";
+import {EntityManager} from "./entityManager";
 import {SystemGroup} from "./systemGroup";
 
 // type AnyCT = CT<any>;

@@ -2,7 +2,7 @@
 import {Component, ComponentOf} from "./component";
 import {ComponentType, type ComponentType as CT} from "./component";
 import type {ComponentCtor} from "./component";
-import {EntityManager} from "./EntityManager";
+import {EntityManager} from "./entityManager";
 import {AnyCT, TokenOrCtor} from "../util/tokenUtils";
 import {NAME} from "./symbols";
 

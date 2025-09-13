@@ -1,7 +1,7 @@
 ﻿import {EntityArchetypeMap} from "./entityArchetypeMap";
 import type {ComponentType} from "./component";
 import type {System} from "./system";
-import {EntityManager} from "./EntityManager";
+import {EntityManager} from "./entityManager";
 import {Entity} from "./entity";
 import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
