@@ -11,6 +11,7 @@ export type EntityStreamRow<Spec extends Record<string, AnyCT>> = {
 
 export interface EntityStreamOptions<Include extends boolean = false> {
   includeEntity: Include; // default: false
+  includeDisabled?: boolean; // default: false
 }
 
 // export class EntityStream<

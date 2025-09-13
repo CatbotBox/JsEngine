@@ -4,7 +4,7 @@ import {EntityCommandBuffer} from "./entityCommandBuffer";
 export class EntityCommandBufferSystem extends System {
   private _buffer: EntityCommandBuffer = new EntityCommandBuffer();
 
-  public get buffer(): EntityCommandBuffer {
+  public createEntityCommandBuffer(): EntityCommandBuffer {
     return this._buffer;
   }
 
