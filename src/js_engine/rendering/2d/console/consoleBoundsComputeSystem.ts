@@ -12,7 +12,6 @@ export class ConsoleBoundsComputeSystem extends System {
     }
 
     onUpdate() {
-        console.log("boundsSystem: " + this._query.archtypes.length);
         this._query.stream({
             position: Position2d,
             anchor: ConsoleImageAnchor,
