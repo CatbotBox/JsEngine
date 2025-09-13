@@ -28,7 +28,7 @@ export class ConsoleBoundsComputeSystem extends System {
             const [v, h] = anchor?.anchorPosition.split('-') as [
                     'top' | 'middle' | 'bottom',
                     'left' | 'center' | 'right'
-            ] || ["top", "bottom"];
+            ] || ["middle", "center"];
 
             const ax = h === 'left' ? 0 : h === 'center' ? 0.5 : 1;    // horizontal anchor
             const ay = v === 'top' ? 0 : v === 'middle' ? 0.5 : 1;     // vertical anchor
