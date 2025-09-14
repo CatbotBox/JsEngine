@@ -26,19 +26,20 @@ buffer.addComponent(cameraEntity, cameraPosition);
 buffer.addComponent(cameraEntity, new Bounds2d());
 
 // can share the same image instance
-const crossImage = new ConsoleImage();
-crossImage.image = [
-  Ansi.colors.bg.white + '0 0',
-  Ansi.colors.bg.white + '   ',
-  Ansi.colors.bg.white + '0 0',
-]
-crossImage.transparentChar = '0'
-const crossImageSize = crossImage.size;
-
 function createCross(position: Position2d, name?: string) {
-  console.log("create cross at", position)
   const objectEntity = buffer.createEntity(name);
-  buffer.addComponent(objectEntity, crossImageSize);
+  const r = Math.round(Math.random() * 255)
+  const g = Math.round(Math.random() * 255)
+  const b = Math.round(Math.random() * 255)
+  const crossImage = new ConsoleImage();
+  crossImage.transparentChar = '0'
+  const color = Ansi.bgRGB(r, g, b)
+  crossImage.image = [
+    color + '0 0',
+    color + '   ',
+    color + '0 0',
+  ]
+  buffer.addComponent(objectEntity, crossImage.size);
   buffer.addComponent(objectEntity, new Bounds2d());
   buffer.addComponent(objectEntity, position);
   buffer.addComponent(objectEntity, crossImage);
@@ -114,7 +115,14 @@ keyboardInput.when({name: 'd'}, () => {
 
 
 keyboardInput.when({name: 'space'}, () => {
-  createCross(Component.clone(position));
+  for (let i = 0; i < 1_000; i++) {
+    const x = (Math.random() - 0.5) * 100
+    const y = (Math.random() - 0.5) * 100
+    const newPos = Component.clone(position)
+    newPos.x += x;
+    newPos.y += y;
+    createCross(newPos);
+  }
 })
 keyboardInput.when({name: 'return'}, () => {
   const renderer = world.tryGetSystem(ConsoleRenderingSystem);
@@ -192,7 +200,7 @@ class DebugSystem extends System {
       .stream({}, {includeEntity: true})
       .collect()
       .toString()
-      // .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
+    // .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
     // .map(e => {
     //     const archetype =   ((e.entity as any)[OWNER].arch as EntityArchetype);
     //     const data = archetype.getDataAtEntity(e.entity);
