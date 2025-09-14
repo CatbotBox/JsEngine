@@ -117,7 +117,6 @@ keyboardInput.when({name: 'space'}, () => {
   createCross(Component.clone(position));
 })
 keyboardInput.when({name: 'return'}, () => {
-  console.log("space")
   const renderer = world.tryGetSystem(ConsoleRenderingSystem);
   if (!renderer) return;
   renderer.enabled = !renderer.enabled;
@@ -192,6 +191,7 @@ class DebugSystem extends System {
     const entities = this._query
       .stream({}, {includeEntity: true})
       .collect()
+      .toString()
       // .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
     // .map(e => {
     //     const archetype =   ((e.entity as any)[OWNER].arch as EntityArchetype);
@@ -199,7 +199,7 @@ class DebugSystem extends System {
     //     const enabled = archetype.isEntityEnabled(e)
     //   });
     console.log("Entities:");
-    // console.log(entities)
+    console.log(entities)
   }
 }
 

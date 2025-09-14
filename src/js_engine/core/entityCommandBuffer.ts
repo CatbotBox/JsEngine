@@ -143,8 +143,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
 
       if (pending.enabled !== undefined) em.setEnabledState(entity, pending.enabled);
 
-      console.log("Playing")
-
     }
 
     for (const {query, enabled} of this.enabledQueries) {

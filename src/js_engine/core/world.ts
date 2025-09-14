@@ -4,9 +4,13 @@ import {EntityManager} from "./entityManager";
 import {Entity} from "./entity";
 import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
+import {GCSystem} from "./GCSystem";
 
 
 class Time {
+  /**
+   * time from last tick (in milliseconds)
+   */
   public deltaTime: number = 0;
   public elapsedTime: number = 0;
 }
@@ -27,6 +31,8 @@ export class World {
     // console.log("World initialized");
     this.archetypes.onCreateArchetype.add((_archtype) => { /* hook point */
     });
+
+    this.getOrCreateSystem(GCSystem)
   }
 
   public getOrCreateSystem<T extends System>(constructor: new () => T): T {

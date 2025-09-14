@@ -151,7 +151,7 @@ type LazySeq<T> = Iterable<T> & {
   filter(pred: (item: T, idx: number) => boolean): LazySeq<T>;
   reduce<U>(reducer: (acc: U, item: T, idx: number) => U, init: U): U;
   forEach(cb: (item: T, idx: number) => void): void;
-  toArray(): T[];
+  // toArray(): T[];
   toString(): string;
 };
 
@@ -200,9 +200,9 @@ function fromIterable<T>(iterable: Iterable<T>): LazySeq<T> {
       for (const x of iterable) cb(x, i++);
     },
 
-    toArray(): T[] {
-      return Array.from(iterable);
-    },
+    // toArray(): T[] {
+    //   return Array.from(iterable);
+    // },
 
     toString(): string {
       // Safely preview if the source is re-iterable (new iterator each call).
