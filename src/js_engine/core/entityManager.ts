@@ -1,7 +1,7 @@
 ﻿import {World} from "./world";
 import {Entity} from "./entity";
 import type {ComponentCtor} from "./component";
-import {Component, ComponentType, setupComponentEvents} from "./component";
+import {Component, ComponentType} from "./component";
 import type {EntityArchetype} from "./entityArchetype";
 import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
 import {EntityQuery} from "./entityQuery";
@@ -108,7 +108,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     const nextComponents = new Map<AnyCT, Component>();
     for (const t of targetArch.componentTypes as AnyCT[]) {
       if (t === token) {
-        nextComponents.set(t, this.wrap(component));
+        nextComponents.set(t, component);
       } else {
         const c = currentData.get(t);
         if (!c) throw new Error(`Missing component for required type during upsert`);
@@ -195,9 +195,5 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     return (typeof key === "function")
       ? ComponentType.of(key as ComponentCtor<Component>)
       : (key as AnyCT);
-  }
-
-  private wrap<C extends Component>(c: C): C {
-    return setupComponentEvents(c);
   }
 }

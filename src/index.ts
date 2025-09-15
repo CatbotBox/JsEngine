@@ -2,9 +2,9 @@ import {Component, EntityCommandBuffer, System, World} from "./js_engine/core";
 import {keyboardInput} from "./js_engine/input";
 import {Camera} from "./js_engine/rendering/camera";
 import {ConsoleRenderingSystem} from "./js_engine/rendering/2d/console/consoleRenderingSystem";
-import {Size2d} from "./js_engine/rendering/2d/size2d";
-import {Position2d} from "./js_engine/rendering/2d/position2d";
-import {Bounds2d} from "./js_engine/rendering/2d/bounds2d";
+import {Scale} from "./js_engine/translation/scale";
+import {Position} from "./js_engine/translation/position";
+import {Bounds} from "./js_engine/translation/bounds";
 import {ConsoleImage, ConsoleImageAnchor} from "./js_engine/rendering/2d/console/components";
 import {Ansi} from "./js_engine/rendering/2d/console/ansi";
 import {RootSystemGroup} from "./js_engine/core";
@@ -19,14 +19,14 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 
 
 const cameraEntity = buffer.createEntity("cameraEntity");
-const cameraPosition = new Position2d();
+const cameraPosition = new Position();
 buffer.addComponent(cameraEntity, new Camera());
-buffer.addComponent(cameraEntity, new Size2d());
+buffer.addComponent(cameraEntity, new Scale());
 buffer.addComponent(cameraEntity, cameraPosition);
-buffer.addComponent(cameraEntity, new Bounds2d());
+buffer.addComponent(cameraEntity, new Bounds());
 
 // can share the same image instance
-function createCross(position: Position2d, name?: string) {
+function createCross(position: Position, name?: string) {
   const objectEntity = buffer.createEntity(name);
   const r = Math.round(Math.random() * 255)
   const g = Math.round(Math.random() * 255)
@@ -40,16 +40,16 @@ function createCross(position: Position2d, name?: string) {
     color + '0 0',
   ]
   buffer.addComponent(objectEntity, crossImage.size);
-  buffer.addComponent(objectEntity, new Bounds2d());
+  buffer.addComponent(objectEntity, new Bounds());
   buffer.addComponent(objectEntity, position);
   buffer.addComponent(objectEntity, crossImage);
 }
 
-const position = new Position2d();
+const position = new Position();
 createCross(position, "cross1")
-createCross(new Position2d(5, 5), "cross2")
-createCross(new Position2d(1, 1), "cross3")
-createCross(new Position2d(9, 9), "cross4")
+createCross(new Position(5, 5), "cross2")
+createCross(new Position(1, 1), "cross3")
+createCross(new Position(9, 9), "cross4")
 
 
 //hud element

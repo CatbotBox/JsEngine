@@ -1,12 +1,12 @@
 ﻿import {System} from "../../../core";
 import {ConsoleImageAnchor, ConsoleImageOffset} from "./components";
-import {Size2d} from "../size2d";
-import {Bounds2d} from "../bounds2d";
-import {Position2d} from "../position2d";
+import {Scale} from "../../../translation/scale";
+import {Bounds} from "../../../translation/bounds";
+import {Position} from "../../../translation/position";
 import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 
 export class ConsoleBoundsComputeSystem extends System {
-    private _query = this.createEntityQuery([Position2d, Size2d, Bounds2d])
+    private _query = this.createEntityQuery([Position, Scale, Bounds])
     override systemGroup() {
         return RenderingSystemGroup;
     }
@@ -20,12 +20,12 @@ export class ConsoleBoundsComputeSystem extends System {
 
     onUpdate() {
         this._query.stream({
-            position: Position2d,
+            position: Position,
             anchor: ConsoleImageAnchor,
             offset: ConsoleImageOffset,
-            size: Size2d,
-            bounds: Bounds2d,
-        }).forEach(({bounds, position, size, anchor, offset}) => {
+            scale: Scale,
+            bounds: Bounds,
+        }).forEach(({bounds, position, scale, anchor, offset}) => {
             // base position after offset
             const px = position.x + (offset?.x || 0);
             const py = position.y + (offset?.y || 0);
@@ -40,10 +40,10 @@ export class ConsoleBoundsComputeSystem extends System {
             const ay = v === 'top' ? 0 : v === 'middle' ? 0.5 : 1;     // vertical anchor
 
             // compute top-left corner from anchor; handle negative sizes robustly
-            const x0 = px - ax * size.x;
-            const y0 = py - ay * size.y;
-            const x1 = x0 + size.x;
-            const y1 = y0 + size.y;
+            const x0 = px - ax * scale.x;
+            const y0 = py - ay * scale.y;
+            const x1 = x0 + scale.x;
+            const y1 = y0 + scale.y;
 
             bounds.xMin = Math.min(x0, x1);
             bounds.xMax = Math.max(x0, x1);

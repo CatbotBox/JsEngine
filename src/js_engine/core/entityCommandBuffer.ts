@@ -1,6 +1,6 @@
 ﻿import {Entity} from "./entity";
-import {Component, ComponentOf, setupComponentEvents} from "./component";
-import {ComponentType, type ComponentType as CT} from "./component";
+import {Component} from "./component";
+import {ComponentType} from "./component";
 import type {ComponentCtor} from "./component";
 import {EntityManager} from "./entityManager";
 import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
@@ -220,9 +220,8 @@ export class EntityCommandBuffer implements EntityWriteOptions {
 
     for (const [key, comp] of input) {
       const token = this.toToken(key);
-      const wrapped = setupComponentEvents(comp);
       if (!map.has(token)) types.push(token);
-      map.set(token, wrapped);
+      map.set(token, comp);
     }
     // unique tokens, preserve order
     const seen = new Set<AnyCT>();

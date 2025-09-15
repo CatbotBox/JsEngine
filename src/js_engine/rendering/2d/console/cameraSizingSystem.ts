@@ -1,11 +1,11 @@
 ﻿import {System} from "../../../core";
 import {Camera} from "../../camera";
-import {Size2d} from "../size2d";
+import {Scale} from "../../../translation/scale";
 import {ConsoleRenderingSystem} from "./consoleRenderingSystem";
 import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 
 export class CameraSizingSystem extends System {
-  private _cameraQuery = this.createEntityQuery([Camera, Size2d])
+  private _cameraQuery = this.createEntityQuery([Camera, Scale])
   private _renderingSystem: ConsoleRenderingSystem = undefined!
 
   override systemGroup() {
@@ -17,7 +17,7 @@ export class CameraSizingSystem extends System {
     this._renderingSystem = this.world.getOrCreateSystem(ConsoleRenderingSystem);
     if (process.stdout.isTTY) {
       process.stdout.on('resize', () => {
-        const cameraEntity = this._cameraQuery.getSingleton({consoleSize: Size2d})
+        const cameraEntity = this._cameraQuery.getSingleton({consoleSize: Scale})
         cameraEntity.consoleSize.x = process.stdout.columns;
         cameraEntity.consoleSize.y = process.stdout.rows - 1; // leave one row for the prompt
         console.log("Resize: " + JSON.stringify(cameraEntity.consoleSize, null, 2));
@@ -32,11 +32,11 @@ export class CameraSizingSystem extends System {
     // }
     // if (!this._renderingSystem.enabled) this._renderingSystem.enabled = true;
     const cameraEntity = this._cameraQuery.getSingleton({
-      consoleSize: Size2d
+      consoleScale: Scale
     });
 
 
-    const consoleSize = cameraEntity.consoleSize;
+    const consoleSize = cameraEntity.consoleScale;
     if (consoleSize.x === 0 || consoleSize.y === 0) {
       this.refreshSize();
       return;
@@ -46,7 +46,7 @@ export class CameraSizingSystem extends System {
 
   public refreshSize() {
     const defaultSize = {columns: 24, rows: 80};
-    const cameraEntity = this._cameraQuery.getSingleton({consoleSize: Size2d})
+    const cameraEntity = this._cameraQuery.getSingleton({consoleSize: Scale})
 
     if (process.stdout && process.stdout.isTTY) {
       cameraEntity.consoleSize.x = process.stdout.columns;
