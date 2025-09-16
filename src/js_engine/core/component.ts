@@ -1,16 +1,61 @@
-﻿export abstract class Component {
+﻿import {Entity} from "./entity";
+import {getOwnerInferred} from "./ownership";
+
+export abstract class Component {
     static clone<T extends Component>(clone: T) {
         const ctor = clone.constructor as ComponentCtor<T>;
         const copy = new ctor();
         return Object.assign(copy, clone);
     }
 
-    // /** Per-instance event; raised when a property on this component changes. */
-    // public readonly onChange: Event<ComponentChange> = new Event();
-
     // Static helper: fetch the ComponentType token for this class.
     static type<T extends Component>(this: ComponentCtor<T>): ComponentType<T> {
         return ComponentType.of(this);
+    }
+
+    static persistentTrack<T extends Component>(entitySource: Entity, target: T): T {
+        const ctor = target.constructor as ComponentCtor<T>;
+        const componentType = ComponentType.of(ctor);
+        const updateLastUpdateTime = () => {
+            const ownership = getOwnerInferred(entitySource);
+            if (ownership) {
+                const col = ownership.getColumn(componentType)
+                if (col !== undefined) {
+                    col.lastUpdatedTime = performance.now();
+                }
+            }
+        }
+        return this.track(target, updateLastUpdateTime)
+    }
+
+    static track<T extends Component>(target: T, modified: () => void): T {
+        return new Proxy(target as T & object, {
+            get(t, prop, receiver) {
+                const v = Reflect.get(t, prop, receiver);
+                return typeof v === "function" ? v.bind(t) : v;
+            },
+            set(t, prop, value, receiver) {
+                modified();
+                return Reflect.set(t, prop, value, receiver);
+            },
+            has(t, prop) {
+                return prop in t;
+            },
+            ownKeys(t) {
+                return Reflect.ownKeys(t);
+            },
+            getOwnPropertyDescriptor(t, prop) {
+                return Object.getOwnPropertyDescriptor(t, prop);
+            },
+            // If target is callable, forward calls.
+            apply(t: any, thisArg, argArray) {
+                return Reflect.apply(t, t, argArray);
+            },
+            // If target is a class/constructable function, forward `new`.
+            construct(t: any, argArray, newTarget) {
+                return Reflect.construct(t, argArray, newTarget);
+            },
+        }) as T;
     }
 }
 

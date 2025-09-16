@@ -91,7 +91,7 @@ export class World {
       }
       prevCycle = now;
       time.deltaTime = delta;
-      time.elapsedTime += delta;
+      time.elapsedTime = now;
       this.update();
       updateInProgress = false;
 

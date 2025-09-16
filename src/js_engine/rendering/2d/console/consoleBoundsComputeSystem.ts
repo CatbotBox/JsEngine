@@ -7,6 +7,7 @@ import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 
 export class ConsoleBoundsComputeSystem extends System {
     private _query = this.createEntityQuery([Position, Scale, Bounds])
+
     override systemGroup() {
         return RenderingSystemGroup;
     }
@@ -14,6 +15,7 @@ export class ConsoleBoundsComputeSystem extends System {
     override priority(): number {
         return -10;
     }
+
     protected onCreate() {
         this.requireAnyForUpdate(this._query);
     }
@@ -25,7 +27,12 @@ export class ConsoleBoundsComputeSystem extends System {
             offset: ConsoleImageOffset,
             scale: Scale,
             bounds: Bounds,
+        }, {
+            filterLastUpdated: this.lastUpdateTime,
+            filterBlackList: [Bounds]
         }).forEach(({bounds, position, scale, anchor, offset}) => {
+
+            console.log("computing Bounds")
             // base position after offset
             const px = position.x + (offset?.x || 0);
             const py = position.y + (offset?.y || 0);

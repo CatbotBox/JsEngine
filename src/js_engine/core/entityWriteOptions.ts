@@ -13,6 +13,8 @@ export interface EntityWriteOptions {
 
   addComponent<T extends Component>(entity: Entity, component: T): void;
 
+  addTrackedComponent<T extends Component>(entity: Entity, component: T): T;
+
   setComponent<T extends Component>(entity: Entity, component: Component): void;
 
   setEnabledState(entity: Entity, enabled: boolean): void;

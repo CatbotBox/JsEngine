@@ -1,7 +1,5 @@
-﻿// src/keypress.ts (TS + CommonJS per your tsconfig)
-import * as readline from 'node:readline';
+﻿import * as readline from 'node:readline';
 import {Event, EventListener} from "./util/event";
-import {Key} from "node:readline";
 
 
 export type KeyPress = {

@@ -1,7 +1,8 @@
-﻿import {AnyCT, IncU, RowFromSpec} from "../util/tokenUtils";
+﻿import {AnyCT, IncU, RowFromSpec, toTokens} from "../util/tokenUtils";
 import {ComponentStore, EntityArchetype} from "./entityArchetype";
 import {EntityStreamOptions} from "./entityStream";
 import {Entity} from "./entity";
+import {Component} from "./component";
 
 export class EntityQueryStream<
     SpecTokens extends Record<string, AnyCT>,
@@ -36,17 +37,53 @@ export class EntityQueryStream<
     }[] {
         if (this._streamResult) return this._streamResult;
         const plans: { arch: EntityArchetype; cols: readonly ComponentStore<AnyCT>[], colIndexes: number[] }[] = [];
+
+        const lastUpdatedTimeRequirement = this.options?.filterLastUpdated as number;
+        const blackList = this.options?.filterBlackList ? new Set<AnyCT>(toTokens(this.options.filterBlackList)) : undefined;
+
         for (const arch of this.arches) {
             const colIndexes: number[] = [];
+            // only attempt to skip if specified in options
+            let skipped = this.options?.filterLastUpdated !== undefined;
+
+            // dont skip if structural change detected
+            if (skipped && arch.lastStructuralChangeTime >= lastUpdatedTimeRequirement) {
+                skipped = false
+            }
+            // if (this.options?.filterLastUpdated !== undefined) {
+            //     console.log()
+            //     console.log(arch.lastStructuralChangeTime + " | " + lastUpdatedTimeRequirement)
+            //     console.log("Structural Changes")
+            //     console.log()
+            // }
+
             const cols = this.keys.map((k, index) => {
                 const token = this.spec[k as string] as AnyCT;
                 const col = arch.getColumn(token)
                 if (col !== undefined) {
                     colIndexes.push(index)
+
+                    // don't skip if component store has a change
+                    if (skipped && !(blackList && blackList.has(token)) && col.lastUpdatedTime >= lastUpdatedTimeRequirement) {
+                        skipped = false
+                    }
+                    // if (this.options?.filterLastUpdated !== undefined) {
+                    //     console.log()
+                    //     console.log(col.lastUpdatedTime + " | " + lastUpdatedTimeRequirement + " | " + (col.lastUpdatedTime >= lastUpdatedTimeRequirement) + ((blackList && blackList.has(token)) ? "(ignored)" : ""));
+                    //     console.log(col.get(0))
+                    //     console.log()
+                    // }
                 }
                 return col!;
             });
-            plans.push({arch, cols, colIndexes});
+            // if (this.options?.filterLastUpdated !== undefined) {
+            //     console.log("update skipped :", skipped);
+            // }
+            if (!skipped) plans.push({arch, cols, colIndexes});
+            // else{
+            //     console.log("skipped");
+            //     console.log(cols);
+            // }
         }
         this._streamResult = plans;
         return this._streamResult;
@@ -76,27 +113,10 @@ export class EntityQueryStream<
                 (IncludeEntity extends true ? { entity: Entity } : {})
         ) => void
     ): void {
-        const streamResults = this.prepStreamResult();
+        const base = this._rowsIterable();
 
-        const includeEntity = this.options?.includeEntity;
-
-        for (const {arch, cols, colIndexes} of streamResults) {
-            const n = this.options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
-
-            // Reuse one object per archetype to avoid allocations per entity.
-            const row: any = {};
-
-            for (let i = 0; i < n; i++) {
-                if (includeEntity) row.entity = arch.getEntityAtIndex(i);
-
-                // Fill fields straight from compiled columns
-
-                colIndexes.forEach(k => {
-                    row[this.keys[k] as string] = cols[k].get(i);
-                })
-
-                cb(row);
-            }
+        for (const row of base) {
+            cb(row);
         }
     }
 
@@ -115,6 +135,9 @@ export class EntityQueryStream<
         const self = this;
         const streamResults = self.prepStreamResult();
 
+        const updated: boolean[] = new Array(this.keys.length);
+        const callbacks = this.keys.map((_, k) => (() => updated[k] = true))
+
         // Use a generator; rows are copied out as small plain objects to keep safety.
         // (If you need absolute zero per-yield alloc, prefer a dedicated consume(cb) API.)
         return {
@@ -122,14 +145,24 @@ export class EntityQueryStream<
                 const includeEntity = !!self.options?.includeEntity;
                 for (const {arch, cols, colIndexes} of streamResults) {
                     const n = self.options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+                    // get time in the middle in case another system runs in the middle of this one (unlikely)
+                    const time = performance.now();
                     for (let i = 0; i < n; i++) {
                         const out: any = {};
                         if (includeEntity) out.entity = arch.getEntityAtIndex(i);
                         colIndexes.forEach(k => {
-                            out[self.keys[k] as string] = cols[k].get(i);
-                        });
+                            out[self.keys[k] as string] = Component.track(cols[k].get(i), callbacks[k]);
+                        })
+
                         yield out;
                     }
+
+                    updated.forEach((value, index) => {
+                        if (!value) return;
+                        cols[index].lastUpdatedTime = time;
+                    })
+
+                    updated.fill(false)
                 }
             },
         };
