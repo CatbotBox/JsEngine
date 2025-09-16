@@ -1,12 +1,12 @@
 ﻿import {System} from "../../../core";
 import {ConsoleImageAnchor, ConsoleImageOffset} from "./components";
-import {Scale} from "../../../translation/scale";
-import {Bounds} from "../../../translation/bounds";
-import {Position} from "../../../translation/position";
+import {LocalScale} from "../../../translation/localScale";
+import {RenderBounds} from "../../renderBounds";
+import {LocalPosition} from "../../../translation/localPosition";
 import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 
 export class ConsoleBoundsComputeSystem extends System {
-    private _query = this.createEntityQuery([Position, Scale, Bounds])
+    private _query = this.createEntityQuery([LocalPosition, LocalScale, RenderBounds])
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -22,14 +22,14 @@ export class ConsoleBoundsComputeSystem extends System {
 
     onUpdate() {
         this._query.stream({
-            position: Position,
+            position: LocalPosition,
             anchor: ConsoleImageAnchor,
             offset: ConsoleImageOffset,
-            scale: Scale,
-            bounds: Bounds,
+            scale: LocalScale,
+            bounds: RenderBounds,
         }, {
             filterLastUpdated: this.lastUpdateTime,
-            filterBlackList: [Bounds]
+            filterBlackList: [RenderBounds]
         }).forEach(({bounds, position, scale, anchor, offset}) => {
 
             console.log("computing Bounds")

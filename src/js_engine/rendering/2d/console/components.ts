@@ -1,5 +1,5 @@
 ﻿import {Component} from "../../../core";
-import {Scale} from "../../../translation/scale";
+import {LocalScale} from "../../../translation/localScale";
 import {Ansi} from "./ansi";
 
 export class ConsoleImageAnchor extends Component {
@@ -47,8 +47,8 @@ export class ConsoleImage extends Component {
   }
 
 
-  public get size(): Scale {
-    const size = new Scale();
+  public get size(): LocalScale {
+    const size = new LocalScale();
     size.x = Math.max(...this.image.map(i => Ansi.strip(i).length));
     size.y = this.image.length;
     return size;

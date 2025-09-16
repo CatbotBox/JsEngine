@@ -3,11 +3,11 @@ import {Camera} from "../../camera";
 import {consoleOverride} from "../../../debugging/consoleOverride";
 import {originalConsole as display} from "../../../debugging/originalConsole";
 import {ConsoleBoundsComputeSystem} from "./consoleBoundsComputeSystem";
-import {Scale} from "../../../translation/scale";
-import {Position} from "../../../translation/position";
+import {LocalScale} from "../../../translation/localScale";
+import {LocalPosition} from "../../../translation/localPosition";
 import {CameraSizingSystem} from "./cameraSizingSystem";
 import {Ansi} from "./ansi";
-import {Bounds} from "../../../translation/bounds";
+import {RenderBounds} from "../../renderBounds";
 import {ConsoleImage, ConsoleImageAnchor, ConsoleImageOffset} from "./components";
 import {ScreenBuffer} from "./screenBuffer";
 import {RenderingSystemGroup} from "../../RenderingSystemGroup";
@@ -15,8 +15,8 @@ import {HudElement} from "../../hudElement";
 
 export class ConsoleRenderingSystem extends System {
 
-    private _cameraQuery = this.createEntityQuery([Camera, Scale, Position, Bounds])
-    private _objectQuery = this.createEntityQuery([ConsoleImage, Position, Bounds], [HudElement])
+    private _cameraQuery = this.createEntityQuery([Camera, LocalScale, LocalPosition, RenderBounds])
+    private _objectQuery = this.createEntityQuery([ConsoleImage, LocalPosition, RenderBounds], [HudElement])
     private _hudObjectQuery = this.createEntityQuery([ConsoleImage, HudElement])
     private _dualScreenBuffer: [ScreenBuffer, ScreenBuffer] = [new ScreenBuffer(), new ScreenBuffer()];
     private _bufferIndex: 0 | 1 = 0;
@@ -51,9 +51,9 @@ export class ConsoleRenderingSystem extends System {
     onUpdate() {
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,
-            position: Position,
-            consoleSize: Scale,
-            bounds: Bounds,
+            position: LocalPosition,
+            consoleSize: LocalScale,
+            bounds: RenderBounds,
         });
 
         const cameraBounds = cameraEntity.bounds;
@@ -70,9 +70,9 @@ export class ConsoleRenderingSystem extends System {
         this.sendFinalFrame(cur)
     }
 
-    private drawObjects(cur: ScreenBuffer, cameraBounds: Bounds) {
+    private drawObjects(cur: ScreenBuffer, cameraBounds: RenderBounds) {
         const imageEntities = this._objectQuery
-            .stream({bounds: Bounds, img: ConsoleImage})
+            .stream({bounds: RenderBounds, img: ConsoleImage})
             .collect()
             .filter(({bounds}) => cameraBounds.intersects(bounds));
 
@@ -90,7 +90,7 @@ export class ConsoleRenderingSystem extends System {
         }
     }
 
-    private drawHud(cur: ScreenBuffer, cameraEntity: { consoleSize: Scale }) {
+    private drawHud(cur: ScreenBuffer, cameraEntity: { consoleSize: LocalScale }) {
         // Only consider on-screen objects
         const hudEntities = this._hudObjectQuery
             .stream({offset: ConsoleImageOffset, img: ConsoleImage, anchor: ConsoleImageAnchor})

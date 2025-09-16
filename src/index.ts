@@ -2,9 +2,9 @@ import {Component, System, World} from "./js_engine/core";
 import {keyboardInput} from "./js_engine/input";
 import {Camera} from "./js_engine/rendering/camera";
 import {ConsoleRenderingSystem} from "./js_engine/rendering/2d/console/consoleRenderingSystem";
-import {Scale} from "./js_engine/translation/scale";
-import {Position} from "./js_engine/translation/position";
-import {Bounds} from "./js_engine/translation/bounds";
+import {LocalScale} from "./js_engine/translation/localScale";
+import {LocalPosition} from "./js_engine/translation/localPosition";
+import {RenderBounds} from "./js_engine/rendering/renderBounds";
 import {ConsoleImage, ConsoleImageAnchor} from "./js_engine/rendering/2d/console/components";
 import {Ansi} from "./js_engine/rendering/2d/console/ansi";
 import {RootSystemGroup} from "./js_engine/core";
@@ -21,12 +21,12 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 const cameraEntity = buffer.createEntity("cameraEntity");
 
 buffer.addComponent(cameraEntity, new Camera());
-buffer.addComponent(cameraEntity, new Scale());
-const cameraPosition = buffer.addTrackedComponent(cameraEntity, new Position());
-buffer.addComponent(cameraEntity, new Bounds());
+buffer.addComponent(cameraEntity, new LocalScale());
+const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
+buffer.addComponent(cameraEntity, new RenderBounds());
 
 // can share the same image instance
-function createCross(position: Position, name?: string, ...additionalComponents: Component[]) {
+function createCross(position: LocalPosition, name?: string, ...additionalComponents: Component[]) {
     const objectEntity = buffer.createEntity(name);
     const r = Math.round(Math.random() * 255)
     const g = Math.round(Math.random() * 255)
@@ -40,7 +40,7 @@ function createCross(position: Position, name?: string, ...additionalComponents:
         color + '0 0',
     ]
     buffer.addComponent(objectEntity, crossImage.size);
-    buffer.addComponent(objectEntity, new Bounds());
+    buffer.addComponent(objectEntity, new RenderBounds());
     buffer.addComponent(objectEntity, crossImage);
     for (const additionalComponent of additionalComponents) {
         buffer.addComponent(objectEntity, additionalComponent);
@@ -54,10 +54,10 @@ class PlayerTag extends Component {
 
 // as this entity updates at a different frequency compared to the others in the same archetype, add a component to force it to be in a different archetype
 // causing only this specific entity to be updated instead of other cross entities
-const position = createCross(new Position(), "cross1", PlayerTag)
-createCross(new Position(5, 5), "cross2")
-createCross(new Position(1, 1), "cross3")
-createCross(new Position(9, 9), "cross4")
+const position = createCross(new LocalPosition(), "cross1", PlayerTag)
+createCross(new LocalPosition(5, 5), "cross2")
+createCross(new LocalPosition(1, 1), "cross3")
+createCross(new LocalPosition(9, 9), "cross4")
 
 
 //hud element

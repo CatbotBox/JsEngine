@@ -1,4 +1,4 @@
-﻿import {Scale} from "../../../translation/scale";
+﻿import {LocalScale} from "../../../translation/localScale";
 import {Ansi} from "./ansi";
 import {ConsoleImage} from "./components";
 
@@ -11,7 +11,7 @@ export class ScreenBuffer {
   /**
    * (Re)initialize the backing 2D cell array with the given background char.
    */
-  public render({consoleSize}: { consoleSize: Scale }, backgroundChar: string) {
+  public render({consoleSize}: { consoleSize: LocalScale }, backgroundChar: string) {
     this.width = Math.max(0, consoleSize.x | 0);
     this.height = Math.max(0, consoleSize.y | 0);
     this.cells = Array.from({length: this.height}, () =>
@@ -20,7 +20,7 @@ export class ScreenBuffer {
     this.screenBuffer = "";
   }
 
-  public renderDebug({consoleSize}: { consoleSize: Scale }) {
+  public renderDebug({consoleSize}: { consoleSize: LocalScale }) {
     this.width = Math.max(0, consoleSize.x | 0);
     this.height = Math.max(0, consoleSize.y | 0);
     this.cells = Array.from({length: this.height}, (_, height) =>
