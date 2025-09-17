@@ -35,7 +35,8 @@
 import {Component} from "../core";
 
 export class LocalScale extends Component {
-    public x: number = 0;
-    public y: number = 0;
-    public z: number = 0;
+    public x: number = 1;
+    public y: number = 1;
+    public z: number = 1;
 }
+
