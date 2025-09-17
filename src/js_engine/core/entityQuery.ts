@@ -6,40 +6,7 @@ import {ComponentFrom, EntityStreamOptions, EntityStreamRow} from "./entityStrea
 import {AnyCT, IncU, RowFromSpec, TokensFrom, TokenSpec, toTokenSpec, TupleToUnion} from "../util/tokenUtils";
 import {EntityQueryStream} from "./entityQueryStream";
 
-
-// row typing driven by the query:
-// - if label’s token ∈ include → required prop
-// - if label’s token ∉ include (and not excluded) → optional prop
-type RowFromQuery<
-  SpecTokens extends TokenSpec,
-  IncludeUnion,
-  _ExcUnion // present for clarity; exclusion is enforced by NotExcludedTokens
-> =
-// required keys (in include)
-  {
-    [K in keyof SpecTokens as SpecTokens[K] extends IncludeUnion ? K : never]:
-    ComponentFrom<SpecTokens[K]>
-  } &
-  // optional keys (not in include)
-  {
-    [K in keyof SpecTokens as SpecTokens[K] extends IncludeUnion ? never : K]?:
-    ComponentFrom<SpecTokens[K]>
-  };
-
-
 type TokenOrCtor = AnyCT | ComponentCtor<Component>;
-
-function toTokens(list?: readonly TokenOrCtor[]): readonly AnyCT[] {
-  if (!list || list.length === 0) return [];
-  return list.map(item =>
-    typeof item === "function"
-      ? CT.of(item as ComponentCtor<Component>)
-      : (item as AnyCT)
-  );
-}
-
-type RowFrom<S> = EntityStreamRow<TokensFrom<S>>;
-
 function hasAll<CT extends AnyCT>(arch: EntityArchetype<CT>, required: readonly CT[]): boolean {
   const have = new Set(arch.componentTypes as readonly CT[]);
   for (const t of required) if (!have.has(t)) return false;
@@ -92,15 +59,6 @@ export class EntityQuery<
     return this._lazyLoaded.cachedArchetypes
   }
 
-
-  // public setInclude(next: Inc): void { this._include = next; this.refreshCache(); }
-  // public setExclude(next: Exc): void { this._exclude = next; this.refreshCache(); }
-  // public setFilters(include: Inc, exclude?: Exc): void {
-  //   this._include = include; this._exclude = exclude ?? ([] as unknown as Exc); this.refreshCache();
-  // }
-
-  // public get include(): readonly TupleToUnion<Inc>[] { return this._include; }
-  // public get exclude(): readonly TupleToUnion<Exc>[] { return this._exclude; }
   public get archetypes(): IterableIterator<EntityArchetype<AnyCT>> {
     const arr = this.getCachedArchetypes(); // array of refs
 
@@ -232,9 +190,9 @@ export class EntityQuery<
   >(
     specOrCtors: S,
     options?: EntityStreamOptions<IncludeEntity>
-  ): EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc, Exc> {
+  ): EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc> {
     const spec = toTokenSpec(specOrCtors);
-    return new EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc, Exc>(
+    return new EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc>(
       this.archetypes,
       spec,
       options

@@ -8,7 +8,6 @@ export class EntityQueryStream<
     SpecTokens extends Record<string, AnyCT>,
     IncludeEntity extends boolean,
     Inc extends readonly AnyCT[],
-    Exc extends readonly AnyCT[],
 > {
     private readonly keys: (keyof SpecTokens)[];
 
@@ -119,14 +118,6 @@ export class EntityQueryStream<
             cb(row);
         }
     }
-
-    // public collect(): (RowFromSpec<SpecTokens, IncU<Inc>> & (IncludeEntity extends true ? { entity: Entity } : {}))[] {
-    //   const result: (RowFromSpec<SpecTokens, IncU<Inc>> & (IncludeEntity extends true ? {
-    //     entity: Entity
-    //   } : {}))[] = [];
-    //   this.forEach(data => result.push(data));
-    //   return result;
-    // }
 
     /** A tiny lazy sequence wrapper over the fast forEach loop */
     private _rowsIterable(): Iterable<RowFromSpec<SpecTokens, IncU<Inc>> & (IncludeEntity extends true ? {

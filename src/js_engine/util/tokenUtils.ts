@@ -1,10 +1,9 @@
 ﻿// Helper types (put near your System/EntityManager helpers)
-import {Component, type ComponentCtor, ComponentType as CT, ComponentType} from "../core/component";
+import {Component, type ComponentCtor, ComponentType} from "../core/component";
 
 export type AnyCT = ComponentType<any>;
 export type AnyCtor = abstract new (...args: any[]) => any;   // <- broad ctor
 type CtorOfToken<T> = T extends ComponentType<infer C> ? (abstract new (...a: any[]) => C) : never;
-type ExcCtors<Exc extends readonly AnyCT[]> = CtorOfToken<ExcU<Exc>>;
 // Token spec vs ctor spec
 export type TokenSpec = Record<string, AnyCT>;
 export type CtorSpec = Record<string, AnyCtor>;
@@ -28,41 +27,12 @@ export type TokensOfList<L extends readonly TokenOrCtor[]> = { [K in keyof L]: T
 
 // unions out of your query’s Inc/Exc tuple generics
 export type IncU<Inc extends readonly AnyCT[]> = Inc[number];
-export type ExcU<Exc extends readonly AnyCT[]> = Exc[number];
-export type DisallowExcludedByToken<S, ExcUnion> = {
-  [K in keyof S]: Tokenize<S[K]> extends ExcUnion ? never : S[K];
-};
-export type DisallowExcluded<S, Exc extends readonly AnyCT[]> = {
-  [K in keyof S]:
-  S[K] extends AnyCtor
-    ? (S[K] extends ExcCtors<Exc> ? never : S[K])
-    : S[K] extends AnyCT
-      ? (S[K] extends ExcU<Exc> ? never : S[K])
-      : never;
-};
 // compile-time block: if any label’s token is in Exc, make its property export type `never` → causes error
-export type NotExcludedTokens<SpecTokens extends TokenSpec, ExcUnion> = {
-  [K in keyof SpecTokens]: SpecTokens[K] extends ExcUnion ? never : SpecTokens[K]
+export type RowFromSpec<M, Sel> = {
+    [K in keyof M as M[K] extends Sel ? K : never]-?: InstanceType<CtorOfToken<M[K]>>;
+} & {
+    [K in keyof M as M[K] extends Sel ? never : K]?: InstanceType<CtorOfToken<M[K]>>;
 };
-
-type MapToComponentTypes<T extends readonly CT[]> = {
-  [K in keyof T]: ComponentType<T[K]>;
-};
-//todo not working
-export type RowFromSpec<
-  S,                // ctor/token spec provided to stream(...)
-  IncludeUnion     // union of included tokens from the query
-> =
-// required keys
-  {
-    [K in keyof S as Tokenize<S[K]> extends IncludeUnion ? K : never]:
-    Tokenize<S[K]> extends ComponentType<infer C> ? C : never
-  } &
-  // optional keys
-  {
-    [K in keyof S as Tokenize<S[K]> extends IncludeUnion ? never : K]?:
-    Tokenize<S[K]> extends ComponentType<infer C> ? C : never
-  };
 
 // Runtime helpers
 const isCtor = (v: unknown): v is AnyCtor => typeof v === "function";
