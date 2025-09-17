@@ -7,6 +7,7 @@ import type {ComponentCtor} from "./component";
 import {ComponentType as CT} from "./component";
 import {EntityQuery} from "./entityQuery";
 import {
+    AnyCT,
     CtorSpec,
     TokenOrCtor,
     TokensFrom,
@@ -73,6 +74,7 @@ export abstract class System {
     protected get lastUpdateTime(): number {
         return this._lastUpdateTime;
     }
+
     public constructor() {
     }
 
@@ -91,12 +93,12 @@ export abstract class System {
 
     protected requireAnyForUpdate<
         IncSpec extends readonly TokenOrCtor[],
-        ExcSpec extends readonly TokenOrCtor[] = []
+        ExcSpec extends readonly TokenOrCtor[] = readonly[],
     >(include: IncSpec, exclude?: ExcSpec): void
     protected requireAnyForUpdate<
         IncSpec extends readonly TokenOrCtor[],
         ExcSpec extends readonly TokenOrCtor[] = []
-    >(query: EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>): void
+    >(query: EntityQuery<IncSpec, ExcSpec>): void
     protected requireAnyForUpdate<IncSpec extends readonly TokenOrCtor[], ExcSpec extends readonly TokenOrCtor[] = []>(input: IncSpec | EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>, input2?: ExcSpec): void {
         let query = input as unknown as EntityQuery
         if (Array.isArray(input)) {
@@ -118,7 +120,7 @@ export abstract class System {
     protected requireAllForUpdate<
         IncSpec extends readonly TokenOrCtor[],
         ExcSpec extends readonly TokenOrCtor[] = []
-    >(query: EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>): void
+    >(query: EntityQuery<IncSpec, ExcSpec>): void
     protected requireAllForUpdate<IncSpec extends readonly TokenOrCtor[], ExcSpec extends readonly TokenOrCtor[] = []>(input: IncSpec | EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>>, input2?: ExcSpec): void {
         let query = input as unknown as EntityQuery
         if (Array.isArray(input)) {
@@ -198,43 +200,8 @@ export abstract class System {
     // Simple, immediate iteration
     // ----------------------------
 
-    // /** Iterate archetypes that include all tokens in `spec`. (entity NOT included) */
-    // protected forEach<Spec extends TokenSpec>(
-    //   spec: Spec,
-    //   cb: (row: EntityStreamRow<Spec>) => void,
-    //   exclude?: readonly AnyCT[]
-    // ): void {
-    //   const stream = new EntityStream<Spec, false>(this.world, spec, exclude ?? [], {includeEntity: false});
-    //   stream.forEach(row => cb(row));
-    // }
-    // protected forEachCtors<C extends CtorSpec>(
-    //   ctors: C,
-    //   cb: (row: EntityStreamRow<SpecFromCtors<C>>, ) => void,
-    //   exclude?: readonly AnyCT[]
-    // ): void {
-    //   const spec = specFromCtors(ctors);                 // type: SpecFromCtors<C>
-    //   this.forEach<SpecFromCtors<C>>(spec, cb, exclude);
-    // }
-    //
-    // /** Same as forEach, but includes the Entity in the callback. */
-    // protected forEachWithEntity<Spec extends TokenSpec>(
-    //   spec: Spec,
-    //   cb: (entity: Entity, row: EntityStreamRow<Spec>) => void,
-    //   exclude?: readonly AnyCT[]
-    // ): void {
-    //   const stream = new EntityStream<Spec, true>(this.world, spec, exclude ?? [], {includeEntity: true});
-    //   stream.forEach((row) => cb(row.entity as Entity, row));
-    // }
-    //
-    // /** Use component ctors, include Entity in callback. */
-    // protected forEachCtorsWithEntity<C extends CtorSpec>(
-    //   ctors: C,
-    //   cb: (entity: Entity, row: EntityStreamRow<SpecFromCtors<C>>) => void,
-    //   exclude?: readonly AnyCT[]
-    // ): void {
-    //   const spec = specFromCtors(ctors);                 // type: SpecFromCtors<C>
-    //   this.forEachWithEntity<SpecFromCtors<C>>(spec, cb, exclude);
-    // }
+    //scrapped in favor of caching
+
 // inside class System
     /** Build an EntityQuery from an array of tokens *or* constructors (no labels). */
     protected createEntityQuery<
@@ -243,40 +210,7 @@ export abstract class System {
     >(
         include: IncSpec,
         exclude?: ExcSpec
-    ): EntityQuery<TokensOfList<IncSpec>, TokensOfList<ExcSpec>> {
-        const inc = toTokens(include) as TokensOfList<IncSpec>;
-        const exc = toTokens(exclude ?? []) as TokensOfList<ExcSpec>;
-        return new EntityQuery(this, inc, exc);
+    ): EntityQuery<IncSpec, ExcSpec> {
+        return new EntityQuery(this, include, exclude);
     }
-
-    // protected forEach<S extends TokenSpec | CtorSpec>(
-    //   specOrCtors: S,
-    //   cb: (row: RowFrom<S>) => void,
-    //   exclude?: readonly AnyCT[]
-    // ): void {
-    //   const spec = toTokenSpec(specOrCtors) as TokensFrom<S>;
-    //   const stream = new EntityStream<TokensFrom<S>>(
-    //     this.world,
-    //     spec,
-    //     exclude ?? [],
-    //     { includeEntity: false }
-    //   );
-    //   stream.forEach(row => cb(row as RowFrom<S>));
-    // }
-    //
-    // /** Same as forEach, but includes the Entity in the callback. */
-    // protected forEachWithEntity<S extends TokenSpec | CtorSpec>(
-    //   specOrCtors: S,
-    //   cb: (entity: Entity, row: RowFrom<S>) => void,
-    //   exclude?: readonly AnyCT[]
-    // ): void {
-    //   const spec = toTokenSpec(specOrCtors) as TokensFrom<S>;
-    //   const stream = new EntityStream<TokensFrom<S>, true>(
-    //     this.world,
-    //     spec,
-    //     exclude ?? [],
-    //     { includeEntity: true }
-    //   );
-    //   stream.forEach((row: any) => cb(row.entity as Entity, row as RowFrom<S>));
-    // }
 }
