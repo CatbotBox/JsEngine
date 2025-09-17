@@ -1,65 +1,12 @@
-﻿// src/core/System.ts
-
-import type {World} from "./world";
-import {EntityStreamRow} from "./entityStream";
-import type {Component} from "./component";
-import type {ComponentCtor} from "./component";
-import {ComponentType as CT} from "./component";
+﻿import type {World} from "./world";
 import {EntityQuery} from "./entityQuery";
 import {
-    AnyCT,
-    CtorSpec,
     TokenOrCtor,
-    TokensFrom,
     TokensOfList,
-    TokenSpec,
     toTokens,
-    ToTokens
 } from "../util/tokenUtils";
 import {EntityManager} from "./entityManager";
 import {SystemGroup} from "./systemGroup";
-
-// type AnyCT = CT<any>;
-// type TokenSpec = Record<string, AnyCT>;
-// type CtorSpec = Record<string, ComponentCtor<Component>>;
-//
-// // helper: build a token spec from constructors
-// function specFromCtors<C extends CtorSpec>(ctors: C) {
-//   const out: any = {};
-//   for (const k of Object.keys(ctors) as (keyof C)[]) {
-//     out[k] = CT.of(ctors[k] as any);
-//   }
-//   return out as { [K in keyof C]: AnyCT };
-// }
-
-
-// nice alias so you never have to spell ToTokens<...> at call sites
-type QueryOf<
-    Inc extends readonly TokenOrCtor[],
-    Exc extends readonly TokenOrCtor[] = []
-> = EntityQuery<ToTokens<Inc>, ToTokens<Exc>>;
-
-// capture tuples without `as const`
-export const tuple = <T extends readonly unknown[]>(...xs: T) => xs;
-
-
-type RowFrom<S> = EntityStreamRow<TokensFrom<S>>;
-
-// runtime converter (ctors -> tokens), tokens pass through
-function toTokenSpec<S extends TokenSpec | CtorSpec>(specOrCtors: S): TokensFrom<S> {
-    const entries = Object.entries(specOrCtors);
-    const firstVal = entries[0]?.[1];
-
-    // if first value is a function, assume ctor-spec; otherwise token-spec
-    if (typeof firstVal === "function") {
-        const out: any = {};
-        for (const [k, ctor] of entries as [string, ComponentCtor<Component>][]) {
-            out[k] = CT.of(ctor);
-        }
-        return out as TokensFrom<S>;
-    }
-    return specOrCtors as unknown as TokensFrom<S>;
-}
 
 /**
  * Unity-like base System with OnCreate/OnUpdate and a fluent Entities API.
@@ -202,7 +149,7 @@ export abstract class System {
 
     //scrapped in favor of caching
 
-// inside class System
+    // inside class System
     /** Build an EntityQuery from an array of tokens *or* constructors (no labels). */
     protected createEntityQuery<
         IncSpec extends readonly TokenOrCtor[],

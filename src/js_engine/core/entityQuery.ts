@@ -1,15 +1,15 @@
-﻿import {type Component, type ComponentCtor, ComponentType as CT} from "./component";
+﻿import {type Component, type ComponentCtor} from "./component";
 import {EntityArchetype} from "./entityArchetype";
 import {World} from "./world";
 import {Entity} from "./entity";
-import {ComponentFrom, EntityStreamOptions, EntityStreamRow} from "./entityStream";
+import {EntityStreamOptions} from "./entityStream";
 import {
     AnyCT,
     IncU,
     RowFromSpec,
     TokensFrom,
     TokensOfList,
-    TokenSpec, toTokens,
+    toTokens,
     toTokenSpec,
     TupleToUnion
 } from "../util/tokenUtils";
@@ -127,10 +127,10 @@ export class EntityQuery<
     public getSingleton<
         S extends Record<string, TokenOrCtor>,
         IncludeEntity extends boolean = false
-    >(specOrCtors: S,
+    >(specOrConstructors: S,
       options?: EntityStreamOptions<IncludeEntity>): RowFromSpec<TokensFrom<S>, IncU<Inc>> &
         (IncludeEntity extends true ? { entity: Entity } : {}) {
-        const spec = toTokenSpec(specOrCtors);
+        const spec = toTokenSpec(specOrConstructors);
         const keys = Object.keys(spec) as (keyof S)[];
         let rowData: any = undefined;
         for (const arch of this.archetypes) {
@@ -199,10 +199,10 @@ export class EntityQuery<
         S extends Record<string, TokenOrCtor>,
         IncludeEntity extends boolean = false
     >(
-        specOrCtors: S,
+        specOrConstructors: S,
         options?: EntityStreamOptions<IncludeEntity>
     ): EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc> {
-        const spec = toTokenSpec(specOrCtors);
+        const spec = toTokenSpec(specOrConstructors);
         return new EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc>(
             this.archetypes,
             spec,

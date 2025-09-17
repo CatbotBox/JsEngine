@@ -49,12 +49,6 @@ export class EntityQueryStream<
             if (skipped && arch.lastStructuralChangeTime >= lastUpdatedTimeRequirement) {
                 skipped = false
             }
-            // if (this.options?.filterLastUpdated !== undefined) {
-            //     console.log()
-            //     console.log(arch.lastStructuralChangeTime + " | " + lastUpdatedTimeRequirement)
-            //     console.log("Structural Changes")
-            //     console.log()
-            // }
 
             const cols = this.keys.map((k, index) => {
                 const token = this.spec[k as string] as AnyCT;
@@ -66,12 +60,6 @@ export class EntityQueryStream<
                     if (skipped && !(blackList && blackList.has(token)) && col.lastUpdatedTime >= lastUpdatedTimeRequirement) {
                         skipped = false
                     }
-                    // if (this.options?.filterLastUpdated !== undefined) {
-                    //     console.log()
-                    //     console.log(col.lastUpdatedTime + " | " + lastUpdatedTimeRequirement + " | " + (col.lastUpdatedTime >= lastUpdatedTimeRequirement) + ((blackList && blackList.has(token)) ? "(ignored)" : ""));
-                    //     console.log(col.get(0))
-                    //     console.log()
-                    // }
                 }
                 return col!;
             });
@@ -150,6 +138,7 @@ export class EntityQueryStream<
 
                     updated.forEach((value, index) => {
                         if (!value) return;
+                        console.log("modified " + index);
                         cols[index].lastUpdatedTime = time;
                     })
 

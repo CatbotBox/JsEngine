@@ -153,7 +153,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             em.setEnabledStateForQuery(query, enabled);
         }
 
-        // 3) destructions
+        // 3) destruction
         this.playbackDestroy(em)
 
         // 4) clear
@@ -181,7 +181,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     }
 
     /**
-     * Move an entity to a specific set of component *types* (tokens or ctors),
+     * Move an entity to a specific set of component *types* (tokens or constructors),
      * using provided components for new types and reusing old ones for shared types.
      */
     private moveEntityTo(

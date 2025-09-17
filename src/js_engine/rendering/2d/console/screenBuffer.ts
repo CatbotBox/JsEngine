@@ -1,6 +1,5 @@
-﻿import {LocalScale} from "../../../translation/localScale";
-import {Ansi} from "./ansi";
-import {ConsoleImage} from "./components";
+﻿import {Ansi} from "./ansi";
+import {ConsoleImage, ScreenSize} from "./components";
 
 export class ScreenBuffer {
   private width = 0;
@@ -11,18 +10,18 @@ export class ScreenBuffer {
   /**
    * (Re)initialize the backing 2D cell array with the given background char.
    */
-  public render({consoleSize}: { consoleSize: LocalScale }, backgroundChar: string) {
-    this.width = Math.max(0, consoleSize.x | 0);
-    this.height = Math.max(0, consoleSize.y | 0);
+  public render({screenSize}: { screenSize: ScreenSize }, backgroundChar: string) {
+    this.width = Math.max(0, screenSize.x | 0);
+    this.height = Math.max(0, screenSize.y | 0);
     this.cells = Array.from({length: this.height}, () =>
       Array.from({length: this.width}, () => backgroundChar)
     );
     this.screenBuffer = "";
   }
 
-  public renderDebug({consoleSize}: { consoleSize: LocalScale }) {
-    this.width = Math.max(0, consoleSize.x | 0);
-    this.height = Math.max(0, consoleSize.y | 0);
+  public renderDebug({screenSize}: { screenSize: ScreenSize }) {
+    this.width = Math.max(0, screenSize.x | 0);
+    this.height = Math.max(0, screenSize.y | 0);
     this.cells = Array.from({length: this.height}, (_, height) =>
       Array.from({length: this.width}, (_, width) => String((width + height) % 10))
     );

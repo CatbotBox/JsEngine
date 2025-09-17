@@ -25,13 +25,11 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     // ---------- creation / destruction ----------
 
-    /** Create an entity with the given components (keys can be tokens or ctors). */
+    /** Create an entity with the given components (keys can be tokens or constructors). */
         // public createEntity(components: Map<TokenOrCtor, Component> = new Map()): Entity {
     private static emptyMap: Map<AnyCT, Component> = new Map();
 
     public createEntity(name?: string): Entity {
-        // const {types, map} = this.normalizeComponents(components);
-        // const arch = this.world.archtypes.getOrCreate(types as AnyCT[]);
         const arch = this._world.archetypes.getOrCreate([] as AnyCT[]);
         const e = new Entity();
         (e as any)[NAME] = name;

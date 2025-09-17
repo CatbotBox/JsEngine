@@ -2,10 +2,26 @@
 import {getOwnerInferred} from "./ownership";
 
 export abstract class Component {
-    static clone<T extends Component>(clone: T) {
-        const ctor = clone.constructor as ComponentCtor<T>;
+
+    /**
+     * call this to force last update
+     * this is useful as only setter trigger it, function calls do not
+     * hence if a function performs write operations, call this setter to prevent undetected changes
+     * @param value pass anything, doesn't matter
+     * @protected
+     */
+    // noinspection JSUnusedLocalSymbols
+    protected set dirty(value: void) {
+    }
+
+    protected copyTo(other: this) {
+        return Object.assign(other, this);
+    }
+
+    static clone<T extends Component>(source: T) {
+        const ctor = source.constructor as ComponentCtor<T>;
         const copy = new ctor();
-        return Object.assign(copy, clone);
+        return source.copyTo(copy);
     }
 
     // Static helper: fetch the ComponentType token for this class.
@@ -31,8 +47,7 @@ export abstract class Component {
     static track<T extends Component>(target: T, modified: () => void): T {
         return new Proxy(target as T & object, {
             get(t, prop, receiver) {
-                const v = Reflect.get(t, prop, receiver);
-                return typeof v === "function" ? v.bind(t) : v;
+                return Reflect.get(t, prop, receiver);
             },
             set(t, prop, value, receiver) {
                 modified();
@@ -64,6 +79,7 @@ export type ComponentCtor<T extends Component> = new (...args: any[]) => T;
 export class ComponentType<C extends Component = Component> {
     private static _registry = new WeakMap<Function, ComponentType<any>>();
     // 👇 brand so ComponentType<A> is NOT compatible with ComponentType<B>
+    // noinspection JSUnusedLocalSymbols
     private readonly __brand!: C;
 
     private constructor(public readonly ctor: ComponentCtor<C>) {

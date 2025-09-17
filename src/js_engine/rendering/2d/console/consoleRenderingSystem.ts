@@ -3,20 +3,19 @@ import {Camera} from "../../camera";
 import {consoleOverride} from "../../../debugging/consoleOverride";
 import {originalConsole as display} from "../../../debugging/originalConsole";
 import {ConsoleBoundsComputeSystem} from "./consoleBoundsComputeSystem";
-import {LocalScale} from "../../../translation/localScale";
-import {LocalPosition} from "../../../translation/localPosition";
 import {CameraSizingSystem} from "./cameraSizingSystem";
 import {Ansi} from "./ansi";
 import {RenderBounds} from "../../renderBounds";
-import {ConsoleImage, ConsoleImageAnchor, ConsoleImageOffset} from "./components";
+import {ConsoleImage, ConsoleImageAnchor, ConsoleImageOffset, ScreenSize} from "./components";
 import {ScreenBuffer} from "./screenBuffer";
 import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 import {HudElement} from "../../hudElement";
+import {LocalToWorld} from "../../../translation/localToWorld";
 
 export class ConsoleRenderingSystem extends System {
 
-    private _cameraQuery = this.createEntityQuery([Camera, LocalScale, LocalPosition, RenderBounds])
-    private _objectQuery = this.createEntityQuery([ConsoleImage, LocalPosition, RenderBounds], [HudElement])
+    private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
+    private _objectQuery = this.createEntityQuery([ConsoleImage, RenderBounds], [HudElement])
     private _hudObjectQuery = this.createEntityQuery([ConsoleImage, HudElement])
     private _dualScreenBuffer: [ScreenBuffer, ScreenBuffer] = [new ScreenBuffer(), new ScreenBuffer()];
     private _bufferIndex: 0 | 1 = 0;
@@ -51,12 +50,23 @@ export class ConsoleRenderingSystem extends System {
     onUpdate() {
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,
-            position: LocalPosition,
-            consoleSize: LocalScale,
-            bounds: RenderBounds,
+            screenSize: ScreenSize,
+            localToWorld: LocalToWorld,
         });
+        const cameraBounds = new RenderBounds();
+        const position = cameraEntity.localToWorld.position;
+        const screenSize = cameraEntity.screenSize;
+        const x0 = position[0] - 0.5 * screenSize.x;
+        const y0 = position[1] - 0.5 * screenSize.y;
+        const x1 = x0 + screenSize.x;
+        const y1 = y0 + screenSize.y;
 
-        const cameraBounds = cameraEntity.bounds;
+        cameraBounds.xMin = Math.min(x0, x1);
+        cameraBounds.xMax = Math.max(x0, x1);
+        cameraBounds.yMin = Math.min(y0, y1);
+        cameraBounds.yMax = Math.max(y0, y1);
+        cameraBounds.zMin = -1000;
+        cameraBounds.zMax = 1000;
 
 
         // Prepare current buffer
@@ -74,7 +84,7 @@ export class ConsoleRenderingSystem extends System {
         const imageEntities = this._objectQuery
             .stream({bounds: RenderBounds, img: ConsoleImage})
             .collect()
-            .filter(({bounds}) => cameraBounds.intersects(bounds));
+            .filter(({bounds}) => RenderBounds.intersects(cameraBounds, bounds));
 
         // Blit each object's image at its top-left corner relative to camera's top-left
         // Painter's algorithm in stream order; add your own z-index if needed.
@@ -90,7 +100,7 @@ export class ConsoleRenderingSystem extends System {
         }
     }
 
-    private drawHud(cur: ScreenBuffer, cameraEntity: { consoleSize: LocalScale }) {
+    private drawHud(cur: ScreenBuffer, cameraEntity: { screenSize: ScreenSize }) {
         // Only consider on-screen objects
         const hudEntities = this._hudObjectQuery
             .stream({offset: ConsoleImageOffset, img: ConsoleImage, anchor: ConsoleImageAnchor})
@@ -107,14 +117,13 @@ export class ConsoleRenderingSystem extends System {
             const ay = v === 'top' ? 0 : v === 'middle' ? 0.5 : 1;   // vertical anchor
 
             // Screen size & image size
-            const screenW = cameraEntity.consoleSize.x | 0;
-            const screenH = cameraEntity.consoleSize.y | 0;
-            const imgSize = img.size; // uses ANSI-stripped width
+            const screenW = cameraEntity.screenSize.x | 0;
+            const screenH = cameraEntity.screenSize.y | 0;
 
             // Place top-left so that the anchor "point" on the image aligns to the same
             // anchor "point" on the screen
-            const sx = Math.floor(ax * (screenW - imgSize.x)) + ((offset?.x ?? 0) | 0);
-            const sy = Math.floor(ay * (screenH - imgSize.y)) + ((offset?.y ?? 0) | 0);
+            const sx = Math.floor(ax * (screenW - img.sizeX)) + ((offset?.x ?? 0) | 0);
+            const sy = Math.floor(ay * (screenH - img.sizeY)) + ((offset?.y ?? 0) | 0);
 
 
             // console.log("HUD", anchor.anchorPosition, "->", sx, sy, " screen:", screenW, screenH, " img:", imgSize.x, imgSize.y)

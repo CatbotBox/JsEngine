@@ -1,12 +1,12 @@
 ﻿import {System} from "../../../core";
-import {ConsoleImageAnchor, ConsoleImageOffset} from "./components";
-import {LocalScale} from "../../../translation/localScale";
+import {ConsoleImage, ConsoleImageAnchor, ConsoleImageOffset} from "./components";
 import {RenderBounds} from "../../renderBounds";
-import {LocalPosition} from "../../../translation/localPosition";
 import {RenderingSystemGroup} from "../../RenderingSystemGroup";
+import {LocalToWorldSystem} from "../../../translation/LocalToWorldSystem";
+import {LocalToWorld} from "../../../translation/localToWorld";
 
 export class ConsoleBoundsComputeSystem extends System {
-    private _query = this.createEntityQuery([LocalPosition, LocalScale, RenderBounds])
+    private _query = this.createEntityQuery([LocalToWorld, ConsoleImage, RenderBounds]);
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -18,24 +18,27 @@ export class ConsoleBoundsComputeSystem extends System {
 
     protected onCreate() {
         this.requireAnyForUpdate(this._query);
+        this.world.getOrCreateSystem(LocalToWorldSystem);
     }
 
     onUpdate() {
         this._query.stream({
-            position: LocalPosition,
             anchor: ConsoleImageAnchor,
-            offset: ConsoleImageOffset,
-            scale: LocalScale,
             bounds: RenderBounds,
+            image: ConsoleImage,
+            offset: ConsoleImageOffset,
+            localToWorld: LocalToWorld,
+            // position: LocalPosition
         }, {
             filterLastUpdated: this.lastUpdateTime,
             filterBlackList: [RenderBounds]
-        }).forEach(({bounds, position, scale, anchor, offset}) => {
-
-            console.log("computing Bounds")
+        }).forEach(({bounds, localToWorld, image, anchor, offset}) => {
+            const position = localToWorld.position;
             // base position after offset
-            const px = position.x + (offset?.x || 0);
-            const py = position.y + (offset?.y || 0);
+            const px = position[0] + (offset?.x || 0);
+            const py = position[1] + (offset?.y || 0);
+            // const px = position.x + (offset?.x || 0);
+            // const py = position.y + (offset?.y || 0);
 
             // parse anchor -> fractional anchor (0=left/top, 0.5=center/middle, 1=right/bottom)
             const [v, h] = anchor?.anchorPosition.split('-') as [
@@ -47,10 +50,10 @@ export class ConsoleBoundsComputeSystem extends System {
             const ay = v === 'top' ? 0 : v === 'middle' ? 0.5 : 1;     // vertical anchor
 
             // compute top-left corner from anchor; handle negative sizes robustly
-            const x0 = px - ax * scale.x;
-            const y0 = py - ay * scale.y;
-            const x1 = x0 + scale.x;
-            const y1 = y0 + scale.y;
+            const x0 = px - ax * image.sizeX;
+            const y0 = py - ay * image.sizeY;
+            const x1 = x0 + image.sizeX;
+            const y1 = y0 + image.sizeY;
 
             bounds.xMin = Math.min(x0, x1);
             bounds.xMax = Math.max(x0, x1);

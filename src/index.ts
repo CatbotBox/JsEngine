@@ -2,14 +2,14 @@ import {Component, System, World} from "./js_engine/core";
 import {keyboardInput} from "./js_engine/input";
 import {Camera} from "./js_engine/rendering/camera";
 import {ConsoleRenderingSystem} from "./js_engine/rendering/2d/console/consoleRenderingSystem";
-import {LocalScale} from "./js_engine/translation/localScale";
 import {LocalPosition} from "./js_engine/translation/localPosition";
 import {RenderBounds} from "./js_engine/rendering/renderBounds";
-import {ConsoleImage, ConsoleImageAnchor} from "./js_engine/rendering/2d/console/components";
+import {ConsoleImage, ConsoleImageAnchor, ScreenSize} from "./js_engine/rendering/2d/console/components";
 import {Ansi} from "./js_engine/rendering/2d/console/ansi";
 import {RootSystemGroup} from "./js_engine/core";
 import {HudElement} from "./js_engine/rendering/hudElement";
 import {EntityCommandBufferSystem} from "./js_engine/core/entityCommandBufferSystem";
+import {LocalToWorld} from "./js_engine/translation/localToWorld";
 
 
 const world = new World();
@@ -21,7 +21,8 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 const cameraEntity = buffer.createEntity("cameraEntity");
 
 buffer.addComponent(cameraEntity, new Camera());
-buffer.addComponent(cameraEntity, new LocalScale());
+buffer.addComponent(cameraEntity, new ScreenSize());
+buffer.addComponent(cameraEntity, new LocalToWorld());
 const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
 buffer.addComponent(cameraEntity, new RenderBounds());
 
@@ -39,9 +40,9 @@ function createCross(position: LocalPosition, name?: string, ...additionalCompon
         color + '   ',
         color + '0 0',
     ]
-    buffer.addComponent(objectEntity, crossImage.size);
     buffer.addComponent(objectEntity, new RenderBounds());
     buffer.addComponent(objectEntity, crossImage);
+    buffer.addComponent(objectEntity, new LocalToWorld());
     for (const additionalComponent of additionalComponents) {
         buffer.addComponent(objectEntity, additionalComponent);
     }
@@ -54,7 +55,7 @@ class PlayerTag extends Component {
 
 // as this entity updates at a different frequency compared to the others in the same archetype, add a component to force it to be in a different archetype
 // causing only this specific entity to be updated instead of other cross entities
-const position = createCross(new LocalPosition(), "cross1", PlayerTag)
+const position = createCross(new LocalPosition(), "cross1", new PlayerTag())
 createCross(new LocalPosition(5, 5), "cross2")
 createCross(new LocalPosition(1, 1), "cross3")
 createCross(new LocalPosition(9, 9), "cross4")
@@ -142,7 +143,6 @@ keyboardInput.when({name: 'g'}, () => {
     world.tryGetSystem(RootSystemGroup)!.debug();
 })
 
-let toggle = true;
 keyboardInput.when({name: 'c', ctrl: true}, () => {
     world.stop()
     process.exit(0);
@@ -158,20 +158,21 @@ console.log(cameraEntity)
 class DebugSystem extends System {
     private _query = this.createEntityQuery([])
     private _hudQuery = this.createEntityQuery([HudElement])
-    private toggle = true;
+    private _toggle = true;
 
     protected onCreate() {
         this.requireAnyForUpdate(this._query);
         // this.enabled = false;
         keyboardInput.when({name: 'tab'}, () => {
-            buffer.setEnabledStateForQuery(this._hudQuery, !toggle);
-            toggle = !toggle;
+            this._toggle = !this._toggle;
+            buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
             console.log("toggle hud", this._hudQuery.entityCount() + " | " + this._hudQuery.entityCountUnfiltered());
             console.log(this._hudQuery.archetypes)
         })
     }
 
     onUpdate() {
+        if (!this._toggle) return;
         this._query.entityCount();
         // const entities = this._query
         //   .stream({}, {includeEntity: true})

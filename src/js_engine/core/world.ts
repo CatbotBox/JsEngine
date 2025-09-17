@@ -29,7 +29,7 @@ export class World {
 
   constructor() {
     // console.log("World initialized");
-    this.archetypes.onCreateArchetype.add((_archtype) => { /* hook point */
+    this.archetypes.onCreateArchetype.add((_archetype) => { /* hook point */
     });
 
     this.getOrCreateSystem(GCSystem)
@@ -65,10 +65,6 @@ export class World {
     return this._systems.has(constructor);
   }
 
-  // public remove(system: System): void {
-  //   // if (this._systems.delete(system)) system.dispose?.();
-  // }
-
   public startLoop(): void {
     if (this._timeout !== null) {
       console.warn("World loop already started");
@@ -101,7 +97,6 @@ export class World {
   public pause(): void {
     if (this._timeout !== null) {
       clearInterval(this._timeout as any);
-      // this._timeout.unref();
       this._timeout = null;
     }
   }
