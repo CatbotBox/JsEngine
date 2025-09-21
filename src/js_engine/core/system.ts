@@ -1,5 +1,4 @@
-﻿import type {World} from "./world";
-import {EntityQuery} from "./entityQuery";
+﻿import {EntityQuery} from "./entityQuery";
 import {
     TokenOrCtor,
     TokensOfList,
@@ -7,12 +6,12 @@ import {
 } from "../util/tokenUtils";
 import {EntityManager} from "./entityManager";
 import {SystemGroup} from "./systemGroup";
+import {WorldSource} from "./worldSource";
 
 /**
  * Unity-like base System with OnCreate/OnUpdate and a fluent Entities API.
  */
-export abstract class System {
-    public world!: World;
+export abstract class System  extends WorldSource{
     private _enabled = true;
     private _requiredAnyForUpdate: EntityQuery[] | undefined;
     private _requiredAllForUpdate: EntityQuery[] | undefined;
@@ -23,6 +22,7 @@ export abstract class System {
     }
 
     public constructor() {
+        super(undefined!)
     }
 
     public priority(): number {

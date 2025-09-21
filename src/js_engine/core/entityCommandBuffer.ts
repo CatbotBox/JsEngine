@@ -72,8 +72,9 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         this.destroyQueries.push(entityQuery);
     }
 
-    public addComponent<T extends Component>(entity: Entity, component: T): void {
+    public addComponent<T extends Component>(entity: Entity, component: T): Readonly<T> {
         this.setComponent(entity, component);
+        return component
     }
 
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {

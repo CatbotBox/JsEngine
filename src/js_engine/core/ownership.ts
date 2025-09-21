@@ -3,7 +3,7 @@ import {EntityArchetype} from "./entityArchetype";
 import {AnyCT} from "../util/tokenUtils";
 import {World} from "./world";
 
-export const OWNER = Symbol("ecs_owner");
+const OWNER = Symbol("ecs_owner");
 
 export type OwnerRecord = {
     world: World;

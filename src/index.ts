@@ -1,4 +1,4 @@
-import {Component, System, World} from "./js_engine/core";
+import {Component, Entity, System, World} from "./js_engine/core";
 import {keyboardInput} from "./js_engine/input";
 import {Camera} from "./js_engine/rendering/camera";
 import {ConsoleRenderingSystem} from "./js_engine/rendering/2d/console/consoleRenderingSystem";
@@ -10,6 +10,7 @@ import {RootSystemGroup} from "./js_engine/core";
 import {HudElement} from "./js_engine/rendering/hudElement";
 import {EntityCommandBufferSystem} from "./js_engine/core/entityCommandBufferSystem";
 import {LocalToWorld} from "./js_engine/translation/localToWorld";
+import {Parent} from "./js_engine/translation/parent";
 
 
 const world = new World();
@@ -27,7 +28,7 @@ const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPositio
 buffer.addComponent(cameraEntity, new RenderBounds());
 
 // can share the same image instance
-function createCross(position: LocalPosition, name?: string, ...additionalComponents: Component[]) {
+function createCross(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
     const objectEntity = buffer.createEntity(name);
     const r = Math.round(Math.random() * 255)
     const g = Math.round(Math.random() * 255)
@@ -42,11 +43,14 @@ function createCross(position: LocalPosition, name?: string, ...additionalCompon
     ]
     buffer.addComponent(objectEntity, new RenderBounds());
     buffer.addComponent(objectEntity, crossImage);
-    buffer.addComponent(objectEntity, new LocalToWorld());
+    const localToWorld = buffer.addComponent(objectEntity, new LocalToWorld());
+    if (parent) {
+        buffer.addComponent(objectEntity, new Parent(parent));
+    }
     for (const additionalComponent of additionalComponents) {
         buffer.addComponent(objectEntity, additionalComponent);
     }
-    return buffer.addTrackedComponent(objectEntity, position);
+    return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
 }
 
 class PlayerTag extends Component {
@@ -55,11 +59,11 @@ class PlayerTag extends Component {
 
 // as this entity updates at a different frequency compared to the others in the same archetype, add a component to force it to be in a different archetype
 // causing only this specific entity to be updated instead of other cross entities
-const position = createCross(new LocalPosition(), "cross1", new PlayerTag())
-createCross(new LocalPosition(5, 5), "cross2")
-createCross(new LocalPosition(1, 1), "cross3")
-createCross(new LocalPosition(9, 9), "cross4")
-
+const [entity, position, localToWorld] = createCross(new LocalPosition(), cameraEntity, "cross1", new PlayerTag())
+createCross(new LocalPosition(-5, -5), entity, "cross2")
+createCross(new LocalPosition(-5, +5), entity, "cross3")
+createCross(new LocalPosition(+5, -5), entity, "cross4")
+createCross(new LocalPosition(+5, +5), entity, "cross5")
 
 //hud element
 // entityCounter
@@ -125,9 +129,9 @@ keyboardInput.when({name: 'space'}, () => {
     for (let i = 0; i < 1_000; i++) {
         const x = (Math.random() - 0.5) * 100
         const y = (Math.random() - 0.5) * 100
-        const newPos = Component.clone(position)
-        newPos.x += x;
-        newPos.y += y;
+        const newPos = new LocalPosition();
+        newPos.x = x + localToWorld.position[0]
+        newPos.y = y + localToWorld.position[1]
         createCross(newPos);
     }
 })

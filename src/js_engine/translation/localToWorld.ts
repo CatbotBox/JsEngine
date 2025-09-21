@@ -211,8 +211,13 @@ export class LocalToWorld extends Component {
         return out;
     }
 
+    public mul(other: LocalToWorld) {
+        LocalToWorld._mul(this.matrix, other.matrix, this.matrix);
+        this.dirty = undefined
+    }
+
     /** out = a * b (column-major) */
-    public static mul(out: Float32Array, a: Float32Array, b: Float32Array): Float32Array {
+    private static _mul(out: Float32Array, a: Float32Array, b: Float32Array): Float32Array {
         const a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
         const a4 = a[4], a5 = a[5], a6 = a[6], a7 = a[7];
         const a8 = a[8], a9 = a[9], a10 = a[10], a11 = a[11];

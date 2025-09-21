@@ -1,6 +1,37 @@
-﻿import {ComponentType, ComponentOf, Component} from "./component";
+﻿import {ComponentType, ComponentOf, Component, ComponentCtor} from "./component";
 import {DoubleMap} from "../util/doubleMap";
 import {Entity} from "./entity";
+import {EntityQuery} from "./entityQuery";
+import {AnyCT} from "../util/tokenUtils";
+import {getOwner} from "./ownership";
+import {WorldSource} from "./worldSource";
+
+export class ComponentLookup<T extends Component, CT extends ComponentType<T> = ComponentType<T>, MISC extends AnyCT[] = []> {
+    private readonly _token: ComponentType<T>
+    // private _stores: Map<EntityArchetype, ComponentStore<CT>> = new Map();
+    private _options?: { filterLastUpdated: number | undefined }
+
+    constructor(private _worldSource: WorldSource, componentType: ComponentCtor<T>, private _sourceQuery: EntityQuery<[...MISC,CT, ...MISC]> = new EntityQuery(this._worldSource, [componentType])) {
+        this._token = ComponentType.of(componentType);
+    }
+
+    public update(options?: { filterLastUpdated: number | undefined }) {
+        this._options = options;
+    }
+
+    public tryGetComponent(entity: Entity):ComponentOf<CT> | undefined {
+        const archetype = getOwner(this._worldSource.world, entity);
+        if (!archetype) return undefined;
+        const componentStore = archetype.getColumn(this._token);
+        if (!componentStore) return undefined;
+        if (this._options && this._options.filterLastUpdated !== undefined &&
+            (archetype.lastStructuralChangeTime > this._options.filterLastUpdated || componentStore.lastUpdatedTime > this._options.filterLastUpdated)) {
+            return undefined;
+        }
+        const id = archetype.getIndexOfEntity(entity)!;
+        return componentStore.get(id)!;
+    }
+}
 
 export class ComponentStore<CT extends ComponentType<any>> {
     private readonly _componentData: ComponentOf<CT>[] = [];

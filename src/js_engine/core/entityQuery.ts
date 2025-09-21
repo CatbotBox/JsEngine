@@ -14,6 +14,7 @@ import {
     TupleToUnion
 } from "../util/tokenUtils";
 import {EntityQueryStream} from "./entityQueryStream";
+import {WorldSource} from "./worldSource";
 
 type TokenOrCtor = AnyCT | ComponentCtor<Component>;
 
@@ -46,7 +47,7 @@ export class EntityQuery<
         cachedArchetypes: []
     }
 
-    constructor(private _source: { world: World }, include: IncSpec, exclude?: ExcSpec) {
+    constructor(private _source: WorldSource, include: IncSpec, exclude?: ExcSpec) {
         this._include = toTokens(include) as TokensOfList<IncSpec>;
         this._exclude = toTokens(exclude ?? []) as TokensOfList<ExcSpec>;
     }
