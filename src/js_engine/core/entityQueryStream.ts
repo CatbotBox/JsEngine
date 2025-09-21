@@ -138,7 +138,7 @@ export class EntityQueryStream<
 
                     updated.forEach((value, index) => {
                         if (!value) return;
-                        console.log("modified " + index);
+                        // console.log("modified " + index);
                         cols[index].lastUpdatedTime = time;
                     })
 
