@@ -140,7 +140,7 @@ export class EntityQuery<
             if (entityCount > 1) throw new Error("More than 1 singleton entity found");
             if (entityCount == 1) {
                 if (rowData != undefined) throw new Error("More than 1 singleton entity found");
-                const data = arch.getDataAtIndex(0) as Map<AnyCT, Component>;
+                const data = arch.getDataAtIndexUntracked(0) as Map<AnyCT, Component>;
                 rowData = {};
                 if (options?.includeEntity) rowData.entity = arch.getEntityAtIndex(0);
 

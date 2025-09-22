@@ -5,13 +5,14 @@ import {EntityQuery} from "./entityQuery";
 import {AnyCT} from "../util/tokenUtils";
 import {getOwner} from "./ownership";
 import {WorldSource} from "./worldSource";
+import {NAME} from "./symbols";
 
 export class ComponentLookup<T extends Component, CT extends ComponentType<T> = ComponentType<T>, MISC extends AnyCT[] = []> {
     private readonly _token: ComponentType<T>
     // private _stores: Map<EntityArchetype, ComponentStore<CT>> = new Map();
     private _options?: { filterLastUpdated: number | undefined }
 
-    constructor(private _worldSource: WorldSource, componentType: ComponentCtor<T>, private _sourceQuery: EntityQuery<[...MISC,CT, ...MISC]> = new EntityQuery(this._worldSource, [componentType])) {
+    constructor(private _worldSource: WorldSource, componentType: ComponentCtor<T>, private _sourceQuery: EntityQuery<[...MISC, CT, ...MISC]> = new EntityQuery(this._worldSource, [componentType])) {
         this._token = ComponentType.of(componentType);
     }
 
@@ -19,7 +20,7 @@ export class ComponentLookup<T extends Component, CT extends ComponentType<T> = 
         this._options = options;
     }
 
-    public tryGetComponent(entity: Entity):ComponentOf<CT> | undefined {
+    public tryGetComponent(entity: Entity): ComponentOf<CT> | undefined {
         const archetype = getOwner(this._worldSource.world, entity);
         if (!archetype) return undefined;
         const componentStore = archetype.getColumn(this._token);
@@ -241,10 +242,25 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         return this._entities.getValue(entity);
     }
 
-    public getDataAtEntity(entity: Entity): Map<CT, ComponentOf<CT>> {
+    public getDataAtEntityUntracked(entity: Entity): Map<CT, ComponentOf<CT>> {
         const entityIndex = this._entities.getValue(entity);
         if (entityIndex === undefined) throw new Error("invalid entity");
+        return this.getDataAtIndexUntracked(entityIndex);
+    }
+
+    public getDataAtEntity(entity: Entity): Map<CT, ComponentOf<CT>> {
+        const entityIndex = this._entities.getValue(entity);
+        if (entityIndex === undefined) throw new Error(`invalid entity ${(entity as any)[NAME]}`);
         return this.getDataAtIndex(entityIndex);
+    }
+
+    public getDataAtIndexUntracked(index: number): Map<CT, ComponentOf<CT>> {
+        const map = new Map<CT, ComponentOf<CT>>();
+        this._uniqueTypes.forEach((type, idx) => {
+            const comp = this._componentData[idx].get(index);
+            if (comp !== undefined) map.set(type, comp);
+        });
+        return map;
     }
 
     public getDataAtIndex(index: number): Map<CT, ComponentOf<CT>> {

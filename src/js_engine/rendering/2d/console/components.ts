@@ -1,5 +1,7 @@
-﻿import {Component} from "../../../core";
+﻿import {Component, Entity} from "../../../core";
 import {Ansi} from "./ansi";
+import {EntityWriteOptions} from "../../../core/entityWriteOptions";
+import {RenderBounds} from "../../renderBounds";
 
 export class ScreenSize extends Component {
     public x: number = 0;
@@ -22,6 +24,10 @@ export class ConsoleImage extends Component {
     private _pixels: (string | undefined)[][] = [];
     private _sizeX: number = 0;
     private _sizeY: number = 0;
+
+    public setup(entity: Entity, entityManager: EntityWriteOptions) {
+        entityManager.addComponent(entity, new RenderBounds())
+    }
 
     public get sizeX(): number {
         return this._sizeX;
