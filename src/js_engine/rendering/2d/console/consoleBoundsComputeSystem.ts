@@ -18,7 +18,7 @@ export class ConsoleBoundsComputeSystem extends System {
 
     protected onCreate() {
         this.requireAnyForUpdate(this._query);
-        this.world.getOrCreateSystem(LocalToWorldSystem);
+        this.world.ensureSystemExists(LocalToWorldSystem);
     }
 
     onUpdate() {

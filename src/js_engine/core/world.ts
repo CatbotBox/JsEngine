@@ -34,7 +34,12 @@ export class World extends WorldSource {
         this.archetypes.onCreateArchetype.add((_archetype) => { /* hook point */
         });
 
-        this.getOrCreateSystem(GCSystem)
+        this.ensureSystemExists(GCSystem)
+    }
+
+    // alias for getOrCreateSystem as it can be used another way
+    public ensureSystemExists<T extends System>(constructor: new () => T): void {
+        this.getOrCreateSystem<T>(constructor)
     }
 
     public getOrCreateSystem<T extends System>(constructor: new () => T): T {

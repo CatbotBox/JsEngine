@@ -35,12 +35,11 @@ export class ConsoleRenderingSystem extends System {
     }
 
     protected onCreate() {
-        this.world.getOrCreateSystem(ConsoleBoundsComputeSystem);
-        // remove original console as an output as we using it
         this.requireAllForUpdate(this._cameraQuery) // always require a camera
         this.requireAnyForUpdate(this._objectQuery) // and require at least one renderer object
         this.requireAnyForUpdate(this._hudObjectQuery) // or one hud object
-        this.world.getOrCreateSystem(CameraSizingSystem);
+        this.world.ensureSystemExists(ConsoleBoundsComputeSystem);
+        this.world.ensureSystemExists(CameraSizingSystem);
     }
 
     protected onDestroy() {

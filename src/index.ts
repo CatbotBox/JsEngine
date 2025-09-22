@@ -223,8 +223,8 @@ class DebugSystem extends System {
 }
 
 
-world.getOrCreateSystem(ConsoleRenderingSystem);
+world.ensureSystemExists(ConsoleRenderingSystem);
 
-world.getOrCreateSystem(DebugSystem)
+world.ensureSystemExists(DebugSystem)
 
 world.startLoop()
