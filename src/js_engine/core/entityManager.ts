@@ -77,8 +77,9 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     }
 
 
-    public addComponent<T extends Component>(entity: Entity, component: Component): void {
+    public addComponent<T extends Component>(entity: Entity, component: T): Readonly<T> {
         this.setComponent(entity, component);
+        return component;
     }
 
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {

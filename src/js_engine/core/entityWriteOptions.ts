@@ -11,7 +11,7 @@ export interface EntityWriteOptions {
   /** Queue entity destruction. */
   destroyEntity(entity: Entity): void;
 
-  addComponent<T extends Component>(entity: Entity, component: T): void;
+  addComponent<T extends Component>(entity: Entity, component: T): Readonly<T>;
 
   addTrackedComponent<T extends Component>(entity: Entity, component: T): T;
 
