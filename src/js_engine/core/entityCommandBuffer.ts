@@ -9,24 +9,14 @@ import {EntityWriteOptions} from "./entityWriteOptions";
 import {EntityQuery} from "./entityQuery";
 import {World} from "./world";
 import {requireOwner, setOwner} from "./ownership";
+import {getEntityComponents, getEntityTokens} from "./entityManagerUtils";
 
 type Pending = {
-    addOrSet: Map<AnyCT, Component>; // upserts
+    set: Map<AnyCT, Component>; // upserts
+    add: Map<AnyCT, Component>;
     remove: Set<AnyCT>;
     enabled?: boolean; // optional enable/disable
 };
-
-/** Get all tokens currently on an entity. */
-function getEntityTokens(world: World, entity: Entity): readonly AnyCT[] {
-    return requireOwner(world, entity).componentTypes as readonly AnyCT[];
-}
-
-/** Snapshot of the entity's components as a Map. */
-function getEntityComponents(world: World, entity: Entity): Map<AnyCT, Component> {
-    const arch = requireOwner(world, entity);
-    return arch.getDataAtEntity(entity) as Map<AnyCT, Component>;
-}
-
 
 export class EntityCommandBuffer implements EntityWriteOptions {
     private createOps: Array<Entity> = [];
@@ -73,12 +63,20 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     }
 
     public addComponent<T extends Component>(entity: Entity, component: T): Readonly<T> {
-        this.setComponent(entity, component);
+        const p = this.ensure(entity);
+        const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
+        p.remove.delete(token);
+        p.add.set(token, component);
+        component.setup(entity, this);
         return component
     }
 
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {
-        this.setComponent(entity, component)
+        const p = this.ensure(entity);
+        const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
+        p.remove.delete(token);
+        p.add.set(token, component);
+        component.setup(entity, this);
         return Component.persistentTrack(entity, component);
     }
 
@@ -86,7 +84,8 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         const p = this.ensure(entity);
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
         p.remove.delete(token);
-        p.addOrSet.set(token, component);
+        p.set.set(token, component);
+        component.setup(entity, this);
     }
 
     public setEnabledState(entity: Entity, enabled: boolean): void {
@@ -104,7 +103,8 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     public removeComponent(entity: Entity, key: TokenOrCtor): void {
         const p = this.ensure(entity);
         const token = this.toToken(key);
-        p.addOrSet.delete(token);
+        p.set.delete(token);
+        p.add.delete(token);
         p.remove.add(token);
     }
 
@@ -127,11 +127,19 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             const currentTokens = new Set<AnyCT>(getEntityTokens(world, entity));
             // remove first
             for (const t of pending.remove) currentTokens.delete(t);
+
+            for (const t of pending.add.keys()) {
+                if (currentTokens.has(t)) {
+                    pending.add.delete(t);
+                    console.warn(`Component ${pending.add.get(t)!.constructor.name} already exists on entity ${entity}`);
+                } else currentTokens.add(t);
+            }
+
             // add/replace
-            for (const t of pending.addOrSet.keys()) currentTokens.add(t);
+            for (const t of pending.set.keys()) currentTokens.add(t);
 
             // build final components map
-            const provided = this.normalizeMap(pending.addOrSet as Map<TokenOrCtor, Component>);
+            const provided = this.normalizeMap(pending.set as Map<TokenOrCtor, Component>, pending.add as Map<TokenOrCtor, Component>);
             const finalTokens = [...currentTokens] as AnyCT[];
             const carry = getEntityComponents(world, entity); // existing comps map
 
@@ -237,7 +245,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     private ensure(entity: Entity): Pending {
         let p = this.perEntity.get(entity);
         if (!p) {
-            p = {addOrSet: new Map(), remove: new Set()};
+            p = {add: new Map(), remove: new Set(), set: new Map()};
             this.perEntity.set(entity, p);
         }
         return p;
@@ -249,9 +257,11 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             : (k as AnyCT);
     }
 
-    private normalizeMap(input: Map<TokenOrCtor, Component>): Map<AnyCT, Component> {
+    private normalizeMap(...inputs: Map<TokenOrCtor, Component>[]): Map<AnyCT, Component> {
         const out = new Map<AnyCT, Component>();
-        for (const [k, v] of input) out.set(this.toToken(k), v);
+        for (const input of inputs) {
+            for (const [k, v] of input) out.set(this.toToken(k), v);
+        }
         return out;
     }
 }
