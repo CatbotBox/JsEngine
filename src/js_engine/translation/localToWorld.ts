@@ -159,7 +159,7 @@ export class LocalToWorld extends Component {
     // ---------- Set full TRS ----------
     public setTRS(position: Vec3, rotation: Vec4, scale: Vec3): void {
         LocalToWorld.fromTRS(this.matrix, position, rotation, scale);
-        this.dirty = undefined;
+        this.setDirty();
     }
 
     // ---------- ctor ----------
@@ -213,7 +213,7 @@ export class LocalToWorld extends Component {
 
     public mul(other: LocalToWorld) {
         LocalToWorld._mul(this.matrix, other.matrix, this.matrix);
-        this.dirty = undefined
+        this.setDirty();
     }
 
     /** out = a * b (column-major) */

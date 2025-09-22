@@ -1,17 +1,34 @@
 ﻿import {Entity} from "./entity";
 import {getOwnerInferred} from "./ownership";
+import {EntityWriteOptions} from "./entityWriteOptions";
 
 export abstract class Component {
+
+    /**
+     * this must be used as only setters are tracked to minimise complexity
+     */
+    // noinspection JSUnusedLocalSymbols
+    private set dirty(value: void) {
+    }
 
     /**
      * call this to force last update
      * this is useful as only setter trigger it, function calls do not
      * hence if a function performs write operations, call this setter to prevent undetected changes
-     * @param value pass anything, doesn't matter
      * @protected
      */
-    // noinspection JSUnusedLocalSymbols
-    protected set dirty(value: void) {
+    protected setDirty() {
+        this.dirty = undefined;
+    }
+
+    /**
+     * add setup logic here
+     * note that it may run multiple time and might run in the middle of the entity's lifespan
+     * it is recommended to use it for adding other required components only
+     * @param entity the entity getting added
+     * @param entityManager write-only entity manager
+     */
+    public setup(entity: Entity, entityManager: EntityWriteOptions): void {
     }
 
     protected copyTo(other: this) {
