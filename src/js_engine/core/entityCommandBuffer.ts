@@ -131,7 +131,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             for (const t of pending.add.keys()) {
                 if (currentTokens.has(t)) {
                     pending.add.delete(t);
-                    console.warn(`Component ${pending.add.get(t)!.constructor.name} already exists on entity ${entity}`);
+                    console.info(`Component ${pending.add.get(t)!.constructor.name} already exists, adding component skipped`);
                 } else currentTokens.add(t);
             }
 

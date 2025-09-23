@@ -103,7 +103,9 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
         const currentTokens = new Set<AnyCT>(getEntityTokens(this.world, entity));
         if (currentTokens.has(token)) {
-            throw new Error(`Component ${component.constructor.name} already exists`);
+            // throw new Error(`Component ${component.constructor.name} already exists`);
+            console.info(`Component ${component.constructor.name} already exists, adding component skipped`);
+            return;
         }
         const currentArch = requireOwner(this.world, entity);
         const currentData = currentArch.getDataAtEntityUntracked(entity) as Map<AnyCT, Component>;
@@ -143,7 +145,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         if (!currentTokens.has(token)) return; // nothing to do
         // next tokens = current \ {token}
         currentTokens.delete(token);
-        const nextTokens =Array.from(currentTokens.values())
+        const nextTokens = Array.from(currentTokens.values())
         const targetArch = this._world.archetypes.getOrCreate(nextTokens);
         const currentData = currentArch.getDataAtEntityUntracked(entity);
         this.moveEntityInternal(entity, currentArch, targetArch, currentData);
