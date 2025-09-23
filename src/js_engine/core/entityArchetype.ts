@@ -20,7 +20,9 @@ export class ComponentLookup<T extends Component, CT extends ComponentType<T> = 
         this._options = options;
     }
 
-    public tryGetComponent(entity: Entity): ComponentOf<CT> | undefined {
+    public tryGetComponent(entity: Entity, readonly?: false): ComponentOf<CT> | undefined
+    public tryGetComponent(entity: Entity, readonly: true): Readonly<ComponentOf<CT>> | undefined
+    public tryGetComponent(entity: Entity, readonly: boolean = false): ComponentOf<CT> | undefined {
         const archetype = getOwner(this._worldSource.world, entity);
         if (!archetype) return undefined;
         const componentStore = archetype.getColumn(this._token);
@@ -30,7 +32,9 @@ export class ComponentLookup<T extends Component, CT extends ComponentType<T> = 
             return undefined;
         }
         const id = archetype.getIndexOfEntity(entity)!;
-        return componentStore.get(id)!;
+        const component = componentStore.get(id);
+        if (readonly) return component;
+        return Component.track(component, () => componentStore.lastUpdatedTime = performance.now());
     }
 }
 
