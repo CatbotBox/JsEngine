@@ -79,8 +79,18 @@ export class ConsoleRenderingSystem extends System {
 
             this.sendFinalFrame(cur)
         } catch (error) {
-            console.log("Multiple Camera Entities Found" + this._cameraQuery.entityCount());
-            console.log(Array.from(this._cameraQuery.stream({}).collect()));
+            const camCount = this._cameraQuery.entityCount();
+            process.stdout.write("\x1b[H");   // cursor to 1,1 (home)
+            if (camCount == 0) {
+                process.stdout.write("ERROR: NO CAMERA ENTITIES FOUND");
+            } else if (camCount > 1) {
+                process.stdout.write("ERROR: MULTIPLE CAMERA ENTITIES FOUND (" + camCount + ")");
+            } else {
+                process.stdout.write("ERROR: UNEXPECTED ERROR HAPPENED WITH CAMERA SYSTEM");
+                process.stdout.write(String(error));
+            }
+
+            process.stdout.write("\x1b[J");   // clear to end of screen (handles shorter frames)
         }
     }
 
@@ -164,10 +174,10 @@ export class ConsoleRenderingSystem extends System {
     }
 
     override onDisable() {
-        console.log("Exiting Alt Mode")
         consoleOverride.addConsoleEventListener(display)
         process.stdout.write("\x1b[?7h");    // re-enable autowrap
         process.stdout.write(Ansi.cursor.show);
         process.stdout.write(Ansi.modes.altScreenExit); // back to main + restore cursor
+        console.log("Exiting Alt Mode")
     }
 }
