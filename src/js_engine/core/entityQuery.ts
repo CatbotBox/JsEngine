@@ -135,6 +135,35 @@ export class EntityQuery<
         throw new Error("No entity found");
     }
 
+    public tryGetSingleton<
+        S extends Record<string, TokenOrCtor>,
+        IncludeEntity extends boolean = false
+    >(specOrConstructors: S,
+      options?: EntityStreamOptions<IncludeEntity>): (RowFromSpec<TokensFrom<S>, IncU<Inc>> &
+        (IncludeEntity extends true ? { entity: Entity } : {})) | undefined {
+        const spec = toTokenSpec(specOrConstructors);
+        const keys = Object.keys(spec) as (keyof S)[];
+        let rowData: any = undefined;
+        for (const arch of this.archetypes) {
+            const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+            if (entityCount == 0) continue;
+            if (entityCount > 1) return undefined;
+            if (entityCount == 1) {
+                if (rowData != undefined) return undefined;
+                const data = arch.getDataAtIndexUntracked(0) as Map<AnyCT, Component>;
+                rowData = {};
+                if (options?.includeEntity) rowData.entity = arch.getEntityAtIndex(0);
+
+                for (const k of keys) {
+                    const token = spec[k] as AnyCT;
+                    rowData[k as string] = data.get(token);
+                }
+            }
+        }
+        if (rowData) return rowData;
+        return undefined;
+    }
+
     public getSingleton<
         S extends Record<string, TokenOrCtor>,
         IncludeEntity extends boolean = false
