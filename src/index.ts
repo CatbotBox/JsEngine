@@ -51,6 +51,28 @@ function createCross(position: LocalPosition, parent?: Entity, name?: string, ..
     return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
 }
 
+function createPixel(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
+    const objectEntity = buffer.createEntity(name);
+    const r = Math.round(Math.random() * 255)
+    const g = Math.round(Math.random() * 255)
+    const b = Math.round(Math.random() * 255)
+    const pixelImage = new ConsoleImage();
+    pixelImage.transparentChar = '0'
+    const color = Ansi.bgRGB(r, g, b)
+    pixelImage.image = [
+        color + ' ',
+    ]
+    buffer.addComponent(objectEntity, pixelImage);
+    const localToWorld = buffer.addComponent(objectEntity, new LocalToWorld());
+    if (parent) {
+        buffer.addComponent(objectEntity, new Parent(parent));
+    }
+    for (const additionalComponent of additionalComponents) {
+        buffer.addComponent(objectEntity, additionalComponent);
+    }
+    return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
+}
+
 class PlayerTag extends Component {
 
 }
@@ -90,36 +112,28 @@ buffer.addComponent(fpsCounterEntity, fpsAnchor);
 
 keyboardInput.when({name: 'up'}, () => {
     position.y -= 1;
-    console.log("up")
 })
 keyboardInput.when({name: 'down'}, () => {
     position.y += 1;
-    console.log("down")
 })
 keyboardInput.when({name: 'left'}, () => {
     position.x -= 1;
-    console.log("left")
 })
 keyboardInput.when({name: 'right'}, () => {
     position.x += 1;
-    console.log("right")
 })
 
 keyboardInput.when({name: 'w'}, () => {
     cameraPosition.y -= 1;
-    console.log("up")
 })
 keyboardInput.when({name: 's'}, () => {
     cameraPosition.y += 1;
-    console.log("down")
 })
 keyboardInput.when({name: 'a'}, () => {
     cameraPosition.x -= 1;
-    console.log("left")
 })
 keyboardInput.when({name: 'd'}, () => {
     cameraPosition.x += 1;
-    console.log("right")
 })
 
 
@@ -130,7 +144,7 @@ keyboardInput.when({name: 'space'}, () => {
         const newPos = new LocalPosition();
         newPos.x = x + localToWorld.position[0]
         newPos.y = y + localToWorld.position[1]
-        createCross(newPos);
+        createPixel(newPos);
     }
 })
 keyboardInput.when({name: 'return'}, () => {
@@ -141,7 +155,6 @@ keyboardInput.when({name: 'return'}, () => {
 })
 
 keyboardInput.when({name: 'g'}, () => {
-    console.log("g")
     world.tryGetSystem(RootSystemGroup)!.debug();
 })
 
