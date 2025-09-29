@@ -13,7 +13,11 @@ class Time {
      * time from last tick (in milliseconds)
      */
     public deltaTime: number = 0;
-    public elapsedTime: number = 0;
+
+    public get elapsedTime(): number {
+        return performance.now();
+    }
+
 }
 
 export class World extends WorldSource {
@@ -94,7 +98,7 @@ export class World extends WorldSource {
             }
             prevCycle = now;
             time.deltaTime = delta;
-            time.elapsedTime = now;
+            // time.elapsedTime = now;
             this.update();
             updateInProgress = false;
 

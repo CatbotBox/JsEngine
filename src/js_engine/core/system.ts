@@ -11,7 +11,7 @@ import {WorldSource} from "./worldSource";
 /**
  * Unity-like base System with OnCreate/OnUpdate and a fluent Entities API.
  */
-export abstract class System  extends WorldSource{
+export abstract class System extends WorldSource {
     private _enabled = true;
     private _requiredAnyForUpdate: EntityQuery[] | undefined;
     private _requiredAllForUpdate: EntityQuery[] | undefined;
@@ -19,6 +19,10 @@ export abstract class System  extends WorldSource{
 
     protected get lastUpdateTime(): number {
         return this._lastUpdateTime;
+    }
+
+    protected updateLastUpdateTime() {
+        this._lastUpdateTime = this.world.time.elapsedTime;
     }
 
     public constructor() {

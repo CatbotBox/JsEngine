@@ -45,8 +45,12 @@ export class LocalToWorld extends Component {
      */
     private readonly _matrix: Float32Array;
 
-    public get matrix(): Vec16 & Float32Array {
-        return this._matrix as Vec16 & Float32Array;
+    public get matrix(): Float32Array & { length: 16 } {
+        return this._matrix as Float32Array & { length: 16 };
+    }
+
+    public set matrix(value: Float32Array & { length: 16 }) {
+        this._matrix.set(value);
     }
 
     // ---------- Position ----------
@@ -211,13 +215,13 @@ export class LocalToWorld extends Component {
         return out;
     }
 
-    public mul(other: LocalToWorld) {
-        LocalToWorld._mul(this.matrix, other.matrix, this.matrix);
+    public mul(other: Vec16) {
+        LocalToWorld._mul(this.matrix, other, this.matrix);
         this.setDirty();
     }
 
     /** out = a * b (column-major) */
-    private static _mul(out: Float32Array, a: Float32Array, b: Float32Array): Float32Array {
+    private static _mul(out: Vec16, a: Vec16, b: Vec16): Vec16 {
         const a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
         const a4 = a[4], a5 = a[5], a6 = a[6], a7 = a[7];
         const a8 = a[8], a9 = a[9], a10 = a[10], a11 = a[11];

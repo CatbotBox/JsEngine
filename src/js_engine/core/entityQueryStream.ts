@@ -94,6 +94,15 @@ export class EntityQueryStream<
     //   }
     // }
 
+    public count() {
+        const data = this.prepStreamResult()
+        let count = 0;
+        for (const {arch} of data) {
+            count += this.options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+        }
+        return count;
+    }
+
     public forEach(
         cb: (
             row: RowFromSpec<SpecTokens, IncU<Inc>> &
@@ -101,7 +110,6 @@ export class EntityQueryStream<
         ) => void
     ): void {
         const base = this._rowsIterable();
-
         for (const row of base) {
             cb(row);
         }
@@ -114,8 +122,8 @@ export class EntityQueryStream<
         const self = this;
         const streamResults = self.prepStreamResult();
 
-        const updated: boolean[] = new Array(this.keys.length);
-        const callbacks = this.keys.map((_, k) => (() => updated[k] = true))
+        const updatedColFlags: boolean[] = new Array(this.keys.length);
+        const callbacks = this.keys.map((_, k) => (() => updatedColFlags[k] = true))
 
         // Use a generator; rows are copied out as small plain objects to keep safety.
         // (If you need absolute zero per-yield alloc, prefer a dedicated consume(cb) API.)
@@ -136,13 +144,15 @@ export class EntityQueryStream<
                         yield out;
                     }
 
-                    updated.forEach((value, index) => {
+                    // set respective columns to dirty
+                    updatedColFlags.forEach((value, index) => {
                         if (!value) return;
                         // console.log("modified " + index);
                         cols[index].lastUpdatedTime = time;
                     })
 
-                    updated.fill(false)
+                    // reset flags
+                    updatedColFlags.fill(false)
                 }
             },
         };

@@ -1,4 +1,4 @@
-import {Component, Entity, System, World} from "./js_engine/core";
+import {Component, Entity, RootSystemGroup, System, World} from "./js_engine/core";
 import {keyboardInput} from "./js_engine/input";
 import {Camera} from "./js_engine/rendering/camera";
 import {ConsoleRenderingSystem} from "./js_engine/rendering/2d/console/consoleRenderingSystem";
@@ -6,7 +6,6 @@ import {LocalPosition} from "./js_engine/translation/localPosition";
 import {RenderBounds} from "./js_engine/rendering/renderBounds";
 import {ConsoleImage, ConsoleImageAnchor, ScreenSize} from "./js_engine/rendering/2d/console/components";
 import {Ansi} from "./js_engine/rendering/2d/console/ansi";
-import {RootSystemGroup} from "./js_engine/core";
 import {HudElement} from "./js_engine/rendering/hudElement";
 import {EntityCommandBufferSystem} from "./js_engine/core/entityCommandBufferSystem";
 import {LocalToWorld} from "./js_engine/translation/localToWorld";
@@ -41,7 +40,6 @@ function createCross(position: LocalPosition, parent?: Entity, name?: string, ..
         color + '   ',
         color + '0 0',
     ]
-    buffer.addComponent(objectEntity, new RenderBounds());
     buffer.addComponent(objectEntity, crossImage);
     const localToWorld = buffer.addComponent(objectEntity, new LocalToWorld());
     if (parent) {
@@ -160,12 +158,12 @@ console.log(cameraEntity)
 
 
 class DebugSystem extends System {
-    private _query = this.createEntityQuery([])
+    private _query = this.createEntityQuery([LocalToWorld])
     private _hudQuery = this.createEntityQuery([HudElement])
     private _toggle = true;
 
     protected onCreate() {
-        this.requireAnyForUpdate(this._query);
+        // this.requireAnyForUpdate(this._query);
         // this.enabled = false;
         keyboardInput.when({name: 'tab'}, () => {
             this._toggle = !this._toggle;
@@ -207,18 +205,29 @@ class DebugSystem extends System {
     }
 
     public logEntities() {
-        const entities = this._query
-            .stream({}, {includeEntity: true})
-            .collect()
-            .toString()
-        // .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
-        // .map(e => {
-        //     const archetype =   ((e.entity as any)[OWNER].arch as EntityArchetype);
-        //     const data = archetype.getDataAtEntity(e.entity);
-        //     const enabled = archetype.isEntityEnabled(e)
-        //   });
-        console.log("Entities:");
-        console.log(entities)
+        // const entities = this._query
+        //     .stream({}, {includeEntity: true})
+        //     .collect()
+        //     // .toString()
+        //     // .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
+        //     .forEach((e: {} & { entity: Entity }) => {
+        //         console.group("DEBUG")
+        //         console.log(entity);
+        //         const archetype = getOwner(this.world, e.entity)!;
+        //         console.log("archetype");
+        //         console.log(archetype.componentTypes.map(t => t.ctor));
+        //         const data = archetype.getDataAtEntity(e.entity);
+        //         console.log(Array.from(data).map(([ct, value]) => value));
+        //         console.groupEnd()
+        //     });
+
+        // for (const archetype of this.world.archetypes.values()) {
+        //     console.log(archetype.componentTypes);
+        //     console.log(archetype.entityCount + "|" + archetype.entityCountUnfiltered);
+        // }
+
+        // console.log("Entities:");
+        // console.log(entities)
     }
 }
 
