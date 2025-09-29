@@ -74,26 +74,36 @@ export class EntityQuery<
     public get archetypes(): IterableIterator<EntityArchetype<AnyCT>> {
         const arr = this.getCachedArchetypes(); // array of refs
 
+        //don't dedupe in iter as multiple systems could be using it
         function* iter(): IterableIterator<EntityArchetype<AnyCT>> {
-            // In-place compaction: single pass, no per-item splicing
-            let w = 0; // write index for the next kept ref
-            for (let r = 0; r < arr.length; r++) {
-                const ref = arr[r].deref();
-                if (ref !== undefined) {
-                    if (w !== r) arr[w] = arr[r]; // move loaded ref forward only when needed
-                    w++;
-                    yield ref;
-                }
-                // unloaded refs are skipped
+            for (let readIndex = 0; readIndex < arr.length; readIndex++) {
+                const ref = arr[readIndex].deref();
+                if (ref === undefined) continue;
+                yield ref;
             }
-            if (w !== arr.length) arr.length = w; // drop all skipped refs in one truncate
         }
 
         return iter();
     }
 
     private onArchetypeCreated = (arch: EntityArchetype<AnyCT>) => {
-        if (this.matches(arch)) this.getCachedArchetypes().push(new WeakRef(arch));
+        if (this.matches(arch)) {
+
+            const arr = this.getCachedArchetypes(); // array of refs
+            // this.getCachedArchetypes().push(new WeakRef(arch));
+
+            // In-place compaction: single pass, no per-item splicing
+            let writeIndex = 0; // write index for the next kept ref
+            for (let readIndex = 0; readIndex < arr.length; readIndex++) {
+                const ref = arr[readIndex].deref();
+                if (ref === undefined) continue;
+                // shift entire array if missing gaps
+                if (writeIndex !== readIndex) arr[writeIndex] = arr[readIndex]; // move loaded ref forward only when needed
+                writeIndex++;
+            }
+            if (writeIndex + 1 !== arr.length) arr.length = writeIndex; // drop all skipped refs in one truncate
+            arr[writeIndex] = new WeakRef(arch);
+        }
     };
 
     private matches(arch: EntityArchetype<AnyCT>): boolean {
