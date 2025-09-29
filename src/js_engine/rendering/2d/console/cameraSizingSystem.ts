@@ -2,6 +2,7 @@
 import {Camera} from "../../camera";
 import {RenderingSystemGroup} from "../../RenderingSystemGroup";
 import {ScreenSize} from "./components";
+import {CurrentInterpreter} from "../../../interpreter";
 
 export class CameraSizingSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize])
@@ -13,17 +14,23 @@ export class CameraSizingSystem extends System {
 
     protected onCreate() {
         this.requireAnyForUpdate(this._cameraQuery)
-        if (process.stdout.isTTY) {
-            process.stdout.on('resize', () => {
-                const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
-                cameraEntity.screenSize.x = process.stdout.columns;
-                cameraEntity.screenSize.y = process.stdout.rows - 1; // leave one row for the prompt
-                console.log("Resize: " + JSON.stringify(cameraEntity.screenSize, null, 2));
-            });
+        if (CurrentInterpreter == "Node" || CurrentInterpreter == "Unknown") {
+            if (process.stdout.isTTY) {
+                process.stdout.on('resize', () => {
+                    const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
+                    cameraEntity.screenSize.x = process.stdout.columns;
+                    cameraEntity.screenSize.y = process.stdout.rows - 1; // leave one row for the prompt
+                    console.log("Resize: " + JSON.stringify(cameraEntity.screenSize, null, 2));
+                });
+            }
         }
     }
 
     onUpdate() {
+        if (CurrentInterpreter == "Bun" || CurrentInterpreter == "Unknown") {
+            this.refreshSize();
+            return;
+        }
         if (!this._initialized) {
             this.refreshSize();
             this._initialized = true;
@@ -36,6 +43,10 @@ export class CameraSizingSystem extends System {
     }
 
     public refreshSize() {
+        if (CurrentInterpreter == "Bun") {
+            // @ts-ignore
+            process.stdout._refreshSize();
+        }
         const defaultSize = {columns: 24, rows: 80};
         const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
 

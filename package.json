@@ -5,11 +5,14 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json && node dist/index.js",
+    "dev-node": "tsc -p tsconfig.json && node dist/index.js",
+    "dev-bun": "bun src/index.ts",
+    "compile": "bun build src/index.ts --compile",
     "start": "node src/index.ts",
     "clear-logs": "rm -rf logs/*"
   },
   "devDependencies": {
+    "@types/bun": "^1.2.23",
     "@types/node": "^24.2.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
