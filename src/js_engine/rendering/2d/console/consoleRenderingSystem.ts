@@ -96,21 +96,22 @@ export class ConsoleRenderingSystem extends System {
 
     private drawObjects(cur: ScreenBuffer, cameraBounds: RenderBounds) {
         const imageEntities = this._objectQuery
-            .stream({bounds: RenderBounds, img: ConsoleImage})
+            .stream({bounds: RenderBounds, img: ConsoleImage, localToWorld: LocalToWorld})
             .collect()
             .filter(({bounds}) => RenderBounds.intersects(cameraBounds, bounds));
 
         // Blit each object's image at its top-left corner relative to camera's top-left
         // Painter's algorithm in stream order; add your own z-index if needed.
         // World-space → screen-space transform.
-        for (const {bounds, img} of imageEntities) {
+        for (const {bounds, img, localToWorld} of imageEntities) {
             // World → screen transform (top-left anchoring)
             const screenX = Math.floor(bounds.xMin - cameraBounds.xMin);
             const screenY = Math.floor(bounds.yMin - cameraBounds.yMin);
 
             // The image is already sized to its visible width via ConsoleImage.size (ANSI stripped)
             // The blitter will clip to the current screen automatically.
-            cur.blit(img, screenX, screenY);
+            const position = localToWorld?.position[2] || 0;
+            cur.blit(img, screenX, screenY, position);
         }
     }
 
@@ -142,7 +143,7 @@ export class ConsoleRenderingSystem extends System {
 
             // console.log("HUD", anchor.anchorPosition, "->", sx, sy, " screen:", screenW, screenH, " img:", imgSize.x, imgSize.y)
             // Blit directly in screen space (cur = current ScreenBuffer)
-            cur.blit(img, sx, sy);
+            cur.blit(img, sx, sy, Number.POSITIVE_INFINITY);
         }
     }
 
