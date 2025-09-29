@@ -47,36 +47,41 @@ export class ConsoleRenderingSystem extends System {
     }
 
     onUpdate() {
-        const cameraEntity = this._cameraQuery.getSingleton({
-            camera: Camera,
-            screenSize: ScreenSize,
-            localToWorld: LocalToWorld,
-        });
-        const cameraBounds = new RenderBounds();
-        const position = cameraEntity.localToWorld.position;
-        const screenSize = cameraEntity.screenSize;
-        const x0 = position[0] - 0.5 * screenSize.x;
-        const y0 = position[1] - 0.5 * screenSize.y;
-        const x1 = x0 + screenSize.x;
-        const y1 = y0 + screenSize.y;
+        try {
+            const cameraEntity = this._cameraQuery.getSingleton({
+                camera: Camera,
+                screenSize: ScreenSize,
+                localToWorld: LocalToWorld,
+            });
+            const cameraBounds = new RenderBounds();
+            const position = cameraEntity.localToWorld.position;
+            const screenSize = cameraEntity.screenSize;
+            const x0 = position[0] - 0.5 * screenSize.x;
+            const y0 = position[1] - 0.5 * screenSize.y;
+            const x1 = x0 + screenSize.x;
+            const y1 = y0 + screenSize.y;
 
-        cameraBounds.xMin = Math.min(x0, x1);
-        cameraBounds.xMax = Math.max(x0, x1);
-        cameraBounds.yMin = Math.min(y0, y1);
-        cameraBounds.yMax = Math.max(y0, y1);
-        cameraBounds.zMin = -1000;
-        cameraBounds.zMax = 1000;
+            cameraBounds.xMin = Math.min(x0, x1);
+            cameraBounds.xMax = Math.max(x0, x1);
+            cameraBounds.yMin = Math.min(y0, y1);
+            cameraBounds.yMax = Math.max(y0, y1);
+            cameraBounds.zMin = -1000;
+            cameraBounds.zMax = 1000;
 
 
-        // Prepare current buffer
-        const cur = this._dualScreenBuffer[this._bufferIndex];
-        cur.render(cameraEntity, this._backgroundChar);
-        // cur.renderDebug(cameraEntity);
+            // Prepare current buffer
+            const cur = this._dualScreenBuffer[this._bufferIndex];
+            cur.render(cameraEntity, this._backgroundChar);
+            // cur.renderDebug(cameraEntity);
 
-        this.drawObjects(cur, cameraBounds);
-        this.drawHud(cur, cameraEntity)
+            this.drawObjects(cur, cameraBounds);
+            this.drawHud(cur, cameraEntity)
 
-        this.sendFinalFrame(cur)
+            this.sendFinalFrame(cur)
+        } catch (error) {
+            console.log("Multiple Camera Entities Found" + this._cameraQuery.entityCount());
+            console.log(Array.from(this._cameraQuery.stream({}).collect()));
+        }
     }
 
     private drawObjects(cur: ScreenBuffer, cameraBounds: RenderBounds) {
