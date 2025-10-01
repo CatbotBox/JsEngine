@@ -1,7 +1,7 @@
 ﻿import {System} from "../core";
 import {Parent} from "./parent";
 import {ComponentLookup} from "../core/entityArchetype";
-import {EntityCommandBufferSystem} from "../core/entityCommandBufferSystem";
+import {EntityCommandBufferSystem} from "../core";
 import {TranslationSystemGroup} from "./TranslationSystemGroup";
 import {Children} from "./children";
 

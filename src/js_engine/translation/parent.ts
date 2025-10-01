@@ -10,8 +10,7 @@ export class Parent extends Component {
 
     public setup(entity: Entity, entityManager: EntityWriteOptions) {
         const parent = this.entity;
-        const self = entity;
-        entityManager.addComponent(self, new ParentTransform())
+        entityManager.addComponent(entity, new ParentTransform())
         entityManager.addComponent(parent, new Children())
     }
 }
