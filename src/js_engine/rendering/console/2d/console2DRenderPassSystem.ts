@@ -54,7 +54,7 @@ export class Console2DRenderPassSystem extends System {
 
         // Prepare current buffer
         const dualScreenBuffer = this.world.resources.tryGet(ConsoleScreenBuffer);
-        if(!dualScreenBuffer) return;
+        if (!dualScreenBuffer) return;
         const screenBuffer = dualScreenBuffer.screenBuffer;
 
         const imageEntities = this._objectQuery
@@ -79,10 +79,10 @@ export class Console2DRenderPassSystem extends System {
 
 
     override onEnable(): void {
-        console.log("Enabled 2D render pass")
+        console.info("Enabled 2D render pass")
     }
 
     override onDisable(): void {
-        console.log("Disabled 2D render pass")
+        console.info("Disabled 2D render pass")
     }
 }

@@ -20,7 +20,7 @@ import {
 } from "./js_engine/rendering/console";
 
 import {Console2DRenderPassSystem} from "./js_engine/rendering/console/2d";
-import {AverageStat} from "./js_engine/dataTypes";
+import {AverageStat} from "./js_engine/datatypes";
 
 
 const world = new DebugWorld();
@@ -209,7 +209,7 @@ class DebugSystem extends System {
         //   .collect()
         this._fpsCounter.add(1000 / this.world.time.deltaTime)
         fpsCounterImage.image = [
-            Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg()!.toFixed(2),
+            Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
         ]
 
         entityCounterImage.image = [

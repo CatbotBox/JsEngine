@@ -1,5 +1,5 @@
 ﻿import {ComponentType, ComponentOf, Component, ComponentCtor} from "./component";
-import {DoubleMap} from "../dataTypes";
+import {DoubleMap} from "../datatypes";
 import {Entity} from "./entity";
 import {EntityQuery} from "./entityQuery";
 import {AnyCT} from "../util/tokenUtils";

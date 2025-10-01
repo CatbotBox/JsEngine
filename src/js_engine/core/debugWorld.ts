@@ -1,5 +1,5 @@
 ﻿import {System, SystemCtor} from "./system";
-import {AverageStat} from "../dataTypes";
+import {AverageStat} from "../datatypes";
 import {performance} from "node:perf_hooks";
 import {SystemGroup} from "./systemGroup";
 import {World} from "./world";

@@ -1,6 +1,6 @@
 ﻿import {SystemGroup} from "../../core";
 import {Camera} from "../camera";
-import {consoleOverride} from "../../debugging/consoleOverride";
+import {consoleOverride} from "../../debugging";
 import {originalConsole as display} from "../../debugging/originalConsole";
 import {ConsoleCameraSizingSystem} from "./consoleCameraSizingSystem";
 import {Ansi} from "./ansi";
@@ -85,7 +85,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
 
     override onEnable(): void {
-        console.log("Entering Alt Mode")
+        console.info("Enabled Console Rendering")
         super.onEnable();
         consoleOverride.removeConsoleEventListener(display)
         process.stdout.write(Ansi.modes.altScreenEnter); // alt buffer + save cursor
@@ -100,6 +100,6 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
         process.stdout.write(Ansi.cursor.show);
         process.stdout.write(Ansi.modes.altScreenExit); // back to main + restore cursor
         super.onDisable();
-        console.log("Exiting Alt Mode")
+        console.info("Disabled Console Rendering")
     }
 }

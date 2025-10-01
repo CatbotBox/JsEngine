@@ -71,10 +71,10 @@ export class ConsoleHudRenderPassSystem extends System {
 
 
     override onEnable(): void {
-        console.log("Enabled Hud render pass")
+        console.info("Enabled Hud render pass")
     }
 
     override onDisable(): void {
-        console.log("Disabled Hud render pass")
+        console.info("Disabled Hud render pass")
     }
 }

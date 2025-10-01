@@ -18,9 +18,12 @@ export class AverageStat {
         this._sum += item;
     }
 
+    public getAvg(): number
+    public getAvg(requireFilledBuffer: false): number
+    public getAvg(requireFilledBuffer: true): number | undefined
     public getAvg(requireFilledBuffer: boolean = false): number | undefined {
-        if (this._arr.isEmpty) return undefined;
         if (requireFilledBuffer && !this._arr.isFull) return undefined;
+        if (this._arr.isEmpty) return 0;
 
         return this._sum / this.sampleSize;
     }
