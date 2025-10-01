@@ -1,12 +1,27 @@
 ﻿import {Ansi} from "./ansi";
-import {ConsoleImage, ScreenSize} from "./components";
+import {ScreenSize} from "../screenSize";
+import {ConsoleImage} from "./consoleImage";
 
-export class ScreenBuffer {
+import {Resource} from "../../core";
+
+export class ConsoleScreenBuffer extends Resource {
+    private _dualScreenBuffer: [ScreenBuffer, ScreenBuffer] = [new ScreenBuffer(), new ScreenBuffer()];
+    private _bufferIndex: 0 | 1 = 0;
+
+    public get screenBuffer(): ScreenBuffer {
+        return this._dualScreenBuffer[this._bufferIndex];
+    }
+
+    public swapBuffer(): void {
+        this._bufferIndex = this._bufferIndex === 1 ? 0 : 1;
+    }
+}
+
+class ScreenBuffer {
     private width = 0;
     private height = 0;
     private depthBuffer: number[][] = []
     private cells: string[][] = [];
-    public screenBuffer: string = "";
 
     /**
      * (Re)initialize the backing 2D cell array with the given background char.
@@ -20,7 +35,6 @@ export class ScreenBuffer {
         this.depthBuffer = Array.from({length: this.height}, () =>
             Array.from({length: this.width}, () => Number.NEGATIVE_INFINITY)
         );
-        this.screenBuffer = "";
     }
 
     public renderDebug({screenSize}: { screenSize: ScreenSize }) {
@@ -29,7 +43,6 @@ export class ScreenBuffer {
         this.cells = Array.from({length: this.height}, (_, height) =>
             Array.from({length: this.width}, (_, width) => String((width + height) % 10))
         );
-        this.screenBuffer = "";
     }
 
     /**
@@ -63,7 +76,6 @@ export class ScreenBuffer {
      */
     public flush(): string {
         const lines = this.cells.map(row => row.join(''));
-        this.screenBuffer = lines.join('\n') + Ansi.control.reset;
-        return this.screenBuffer;
+        return lines.join('\n') + Ansi.control.reset;
     }
 }

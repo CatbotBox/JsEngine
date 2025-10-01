@@ -1,15 +1,25 @@
-import {Component, Entity, RootSystemGroup, System, World} from "./js_engine/core";
+import {
+    Component,
+    Entity,
+    EntityCommandBufferSystem,
+    System,
+    World
+} from "./js_engine";
 import {keyboardInput} from "./js_engine/input";
-import {Camera} from "./js_engine/rendering/camera";
-import {ConsoleRenderingSystem} from "./js_engine/rendering/2d/console/consoleRenderingSystem";
-import {LocalPosition} from "./js_engine/translation/localPosition";
-import {RenderBounds} from "./js_engine/rendering/renderBounds";
-import {ConsoleImage, ConsoleImageAnchor, ScreenSize} from "./js_engine/rendering/2d/console/components";
-import {Ansi} from "./js_engine/rendering/2d/console/ansi";
-import {HudElement} from "./js_engine/rendering/hudElement";
-import {EntityCommandBufferSystem} from "./js_engine/core/entityCommandBufferSystem";
-import {LocalToWorld} from "./js_engine/translation/localToWorld";
-import {Parent} from "./js_engine/translation/parent";
+
+import {Camera, HudElement, RenderBounds} from "./js_engine/rendering";
+
+import {LocalPosition, LocalToWorld, Parent} from "./js_engine/translation";
+
+import {
+    Ansi,
+    ConsoleHudRenderPassSystem,
+    ConsoleImage,
+    ConsoleImageAnchor,
+    ConsoleRenderPassSystemGroup,
+} from "./js_engine/rendering/console";
+
+import {Console2DRenderPassSystem} from "./js_engine/rendering/console/2d";
 
 
 const world = new World();
@@ -21,7 +31,6 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 const cameraEntity = buffer.createEntity("cameraEntity");
 
 buffer.addComponent(cameraEntity, new Camera());
-buffer.addComponent(cameraEntity, new ScreenSize());
 buffer.addComponent(cameraEntity, new LocalToWorld());
 const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
 buffer.addComponent(cameraEntity, new RenderBounds());
@@ -148,14 +157,14 @@ keyboardInput.when({name: 'space'}, () => {
     }
 })
 keyboardInput.when({name: 'return'}, () => {
-    const renderer = world.tryGetSystem(ConsoleRenderingSystem);
+    const renderer = world.tryGetSystem(ConsoleRenderPassSystemGroup);
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
     world.getOrCreateSystem(DebugSystem).logEntities();
 })
 
 keyboardInput.when({name: 'g'}, () => {
-    world.tryGetSystem(RootSystemGroup)!.debug();
+    world.logSystemUpdateOrder();
 })
 
 keyboardInput.when({name: 'c', ctrl: true}, () => {
@@ -245,7 +254,8 @@ class DebugSystem extends System {
 }
 
 
-world.ensureSystemExists(ConsoleRenderingSystem);
+world.ensureSystemExists(Console2DRenderPassSystem);
+world.ensureSystemExists(ConsoleHudRenderPassSystem);
 
 world.ensureSystemExists(DebugSystem)
 

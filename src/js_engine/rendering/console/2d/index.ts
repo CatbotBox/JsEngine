@@ -1,0 +1,1 @@
+﻿export {Console2DRenderPassSystem} from "./console2DRenderPassSystem";

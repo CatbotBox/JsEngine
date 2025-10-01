@@ -139,11 +139,11 @@ export abstract class System extends WorldSource {
         }
     }
 
-    protected onEnable(): void {
+    public onEnable(): void {
 
     }
 
-    protected onDisable(): void {
+    public onDisable(): void {
 
     }
 

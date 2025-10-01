@@ -1,6 +1,7 @@
 ﻿import {Component, Entity} from "../core";
 import {EntityWriteOptions} from "../core/entityWriteOptions";
 import {LocalToWorld} from "./localToWorld";
+import {Children} from "./children";
 
 export class Parent extends Component {
     public constructor(public entity: Entity) {
@@ -12,30 +13,6 @@ export class Parent extends Component {
         const self = entity;
         entityManager.addComponent(self, new ParentTransform())
         entityManager.addComponent(parent, new Children())
-    }
-}
-
-export class Children extends Component {
-    private readonly _children: Set<Entity>;
-
-    public get children() {
-        return this._children;
-    }
-
-    public constructor(...childEntities: Entity[]) {
-        super();
-        this._children = new Set(childEntities);
-    }
-
-    public addChild(entity: Entity): void {
-        this._children.add(entity);
-        this.setDirty();
-
-    }
-
-    public removeChild(entity: Entity): void {
-        this._children.delete(entity);
-        this.setDirty();
     }
 }
 

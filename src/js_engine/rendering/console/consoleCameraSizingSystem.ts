@@ -1,10 +1,10 @@
-﻿import {System} from "../../../core";
-import {Camera} from "../../camera";
-import {RenderingSystemGroup} from "../../RenderingSystemGroup";
-import {ScreenSize} from "./components";
-import {CurrentInterpreter} from "../../../interpreter";
+﻿import {System} from "../../core";
+import {Camera} from "../camera";
+import {RenderingSystemGroup} from "../renderingSystemGroup";
+import {CurrentInterpreter} from "../../interpreter";
+import {ScreenSize} from "../screenSize";
 
-export class CameraSizingSystem extends System {
+export class ConsoleCameraSizingSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize])
     private _initialized: boolean = false;
 
@@ -37,7 +37,7 @@ export class CameraSizingSystem extends System {
         }
     }
 
-    protected onEnable() {
+    onEnable(): void {
         //reset initialized status
         this._initialized = false;
     }

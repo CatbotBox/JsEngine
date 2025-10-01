@@ -1,11 +1,13 @@
 ﻿import {System} from "../../../core";
-import {ConsoleImage, ConsoleImageAnchor, ConsoleImageOffset} from "./components";
 import {RenderBounds} from "../../renderBounds";
-import {RenderingSystemGroup} from "../../RenderingSystemGroup";
+import {RenderingSystemGroup} from "../../renderingSystemGroup";
 import {LocalToWorldSystem} from "../../../translation/LocalToWorldSystem";
-import {LocalToWorld} from "../../../translation/localToWorld";
+import {LocalToWorld} from "../../../translation";
+import {ConsoleImageAnchor} from "../consoleImageAnchor";
+import {ConsoleImageOffset} from "../consoleImageOffset";
+import {ConsoleImage} from "../consoleImage";
 
-export class ConsoleBoundsComputeSystem extends System {
+export class Console2DBoundsComputeSystem extends System {
     private _query = this.createEntityQuery([LocalToWorld, ConsoleImage, RenderBounds]);
 
     override systemGroup() {

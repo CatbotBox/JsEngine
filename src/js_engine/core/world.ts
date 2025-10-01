@@ -1,11 +1,14 @@
 ﻿import {EntityArchetypeMap} from "./entityArchetypeMap";
-import type {System} from "./system";
+import {System} from "./system";
 import {EntityManager} from "./entityManager";
 import {Entity} from "./entity";
 import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
 import {GCSystem} from "./GCSystem";
 import {WorldSource} from "./worldSource";
+import {performance} from "node:perf_hooks";
+import {clearInterval} from "node:timers";
+import {ResourceManager} from "./resourceManager";
 
 
 class Time {
@@ -21,11 +24,25 @@ class Time {
 }
 
 export class World extends WorldSource {
-    public archetypes: EntityArchetypeMap = new EntityArchetypeMap();
+
+    private _archetypes: EntityArchetypeMap = new EntityArchetypeMap();
+    private _resources: ResourceManager = new ResourceManager();
     private _systems: Map<new () => System, System> = new Map();
     private _rootSystemGroup: SystemGroup = this.createSystem(RootSystemGroup);
-    public entityManager: EntityManager = new EntityManager(this);
     public time: Time = new Time();
+
+    get archetypes(): EntityArchetypeMap {
+        return this._archetypes;
+    }
+
+    get resources(): ResourceManager {
+        return this._resources;
+    }
+
+    get entityManager(): EntityManager {
+        return new EntityManager(this)
+    }
+
 
     //update loop settings
     private _timeout: unknown | null = null;
@@ -35,7 +52,7 @@ export class World extends WorldSource {
         super(undefined!);
         this.world = this;
         // console.log("World initialized");
-        this.archetypes.onCreateArchetype.add((_archetype) => { /* hook point */
+        this._archetypes.onCreateArchetype.add((_archetype) => { /* hook point */
         });
 
         this.ensureSystemExists(GCSystem)
@@ -149,7 +166,7 @@ export class World extends WorldSource {
     }
 
     public* entities(): Iterator<Entity> {
-        for (const archetype of this.archetypes.values()) {
+        for (const archetype of this._archetypes.values()) {
             for (let i = 0; i < archetype.entityCount; i++) {
                 const entity = archetype.getEntityAtIndex(i);
                 if (entity) yield entity;
@@ -163,9 +180,13 @@ export class World extends WorldSource {
 
     public get entityCount(): number {
         let count = 0;
-        for (const archetype of this.archetypes.values()) {
+        for (const archetype of this._archetypes.values()) {
             count += archetype.entityCount;
         }
         return count;
+    }
+
+    public logSystemUpdateOrder(){
+        this._rootSystemGroup.debug();
     }
 }

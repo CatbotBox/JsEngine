@@ -1,8 +1,9 @@
 ﻿import {System} from "../core";
-import {Children, Parent} from "./parent";
+import {Parent} from "./parent";
 import {ComponentLookup} from "../core/entityArchetype";
 import {EntityCommandBufferSystem} from "../core/entityCommandBufferSystem";
 import {TranslationSystemGroup} from "./TranslationSystemGroup";
+import {Children} from "./children";
 
 export class HierarchySyncSystem extends System {
     private _parentQuery = this.createEntityQuery([Children])

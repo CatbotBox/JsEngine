@@ -1,21 +1,7 @@
-﻿import {Component, Entity} from "../../../core";
+﻿import {Component, Entity} from "../../core";
+import {EntityWriteOptions} from "../../core/entityWriteOptions";
+import {RenderBounds} from "../renderBounds";
 import {Ansi} from "./ansi";
-import {EntityWriteOptions} from "../../../core/entityWriteOptions";
-import {RenderBounds} from "../../renderBounds";
-
-export class ScreenSize extends Component {
-    public x: number = 0;
-    public y: number = 0;
-}
-
-export class ConsoleImageAnchor extends Component {
-    public anchorPosition: `${'top' | 'middle' | 'bottom'}-${'left' | 'center' | 'right'}` = 'middle-center';
-}
-
-export class ConsoleImageOffset extends Component {
-    public x: number = 0;
-    public y: number = 0;
-}
 
 export class ConsoleImage extends Component {
     private _image: string[] = []

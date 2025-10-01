@@ -1,5 +1,5 @@
 ﻿import {System} from "../core";
-import {Children, ParentTransform} from "./parent";
+import {ParentTransform} from "./parent";
 import {LocalToWorld} from "./localToWorld";
 import {ComponentLookup} from "../core/entityArchetype";
 import {VecMath} from "../math/types/vec";
@@ -7,6 +7,7 @@ import {VecMath} from "../math/types/vec";
 import {HierarchySyncSystem} from "./HierarchySyncSystem";
 import {LocalToWorldSystem} from "./LocalToWorldSystem";
 import {TranslationSystemGroup} from "./TranslationSystemGroup";
+import {Children} from "./children";
 
 export class ParentTransformSyncSystem extends System {
     private _parentQuery = this.createEntityQuery([Children, LocalToWorld])
