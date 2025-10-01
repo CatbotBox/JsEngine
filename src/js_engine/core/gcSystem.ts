@@ -2,7 +2,7 @@
 
 const TIME_BEFORE_PRUNE = 20 * 1000; //20 seconds
 const TIME_BEFORE_PRUNE_OPTIMISTIC = 120 * 1000; //120 seconds
-export class GCSystem extends System {
+export class GcSystem extends System {
     private time = 0;
 
     public onUpdate(): void {

@@ -1,7 +1,7 @@
 ﻿import {Resource, ResourceCtor} from "./resource";
 
 export class ResourceManager {
-    private _map: Map<ResourceCtor, unknown> = new Map();
+    private _map: Map<ResourceCtor<Resource>, Resource> = new Map();
 
     public tryGet<T extends Resource>(ctor: ResourceCtor<T>): T | undefined {
         return this._map.get(ctor) as T | undefined;

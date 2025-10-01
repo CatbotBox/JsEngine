@@ -5,4 +5,4 @@ export abstract class Resource {
 
 }
 
-export type ResourceCtor<T extends Resource = any> = new (...args: any[]) => T;
+export type ResourceCtor<T extends Resource> = new (...args: any[]) => T;

@@ -1,6 +1,10 @@
-﻿import {System} from "./system";
+﻿import {System, SystemCtor} from "./system";
 
 export abstract class SystemGroup extends System {
+    public get systems(): System[] {
+        return this._systems;
+    }
+
     private _systems: System[] = [];
 
     public onUpdate(): void {
@@ -27,33 +31,27 @@ export abstract class SystemGroup extends System {
         }
     }
 
-    public addSystem<T extends System>(system: new () => T): void {
+    public addSystem(system: SystemCtor<System>): void {
         const systemInstance = this.world.createSystem(system);
+        this.addSystemInstance(systemInstance);
+    }
+
+    public addSystemInstance(systemInstance: System): void {
         this._systems.push(systemInstance);
         this._systems.sort((a, b) => a.priority() - b.priority());
     }
 
-    public addSystemInstance<T extends System>(systemInstance: T): void {
-        this._systems.push(systemInstance);
-        this._systems.sort((a, b) => a.priority() - b.priority());
+    public removeSystem(system: SystemCtor<System>): void {
+        const instance = this.world.tryGetSystem(system)
+        if (!instance) throw new Error("Can't remove system instance because it doesnt exist in world");
+        this.removeSystemInstance(instance);
     }
 
+    public removeSystemInstance(systemInstance: System): void {
+        const index = this._systems.findIndex((t) => t === systemInstance);
+        if (index == -1) throw new Error("Can't remove system instance because it does not exist in System Group");
+        this._systems.splice(index, 1);
 
-    destroy() {
-        for (const system of this._systems) {
-            system.destroy();
-        }
-    }
-
-    debug() {
-        console.group("SystemGroup", this.constructor.name);
-        for (const system of this._systems) {
-            if (system instanceof SystemGroup) {
-                system.debug()
-            } else {
-                console.log("System", system.constructor.name);
-            }
-        }
-        console.groupEnd();
+        systemInstance.destroy();
     }
 }

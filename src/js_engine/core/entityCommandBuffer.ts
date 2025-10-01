@@ -94,7 +94,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     }
 
     public setEnabledStateForQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>, enabled: boolean): void {
-        console.log("set")
         this.enabledQueries.push({query: entityQuery, enabled});
     }
 

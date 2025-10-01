@@ -3,11 +3,11 @@ import {
     Entity,
     EntityCommandBufferSystem,
     System,
-    World
+    DebugWorld
 } from "./js_engine";
 import {keyboardInput} from "./js_engine/input";
 
-import {Camera, HudElement, RenderBounds} from "./js_engine/rendering";
+import {Camera, HudElement, RenderBounds, RenderingSystemGroup} from "./js_engine/rendering";
 
 import {LocalPosition, LocalToWorld, Parent} from "./js_engine/translation";
 
@@ -16,13 +16,14 @@ import {
     ConsoleHudRenderPassSystem,
     ConsoleImage,
     ConsoleImageAnchor,
-    ConsoleRenderPassSystemGroup,
+
 } from "./js_engine/rendering/console";
 
 import {Console2DRenderPassSystem} from "./js_engine/rendering/console/2d";
+import {AverageStat} from "./js_engine/dataTypes";
 
 
-const world = new World();
+const world = new DebugWorld();
 
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
 // const buffer = world.entityManager
@@ -157,12 +158,16 @@ keyboardInput.when({name: 'space'}, () => {
     }
 })
 keyboardInput.when({name: 'return'}, () => {
-    const renderer = world.tryGetSystem(ConsoleRenderPassSystemGroup);
+    const renderer = world.tryGetSystem(RenderingSystemGroup);
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
     world.getOrCreateSystem(DebugSystem).logEntities();
 })
-
+keyboardInput.when({name: 'backspace'}, () => {
+    const renderer = world.tryGetSystem(Console2DRenderPassSystem);
+    if (!renderer) return;
+    renderer.enabled = !renderer.enabled;
+})
 keyboardInput.when({name: 'g'}, () => {
     world.logSystemUpdateOrder();
 })
@@ -183,6 +188,7 @@ class DebugSystem extends System {
     private _query = this.createEntityQuery([LocalToWorld])
     private _hudQuery = this.createEntityQuery([HudElement])
     private _toggle = true;
+    private _fpsCounter = new AverageStat(10)
 
     protected onCreate() {
         // this.requireAnyForUpdate(this._query);
@@ -201,9 +207,9 @@ class DebugSystem extends System {
         // const entities = this._query
         //   .stream({}, {includeEntity: true})
         //   .collect()
-
+        this._fpsCounter.add(1000 / this.world.time.deltaTime)
         fpsCounterImage.image = [
-            Ansi.colors.fg.green + 'FPS: ' + (Math.round((1000 / this.world.time.deltaTime) * 10) / 10),
+            Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg()!.toFixed(2),
         ]
 
         entityCounterImage.image = [

@@ -93,7 +93,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     }
 
     public setEnabledStateForQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>, enabled: boolean): void {
-        console.log("setEnabledStateForQuery", entityQuery, enabled);
         for (const archetype of entityQuery.archetypes) {
             archetype.setEnabledStateForAll(enabled, this._world.time);
         }

@@ -1,4 +1,4 @@
-﻿import {System} from "../core";
+﻿import {EntityCommandBuffer, System} from "../core";
 import {Parent} from "./parent";
 import {ComponentLookup} from "../core/entityArchetype";
 import {EntityCommandBufferSystem} from "../core";
@@ -25,10 +25,18 @@ export class HierarchySyncSystem extends System {
     }
 
     onUpdate() {
-        const commandBufferSystem = this.world.getOrCreateSystem(EntityCommandBufferSystem)
 
+        let buffer: EntityCommandBuffer | undefined = undefined;
+        const world = this.world;
 
-        const buffer = commandBufferSystem.createEntityCommandBuffer()
+        function getBuffer() {
+            if (buffer === undefined) {
+                const commandBufferSystem = world.getOrCreateSystem(EntityCommandBufferSystem)
+                buffer = commandBufferSystem.createEntityCommandBuffer()
+            }
+            return buffer;
+        }
+
         // ensure children have this entity as parent
         this._parentQuery.stream({children: Children},
             {
@@ -44,7 +52,7 @@ export class HierarchySyncSystem extends System {
                         }
                         return;
                     }
-                    buffer.addComponent(child, new Parent(entity));
+                    getBuffer().addComponent(child, new Parent(entity));
                 })
             })
 
@@ -62,7 +70,7 @@ export class HierarchySyncSystem extends System {
                     }
                     return;
                 }
-                buffer.addComponent(parent.entity, new Children(entity));
+                getBuffer().addComponent(parent.entity, new Children(entity));
             })
     }
 }

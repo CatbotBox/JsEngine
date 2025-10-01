@@ -1,10 +1,10 @@
 ﻿import {EntityArchetypeMap} from "./entityArchetypeMap";
-import {System} from "./system";
+import {System, SystemCtor} from "./system";
 import {EntityManager} from "./entityManager";
 import {Entity} from "./entity";
 import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
-import {GCSystem} from "./GCSystem";
+import {GcSystem} from "./gcSystem";
 import {WorldSource} from "./worldSource";
 import {performance} from "node:perf_hooks";
 import {clearInterval} from "node:timers";
@@ -24,11 +24,18 @@ class Time {
 }
 
 export class World extends WorldSource {
+    get timeout(): unknown | null {
+        return this._timeout;
+    }
+
+    set timeout(value: unknown | null) {
+        this._timeout = value;
+    }
 
     private _archetypes: EntityArchetypeMap = new EntityArchetypeMap();
     private _resources: ResourceManager = new ResourceManager();
-    private _systems: Map<new () => System, System> = new Map();
-    private _rootSystemGroup: SystemGroup = this.createSystem(RootSystemGroup);
+    protected _systems: Map<SystemCtor<System>, System> = new Map();
+    protected _rootSystemGroup: SystemGroup;
     public time: Time = new Time();
 
     get archetypes(): EntityArchetypeMap {
@@ -46,24 +53,23 @@ export class World extends WorldSource {
 
     //update loop settings
     private _timeout: unknown | null = null;
-    private _targetDeltaTime: number = 1000 / 60; // default to 60 FPS
+    protected _targetDeltaTime: number = 1000 / 60; // default to 60 FPS
 
     constructor() {
         super(undefined!);
         this.world = this;
-        // console.log("World initialized");
         this._archetypes.onCreateArchetype.add((_archetype) => { /* hook point */
         });
-
-        this.ensureSystemExists(GCSystem)
+        this._rootSystemGroup = this.createSystem(RootSystemGroup)
+        this.ensureSystemExists(GcSystem)
     }
 
     // alias for getOrCreateSystem as it can be used another way
-    public ensureSystemExists<T extends System>(constructor: new () => T): void {
+    public ensureSystemExists<T extends System>(constructor: SystemCtor<T>): void {
         this.getOrCreateSystem<T>(constructor)
     }
 
-    public getOrCreateSystem<T extends System>(constructor: new () => T): T {
+    public getOrCreateSystem<T extends System>(constructor: SystemCtor<T>): T {
         const existing = this._systems.get(constructor);
         if (existing !== undefined) return existing as T;
         const system = new constructor();
@@ -73,9 +79,9 @@ export class World extends WorldSource {
         return system;
     }
 
-    public createSystem<T extends System>(systemClass: new () => T): T {
+    public createSystem<T extends System>(systemClass: SystemCtor<T>): T {
         const existing = this._systems.get(systemClass);
-        if (existing !== undefined) throw new Error("System already exists");
+        if (existing !== undefined) throw new Error("System {" + systemClass.name + "} already exists");
         const systemInstance = new systemClass();
         systemInstance.world = this;
         this._systems.set(systemClass, systemInstance);
@@ -83,14 +89,21 @@ export class World extends WorldSource {
         return systemInstance;
     }
 
-    public tryGetSystem<T extends System>(constructor: new () => T): T | undefined {
-        const existing = this._systems.get(constructor);
+    public removeSystem<T extends System>(systemClass: SystemCtor<T>): void {
+        const system = this.tryGetSystem(systemClass);
+        if (!system) return
+        system.destroy();
+        this._systems.delete(systemClass);
+    }
+
+    public tryGetSystem<T extends System>(systemClass: SystemCtor<T>): T | undefined {
+        const existing = this._systems.get(systemClass);
         return existing as T | undefined;
     }
 
 
-    public hasSystem<T extends System>(constructor: new () => T): boolean {
-        return this._systems.has(constructor);
+    public hasSystem<T extends System>(systemClass: SystemCtor<T>): boolean {
+        return this._systems.has(systemClass);
     }
 
     public startLoop(): void {
@@ -186,7 +199,5 @@ export class World extends WorldSource {
         return count;
     }
 
-    public logSystemUpdateOrder(){
-        this._rootSystemGroup.debug();
-    }
 }
+

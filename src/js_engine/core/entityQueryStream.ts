@@ -63,36 +63,11 @@ export class EntityQueryStream<
                 }
                 return col!;
             });
-            // if (this.options?.filterLastUpdated !== undefined) {
-            //     console.log("update skipped :", skipped);
-            // }
             if (!skipped) plans.push({arch, cols, colIndexes});
-            // else{
-            //     console.log("skipped");
-            //     console.log(cols);
-            // }
         }
         this._streamResult = plans;
         return this._streamResult;
     }
-
-    // private getIter(): Iterable<(RowFromSpec<SpecTokens, IncU<Inc>> & (IncludeEntity extends true ? {
-    //   entity: Entity
-    // } : {}))> {
-    //   const self = this;
-    //   return {
-    //     * [Symbol.iterator]() {
-    //       const includeEntity = !!self.options?.includeEntity;
-    //       for (const arch of self.arches) {
-    //         const body = {}
-    //         self.keys.forEach((k, index) => {
-    //           const token = self.spec[k as string] as AnyCT;
-    //           const col = arch.getColumn(token)
-    //         });
-    //       }
-    //     }
-    //   }
-    // }
 
     public count() {
         const data = this.prepStreamResult()
@@ -147,7 +122,6 @@ export class EntityQueryStream<
                     // set respective columns to dirty
                     updatedColFlags.forEach((value, index) => {
                         if (!value) return;
-                        // console.log("modified " + index);
                         cols[index].lastUpdatedTime = time;
                     })
 

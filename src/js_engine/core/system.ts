@@ -8,6 +8,8 @@ import {EntityManager} from "./entityManager";
 import {SystemGroup} from "./systemGroup";
 import {WorldSource} from "./worldSource";
 
+export type SystemCtor<T extends System> = new () => T;
+
 /**
  * Unity-like base System with OnCreate/OnUpdate and a fluent Entities API.
  */
@@ -16,6 +18,7 @@ export abstract class System extends WorldSource {
     private _requiredAnyForUpdate: EntityQuery[] | undefined;
     private _requiredAllForUpdate: EntityQuery[] | undefined;
     private _lastUpdateTime: number = 0;
+    private _isCreated: boolean = false;
 
     protected get lastUpdateTime(): number {
         return this._lastUpdateTime;
@@ -88,8 +91,10 @@ export abstract class System extends WorldSource {
 
 
     public create(): void {
+        if (this._isCreated) return;
         const updateGroup = this.world.getOrCreateSystem(this.systemGroup())
         updateGroup.addSystemInstance(this)
+        this._isCreated = true;
         this.onCreate();
         if (this.enabled) this.onEnable();
     }
@@ -98,8 +103,14 @@ export abstract class System extends WorldSource {
     }
 
     public destroy(): void {
+        if (!this._isCreated) return;
         if (this.enabled) this.onDisable();
+        this._isCreated = false;
         this.onDestroy();
+        const updateGroup = this.world.tryGetSystem(this.systemGroup())
+        if (!updateGroup) return;
+        updateGroup.removeSystemInstance(this);
+        this.world.removeSystem(this.constructor as SystemCtor<this>);
     }
 
     protected onDestroy(): void {
