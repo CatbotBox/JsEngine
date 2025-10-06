@@ -1,6 +1,8 @@
 ﻿import {Component} from "../core";
 
-export class RenderBounds extends Component {
+import {AABB} from "../datatypes/AABB";
+
+export class RenderBounds extends Component implements AABB {
     private _values: Float32Array = new Float32Array(6);
 
     get xMin(): number {
@@ -60,21 +62,6 @@ export class RenderBounds extends Component {
             object2.xMin > object1.xMax || object2.xMax < object1.xMin ||
             object2.yMin > object1.yMax || object2.yMax < object1.yMin ||
             object2.zMin < object1.zMin || object2.zMax < object1.zMin
-        );
-    }
-
-    public contains(other: RenderBounds): boolean {
-        return RenderBounds.contains(this, other)
-    }
-
-    public static contains(outer: RenderBounds, inner: RenderBounds): boolean {
-        return (
-            inner.xMin >= outer.xMin &&
-            inner.xMax <= outer.xMax &&
-            inner.yMin >= outer.yMin &&
-            inner.yMax <= outer.yMax &&
-            inner.zMin >= outer.zMin &&
-            inner.zMax <= outer.zMax
         );
     }
 

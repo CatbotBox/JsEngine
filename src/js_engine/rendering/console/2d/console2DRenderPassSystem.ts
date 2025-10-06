@@ -7,7 +7,8 @@ import {LocalToWorld} from "../../../translation";
 import {ScreenSize} from "../../screenSize";
 import {ConsoleImage} from "../consoleImage";
 import {ConsoleRenderPassSystemGroup} from "../consoleRenderPassSystemGroup";
-import {Console2DBoundsComputeSystem} from "./console2DBoundsComputeSystem";
+import {RenderBounds2DComputeSystem} from "./renderBounds2DComputeSystem";
+import {Console2DRenderBoundsQueryBuilderSystem} from "./console2DRenderBoundsQueryBuilderSystem";
 
 export class Console2DRenderPassSystem extends System {
 
@@ -27,7 +28,8 @@ export class Console2DRenderPassSystem extends System {
         this.requireAllForUpdate(this._cameraQuery) // always require a camera
         this.requireAnyForUpdate(this._objectQuery) // and require at least one renderer object
 
-        this.world.ensureSystemExists(Console2DBoundsComputeSystem)
+        this.world.ensureSystemExists(RenderBounds2DComputeSystem)
+        // this.world.ensureSystemExists(Console2DRenderBoundsQueryBuilderSystem);
     }
 
     onUpdate() {
@@ -57,24 +59,17 @@ export class Console2DRenderPassSystem extends System {
         if (!dualScreenBuffer) return;
         const screenBuffer = dualScreenBuffer.screenBuffer;
 
-        const imageEntities = this._objectQuery
-            .stream({bounds: RenderBounds, img: ConsoleImage, localToWorld: LocalToWorld})
-            .collect()
-            .filter(({bounds}) => RenderBounds.intersects(cameraBounds, bounds));
-
-        // Blit each object's image at its top-left corner relative to camera's top-left
-        // Painter's algorithm in stream order; add your own z-index if needed.
-        // World-space → screen-space transform.
-        for (const {bounds, img, localToWorld} of imageEntities) {
+        const octTree = this.world.getOrCreateSystem(Console2DRenderBoundsQueryBuilderSystem).octTree;
+        const matches = octTree.query(cameraBounds);
+        matches.forEach(({bounds, payload}) => {
             // World → screen transform (top-left anchoring)
             const screenX = Math.floor(bounds.xMin - cameraBounds.xMin);
             const screenY = Math.floor(bounds.yMin - cameraBounds.yMin);
 
             // The image is already sized to its visible width via ConsoleImage.size (ANSI stripped)
             // The blitter will clip to the current screen automatically.
-            const position = localToWorld?.position[2] || 0;
-            screenBuffer.blit(img, screenX, screenY, position);
-        }
+            screenBuffer.blit(payload.consoleImage, screenX, screenY, payload.zHeight);
+        })
     }
 
 

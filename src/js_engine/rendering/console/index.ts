@@ -1,6 +1,5 @@
 ﻿export {ConsoleImage} from "./consoleImage";
 export {ConsoleImageAnchor} from "./consoleImageAnchor";
-export {ConsoleImageOffset} from "./consoleImageOffset";
 
 export {Ansi} from "./ansi";
 

@@ -4,7 +4,7 @@ import {ConsoleScreenBuffer} from "./consoleScreenBuffer";
 import {HudElement} from "../hudElement";
 import {ScreenSize} from "../screenSize";
 import {ConsoleImageAnchor} from "./consoleImageAnchor";
-import {ConsoleImageOffset} from "./consoleImageOffset";
+import {RenderObjectOffset} from "../renderObjectOffset";
 import {ConsoleImage} from "./consoleImage";
 import {ConsoleRenderPassSystemGroup} from "./consoleRenderPassSystemGroup";
 
@@ -40,12 +40,12 @@ export class ConsoleHudRenderPassSystem extends System {
 
         // Only consider on-screen objects
         const hudEntities = this._hudObjectQuery
-            .stream({offset: ConsoleImageOffset, img: ConsoleImage, anchor: ConsoleImageAnchor})
+            .stream({offset: RenderObjectOffset, img: ConsoleImage, anchor: ConsoleImageAnchor})
             .collect();
 
         // HUD elements (screen-space, not world-space)
         // HUD elements (screen-space, not world-space)
-        for (const {img, anchor = new ConsoleImageAnchor(), offset = new ConsoleImageOffset()} of hudEntities) {
+        for (const {img, anchor = new ConsoleImageAnchor(), offset = new RenderObjectOffset()} of hudEntities) {
             // Parse anchor into fractions (0 = left/top, 0.5 = center/middle, 1 = right/bottom)
             const [v, h] = (anchor.anchorPosition).split('-') as
                 ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right'];

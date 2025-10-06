@@ -3,11 +3,11 @@ import {RenderBounds} from "../../renderBounds";
 import {RenderingSystemGroup} from "../../renderingSystemGroup";
 import {LocalToWorldSystem} from "../../../translation/LocalToWorldSystem";
 import {LocalToWorld} from "../../../translation";
-import {ConsoleImageAnchor} from "../consoleImageAnchor";
-import {ConsoleImageOffset} from "../consoleImageOffset";
-import {ConsoleImage} from "../consoleImage";
+import {ConsoleImageAnchor} from "../index";
+import {RenderObjectOffset} from "../../renderObjectOffset";
+import {ConsoleImage} from "../index";
 
-export class Console2DBoundsComputeSystem extends System {
+export class RenderBounds2DComputeSystem extends System {
     private _query = this.createEntityQuery([LocalToWorld, ConsoleImage, RenderBounds]);
 
     override systemGroup() {
@@ -28,7 +28,7 @@ export class Console2DBoundsComputeSystem extends System {
             anchor: ConsoleImageAnchor,
             bounds: RenderBounds,
             image: ConsoleImage,
-            offset: ConsoleImageOffset,
+            offset: RenderObjectOffset,
             localToWorld: LocalToWorld,
             // position: LocalPosition
         }, {
@@ -39,6 +39,7 @@ export class Console2DBoundsComputeSystem extends System {
             // base position after offset
             const px = position[0] + (offset?.x || 0);
             const py = position[1] + (offset?.y || 0);
+            const pz = position[2] + (offset?.z || 0);
             // const px = position.x + (offset?.x || 0);
             // const py = position.y + (offset?.y || 0);
 
@@ -56,11 +57,15 @@ export class Console2DBoundsComputeSystem extends System {
             const y0 = py - ay * image.sizeY;
             const x1 = x0 + image.sizeX;
             const y1 = y0 + image.sizeY;
+            const z1 = pz;
+            const z2 = pz + 1;
 
             bounds.xMin = Math.min(x0, x1);
             bounds.xMax = Math.max(x0, x1);
             bounds.yMin = Math.min(y0, y1);
             bounds.yMax = Math.max(y0, y1);
+            bounds.zMin = Math.min(z1, z2);
+            bounds.zMax = Math.max(z1, z2);
         })
     }
 
