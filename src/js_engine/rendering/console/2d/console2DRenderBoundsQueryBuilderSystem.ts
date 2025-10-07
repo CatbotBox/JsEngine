@@ -65,6 +65,7 @@ export class Console2DRenderBoundsQueryBuilderSystem extends System {
                 const zHeight = localToWorldCol
                     ? (localToWorldCol.get(id) as LocalToWorld).position[2]
                     : 0;
+                if (this.tracked.has(arch)) this.tracked.add(arch);
                 pooledArray.push({
                         payload: {
                             consoleImage: consoleImageCol.get(id),
@@ -76,6 +77,9 @@ export class Console2DRenderBoundsQueryBuilderSystem extends System {
             this.octTree.insertBatch(arch, pooledArray);
             pooledArray.length = 0;
         }
-        Array.from(tempSet).forEach(this.octTree.removeBatch);
+        for (const batchId of Array.from(tempSet)) {
+            this.tracked.has(batchId);
+            this.octTree.removeBatch(batchId);
+        }
     }
 }
