@@ -1,4 +1,4 @@
-﻿import {System} from "../../../core";
+﻿import {Entity, System} from "../../../core";
 import {RenderBounds} from "../../renderBounds";
 import {TrackedOctree} from "../../../datatypes/octTree/trackedOctTree";
 import {RenderingSystemGroup} from "../../renderingSystemGroup";
@@ -14,7 +14,7 @@ export class Console2DRenderBoundsQueryBuilderSystem extends System {
     public octTree = new TrackedOctree<{
         consoleImage: ConsoleImage;
         zHeight: number;
-    }>();
+    }, EntityArchetype>();
     private tracked: Set<EntityArchetype> = new Set();
 
 
