@@ -1,7 +1,8 @@
 ﻿import {AABB} from "../AABB";
+import {it} from "node:test";
 
 
-export interface TrackedOctItem<T,U> {
+export interface TrackedOctItem<T, U> {
     batchId: U;
     bounds: AABB;
     payload: T;
@@ -13,13 +14,13 @@ export interface TrackedOctreeOptions {
     looseFactor?: number;  // >= 1; adds slack to nodes to reduce churn
 }
 
-class OctNode<T,U> {
+class OctNode<T, U> {
     bounds: AABB;
     depth: number;
     capacity: number;
     maxDepth: number;
-    items: TrackedOctItem<T,U>[] = [];
-    children: OctNode<T,U>[] | null = null;
+    items: TrackedOctItem<T, U>[] = [];
+    children: OctNode<T, U>[] | null = null;
 
     // batch accounting for this node (not descendants)
     batchCounts = new Map<U, number>();
@@ -33,14 +34,23 @@ class OctNode<T,U> {
 }
 
 
-export class TrackedOctree<T ,U> {
-    private root: OctNode<T,U> | null = null; // starts empty; created on first insert
+export class TrackedOctree<T, U> {
+
+    private root: OctNode<T, U> | null = null; // starts empty; created on first insert
     private readonly capacity: number;
     private readonly maxDepth: number;   // controls node fanout, not world size
     private readonly looseFactor: number;
+    private _count: number = 0;
+    get count(): number {
+        return this._count;
+    }
+
+    private set count(value: number) {
+        this._count = value;
+    }
 
     // batchId -> set of nodes that currently contain items from that batch
-    private batchIndex = new Map<U, Set<OctNode<T,U>>>();
+    private batchIndex = new Map<U, Set<OctNode<T, U>>>();
 
     constructor(opts: TrackedOctreeOptions = {}) {
         this.capacity = opts.capacity ?? 16;
@@ -52,17 +62,19 @@ export class TrackedOctree<T ,U> {
     clear() {
         this.root = null;
         this.batchIndex.clear();
+        this.count = 0;
     }
 
     /** Insert a single item (auto-grows if needed). */
-    insert(item: TrackedOctItem<T,U>) {
+    insert(item: TrackedOctItem<T, U>) {
         this.ensureRootInitialized(item.bounds);
         this.ensureFits(item.bounds);
         this.insertInto(this.root!, item);
+        this.count++;
     }
 
     /** Insert many items with the same batch (auto-grows once as needed). */
-    insertBatch(batchId: U, items: Omit<TrackedOctItem<T,U>, "batchId">[]) {
+    insertBatch(batchId: U, items: Omit<TrackedOctItem<T, U>, "batchId">[]) {
         if (items.length === 0) return;
 
         // Initialize root from the first item if needed
@@ -76,6 +88,8 @@ export class TrackedOctree<T ,U> {
         for (const it of items) {
             this.insertInto(this.root!, {...it, batchId});
         }
+
+        this.count += items.length;
     }
 
     /** Remove every item belonging to a batch id. */
@@ -87,7 +101,7 @@ export class TrackedOctree<T ,U> {
         for (const node of arr) {
             if (!node.items.length) continue;
             let removed = 0;
-            const keep: TrackedOctItem<T,U>[] = [];
+            const keep: TrackedOctItem<T, U>[] = [];
             for (const it of node.items) {
                 if (it.batchId === batchId) {
                     removed++;
@@ -98,13 +112,14 @@ export class TrackedOctree<T ,U> {
             if (removed > 0) {
                 node.items = keep;
                 this.bumpBatch(node, batchId, -removed);
+                this.count -= removed;
             }
         }
     }
 
     /** Query overlapping items. */
-    query(range: AABB): TrackedOctItem<T,U>[] {
-        const out: TrackedOctItem<T,U>[] = [];
+    query(range: AABB): TrackedOctItem<T, U>[] {
+        const out: TrackedOctItem<T, U>[] = [];
         if (!this.root) return out;
         this.queryNode(this.root, range, out);
         return out;
@@ -114,7 +129,7 @@ export class TrackedOctree<T ,U> {
 
     private ensureRootInitialized(b: AABB) {
         if (this.root) return;
-        this.root = new OctNode<T,U>(AABB.inflate(b, this.looseFactor), 0, this.capacity, this.maxDepth);
+        this.root = new OctNode<T, U>(AABB.inflate(b, this.looseFactor), 0, this.capacity, this.maxDepth);
     }
 
     /** Ensure the root AABB contains b; if not, expand and rebuild. */
@@ -128,7 +143,7 @@ export class TrackedOctree<T ,U> {
         if (!this.root) return;
 
         // Collect all items to reinsert (linear in current size)
-        const all: TrackedOctItem<T,U>[] = [];
+        const all: TrackedOctItem<T, U>[] = [];
         this.collectAll(this.root, all);
 
         // Expand root bounds by doubling outward along needed axes until b fits
@@ -157,24 +172,24 @@ export class TrackedOctree<T ,U> {
 
         // Rebuild: new root with inflated bounds, reset batch index
         this.batchIndex.clear();
-        this.root = new OctNode<T,U>(AABB.inflate(rb, this.looseFactor), 0, this.capacity, this.maxDepth);
+        this.root = new OctNode<T, U>(AABB.inflate(rb, this.looseFactor), 0, this.capacity, this.maxDepth);
 
         // Reinsert everything
         for (const it of all) this.insertInto(this.root, it);
     }
 
-    private collectAll(node: OctNode<T,U>, out: TrackedOctItem<T,U>[]) {
+    private collectAll(node: OctNode<T, U>, out: TrackedOctItem<T, U>[]) {
         for (const it of node.items) out.push(it);
         if (node.children) for (const c of node.children) this.collectAll(c, out);
     }
 
-    private queryNode(node: OctNode<T,U>, range: AABB, out: TrackedOctItem<T,U>[]) {
+    private queryNode(node: OctNode<T, U>, range: AABB, out: TrackedOctItem<T, U>[]) {
         if (!AABB.intersects(node.bounds, range)) return;
         for (const it of node.items) if (AABB.intersects(it.bounds, range)) out.push(it);
         if (node.children) for (const c of node.children) this.queryNode(c, range, out);
     }
 
-    private insertInto(node: OctNode<T,U>, item: TrackedOctItem<T,U>): boolean {
+    private insertInto(node: OctNode<T, U>, item: TrackedOctItem<T, U>): boolean {
         if (!AABB.intersects(node.bounds, item.bounds)) return false;
 
         if (node.children) {
@@ -192,7 +207,7 @@ export class TrackedOctree<T ,U> {
         // subdivide & redistribute if needed
         if (!node.children && node.items.length > node.capacity && node.depth < node.maxDepth) {
             this.subdivide(node);
-            const remain: TrackedOctItem<T,U>[] = [];
+            const remain: TrackedOctItem<T, U>[] = [];
             for (const it of node.items) {
                 let moved = false;
                 for (const c of node.children!) {
@@ -211,7 +226,7 @@ export class TrackedOctree<T ,U> {
         return true;
     }
 
-    private subdivide(node: OctNode<T,U>) {
+    private subdivide(node: OctNode<T, U>) {
         const {xMin, yMin, zMin, xMax, yMax, zMax} = node.bounds;
         const midX = (xMin + xMax) * 0.5;
         const midY = (yMin + yMax) * 0.5;
@@ -220,19 +235,19 @@ export class TrackedOctree<T ,U> {
             AABB.inflate({xMin: x0, yMin: y0, zMin: z0, xMax: x1, yMax: y1, zMax: z1}, this.looseFactor);
 
         node.children = [
-            new OctNode<T,U>(mk(xMin, yMin, zMin, midX, midY, midZ), node.depth + 1, node.capacity, node.maxDepth), // LLL
-            new OctNode<T,U>(mk(midX, yMin, zMin, xMax, midY, midZ), node.depth + 1, node.capacity, node.maxDepth), // HLL
-            new OctNode<T,U>(mk(xMin, midY, zMin, midX, yMax, midZ), node.depth + 1, node.capacity, node.maxDepth), // LHL
-            new OctNode<T,U>(mk(midX, midY, zMin, xMax, yMax, midZ), node.depth + 1, node.capacity, node.maxDepth), // HHL
-            new OctNode<T,U>(mk(xMin, yMin, midZ, midX, midY, zMax), node.depth + 1, node.capacity, node.maxDepth), // LLH
-            new OctNode<T,U>(mk(midX, yMin, midZ, xMax, midY, zMax), node.depth + 1, node.capacity, node.maxDepth), // HLH
-            new OctNode<T,U>(mk(xMin, midY, midZ, midX, yMax, zMax), node.depth + 1, node.capacity, node.maxDepth), // LHH
-            new OctNode<T,U>(mk(midX, midY, midZ, xMax, yMax, zMax), node.depth + 1, node.capacity, node.maxDepth), // HHH
+            new OctNode<T, U>(mk(xMin, yMin, zMin, midX, midY, midZ), node.depth + 1, node.capacity, node.maxDepth), // LLL
+            new OctNode<T, U>(mk(midX, yMin, zMin, xMax, midY, midZ), node.depth + 1, node.capacity, node.maxDepth), // HLL
+            new OctNode<T, U>(mk(xMin, midY, zMin, midX, yMax, midZ), node.depth + 1, node.capacity, node.maxDepth), // LHL
+            new OctNode<T, U>(mk(midX, midY, zMin, xMax, yMax, midZ), node.depth + 1, node.capacity, node.maxDepth), // HHL
+            new OctNode<T, U>(mk(xMin, yMin, midZ, midX, midY, zMax), node.depth + 1, node.capacity, node.maxDepth), // LLH
+            new OctNode<T, U>(mk(midX, yMin, midZ, xMax, midY, zMax), node.depth + 1, node.capacity, node.maxDepth), // HLH
+            new OctNode<T, U>(mk(xMin, midY, midZ, midX, yMax, zMax), node.depth + 1, node.capacity, node.maxDepth), // LHH
+            new OctNode<T, U>(mk(midX, midY, midZ, xMax, yMax, zMax), node.depth + 1, node.capacity, node.maxDepth), // HHH
         ];
     }
 
     /** Maintain per-node count + global node set for each batchId. */
-    private bumpBatch(node: OctNode<T,U>, batchId: U, delta: number) {
+    private bumpBatch(node: OctNode<T, U>, batchId: U, delta: number) {
         const prev = node.batchCounts.get(batchId) ?? 0;
         const next = prev + delta;
         if (next <= 0) {

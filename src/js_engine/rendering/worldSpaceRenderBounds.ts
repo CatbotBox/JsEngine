@@ -1,15 +1,9 @@
-﻿import {Component, Entity} from "../core";
-
+﻿import {Component} from "../core";
 import {AABB} from "../datatypes/AABB";
-import {EntityWriteOptions} from "../core/entityWriteOptions";
-import {WorldSpaceRenderBounds} from "./worldSpaceRenderBounds";
+import {RenderBounds} from "./renderBounds";
 
-export class RenderBounds extends Component implements AABB {
+export class WorldSpaceRenderBounds extends Component implements AABB {
     private _values: Float32Array = new Float32Array(6);
-
-    setup(entity: Entity, entityManager: EntityWriteOptions) {
-        entityManager.addComponent(entity, new WorldSpaceRenderBounds())
-    }
 
     get xMin(): number {
         return this._values[0];
@@ -64,5 +58,3 @@ export class RenderBounds extends Component implements AABB {
         return other;
     }
 }
-
-

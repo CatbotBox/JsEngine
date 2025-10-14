@@ -1,13 +1,12 @@
 ﻿import {System} from "../../../core";
 import {RenderBounds} from "../../renderBounds";
 import {RenderingSystemGroup} from "../../renderingSystemGroup";
-import {LocalToWorldSystem} from "../../../translation/LocalToWorldSystem";
 import {LocalToWorld} from "../../../translation";
 import {ConsoleImageAnchor} from "../index";
-import {RenderObjectOffset} from "../../renderObjectOffset";
 import {ConsoleImage} from "../index";
+import {WorldSpaceRenderBoundsComputeSystem} from "../../worldSpaceRenderBoundsComputeSystem";
 
-export class RenderBounds2DComputeSystem extends System {
+export class RenderBounds2DApplyModifierSystem extends System {
     private _query = this.createEntityQuery([LocalToWorld, ConsoleImage, RenderBounds]);
 
     override systemGroup() {
@@ -20,7 +19,7 @@ export class RenderBounds2DComputeSystem extends System {
 
     protected onCreate() {
         this.requireAnyForUpdate(this._query);
-        this.world.ensureSystemExists(LocalToWorldSystem);
+        this.world.ensureSystemExists(WorldSpaceRenderBoundsComputeSystem);
     }
 
     onUpdate() {
@@ -28,20 +27,10 @@ export class RenderBounds2DComputeSystem extends System {
             anchor: ConsoleImageAnchor,
             bounds: RenderBounds,
             image: ConsoleImage,
-            offset: RenderObjectOffset,
-            localToWorld: LocalToWorld,
-            // position: LocalPosition
         }, {
             filterLastUpdated: this.lastUpdateTime,
             filterBlackList: [RenderBounds]
-        }).forEach(({bounds, localToWorld, image, anchor, offset}) => {
-            const position = localToWorld.position;
-            // base position after offset
-            const px = position[0] + (offset?.x || 0);
-            const py = position[1] + (offset?.y || 0);
-            const pz = position[2] + (offset?.z || 0);
-            // const px = position.x + (offset?.x || 0);
-            // const py = position.y + (offset?.y || 0);
+        }).forEach(({bounds, image, anchor}) => {
 
             // parse anchor -> fractional anchor (0=left/top, 0.5=center/middle, 1=right/bottom)
             const [v, h] = anchor?.anchorPosition.split('-') as [
@@ -53,19 +42,17 @@ export class RenderBounds2DComputeSystem extends System {
             const ay = v === 'top' ? 0 : v === 'middle' ? 0.5 : 1;     // vertical anchor
 
             // compute top-left corner from anchor; handle negative sizes robustly
-            const x0 = px - ax * image.sizeX;
-            const y0 = py - ay * image.sizeY;
+            const x0 =  - ax * image.sizeX;
+            const y0 =  - ay * image.sizeY;
             const x1 = x0 + image.sizeX;
-            const y1 = y0 + image.sizeY;
-            const z1 = pz;
-            const z2 = pz + 1;
+            const y1 = y0 + image.sizeY;;
 
             bounds.xMin = Math.min(x0, x1);
             bounds.xMax = Math.max(x0, x1);
             bounds.yMin = Math.min(y0, y1);
             bounds.yMax = Math.max(y0, y1);
-            bounds.zMin = Math.min(z1, z2);
-            bounds.zMax = Math.max(z1, z2);
+            bounds.zMin = 0
+            bounds.zMax = 1
         })
     }
 

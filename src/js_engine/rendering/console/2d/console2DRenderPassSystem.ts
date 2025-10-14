@@ -7,14 +7,21 @@ import {LocalToWorld} from "../../../translation";
 import {ScreenSize} from "../../screenSize";
 import {ConsoleImage} from "../consoleImage";
 import {ConsoleRenderPassSystemGroup} from "../consoleRenderPassSystemGroup";
-import {RenderBounds2DComputeSystem} from "./renderBounds2DComputeSystem";
-import {Console2DRenderBoundsQueryBuilderSystem} from "./console2DRenderBoundsQueryBuilderSystem";
+import {RenderBounds2DApplyModifierSystem} from "./renderBounds2DApplyModifierSystem";
+import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
+import {TrackedOctree} from "../../../datatypes/octTree/trackedOctTree";
+import {EntityArchetype} from "../../../core/entityArchetype";
+import {AABB} from "../../../datatypes/AABB";
 
 export class Console2DRenderPassSystem extends System {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
-    private _objectQuery = this.createEntityQuery([ConsoleImage, RenderBounds], [HudElement])// private _dualScreenBuffer: [ScreenBuffer, ScreenBuffer] = [new ScreenBuffer(), new ScreenBuffer()];
-
+    private _objectQuery = this.createEntityQuery([ConsoleImage, WorldSpaceRenderBounds], [HudElement])// private _dualScreenBuffer: [ScreenBuffer, ScreenBuffer] = [new ScreenBuffer(), new ScreenBuffer()];
+    private _octTree = new TrackedOctree<{
+        consoleImage: ConsoleImage;
+        zHeight: number;
+    }, EntityArchetype>();
+    private tracked: Set<EntityArchetype> = new Set();
 
     override systemGroup() {
         return ConsoleRenderPassSystemGroup;
@@ -28,7 +35,7 @@ export class Console2DRenderPassSystem extends System {
         this.requireAllForUpdate(this._cameraQuery) // always require a camera
         this.requireAnyForUpdate(this._objectQuery) // and require at least one renderer object
 
-        this.world.ensureSystemExists(RenderBounds2DComputeSystem)
+        this.world.ensureSystemExists(RenderBounds2DApplyModifierSystem)
         // this.world.ensureSystemExists(Console2DRenderBoundsQueryBuilderSystem);
     }
 
@@ -53,14 +60,16 @@ export class Console2DRenderPassSystem extends System {
         cameraBounds.zMin = -1000;
         cameraBounds.zMax = 1000;
 
+        this.updateOctTree();
 
         // Prepare current buffer
         const dualScreenBuffer = this.world.resources.tryGet(ConsoleScreenBuffer);
         if (!dualScreenBuffer) return;
         const screenBuffer = dualScreenBuffer.screenBuffer;
 
-        const octTree = this.world.getOrCreateSystem(Console2DRenderBoundsQueryBuilderSystem).octTree;
+        const octTree = this._octTree;
         const matches = octTree.query(cameraBounds);
+
         matches.forEach(({bounds, payload}) => {
             // World → screen transform (top-left anchoring)
             const screenX = Math.floor(bounds.xMin - cameraBounds.xMin);
@@ -69,7 +78,7 @@ export class Console2DRenderPassSystem extends System {
             // The image is already sized to its visible width via ConsoleImage.size (ANSI stripped)
             // The blitter will clip to the current screen automatically.
             screenBuffer.blit(payload.consoleImage, screenX, screenY, payload.zHeight);
-        })
+        });
     }
 
 
@@ -79,5 +88,62 @@ export class Console2DRenderPassSystem extends System {
 
     override onDisable(): void {
         console.info("Disabled 2D render pass")
+    }
+
+    private updateOctTree(): void {
+        const tempSet = new Set<EntityArchetype>(this.tracked);
+        const archetypes = this._objectQuery.archetypes;
+        const lastUpdatedTimeRequirement = this.lastUpdateTime
+
+        const pooledArray: {
+            bounds: AABB;
+            payload: {
+                zHeight: number;
+                consoleImage: ConsoleImage;
+            }
+        }[] = []
+
+        for (const arch of archetypes) {
+            tempSet.delete(arch)
+            let skipped = true;
+
+            // dont skip if structural change detected
+            if (arch.lastStructuralChangeTime >= lastUpdatedTimeRequirement) {
+                skipped = false
+            }
+
+            const renderBoundsCol = arch.getColumn(WorldSpaceRenderBounds.type())!;
+            const consoleImageCol = arch.getColumn(ConsoleImage.type())!;
+            const localToWorldCol = arch.getColumn(LocalToWorld.type());
+            if (renderBoundsCol === undefined) throw new Error("RenderBounds is not found (this shouldn't happen)") ;
+            if (consoleImageCol === undefined) throw new Error("ConsoleImage is not found (this shouldn't happen)") ;
+
+            // don't skip if component store has a change
+            if (skipped && consoleImageCol.lastUpdatedTime >= lastUpdatedTimeRequirement) {
+                skipped = false
+            }
+
+            if (skipped) continue;
+            for (let id = 0; id < arch.entityCount; id++) {
+                const zHeight = localToWorldCol
+                    ? (localToWorldCol.get(id) as LocalToWorld).position[2]
+                    : 0;
+                if (this.tracked.has(arch)) this.tracked.add(arch);
+                pooledArray.push({
+                        payload: {
+                            consoleImage: consoleImageCol.get(id),
+                            zHeight,
+                        }, bounds: renderBoundsCol.get(id)
+                    }
+                );
+            }
+            this._octTree.insertBatch(arch, pooledArray);
+            pooledArray.length = 0;
+        }
+        for (const batchId of Array.from(tempSet)) {
+            this.tracked.has(batchId);
+            this._octTree.removeBatch(batchId);
+        }
+
     }
 }
