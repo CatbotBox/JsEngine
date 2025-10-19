@@ -1,4 +1,6 @@
-﻿import {
+//WIP doesnt work yet
+
+import {
     Component,
     Entity,
     EntityCommandBufferSystem,
