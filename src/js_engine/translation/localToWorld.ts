@@ -178,9 +178,18 @@ export class LocalToWorld extends Component {
     // ======================================================
 
     /** out = Identity */
-    public static identity(out: Float32Array): Vec16 {
-        out.set(identity)
-        return out as Vec16;
+    public static identity(out?: Vec16): Vec16 {
+        if (out === undefined) {
+            out = new Float32Array(16) as Vec16;
+        }
+        if (ArrayBuffer.isView(out)) {
+            out.set(identity);
+            return out;
+        }
+        for (let i = 0; i < identity.length; i++) {
+            out[i] = identity[i];
+        }
+        return out;
     }
 
     /** Build column-major mat4 from TRS (vec4 is [x,y,z,w]) */
@@ -216,12 +225,12 @@ export class LocalToWorld extends Component {
     }
 
     public mul(other: Vec16) {
-        LocalToWorld._mul(this.matrix, other, this.matrix);
+        LocalToWorld.mul(other, this.matrix, this.matrix);
         this.setDirty();
     }
 
     /** out = a * b (column-major) */
-    private static _mul(out: Vec16, a: Vec16, b: Vec16): Vec16 {
+    static mul(a: Vec16, b: Vec16, out: Vec16 = this.identity()): Vec16 {
         const a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
         const a4 = a[4], a5 = a[5], a6 = a[6], a7 = a[7];
         const a8 = a[8], a9 = a[9], a10 = a[10], a11 = a[11];
@@ -277,10 +286,10 @@ export class LocalToWorld extends Component {
     }
 
     /** Transform a point (x,y,z,1) */
-    public static transformPoint(out: Vec3, m: Float32Array, x: number, y: number, z: number): Vec3 {
-        const ox = m[0] * x + m[4] * y + m[8] * z + m[12];
-        const oy = m[1] * x + m[5] * y + m[9] * z + m[13];
-        const oz = m[2] * x + m[6] * y + m[10] * z + m[14];
+    public static transformPoint(m: Vec16, point: Vec3, out: Vec3 = [0, 0, 0]): Vec3 {
+        const ox = m[0] * point[0] + m[4] * point[1] + m[8] * point[2] + m[12];
+        const oy = m[1] * point[0] + m[5] * point[1] + m[9] * point[2] + m[13];
+        const oz = m[2] * point[0] + m[6] * point[1] + m[10] * point[2] + m[14];
         out[0] = ox;
         out[1] = oy;
         out[2] = oz;
@@ -288,10 +297,10 @@ export class LocalToWorld extends Component {
     }
 
     /** Transform a direction (x,y,z,0) */
-    public static transformDir(out: Vec3, m: Float32Array, x: number, y: number, z: number): Vec3 {
-        const ox = m[0] * x + m[4] * y + m[8] * z;
-        const oy = m[1] * x + m[5] * y + m[9] * z;
-        const oz = m[2] * x + m[6] * y + m[10] * z;
+    public static transformDir(m: Float32Array, direction: Vec3, out: Vec3 = [0, 0, 0]): Vec3 {
+        const ox = m[0] * direction[0] + m[4] * direction[1] + m[8] * direction[2];
+        const oy = m[1] * direction[0] + m[5] * direction[1] + m[9] * direction[2];
+        const oz = m[2] * direction[0] + m[6] * direction[1] + m[10] * direction[2];
         out[0] = ox;
         out[1] = oy;
         out[2] = oz;
@@ -299,7 +308,7 @@ export class LocalToWorld extends Component {
     }
 
     /** Invert an affine matrix (ignores perspective) */
-    public static invertAffine(out: Float32Array, m: Float32Array): Vec16 {
+    public static invertAffine(m: Float32Array, out: Vec16 = this.identity()): Vec16 {
         const a00 = m[0], a01 = m[4], a02 = m[8];
         const a10 = m[1], a11 = m[5], a12 = m[9];
         const a20 = m[2], a21 = m[6], a22 = m[10];

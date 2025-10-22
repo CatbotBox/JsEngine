@@ -29,7 +29,8 @@ export class DebugWorld extends World {
         if (existing !== undefined) throw new Error("System already exists");
         const systemInstance = new systemClass();
         const statTracker = new AverageStat(60)
-        if (!this._systemPerfStat) this._systemPerfStat = new Map<System, AverageStat>();
+        if (!this._systemPerfStat) this._systemPerfStat = new Map<System, AverageStat>()
+        const world = this;
         const orig = systemInstance['onUpdate'];
         systemInstance['onUpdate'] = function (...args: any[]) {
             const start = performance.now();
@@ -41,8 +42,9 @@ export class DebugWorld extends World {
 
             } catch (err) {
                 const end = performance.now();
-                statTracker.add(end - start)
-                throw err;
+                statTracker.add(end - start);
+                world.stop();
+                console.error("error while running system: " + systemClass.name + " Error: " + err);
             }
         } as System['onUpdate'];
 

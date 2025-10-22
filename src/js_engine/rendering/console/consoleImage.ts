@@ -84,7 +84,7 @@ export class ConsoleImage extends Component {
             if (ch === transparentChar)
                 out.push(undefined);
             else {
-                out.push(carry + ch + Ansi.control.reset);
+                out.push(Ansi.control.reset + carry + ch + Ansi.control.reset);
             }
             i++;
         }

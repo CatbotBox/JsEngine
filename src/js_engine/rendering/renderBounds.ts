@@ -3,6 +3,7 @@
 import {AABB} from "../datatypes/AABB";
 import {EntityWriteOptions} from "../core/entityWriteOptions";
 import {WorldSpaceRenderBounds} from "./worldSpaceRenderBounds";
+import {Vec3} from "../math/types/vec";
 
 export class RenderBounds extends Component implements AABB {
     private _values: Float32Array = new Float32Array(6);
@@ -19,35 +20,44 @@ export class RenderBounds extends Component implements AABB {
         this._values[0] = value;
     }
 
-    get xMax(): number {
+    get yMin(): number {
         return this._values[1];
     }
 
-    set xMax(value: number) {
+    set yMin(value: number) {
         this._values[1] = value;
     }
 
-    get yMin(): number {
+    get zMin(): number {
         return this._values[2];
     }
 
-    set yMin(value: number) {
+    set zMin(value: number) {
         this._values[2] = value;
     }
 
-    get yMax(): number {
+    get min(): Vec3 {
+        return this._values.subarray(0, 3) as Vec3;
+    }
+
+    set min(value: Vec3) {
+        this._values.set(value, 0)
+    }
+
+
+    get xMax(): number {
         return this._values[3];
     }
 
-    set yMax(value: number) {
+    set xMax(value: number) {
         this._values[3] = value;
     }
 
-    get zMin(): number {
+    get yMax(): number {
         return this._values[4];
     }
 
-    set zMin(value: number) {
+    set yMax(value: number) {
         this._values[4] = value;
     }
 
@@ -58,6 +68,15 @@ export class RenderBounds extends Component implements AABB {
     set zMax(value: number) {
         this._values[5] = value;
     }
+
+    get max(): Vec3 {
+        return this._values.subarray(3, 6) as Vec3;
+    }
+
+    set max(value: Vec3) {
+        this._values.set(value, 3)
+    }
+
 
     protected copyTo(other: this) {
         other._values.set(this._values);

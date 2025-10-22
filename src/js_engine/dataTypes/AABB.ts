@@ -1,10 +1,15 @@
-﻿export interface AABB {
+﻿import {Vec3} from "../math/types/vec";
+
+export interface AABB {
     readonly xMin: number;
     readonly yMin: number;
     readonly zMin: number;
     readonly xMax: number;
     readonly yMax: number;
     readonly zMax: number;
+
+    readonly min: Vec3;
+    readonly max: Vec3;
 }
 
 export namespace AABB {
@@ -25,10 +30,21 @@ export namespace AABB {
     }
 
     export function union(a: AABB, b: AABB): AABB {
+        const xMin = Math.min(a.xMin, b.xMin);
+        const yMin = Math.min(a.yMin, b.yMin);
+        const zMin = Math.min(a.zMin, b.zMin);
+        const xMax = Math.max(a.xMax, b.xMax);
+        const yMax = Math.max(a.yMax, b.yMax);
+        const zMax = Math.max(a.zMax, b.zMax);
+
+        const min: Vec3 = [xMin, yMin, zMin];
+        const max: Vec3 = [xMax, yMax, zMax];
+
         return {
-            xMin: Math.min(a.xMin, b.xMin), yMin: Math.min(a.yMin, b.yMin), zMin: Math.min(a.zMin, b.zMin),
-            xMax: Math.max(a.xMax, b.xMax), yMax: Math.max(a.yMax, b.yMax), zMax: Math.max(a.zMax, b.zMax),
-        };
+            xMin, yMin, zMin,
+            xMax, yMax, zMax,
+            min, max
+        }
     }
 
     export function inflate(b: AABB, factor: number): AABB {
@@ -39,6 +55,21 @@ export namespace AABB {
         const hx = Math.max(0.5, (b.xMax - b.xMin) * 0.5 * factor);
         const hy = Math.max(0.5, (b.yMax - b.yMin) * 0.5 * factor);
         const hz = Math.max(0.5, (b.zMax - b.zMin) * 0.5 * factor);
-        return {xMin: cx - hx, yMin: cy - hy, zMin: cz - hz, xMax: cx + hx, yMax: cy + hy, zMax: cz + hz};
+        const xMin = cx - hx;
+        const yMin = cy - hy;
+        const zMin = cz - hz;
+        const xMax = cx + hx;
+        const yMax = cy + hy;
+        const zMax = cz + hz;
+
+
+        const min: Vec3 = [xMin, yMin, zMin];
+        const max: Vec3 = [xMax, yMax, zMax];
+
+        return {
+            xMin, yMin, zMin,
+            xMax, yMax, zMax,
+            min, max
+        }
     }
 }

@@ -17,7 +17,7 @@ export class ConsoleScreenBuffer extends Resource {
     }
 }
 
-class ScreenBuffer {
+export class ScreenBuffer {
     private width = 0;
     private height = 0;
     private depthBuffer: number[][] = []
@@ -33,7 +33,7 @@ class ScreenBuffer {
             Array.from({length: this.width}, () => backgroundChar)
         );
         this.depthBuffer = Array.from({length: this.height}, () =>
-            Array.from({length: this.width}, () => Number.NEGATIVE_INFINITY)
+            Array.from({length: this.width}, () => Number.POSITIVE_INFINITY)
         );
     }
 
@@ -49,6 +49,7 @@ class ScreenBuffer {
      * Blit ANSI-decorated image lines at a destination top-left in SCREEN space.
      * Clipped automatically to the current buffer.
      */
+    //depth refers to distance from camera
     public blit(image: ConsoleImage, dstX: number, dstY: number, depth: number) {
         const pixels = image.pixels;
         if (!this.cells.length) return;
@@ -61,14 +62,18 @@ class ScreenBuffer {
                 const x = dstX + col;
                 if (x < 0 || x >= this.width) continue;
                 const pixel = rowPixels[col];
-                if (pixel !== undefined) {
-                    const existingDepth = this.depthBuffer[y][x];
-                    if (existingDepth > depth) continue;
-                    this.depthBuffer[y][x] = depth;
-                    this.cells[y][x] = pixel;
-                }
+                if (pixel === undefined) continue;
+                this.setPixels(pixel, x, y, depth);
             }
         }
+    }
+
+    //depth refers to distance from camera
+    public setPixels(pixel: string, x: number, y: number, depth: number) {
+        const existingDepth = this.depthBuffer[y][x];
+        if (existingDepth < depth) return;
+        this.depthBuffer[y][x] = depth;
+        this.cells[y][x] = pixel;
     }
 
     /**

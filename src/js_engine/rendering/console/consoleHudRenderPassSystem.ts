@@ -65,7 +65,7 @@ export class ConsoleHudRenderPassSystem extends System {
 
             // console.log("HUD", anchor.anchorPosition, "->", sx, sy, " screen:", screenW, screenH, " img:", imgSize.x, imgSize.y)
             // Blit directly in screen space (cur = current ScreenBuffer)
-            screenBuffer.blit(img, sx, sy, Number.POSITIVE_INFINITY);
+            screenBuffer.blit(img, sx, sy, Number.NEGATIVE_INFINITY);
         }
     }
 

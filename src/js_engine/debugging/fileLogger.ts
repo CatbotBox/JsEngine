@@ -14,6 +14,7 @@ type Node = LogNode | GroupNode;
 
 const logFilePath = "./logs/";
 let logFile: NodeJS.WritableStream | null = null;
+let latestLogFile: NodeJS.WritableStream | null = null;
 const logOptions: Intl.DateTimeFormatOptions = {hour12: false};
 
 function getDateString(): string {
@@ -32,12 +33,25 @@ function getLogFile(): NodeJS.WritableStream {
     return logFile!;
 }
 
+function getLatestLogFile(): NodeJS.WritableStream {
+    if (!latestLogFile) {
+        if (!fs.existsSync(logFilePath)) {
+            fs.mkdirSync(logFilePath, {recursive: true});
+        }
+        const file = logFilePath + "latest" + ".log";
+        fs.rmSync(file);
+
+        latestLogFile = fs.createWriteStream(file, {flags: "a"})
+    }
+    return latestLogFile!;
+}
+
 const errorFilePath = "./crash-logs/";
 let errorFile: NodeJS.WritableStream | null = null;
 
 function getErrorFile(): NodeJS.WritableStream {
-    if (!fs.existsSync(logFilePath)) {
-        fs.mkdirSync(logFilePath, {recursive: true});
+    if (!fs.existsSync(errorFilePath)) {
+        fs.mkdirSync(errorFilePath, {recursive: true});
     }
     if (!errorFile) errorFile = fs.createWriteStream(errorFilePath + getDateString() + ".log", {flags: "a"});
 
@@ -47,7 +61,7 @@ function getErrorFile(): NodeJS.WritableStream {
 class FileConsole implements Console {
     write(...data: Array<string | ArrayBufferView | ArrayBuffer>): number {
         const text = util.format(...data);
-        this.write(text);
+        this.writeLine(text)
         return 0;
     }
 
@@ -160,6 +174,7 @@ class FileConsole implements Console {
 
     writeLine(msg: string): void {
         getLogFile().write(msg + "\n");
+        getLatestLogFile().write(msg + "\n");
     }
 
     private writeLineHelper(level: LogLevel, timestamp: number, msg: string): void {

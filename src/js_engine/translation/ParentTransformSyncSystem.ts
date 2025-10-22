@@ -2,7 +2,7 @@
 import {ParentTransform} from "./parent";
 import {LocalToWorld} from "./localToWorld";
 import {ComponentLookup} from "../core/entityArchetype";
-import {VecMath} from "../math/types/vec";
+import {Vec} from "../math/types/vec";
 
 import {HierarchySyncSystem} from "./HierarchySyncSystem";
 import {LocalToWorldSystem} from "./LocalToWorldSystem";
@@ -36,7 +36,7 @@ export class ParentTransformSyncSystem extends System {
             .forEach(({children, localToWorld}) => {
                 children.children.forEach((child) => {
                     const component = this._trackerLookup.tryGetComponent(child)
-                    if (component && !VecMath.equals(localToWorld.matrix, component.transform)) {
+                    if (component && !Vec.equals(localToWorld.matrix, component.transform)) {
                         component.transform = localToWorld.matrix
                     }
                 })
