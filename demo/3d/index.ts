@@ -37,6 +37,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     buffer.addComponent(cameraEntity, new LocalToWorld());
     buffer.addComponent(cameraEntity, new LocalPosition());
     buffer.addComponent(cameraEntity, new RenderBounds());
+    const cameraRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
     keyboardInput.when({name: 'l'}, () => {
@@ -81,16 +82,24 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     // meshes.push(new Mesh(builder));
 
     const testMesh = buffer.createEntity();
+    const testMesh2 = buffer.createEntity();
+    const testMesh3 = buffer.createEntity();
 
     let meshIndex = 0;
     const renderMesh = buffer.addTrackedComponent(testMesh, new RenderMesh(meshes[0]));
+    const renderMesh2 = buffer.addTrackedComponent(testMesh2, new RenderMesh(meshes[0]));
+    const renderMesh3 = buffer.addTrackedComponent(testMesh3, new RenderMesh(meshes[0]));
     keyboardInput.when({name: 'space'}, () => {
         meshIndex += 1;
         if (meshIndex === meshes.length) meshIndex = 0;
         renderMesh.mesh = meshes[meshIndex];
+        renderMesh2.mesh = meshes[meshIndex];
+        renderMesh3.mesh = meshes[meshIndex];
     })
 
     const cubePosition = buffer.addTrackedComponent(testMesh, new LocalPosition(0, 0, 10));
+    const cubePosition2 = buffer.addTrackedComponent(testMesh2, new LocalPosition(5, 0, 10));
+    const cubePosition3 = buffer.addTrackedComponent(testMesh3, new LocalPosition(-5, 0, 10));
     keyboardInput.when({name: 'w'}, () => {
         cubePosition.y -= 1;
     })
@@ -111,23 +120,34 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     })
 
     buffer.addComponent(testMesh, new LocalToWorld());
+    buffer.addComponent(testMesh2, new LocalToWorld());
+    buffer.addComponent(testMesh3, new LocalToWorld());
     const rotation = buffer.addTrackedComponent(testMesh, new LocalRotation());
+    const rotation2 = buffer.addTrackedComponent(testMesh2, new LocalRotation());
+    const rotation3 = buffer.addTrackedComponent(testMesh3, new LocalRotation());
 
     const euler: Vec3 = [0, 0, 0]
     keyboardInput.when({name: 'up'}, ({shift}) => {
         const value = shift ? -0.1 : 0.1;
         euler[0] += value;
         rotation.xyzw = Quaternions.eulerToQuat(euler);
+        rotation2.xyzw = Quaternions.eulerToQuat(euler);
+        rotation3.xyzw = Quaternions.eulerToQuat(euler);
+
     })
     keyboardInput.when({name: 'left'}, ({shift}) => {
         const value = shift ? -0.1 : 0.1;
         euler[1] += value
         rotation.xyzw = Quaternions.eulerToQuat(euler);
+        rotation2.xyzw = Quaternions.eulerToQuat(euler);
+        rotation3.xyzw = Quaternions.eulerToQuat(euler);
     })
     keyboardInput.when({name: 'right'}, ({shift}) => {
         const value = shift ? -0.1 : 0.1;
         euler[2] += value
         rotation.xyzw = Quaternions.eulerToQuat(euler);
+        rotation2.xyzw = Quaternions.eulerToQuat(euler);
+        rotation3.xyzw = Quaternions.eulerToQuat(euler);
     })
     keyboardInput.when({name: 'down'}, ({shift}) => {
         const value = shift ? -0.1 : 0.1;
@@ -135,16 +155,24 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         euler[1] += value
         euler[2] += value
         rotation.xyzw = Quaternions.eulerToQuat(euler);
+        rotation2.xyzw = Quaternions.eulerToQuat(euler);
+        rotation3.xyzw = Quaternions.eulerToQuat(euler);
     })
 
     const scale = buffer.addTrackedComponent(testMesh, new LocalScale());
+    const scale2 = buffer.addTrackedComponent(testMesh2, new LocalScale());
+    const scale3 = buffer.addTrackedComponent(testMesh3, new LocalScale());
 
     const scaleFactor: Vec3 = [1.1, 1.1, 1.1];
     keyboardInput.when({name: 'i'}, () => {
         scale.xyz = Vec.mul(scale.xyz, scaleFactor);
+        scale2.xyz = Vec.mul(scale.xyz, scaleFactor);
+        scale3.xyz = Vec.mul(scale.xyz, scaleFactor);
     })
     keyboardInput.when({name: 'o'}, () => {
         scale.xyz = Vec.div(scale.xyz, scaleFactor);
+        scale2.xyz = Vec.div(scale.xyz, scaleFactor);
+        scale3.xyz = Vec.div(scale.xyz, scaleFactor);
     })
 
 }

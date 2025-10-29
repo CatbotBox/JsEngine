@@ -151,7 +151,7 @@ export class Console3DRenderPassSystem extends System {
             pixelsPerWorldUnit = screenSize.y / screenHeightWorld / worldSpaceVert[2];
         }
         const screenOffset = Vec.div(screenSize.vec, [2, 2] as Vec2);
-        const pixelOffset = [worldSpaceVert[0] * pixelsPerWorldUnit *2, worldSpaceVert[1] * pixelsPerWorldUnit] as Vec2
+        const pixelOffset = [worldSpaceVert[0] * pixelsPerWorldUnit * 2, worldSpaceVert[1] * pixelsPerWorldUnit] as Vec2
 
         //ignore z for now
         // return [worldSpaceVert[0], worldSpaceVert[1]] as Vec2;
@@ -182,7 +182,7 @@ export class Console3DRenderPassSystem extends System {
                 const depths: Vec3 = [depthData[0], depthData[1], depthData[2]]
                 const depth = Vec.dot(depths, weights);
                 if (depth < 0) continue; //cull parts that are behind the camera
-                const color = Math.ceil(255 - ((depth / 10) * 255));
+                const color = Math.ceil(255 - ((depth / 15) * 255));
                 const depthColor = Ansi.bgRGB(color, color, color);
                 screenBuffer.setPixels(depthColor + " " + Ansi.control.reset, x, y, depth);
 
