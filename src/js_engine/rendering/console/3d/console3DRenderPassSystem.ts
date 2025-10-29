@@ -151,7 +151,7 @@ export class Console3DRenderPassSystem extends System {
             pixelsPerWorldUnit = screenSize.y / screenHeightWorld / worldSpaceVert[2];
         }
         const screenOffset = Vec.div(screenSize.vec, [2, 2] as Vec2);
-        const pixelOffset = [worldSpaceVert[0] * pixelsPerWorldUnit, worldSpaceVert[1] * pixelsPerWorldUnit] as Vec2
+        const pixelOffset = [worldSpaceVert[0] * pixelsPerWorldUnit *2, worldSpaceVert[1] * pixelsPerWorldUnit] as Vec2
 
         //ignore z for now
         // return [worldSpaceVert[0], worldSpaceVert[1]] as Vec2;
