@@ -1,16 +1,17 @@
 ﻿import {Vec} from "./vec";
 
-export class VecArray<factor extends number> {
+
+export class VecArray<factor extends number,length extends number = number> {
     private rawData: Float32Array
 
-    public readonly length: number;
+    public readonly length: length;
 
-    public constructor(length: number, factor: factor)
+    public constructor(length: length, factor: factor)
     public constructor(array: ArrayLike<Vec<factor>>, factor: factor, startIndex?: number, endIndex?: number)
 
     public constructor(array: VecArray<factor>, factor: factor, startIndex?: number, endIndex?: number)
 
-    public constructor(flexArg: VecArray<factor> | ArrayLike<Vec<factor>> | number, private factor: factor, startIndex: number = 0, endIndex?: number) {
+    public constructor(flexArg: VecArray<factor> | ArrayLike<Vec<factor>> | length, private factor: factor, startIndex: number = 0, endIndex?: number) {
         if (typeof flexArg === "number") {
             this.length = flexArg;
             this.rawData = new Float32Array(this.length * factor);
@@ -24,7 +25,7 @@ export class VecArray<factor extends number> {
         const absoluteStartIndex = startIndex * factor;
         const absoluteEndIndex = endIndex * factor;
         if (absoluteEndIndex > (flexArg.length * factor)) throw new Error("Out of bounds");
-        this.length = (endIndex - startIndex);
+        this.length = (endIndex - startIndex) as length;
 
         // Vec Array share view
         if (VecArray.isVecArray(flexArg)) {
@@ -49,19 +50,32 @@ export class VecArray<factor extends number> {
     }
 
 
+    public set(array: Vec<factor>, offset?: number): void
     public set(array: ArrayLike<Vec<factor>>, offset?: number): void
     public set(array: VecArray<factor>, offset?: number): void
-    public set(array: ArrayLike<Vec<factor>> | VecArray<factor>, offset: number = 0): void {
+    public set(array: ArrayLike<Vec<factor>> | VecArray<factor> | Vec<factor>, offset: number = 0): void {
+        if (array.length <= 0) return;
         const absoluteOffset = offset * this.factor;
         // vecArray
         if (VecArray.isVecArray(array)) {
             this.rawData.set(array.rawData, absoluteOffset);
             return;
         }
-        //array like
-        for (let i = 0; i < array.length; i++) {
-            this.rawData.set(array[i], absoluteOffset + (i * this.factor));
+        //array of Vec or Vec
+        const firstElement = array[0];
+        if (Array.isArray(firstElement)) {
+            // Array of Vec
+            array = array as ArrayLike<Vec<factor>>;
+            this.rawData.set(firstElement, absoluteOffset);
+            for (let i = 1; i < array.length; i++) {
+                this.rawData.set(array[i], absoluteOffset + (i * this.factor));
+            }
+            return;
         }
+        //Vec
+        array = array as Vec<factor>;
+        this.rawData.set(array, absoluteOffset);
+
     }
 
     * [Symbol.iterator](): Iterator<Vec<factor>> {
@@ -85,4 +99,5 @@ export class VecArray<factor extends number> {
     }
 }
 
-export type Vec3Array = VecArray<3>
+export type Vec2Array<length extends number = number> = VecArray<2,length>
+export type Vec3Array<length extends number = number> = VecArray<3,length>
