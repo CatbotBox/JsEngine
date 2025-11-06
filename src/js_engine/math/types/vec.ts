@@ -17,6 +17,8 @@ export type Vec<N extends number> =
     (Float32Array | number[]) &
     { length: N };
 
+export type truthVec<N> = boolean[] & { length: N }
+
 // Concrete aliases
 export type Vec2 = Vec<2>;
 export type Vec3 = Vec<3>;
@@ -115,6 +117,38 @@ export namespace Vec {
                 if (result[j] < vectors[i][j])
                     result[j] = vectors[i][j];
             }
+        }
+        return result;
+    }
+
+    export function moreThan<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
+        const result = new Array(a.length) as truthVec<NoUnion<N>>;
+        for (let i = 0; i < a.length; i++) {
+            result[i] = a[i] > b[i];
+        }
+        return result;
+    }
+
+    export function moreOrEquals<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
+        const result = new Array(a.length) as truthVec<NoUnion<N>>;
+        for (let i = 0; i < a.length; i++) {
+            result[i] = a[i] >= b[i];
+        }
+        return result;
+    }
+
+    export function lessThan<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
+        const result = new Array(a.length) as truthVec<NoUnion<N>>;
+        for (let i = 0; i < a.length; i++) {
+            result[i] = a[i] < b[i];
+        }
+        return result;
+    }
+
+    export function lessOrEquals<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
+        const result = new Array(a.length) as truthVec<NoUnion<N>>;
+        for (let i = 0; i < a.length; i++) {
+            result[i] = a[i] <= b[i];
         }
         return result;
     }

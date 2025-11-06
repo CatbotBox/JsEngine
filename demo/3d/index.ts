@@ -101,22 +101,22 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     const cubePosition2 = buffer.addTrackedComponent(testMesh2, new LocalPosition(5, 0, 10));
     const cubePosition3 = buffer.addTrackedComponent(testMesh3, new LocalPosition(-5, 0, 10));
     keyboardInput.when({name: 'w'}, () => {
-        cubePosition.y -= 1;
+        cubePosition.y -= 0.05;
     })
     keyboardInput.when({name: 's'}, () => {
-        cubePosition.y += 1;
+        cubePosition.y += 0.05;
     })
     keyboardInput.when({name: 'a'}, () => {
-        cubePosition.x -= 1;
+        cubePosition.x -= 0.05;
     })
     keyboardInput.when({name: 'd'}, () => {
-        cubePosition.x += 1;
+        cubePosition.x += 0.05;
     })
     keyboardInput.when({name: 'q'}, () => {
-        cubePosition.z -= 1;
+        cubePosition.z -= 0.05;
     })
     keyboardInput.when({name: 'e'}, () => {
-        cubePosition.z += 1;
+        cubePosition.z += 0.05;
     })
 
     buffer.addComponent(testMesh, new LocalToWorld());
@@ -163,7 +163,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     const scale2 = buffer.addTrackedComponent(testMesh2, new LocalScale());
     const scale3 = buffer.addTrackedComponent(testMesh3, new LocalScale());
 
-    const scaleFactor: Vec3 = [1.1, 1.1, 1.1];
+    const scaleFactor: Vec3 = [1.02, 1.02, 1.02];
     keyboardInput.when({name: 'i'}, () => {
         scale.xyz = Vec.mul(scale.xyz, scaleFactor);
         scale2.xyz = Vec.mul(scale.xyz, scaleFactor);

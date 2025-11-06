@@ -127,40 +127,30 @@ export class Console3DRenderPassSystem extends System {
             screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(vertBuffer.at(2), fieldOfView, screenSize), 2);
 
 
-            // if (this.triangleLevelBackfaceCulling(screenSpacePointsBuffer)) return;
+            const depthBuffer = this.drawMeshPreAllocations.depthBuffer;
+            vertBuffer.select(2).copyTo(depthBuffer);
+            const below0 = Vec.lessOrEquals(depthBuffer, [0, 0, 0] as Vec3);
+            const below0Count = below0.reduce((a, b) => a + (b ? 1 : 0), 0);
+            //cull if triangle is behind camera
+            if (below0Count == 3) continue;
+
+            //special handling when part of triangle is behind camera
+            if (below0Count > 0) {
+                continue; //todo
+            }
+
 
             // const uv1 = vertices.at(currentTri[0]);
             // const uv2 = vertices.at(currentTri[1]);
             // const uv3 = vertices.at(currentTri[2]);
 
-            const depthBuffer = this.drawMeshPreAllocations.depthBuffer;
-            depthBuffer[0] = vertBuffer.at(0)[2];
-            depthBuffer[1] = vertBuffer.at(1)[2];
-            depthBuffer[2] = vertBuffer.at(2)[2];
+            // const depthBuffer = this.drawMeshPreAllocations.depthBuffer;
+            // vertBuffer.select(2).copyTo(depthBuffer);
 
             this.drawTriangleScreenSpace(screenBuffer, screenSize, screenSpacePointsBuffer, depthBuffer)
 
         }
     }
-
-    // private static triangleLevelBackfaceCulling(points: Vec2Array<3>): boolean {
-    //     const x0 = points.at(0)[0];
-    //     const x1 = points.at(1)[0];
-    //     const x2 = points.at(2)[0];
-    //     const y0 = points.at(0)[1];
-    //     const y1 = points.at(1)[1];
-    //     const y2 = points.at(2)[1];
-    //     const value = (((x1 - x0) * (y2 - y0)) - ((x2 - x0) * (y1 - y0)));
-    //     // if (value > 0) {
-    //     //     this.triCullDebug[2] = true;
-    //     // } else if (value < 0) {
-    //     //     this.triCullDebug[0] = true
-    //     // } else if (value == 0) {
-    //     //     this.triCullDebug[1] = true
-    //     // }
-    //
-    //     return value > 0;
-    // }
 
     //world space relative to the camera
 
@@ -205,9 +195,8 @@ export class Console3DRenderPassSystem extends System {
         const min = Vec.min(...screenspacePoints);
         const max = Vec.max(...screenspacePoints);
 
-
-        const renderStartX = clamp(Math.floor(min[0]), 0, screenSize.x)
-        const renderStartY = clamp(Math.floor(min[1]), 0, screenSize.y)
+        const renderStartX = clamp(Math.ceil(min[0]), 0, screenSize.x)
+        const renderStartY = clamp(Math.ceil(min[1]), 0, screenSize.y)
         const renderEndX = clamp(Math.ceil(max[0]), 0, screenSize.x)
         const renderEndY = clamp(Math.ceil(max[1]), 0, screenSize.y)
         // const triColor = Ansi.bgRGB(Math.ceil(Math.random() * 255), Math.ceil(Math.random() * 255), Math.ceil(Math.random() * 255));
@@ -223,7 +212,6 @@ export class Console3DRenderPassSystem extends System {
                     // screenBuffer.setPixels(Ansi.colors.bg.red + " " + Ansi.control.reset, x, y, Number.POSITIVE_INFINITY / 2);
                     continue;
                 }
-                // if (this.triangleLevelBackfaceCulling(screenspacePoints)) return;
 
                 const depth = Vec.dot(depthData, weights);
                 if (depth < 0) continue; //cull parts that are behind the camera

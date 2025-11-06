@@ -1,7 +1,39 @@
 ﻿import {Vec} from "./vec";
 
+export class VecArraySelector<factor extends number, length extends number = number> {
+    public constructor(private rawData: VecArray<factor, length>, factor: factor, private index: number) {
+        if (index >= factor) throw new RangeError("Index must be lesser than Vector Size")
+        if (factor < 0) throw new RangeError("Index must be a positive number");
+    }
 
-export class VecArray<factor extends number,length extends number = number> {
+    public at(index: number): number {
+        if (index >= this.rawData.length) throw new RangeError("Index is greater than the size of array");
+        if (index < 0) throw new RangeError("Index is less than 0");
+
+        return this.rawData.at(index)[this.index];
+    }
+
+    public copyTo(vec: Vec<length>) {
+        for (let i = 0; i < this.rawData.length; i++) {
+            vec[i] = this.rawData.at(i)[this.index];
+        }
+    }
+
+    public copyFrom(vec: Vec<length>) {
+        for (let i = 0; i < this.rawData.length; i++) {
+            this.rawData.at(i)[this.index] = vec[i];
+        }
+    }
+
+    * [Symbol.iterator](): Iterator<number> {
+        for (let i = 0; i < this.rawData.length; i++) {
+            yield this.at(i);
+        }
+
+    }
+}
+
+export class VecArray<factor extends number, length extends number = number> {
     private rawData: Float32Array
 
     public readonly length: length;
@@ -43,6 +75,10 @@ export class VecArray<factor extends number,length extends number = number> {
 
     public at(index: number): Vec<factor> {
         return this.rawData.subarray(index * this.factor, (index + 1) * this.factor) as Vec<factor>;
+    }
+
+    public select(index: number): VecArraySelector<factor, length> {
+        return new VecArraySelector<factor, length>(this, this.factor, index)
     }
 
     public subarray(startIndex: number, endIndex: number): VecArray<factor> {
@@ -99,5 +135,5 @@ export class VecArray<factor extends number,length extends number = number> {
     }
 }
 
-export type Vec2Array<length extends number = number> = VecArray<2,length>
-export type Vec3Array<length extends number = number> = VecArray<3,length>
+export type Vec2Array<length extends number = number> = VecArray<2, length>
+export type Vec3Array<length extends number = number> = VecArray<3, length>
