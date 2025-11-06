@@ -13,6 +13,28 @@ export interface AABB {
 }
 
 export namespace AABB {
+
+    export function fromMinMax(min: Vec3, max: Vec3): Readonly<AABB> {
+        return {
+            min,
+            max,
+            xMin: min[0],
+            xMax: max[0],
+            yMin: min[1],
+            yMax: max[1],
+            zMin: min[2],
+            zMax: max[2],
+        }
+    }
+
+    export function fromExplicit(aabb: Omit<AABB, "min" | "max">): Readonly<AABB> {
+        return {
+            ...aabb,
+            min:[aabb.xMin, aabb.yMin,aabb.zMin],
+            max :[aabb.xMax, aabb.yMax,aabb.zMax],
+        }
+    }
+
     export function intersects(a: AABB, b: AABB): boolean {
         return !(
             b.xMax < a.xMin || b.xMin > a.xMax ||
