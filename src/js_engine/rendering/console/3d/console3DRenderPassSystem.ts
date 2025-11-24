@@ -11,6 +11,7 @@ import {RenderMesh} from "../../3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {FieldOfView} from "../../3d/fieldOfView";
 import {Vec2Array, Vec3Array, VecArray} from "../../../math/types/vecArray";
+import {TextureProvider} from "../../textureProvider";
 
 function clamp(value: number, min: number, max: number): number {
     if (value > max) return max;
@@ -102,6 +103,7 @@ export class Console3DRenderPassSystem extends System {
 
     private static drawMeshPreAllocations = {
         vertBuffer: new VecArray(3, 3),
+        uvBuffer: new VecArray(3, 3),
         screenSpacePointsBuffer: new VecArray(3, 2),
         depthBuffer: [0, 0, 0] as Vec3,
     };
@@ -111,6 +113,8 @@ export class Console3DRenderPassSystem extends System {
         const triangles = mesh.triangles;
 
         const vertBuffer = this.drawMeshPreAllocations.vertBuffer;
+        const uvBuffer = this.drawMeshPreAllocations.uvBuffer;
+        const uvs = mesh.uvs;
         const screenSpacePointsBuffer = this.drawMeshPreAllocations.screenSpacePointsBuffer;
         const worldSpaceVertices = this.localSpaceToWorldSpace(mesh.vertices, localToWorld, invertedCameraMatrix);
 
@@ -121,6 +125,10 @@ export class Console3DRenderPassSystem extends System {
             vertBuffer.set(worldSpaceVertices.at(currentTri[0]), 0);
             vertBuffer.set(worldSpaceVertices.at(currentTri[1]), 1);
             vertBuffer.set(worldSpaceVertices.at(currentTri[2]), 2);
+
+            uvBuffer.set(uvs.at(currentTri[0]), 0);
+            uvBuffer.set(uvs.at(currentTri[1]), 1);
+            uvBuffer.set(uvs.at(currentTri[2]), 2);
 
             screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(vertBuffer.at(0), fieldOfView, screenSize), 0);
             screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(vertBuffer.at(1), fieldOfView, screenSize), 1);
@@ -140,14 +148,10 @@ export class Console3DRenderPassSystem extends System {
             }
 
 
-            // const uv1 = vertices.at(currentTri[0]);
-            // const uv2 = vertices.at(currentTri[1]);
-            // const uv3 = vertices.at(currentTri[2]);
-
             // const depthBuffer = this.drawMeshPreAllocations.depthBuffer;
             // vertBuffer.select(2).copyTo(depthBuffer);
 
-            this.drawTriangleScreenSpace(screenBuffer, screenSize, screenSpacePointsBuffer, depthBuffer)
+            this.drawTriangleScreenSpace(screenBuffer, screenSize, screenSpacePointsBuffer, depthBuffer, uvBuffer, TextureProvider.defaultTexture)
 
         }
     }
@@ -187,9 +191,13 @@ export class Console3DRenderPassSystem extends System {
     static drawTriangleScreenSpacePreAllocations = {
         screenPoint: [0, 0] as Vec2,
         weights: [0, 0, 0] as Vec3,
+        color: [255, 255, 255] as Vec3,
+        uv: [0, 0] as Vec2,
     }
 
-    private static drawTriangleScreenSpace(screenBuffer: ScreenBuffer, screenSize: ScreenSize, screenspacePoints: Vec2Array<3>, depthData: Vec3) {
+    private static drawTriangleScreenSpace(screenBuffer: ScreenBuffer, screenSize: ScreenSize,
+                                           screenspacePoints: Vec2Array<3>, depthData: Vec3,
+                                           uvs: Vec3Array<3>, textureProvider: TextureProvider) {
         //triangle on screen space
 
         const min = Vec.min(...screenspacePoints);
@@ -213,10 +221,19 @@ export class Console3DRenderPassSystem extends System {
                     continue;
                 }
 
+                const uv = this.drawTriangleScreenSpacePreAllocations.uv;
+                const color = this.drawTriangleScreenSpacePreAllocations.color;
+                // uv[0] = uvs.at(0)[0] * weights[0] + uvs.at(1)[0] * weights[1] + uvs.at(2)[0] * weights[2];
+                // uv[1] = uvs.at(0)[1] * weights[0] + uvs.at(1)[1] * weights[1] + uvs.at(2)[1] * weights[2];
+                // color = textureProvider.getColorAt(uv);
+
                 const depth = Vec.dot(depthData, weights);
                 if (depth < 0) continue; //cull parts that are behind the camera
-                const color = Math.ceil(255 - ((depth / 15) * 255));
-                const depthColor = Ansi.bgRGB(color, color, color);
+                const depthFade = 1 - (depth / 15);
+                const color0 = Math.ceil(depthFade * color[0]);
+                const color1 = Math.ceil(depthFade * color[1]);
+                const color2 = Math.ceil(depthFade * color[2]);
+                const depthColor = Ansi.bgRGB(color0, color1, color2);
                 screenBuffer.setPixels(depthColor + " " + Ansi.control.reset, x, y, depth);
             }
         }

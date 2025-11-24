@@ -1,4 +1,4 @@
-﻿import {Vec3} from "../../math/types/vec";
+﻿import {Vec2, Vec3} from "../../math/types/vec";
 import {Vec3Array, VecArray} from "../../math/types/vecArray";
 
 export class Mesh {
@@ -45,7 +45,7 @@ export class Mesh {
 
         this.triangleCount = builder.triangles.length;
         this.vertCount = builder.vertices.length;
-        const data = [...builder.vertices, ...builder.normals, ...builder.uvs, ...builder.triangles];
+        const data = [...builder.vertices, ...builder.normals, ...builder.uvs.map(value => [...value, 0] as Vec3), ...builder.triangles];
         this.data = new VecArray(data, 3);
     }
 
@@ -62,35 +62,103 @@ export class Mesh {
     private static parseObj(data: string): Mesh {
         const lines = data.split(/\r?\n/);
         const meshBuilder = new MeshBuilder();
-        lines.forEach(line => {
-            if (line.startsWith("v")) {
+
+        lines.forEach(rawLine => {
+            const line = rawLine.trim();
+
+            // Skip empty lines and comments
+            if (!line || line.startsWith('#')) {
+                return;
+            }
+
+            // Positions: lines starting with "v " only (NOT vt / vn)
+            if (line.startsWith("v ")) {
                 const vertexData = line
-                    .slice(2)
-                    .split(' ')
+                    .substring(2)          // drop "v "
+                    .trim()
+                    .split(/\s+/)          // handle multiple spaces
                     .map(v => Number.parseFloat(v));
-                meshBuilder.vertices.push(vertexData as Vec3)
-            } else if (line.startsWith("f")) {
-                const faceData = line.slice(2).split(' ')
-                    .map((str) => str.split('/')
-                        // return array instead of 1st index because we might need the other data in the future
-                        .map(v => Number.parseInt(v)))
+
+                // Expecting at least x, y, z
+                if (vertexData.length >= 3) {
+                    meshBuilder.vertices.push(vertexData as Vec3);
+                }
+
+                // Texture coords: "vt " (parsed & ignored here unless you wire them into MeshBuilder)
+            } else if (line.startsWith("vt ")) {
+                return;
+                // todo :more vt than v in CORRECT obj file
+                // const uvData = line
+                //     .substring(3)
+                //     .trim()
+                //     .split(/\s+/)
+                //     .map(v => Number.parseFloat(v));
+                // meshBuilder.uvs.push([uvData[0], uvData[1]] as Vec2);
+                // return;
+
+                // Normals: "vn " (same idea as vt)
+            } else if (line.startsWith("vn ")) {
+                const normalData = line
+                    .substring(3)          // drop "vn "
+                    .trim()
+                    .split(/\s+/)          // handle multiple spaces/tabs
+                    .map(v => Number.parseFloat(v));
+
+                // Expect nx, ny, nz
+                if (normalData.length >= 3) {
+                    meshBuilder.normals.push(normalData as Vec3);
+                }
+
+                return;
+                // Faces: "f "
+            } else if (line.startsWith("f ")) {
+                const faceData = line
+                    .substring(2)          // drop "f "
+                    .trim()
+                    .split(/\s+/)          // each token is like v, v/vt, v//vn, v/vt/vn
+                    .map(str => str.split('/')
+                        .map(v => v.length ? Number.parseInt(v, 10) : NaN)
+                    )
                     .map(data => {
-                        //obj files start with 1 instead of 0;
-                        data[0] -= 1;
+                        // OBJ indices are 1-based, convert to 0-based.
+                        // We only care about the position index (data[0]) here.
+                        if (!Number.isNaN(data[0])) {
+                            // Positive index: 1..N -> 0..N-1
+                            if (data[0] > 0) {
+                                data[0] -= 1;
+                            } else {
+                                // Negative index: -1 = last defined vertex, etc.
+                                data[0] = meshBuilder.vertices.length + data[0];
+                            }
+                        }
                         return data;
                     });
-                meshBuilder.triangles.push([faceData[0][0], faceData[1][0], faceData[2][0]])
+
+                if (faceData.length < 3) {
+                    return; // not enough vertices to form a face
+                }
+
+                // Triangulate polygon as fan: (0,1,2), (0,2,3), ...
+                // Using only position indices (data[0])
+                meshBuilder.triangles.push([
+                    faceData[0][0],
+                    faceData[1][0],
+                    faceData[2][0],
+                ]);
+
                 for (let i = 3; i < faceData.length; i++) {
-                    const point0 = faceData[0][0];
-                    const point1 = faceData[i - 1][0];
-                    const point2 = faceData[i][0];
-                    meshBuilder.triangles.push([point0, point1, point2]);
+                    const p0 = faceData[0][0];
+                    const p1 = faceData[i - 1][0];
+                    const p2 = faceData[i][0];
+                    meshBuilder.triangles.push([p0, p1, p2]);
                 }
             }
-        })
+        });
 
+        // Still using your procedural generators
         meshBuilder.generateUvs();
         meshBuilder.generateNormals();
+
         return new Mesh(meshBuilder);
     }
 }
@@ -98,7 +166,7 @@ export class Mesh {
 export class MeshBuilder {
     public vertices: Vec3[] = []
     public normals: Vec3[] = []
-    public uvs: Vec3[] = []
+    public uvs: Vec2[] = []
     public triangles: Vec3[] = []
 
     public verify() {
@@ -116,7 +184,7 @@ export class MeshBuilder {
     public generateUvs(): void {
         // for now just set to 0
         for (let i = 0; i < this.vertices.length; i++) {
-            this.uvs[i] = [0, 0, 0]
+            this.uvs[i] = [0, 0]
         }
     }
 
