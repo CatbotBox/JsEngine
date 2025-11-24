@@ -1,5 +1,4 @@
 ﻿import {AABB} from "../AABB";
-import {it} from "node:test";
 
 
 export interface TrackedOctItem<T, U> {
@@ -160,14 +159,14 @@ export class TrackedOctree<T, U> {
             const growMinZ = b.zMin < rb.zMin;
             const growMaxZ = b.zMax > rb.zMax;
 
-            rb = {
+            rb = AABB.fromExplicit({
                 xMin: rb.xMin - (growMinX ? sx : 0),
                 xMax: rb.xMax + (growMaxX ? sx : 0),
                 yMin: rb.yMin - (growMinY ? sy : 0),
                 yMax: rb.yMax + (growMaxY ? sy : 0),
                 zMin: rb.zMin - (growMinZ ? sz : 0),
                 zMax: rb.zMax + (growMaxZ ? sz : 0),
-            };
+            });
         } while (!AABB.contains(rb, b));
 
         // Rebuild: new root with inflated bounds, reset batch index
@@ -232,7 +231,14 @@ export class TrackedOctree<T, U> {
         const midY = (yMin + yMax) * 0.5;
         const midZ = (zMin + zMax) * 0.5;
         const mk = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): AABB =>
-            AABB.inflate({xMin: x0, yMin: y0, zMin: z0, xMax: x1, yMax: y1, zMax: z1}, this.looseFactor);
+            AABB.inflate(AABB.fromExplicit({
+                xMin: x0,
+                yMin: y0,
+                zMin: z0,
+                xMax: x1,
+                yMax: y1,
+                zMax: z1
+            }), this.looseFactor);
 
         node.children = [
             new OctNode<T, U>(mk(xMin, yMin, zMin, midX, midY, midZ), node.depth + 1, node.capacity, node.maxDepth), // LLL
