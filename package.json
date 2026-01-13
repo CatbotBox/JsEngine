@@ -6,9 +6,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev-node": "tsc -p tsconfig.json && node dist/index.js",
-    "dev-bun": "bun src/index.ts",
-    "compile": "bun build src/index.ts --compile",
-    "start": "node src/index.ts",
     "clear-logs": "rm -rf logs/*"
   },
   "devDependencies": {

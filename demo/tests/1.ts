@@ -4,12 +4,12 @@ import {
     EntityCommandBufferSystem,
     System,
     DebugWorld
-} from "./js_engine";
-import {keyboardInput} from "./js_engine/input";
+} from "../../src/js_engine";
+import {keyboardInput} from "../../src/js_engine/input";
 
-import {Camera, HudElement, RenderBounds, RenderingSystemGroup} from "./js_engine/rendering";
+import {Camera, HudElement, RenderBounds, RenderingSystemGroup} from "../../src/js_engine/rendering";
 
-import {LocalPosition, LocalToWorld, Parent} from "./js_engine/translation";
+import {LocalPosition, LocalToWorld, Parent} from "../../src/js_engine/translation";
 
 import {
     Ansi,
@@ -17,10 +17,10 @@ import {
     ConsoleImage,
     ConsoleImageAnchor,
 
-} from "./js_engine/rendering/console";
+} from "../../src/js_engine/rendering/console";
 
-import {Console2DRenderPassSystem} from "./js_engine/rendering/console/2d";
-import {AverageStat} from "./js_engine/datatypes";
+import {Console2DRenderPassSystem} from "../../src/js_engine/rendering/console/2d";
+import {AverageStat} from "../../src/js_engine/datatypes";
 
 
 const world = new DebugWorld();
