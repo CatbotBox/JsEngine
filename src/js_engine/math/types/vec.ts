@@ -14,8 +14,8 @@ type BuildTuple<N extends number, T, R extends unknown[] = []> =
 // NOTE: labels are not included here (TS can't compute them).
 export type Vec<N extends number> =
 // BuildTuple<N, number> &
-    (Float32Array | number[]) &
-    { length: N };
+    ((Float32Array | number[]) &
+        { length: N } ) | Vec<NoUnion<N>>
 
 export type truthVec<N> = boolean[] & { length: N }
 
