@@ -138,7 +138,7 @@ export class Console3DRenderPassSystem extends System {
             const depthBuffer = this.drawMeshPreAllocations.depthBuffer;
             vertBuffer.select(2).copyTo(depthBuffer);
             const below0 = Vec.lessOrEquals(depthBuffer, [0, 0, 0] as Vec3);
-            const below0Count = below0.reduce((a, b) => a + (b ? 1 : 0), 0);
+            const below0Count = below0.reduce((a, b) => a + (b ? 1 : 0));
             //cull if triangle is behind camera
             if (below0Count == 3) continue;
 
