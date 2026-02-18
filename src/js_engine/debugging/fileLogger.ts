@@ -39,7 +39,9 @@ function getLatestLogFile(): NodeJS.WritableStream {
             fs.mkdirSync(logFilePath, {recursive: true});
         }
         const file = logFilePath + "latest" + ".log";
-        fs.rmSync(file);
+        if(fs.existsSync(file)) {
+            fs.rmSync(file);
+        }
 
         latestLogFile = fs.createWriteStream(file, {flags: "a"})
     }
