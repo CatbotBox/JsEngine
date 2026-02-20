@@ -112,8 +112,8 @@ export class Console2DRenderPassSystem extends System {
                 skipped = false
             }
 
-            const renderBoundsCol = arch.getColumn(WorldSpaceRenderBounds.type())!;
-            const consoleImageCol = arch.getColumn(ConsoleImage.type())!;
+            const renderBoundsCol = arch.getColumn(WorldSpaceRenderBounds.type());
+            const consoleImageCol = arch.getColumn(ConsoleImage.type());
             const localToWorldCol = arch.getColumn(LocalToWorld.type());
             if (renderBoundsCol === undefined) throw new Error("RenderBounds is not found (this shouldn't happen)") ;
             if (consoleImageCol === undefined) throw new Error("ConsoleImage is not found (this shouldn't happen)") ;
