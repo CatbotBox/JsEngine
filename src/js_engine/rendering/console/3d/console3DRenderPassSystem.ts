@@ -13,12 +13,8 @@ import {FieldOfView} from "../../3d/fieldOfView";
 import {Vec2Array, Vec3Array, VecArray} from "../../../math/types/vecArray";
 import {TextureProvider} from "../../textureProvider";
 import {ConsoleCellRatio} from "../../consoleCellRatio";
-//
-// // Terminal Settings
-// const LINE_HEIGHT = 0.6;
-// const CELL_WIDTH = 0.6;
-// // Constants
-// const CONSOLE_ASPECT_RATIO = LINE_HEIGHT / CELL_WIDTH; // Console chars are usually twice as tall as they are wide
+
+// Constants
 const MAX_DEPTH_FADE = 15;      // Depth at which objects fade to black
 
 function clamp(value: number, min: number, max: number): number {
