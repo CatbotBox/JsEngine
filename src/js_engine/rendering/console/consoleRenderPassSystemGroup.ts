@@ -7,6 +7,7 @@ import {Ansi} from "./ansi";
 import {ConsoleScreenBuffer} from "./consoleScreenBuffer";
 import {RenderingSystemGroup} from "../renderingSystemGroup";
 import {ScreenSize} from "../screenSize";
+import {ConsoleCellSizingSystem} from "./consoleCellSizingSystem";
 
 export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
@@ -30,6 +31,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
     protected onCreate() {
         this.requireAllForUpdate(this._cameraQuery) // always require a camera
         this.world.ensureSystemExists(ConsoleCameraSizingSystem);
+        this.world.ensureSystemExists(ConsoleCellSizingSystem);
     }
 
     public onDestroy() {

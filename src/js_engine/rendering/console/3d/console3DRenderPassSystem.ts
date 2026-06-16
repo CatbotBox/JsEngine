@@ -12,6 +12,14 @@ import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {FieldOfView} from "../../3d/fieldOfView";
 import {Vec2Array, Vec3Array, VecArray} from "../../../math/types/vecArray";
 import {TextureProvider} from "../../textureProvider";
+import {ConsoleCellRatio} from "../../consoleCellRatio";
+//
+// // Terminal Settings
+// const LINE_HEIGHT = 0.6;
+// const CELL_WIDTH = 0.6;
+// // Constants
+// const CONSOLE_ASPECT_RATIO = LINE_HEIGHT / CELL_WIDTH; // Console chars are usually twice as tall as they are wide
+const MAX_DEPTH_FADE = 15;      // Depth at which objects fade to black
 
 function clamp(value: number, min: number, max: number): number {
     if (value > max) return max;
@@ -19,44 +27,42 @@ function clamp(value: number, min: number, max: number): number {
     return value;
 }
 
-function perpendicular(a: Vec2): Vec2 {
-    return [-a[1], a[0]]
-}
-
+/**
+ * Calculates the signed area of a 2D triangle using the 2D cross product.
+ * Avoids array allocations for performance in tight loops.
+ */
 function signedAreaTriangle(a: Vec2, b: Vec2, c: Vec2): number {
-    const ac = Vec.sub(c, a);
-    const abPerp = perpendicular(Vec.sub(b, a))
-    return Vec.dot(ac, abPerp) / 2;
+    return ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
 }
 
 function pointInTriangle(verts: Vec2Array<3>, point: Vec2, outWeights: Vec3): boolean {
     const [a, b, c] = verts;
+
+    // Calculate total area of the triangle once
+    const areaABC = signedAreaTriangle(a, b, c);
+    if (areaABC === 0) return false; // Cull degenerate triangles
+
     const areaABP = signedAreaTriangle(a, b, point);
     const areaBCP = signedAreaTriangle(b, c, point);
     const areaCAP = signedAreaTriangle(c, a, point);
 
-    const inTriangle: boolean = areaABP <= 0 && areaBCP <= 0 && areaCAP <= 0;
+    // Assuming a specific winding order (adjust signs if your faces are culled backwards)
+    const inTriangle = areaABP <= 0 && areaBCP <= 0 && areaCAP <= 0;
+    if (!inTriangle) return false;
 
-    const invAreaSum = 1 / (areaABP + areaBCP + areaCAP);
-    outWeights[0] = areaBCP * invAreaSum;
-    outWeights[1] = areaCAP * invAreaSum;
-    outWeights[2] = areaABP * invAreaSum;
+    // Use the actual area of the triangle for mathematically correct barycentric weights
+    const invArea = 1 / areaABC;
+    outWeights[0] = areaBCP * invArea;
+    outWeights[1] = areaCAP * invArea;
+    outWeights[2] = areaABP * invArea;
 
-    return inTriangle
+    return true;
 }
 
 export class Console3DRenderPassSystem extends System {
-
-    private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
-    // always render these objects (no render bounds)
+    private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld, FieldOfView, ConsoleCellRatio]);
     private _alwaysRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
-    // only render if visible
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
-    // private _octTree = new TrackedOctree<{
-    //     consoleImage: ConsoleImage;
-    //     zHeight: number;
-    // }, EntityArchetype>();
-    // private tracked: Set<EntityArchetype> = new Set();
 
     override systemGroup() {
         return ConsoleRenderPassSystemGroup;
@@ -67,29 +73,24 @@ export class Console3DRenderPassSystem extends System {
     }
 
     protected onCreate() {
-        // always require a camera
-        this.requireAllForUpdate(this._cameraQuery)
-        // and require at least one renderer object from either query
+        this.requireAllForUpdate(this._cameraQuery);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
         this.requireAnyForUpdate(this._selectiveRenderQuery);
     }
-
 
     onUpdate() {
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,
             screenSize: ScreenSize,
+            consoleCellRatio: ConsoleCellRatio,
             localToWorld: LocalToWorld,
             fov: FieldOfView,
         });
-        const screenSize = cameraEntity.screenSize;
 
-        // Prepare current buffer
         const dualScreenBuffer = this.world.resources.tryGet(ConsoleScreenBuffer);
-        if (!dualScreenBuffer) return
-        const screenBuffer = dualScreenBuffer.screenBuffer;
+        if (!dualScreenBuffer) return;
 
-        const invertedCameraMatrix = LocalToWorld.invertAffine(cameraEntity.localToWorld.matrix)
+        const invertedCameraMatrix = LocalToWorld.invertAffine(cameraEntity.localToWorld.matrix);
 
         this._alwaysRenderQuery.stream({
             renderMesh: RenderMesh,
@@ -97,8 +98,16 @@ export class Console3DRenderPassSystem extends System {
         }).collect()
             .filter(e => e.renderMesh.mesh !== undefined)
             .forEach(({renderMesh, localToWorld}) => {
-                Console3DRenderPassSystem.drawMesh(screenBuffer, renderMesh.mesh!, localToWorld, invertedCameraMatrix, cameraEntity.fov, screenSize)
-            })
+                Console3DRenderPassSystem.drawMesh(
+                    dualScreenBuffer.screenBuffer,
+                    renderMesh.mesh!,
+                    localToWorld,
+                    invertedCameraMatrix,
+                    cameraEntity.fov,
+                    cameraEntity.screenSize,
+                    cameraEntity.consoleCellRatio
+                );
+            });
     }
 
     private static drawMeshPreAllocations = {
@@ -107,144 +116,238 @@ export class Console3DRenderPassSystem extends System {
         screenSpacePointsBuffer: new VecArray(3, 2),
         depthBuffer: [0, 0, 0] as Vec3,
     };
+    private static NEAR_PLANE_Z = 0.1;
 
-    private static drawMesh(screenBuffer: ScreenBuffer, mesh: Mesh, localToWorld: LocalToWorld, invertedCameraMatrix: Vec16, fieldOfView: FieldOfView | undefined, screenSize: ScreenSize): void {
+    private static intersectPlane(p1: Vec3, p2: Vec3, uv1: Vec2, uv2: Vec2): { p: Vec3, uv: Vec2 } {
+        // Calculate interpolation factor 't' along the line segment
+        const t = (this.NEAR_PLANE_Z - p1[2]) / (p2[2] - p1[2]);
 
-        const triangles = mesh.triangles;
+        const p: Vec3 = [
+            p1[0] + t * (p2[0] - p1[0]),
+            p1[1] + t * (p2[1] - p1[1]),
+            this.NEAR_PLANE_Z
+        ];
 
-        const vertBuffer = this.drawMeshPreAllocations.vertBuffer;
-        const uvBuffer = this.drawMeshPreAllocations.uvBuffer;
-        const uvs = mesh.uvs;
-        const screenSpacePointsBuffer = this.drawMeshPreAllocations.screenSpacePointsBuffer;
-        const worldSpaceVertices = this.localSpaceToWorldSpace(mesh.vertices, localToWorld, invertedCameraMatrix);
+        const uv: Vec2 = [
+            uv1[0] + t * (uv2[0] - uv1[0]),
+            uv1[1] + t * (uv2[1] - uv1[1])
+        ];
 
+        return {p, uv};
+    }
 
-        // const AABB
-        for (const triangle of triangles) {
-            const currentTri = triangle;
-            vertBuffer.set(worldSpaceVertices.at(currentTri[0]), 0);
-            vertBuffer.set(worldSpaceVertices.at(currentTri[1]), 1);
-            vertBuffer.set(worldSpaceVertices.at(currentTri[2]), 2);
+    private static clipTriangleAgainstNearPlane(
+        inVerts: Vec3[],
+        inUVs: Vec2[]
+    ): { verts: Vec3[], uvs: Vec2[] }[] {
+        const insideVerts: Vec3[] = [];
+        const insideUVs: Vec2[] = [];
+        const outsideVerts: Vec3[] = [];
+        const outsideUVs: Vec2[] = [];
 
-            uvBuffer.set(uvs.at(currentTri[0]), 0);
-            uvBuffer.set(uvs.at(currentTri[1]), 1);
-            uvBuffer.set(uvs.at(currentTri[2]), 2);
-
-            screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(vertBuffer.at(0), fieldOfView, screenSize), 0);
-            screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(vertBuffer.at(1), fieldOfView, screenSize), 1);
-            screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(vertBuffer.at(2), fieldOfView, screenSize), 2);
-
-
-            const depthBuffer = this.drawMeshPreAllocations.depthBuffer;
-            vertBuffer.select(2).copyTo(depthBuffer);
-            const below0 = Vec.lessOrEquals(depthBuffer, [0, 0, 0] as Vec3);
-            const below0Count = below0.reduce((a, b) => a + (b ? 1 : 0));
-            //cull if triangle is behind camera
-            if (below0Count == 3) continue;
-
-            //special handling when part of triangle is behind camera
-            if (below0Count > 0) {
-                continue; //todo
+        // Sort vertices into "inside" (in front of camera) and "outside" (behind camera)
+        for (let i = 0; i < 3; i++) {
+            if (inVerts[i][2] >= this.NEAR_PLANE_Z) {
+                insideVerts.push(inVerts[i]);
+                insideUVs.push(inUVs[i]);
+            } else {
+                outsideVerts.push(inVerts[i]);
+                outsideUVs.push(inUVs[i]);
             }
+        }
 
+        // Case 0: Entirely behind camera. Draw nothing.
+        if (insideVerts.length === 0) return [];
 
-            // const depthBuffer = this.drawMeshPreAllocations.depthBuffer;
-            // vertBuffer.select(2).copyTo(depthBuffer);
+        // Case 3: Entirely in front of camera. Draw as-is.
+        if (insideVerts.length === 3) {
+            return [{verts: inVerts, uvs: inUVs}];
+        }
 
-            this.drawTriangleScreenSpace(screenBuffer, screenSize, screenSpacePointsBuffer, depthBuffer, uvBuffer, TextureProvider.defaultTexture)
+        // Case 1: One vertex inside, two outside. The triangle is clipped into a smaller triangle.
+        if (insideVerts.length === 1) {
+            const intersection1 = this.intersectPlane(insideVerts[0], outsideVerts[0], insideUVs[0], outsideUVs[0]);
+            const intersection2 = this.intersectPlane(insideVerts[0], outsideVerts[1], insideUVs[0], outsideUVs[1]);
 
+            return [{
+                verts: [insideVerts[0], intersection1.p, intersection2.p],
+                uvs: [insideUVs[0], intersection1.uv, intersection2.uv]
+            }];
+        }
+
+        // Case 2: Two vertices inside, one outside. The triangle is clipped into a quad, which becomes 2 new triangles.
+        if (insideVerts.length === 2) {
+            const intersection1 = this.intersectPlane(insideVerts[0], outsideVerts[0], insideUVs[0], outsideUVs[0]);
+            const intersection2 = this.intersectPlane(insideVerts[1], outsideVerts[0], insideUVs[1], outsideUVs[0]);
+
+            return [
+                { // Triangle 1 of the new quad
+                    verts: [insideVerts[0], insideVerts[1], intersection1.p],
+                    uvs: [insideUVs[0], insideUVs[1], intersection1.uv]
+                },
+                { // Triangle 2 of the new quad
+                    verts: [insideVerts[1], intersection2.p, intersection1.p],
+                    uvs: [insideUVs[1], intersection2.uv, intersection1.uv]
+                }
+            ];
+        }
+
+        return [];
+    }
+
+    private static drawMesh(screenBuffer: ScreenBuffer, mesh: Mesh, localToWorld: LocalToWorld, invertedCameraMatrix: Vec16, fieldOfView: FieldOfView | undefined, screenSize: ScreenSize, consoleCellRatio: ConsoleCellRatio): void {
+        const {screenSpacePointsBuffer, depthBuffer} = this.drawMeshPreAllocations;
+        // View space vertices (relative to camera)
+        const viewSpaceVertices = this.localSpaceToWorldSpace(mesh.vertices, localToWorld, invertedCameraMatrix);
+
+        for (const currentTri of mesh.triangles) {
+
+            // 1. Gather view-space vertices and UVs for this triangle
+            const triVerts = [
+                viewSpaceVertices.at(currentTri[0]),
+                viewSpaceVertices.at(currentTri[1]),
+                viewSpaceVertices.at(currentTri[2])
+            ];
+
+            const triUVs = [
+                mesh.uvs.at(currentTri[0]),
+                mesh.uvs.at(currentTri[1]),
+                mesh.uvs.at(currentTri[2])
+            ];
+
+            // 2. Clip against the near plane
+            const clippedTriangles = this.clipTriangleAgainstNearPlane(triVerts, triUVs);
+
+            // 3. Project and draw the resulting triangle(s)
+            for (const clippedTri of clippedTriangles) {
+                // Project to screen space
+                screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(clippedTri.verts[0], fieldOfView, screenSize, consoleCellRatio), 0);
+                screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(clippedTri.verts[1], fieldOfView, screenSize, consoleCellRatio), 1);
+                screenSpacePointsBuffer.set(this.worldSpaceToScreenSpace(clippedTri.verts[2], fieldOfView, screenSize, consoleCellRatio), 2);
+
+                // Set depth buffer
+                depthBuffer[0] = clippedTri.verts[0][2];
+                depthBuffer[1] = clippedTri.verts[1][2];
+                depthBuffer[2] = clippedTri.verts[2][2];
+
+                // Write UVs to your pre-allocated format
+                const uvBuffer = new VecArray(3, 3); // Consider pre-allocating an array of these to avoid this allocation!
+                uvBuffer.set([clippedTri.uvs[0][0], clippedTri.uvs[0][1], 0], 0);
+                uvBuffer.set([clippedTri.uvs[1][0], clippedTri.uvs[1][1], 0], 1);
+                uvBuffer.set([clippedTri.uvs[2][0], clippedTri.uvs[2][1], 0], 2);
+
+                this.drawTriangleScreenSpace(screenBuffer, screenSize, screenSpacePointsBuffer, depthBuffer, uvBuffer, TextureProvider.defaultTexture);
+            }
         }
     }
 
-    //world space relative to the camera
-
     private static localSpaceToWorldSpace(points: Vec3Array, localToWorld: LocalToWorld, invertedCamMatrix: Vec16, vec3Buffer: Vec3Array = new VecArray(points.length, 3)): Vec3Array {
         const relativeLocalToWorld = LocalToWorld.mul(invertedCamMatrix, localToWorld.matrix);
-        for (let index = 0; index < points.length; index++) {
-            const point = points.at(index);
-            LocalToWorld.transformPoint(relativeLocalToWorld, point, vec3Buffer.at(index));
+        for (let i = 0; i < points.length; i++) {
+            LocalToWorld.transformPoint(relativeLocalToWorld, points.at(i), vec3Buffer.at(i));
         }
         return vec3Buffer;
     }
 
-    private static worldSpaceToScreenSpace(worldSpaceVert: Vec3, fieldOfView: FieldOfView | undefined, screenSize: ScreenSize): Vec2 {
+    private static worldSpaceToScreenSpace(worldSpaceVert: Vec3, fieldOfView: FieldOfView | undefined, screenSize: ScreenSize, consoleCellRatio: ConsoleCellRatio): Vec2 {
         let pixelsPerWorldUnit = 1;
         if (fieldOfView !== undefined) {
-            //this value in world space maps to the top of the screen
-            // const fov = fieldOfView ? fieldOfView.radians : 0;
-            // const screenHeightWorld = 5;
             const screenHeightWorld = Math.tan(fieldOfView.radians / 2) * 2;
-
-
             pixelsPerWorldUnit = screenSize.y / screenHeightWorld / worldSpaceVert[2];
         }
-        const screenOffset = Vec.div(screenSize.vec, [2, 2] as Vec2);
-        const pixelOffset = [worldSpaceVert[0] * pixelsPerWorldUnit * 2, worldSpaceVert[1] * pixelsPerWorldUnit] as Vec2
 
-        //ignore z for now
-        // return [worldSpaceVert[0], worldSpaceVert[1]] as Vec2;
-        // console.log(vert[2])
-        // return [vert[0] / vert[2], vert[1] / vert[2]] as Vec2;
+        const screenOffset = Vec.div(screenSize.vec, [2, 2] as Vec2);
+        const pixelOffset = [
+            worldSpaceVert[0] * pixelsPerWorldUnit * consoleCellRatio.value,
+            worldSpaceVert[1] * pixelsPerWorldUnit
+        ] as Vec2;
+
         return Vec.add(screenOffset, pixelOffset);
     }
 
     static drawTriangleScreenSpacePreAllocations = {
         screenPoint: [0, 0] as Vec2,
         weights: [0, 0, 0] as Vec3,
+        // color: [218, 96, 239] as Vec3,
         color: [255, 255, 255] as Vec3,
         uv: [0, 0] as Vec2,
-    }
+        // Pre-calculate 1/Z for the 3 vertices to save time in the loop
+        invDepthData: [0, 0, 0] as Vec3,
+    };
 
-    private static drawTriangleScreenSpace(screenBuffer: ScreenBuffer, screenSize: ScreenSize,
-                                           screenspacePoints: Vec2Array<3>, depthData: Vec3,
-                                           uvs: Vec3Array<3>, textureProvider: TextureProvider) {
-        //triangle on screen space
-
+    private static drawTriangleScreenSpace(
+        screenBuffer: ScreenBuffer,
+        screenSize: ScreenSize,
+        screenspacePoints: Vec2Array<3>,
+        depthData: Vec3,
+        uvs: Vec3Array<3>,
+        textureProvider: TextureProvider
+    ) {
         const min = Vec.min(...screenspacePoints);
         const max = Vec.max(...screenspacePoints);
 
-        const renderStartX = clamp(Math.ceil(min[0]), 0, screenSize.x)
-        const renderStartY = clamp(Math.ceil(min[1]), 0, screenSize.y)
-        const renderEndX = clamp(Math.ceil(max[0]), 0, screenSize.x)
-        const renderEndY = clamp(Math.ceil(max[1]), 0, screenSize.y)
-        // const triColor = Ansi.bgRGB(Math.ceil(Math.random() * 255), Math.ceil(Math.random() * 255), Math.ceil(Math.random() * 255));
+        const renderStartX = clamp(Math.floor(min[0]), 0, screenSize.x);
+        const renderStartY = clamp(Math.floor(min[1]), 0, screenSize.y);
+        const renderEndX = clamp(Math.ceil(max[0]), 0, screenSize.x);
+        const renderEndY = clamp(Math.ceil(max[1]), 0, screenSize.y);
+
+        const {screenPoint, weights, color, uv, invDepthData} = this.drawTriangleScreenSpacePreAllocations;
+
+        // Pre-compute 1/Z for perspective correction
+        invDepthData[0] = 1 / depthData[0];
+        invDepthData[1] = 1 / depthData[1];
+        invDepthData[2] = 1 / depthData[2];
+
+        // Pre-compute U/Z and V/Z
+        const u0z = uvs.at(0)[0] * invDepthData[0];
+        const v0z = uvs.at(0)[1] * invDepthData[0];
+        const u1z = uvs.at(1)[0] * invDepthData[1];
+        const v1z = uvs.at(1)[1] * invDepthData[1];
+        const u2z = uvs.at(2)[0] * invDepthData[2];
+        const v2z = uvs.at(2)[1] * invDepthData[2];
 
         for (let y = renderStartY; y < renderEndY; y++) {
             for (let x = renderStartX; x < renderEndX; x++) {
-                const screenPoint = this.drawTriangleScreenSpacePreAllocations.screenPoint;
                 screenPoint[0] = x;
                 screenPoint[1] = y;
-                const weights = this.drawTriangleScreenSpacePreAllocations.weights
-                if (!pointInTriangle(screenspacePoints, screenPoint, weights)) {
-                    // this.triangleLevelBackfaceCulling(screenspacePoints);
-                    // screenBuffer.setPixels(Ansi.colors.bg.red + " " + Ansi.control.reset, x, y, Number.POSITIVE_INFINITY / 2);
-                    continue;
-                }
 
-                const uv = this.drawTriangleScreenSpacePreAllocations.uv;
-                const color = this.drawTriangleScreenSpacePreAllocations.color;
-                // uv[0] = uvs.at(0)[0] * weights[0] + uvs.at(1)[0] * weights[1] + uvs.at(2)[0] * weights[2];
-                // uv[1] = uvs.at(0)[1] * weights[0] + uvs.at(1)[1] * weights[1] + uvs.at(2)[1] * weights[2];
+                if (!pointInTriangle(screenspacePoints, screenPoint, weights)) continue;
+
+                // 1. Interpolate 1/Z
+                const interpolatedInvZ =
+                    invDepthData[0] * weights[0] +
+                    invDepthData[1] * weights[1] +
+                    invDepthData[2] * weights[2];
+
+                // The true pixel depth
+                const depth = 1 / interpolatedInvZ;
+
+                // Cull parts behind the near plane (just in case clipping missed a microscopic sliver)
+                if (depth < 0.1) continue;
+
+                // 2. Interpolate U/Z and V/Z, then multiply by true depth to get final UV
+                uv[0] = (u0z * weights[0] + u1z * weights[1] + u2z * weights[2]) * depth;
+                uv[1] = (v0z * weights[0] + v1z * weights[1] + v2z * weights[2]) * depth;
+
+                // --- NOW YOU CAN USE `uv` TO SAMPLE YOUR TEXTURE ---
                 // color = textureProvider.getColorAt(uv);
 
-                const depth = Vec.dot(depthData, weights);
-                if (depth < 0) continue; //cull parts that are behind the camera
-                const depthFade = 1 - (depth / 15);
-                const color0 = Math.ceil(depthFade * color[0]);
-                const color1 = Math.ceil(depthFade * color[1]);
-                const color2 = Math.ceil(depthFade * color[2]);
-                const depthColor = Ansi.bgRGB(color0, color1, color2);
+                const depthFade = clamp(1 - (depth / MAX_DEPTH_FADE), 0, 1);
+                const r = Math.ceil(depthFade * color[0]);
+                const g = Math.ceil(depthFade * color[1]);
+                const b = Math.ceil(depthFade * color[2]);
+
+                const depthColor = Ansi.bgRGB(r, g, b);
                 screenBuffer.setPixels(depthColor + " " + Ansi.control.reset, x, y, depth);
             }
         }
     }
 
-
     override onEnable(): void {
-        console.info("Enabled 3D render pass")
+        console.info("Enabled 3D render pass");
     }
 
     override onDisable(): void {
-        console.info("Disabled 3D render pass")
+        console.info("Disabled 3D render pass");
     }
 }

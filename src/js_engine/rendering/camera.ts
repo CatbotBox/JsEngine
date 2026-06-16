@@ -1,6 +1,7 @@
 ﻿import {Component, Entity} from "../core";
 import {EntityWriteOptions} from "../core/entityWriteOptions";
 import {ScreenSize} from "./screenSize";
+import {ConsoleCellRatio} from "./consoleCellRatio";
 
 export class Camera extends Component {
     private _nearPlaneDistance: number = 0.1;
@@ -24,5 +25,6 @@ export class Camera extends Component {
 
     setup(entity: Entity, entityManager: EntityWriteOptions) {
         entityManager.addComponent(entity, new ScreenSize())
+        entityManager.addComponent(entity, new ConsoleCellRatio())
     }
 }
