@@ -3,10 +3,16 @@ import {Camera} from "../camera";
 import {RenderingSystemGroup} from "../renderingSystemGroup";
 import {CurrentInterpreter} from "../../interpreter";
 import {ConsoleCellRatio} from "../consoleCellRatio";
+import {getRawTerminalSize} from "./consoleCameraSizingSystem";
+
+
+const DEFAULT_CELL_RATIO = 0.5;
+const QUERY_TIMEOUT_MS = 200;
 
 export class ConsoleCellSizingSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ConsoleCellRatio])
     private _initialized: boolean = false;
+    private _pending: boolean = false;
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -28,32 +34,79 @@ export class ConsoleCellSizingSystem extends System {
     }
 
     onEnable(): void {
-        //reset initialized status
+        // reset initialized status
         this._initialized = false;
     }
 
     public refreshSize() {
-        const cameraEntity = this._cameraQuery.getSingleton({consoleSizeRatio: ConsoleCellRatio})
-        process.stdin.setRawMode(true);
-        process.stdin.resume();
-        process.stdout.write('\x1b[14t');
+        if (this._pending) return;
 
-        process.stdin.once('data', (chunk: Uint8Array) => {
-            process.stdin.setRawMode(false);
-            process.stdin.pause();
+        const cameraEntity = this._cameraQuery.getSingleton({consoleSizeRatio: ConsoleCellRatio});
+        const stdin = process.stdin;
+        const stdout = process.stdout;
 
-            const response = new TextDecoder().decode(chunk);
-            const match = response.match(/\x1b\[4;(\d+);(\d+)t/);
+        if (!stdin.isTTY || !stdout.isTTY || typeof stdin.setRawMode !== "function") {
+            cameraEntity.consoleSizeRatio.value = DEFAULT_CELL_RATIO;
+            return;
+        }
 
-            if (match) {
-                const pixelHeight = parseInt(match[1], 10);
-                const pixelWidth = parseInt(match[2], 10);
+        const {columns: cols, rows} = getRawTerminalSize();
 
-                // Derive your verified ratio constraints
-                cameraEntity.consoleSizeRatio.value = 1 / pixelHeight * pixelWidth;
+        if (!cols || !rows) {
+            cameraEntity.consoleSizeRatio.value = DEFAULT_CELL_RATIO;
+            return;
+        }
+
+        this._pending = true;
+        let buffer = "";
+        let settled = false;
+
+        const cleanup = () => {
+            stdin.setRawMode(false);
+            stdin.pause();
+            // noinspection TypeScriptValidateTypes
+            stdin.removeListener("data", onData);
+            clearTimeout(timer);
+            this._pending = false;
+        };
+
+        const finish = (ratio: number) => {
+            if (settled) return;
+            settled = true;
+            cameraEntity.consoleSizeRatio.value = ratio;
+            cleanup();
+        };
+
+        const onData = (chunk: Uint8Array) => {
+            buffer += new TextDecoder().decode(chunk);
+            const match = buffer.match(/\x1b\[4;(\d+);(\d+)t/);
+            if (!match) return;
+
+            const pixelHeight = parseInt(match[1], 10);
+            const pixelWidth = parseInt(match[2], 10);
+
+            if (pixelHeight > 0 && pixelWidth > 0) {
+                // pixelWidth/pixelHeight describe the WHOLE window — divide
+                // out the grid size to get one cell's dimensions, then take
+                // ITS width:height ratio.
+                const cellWidth = pixelWidth / cols;
+                const cellHeight = pixelHeight / rows;
+                finish(cellHeight / cellWidth);
             } else {
-                cameraEntity.consoleSizeRatio.value = 2;
+                // Some terminals/multiplexers (e.g. tmux) reply "0;0" when
+                // they don't actually track pixel size.
+                finish(DEFAULT_CELL_RATIO);
             }
-        });
+        };
+
+        const timer = setTimeout(() => {
+            // Terminal never replied (no XTWINOPS support) - don't hang forever.
+            finish(DEFAULT_CELL_RATIO);
+        }, QUERY_TIMEOUT_MS);
+
+        stdin.setRawMode(true);
+        stdin.resume();
+        stdin.on("data", onData);
+        stdout.write('\x1b[14t');
     }
 }
