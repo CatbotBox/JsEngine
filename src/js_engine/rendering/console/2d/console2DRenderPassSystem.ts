@@ -118,8 +118,11 @@ export class Console2DRenderPassSystem extends System {
             if (renderBoundsCol === undefined) throw new Error("RenderBounds is not found (this shouldn't happen)") ;
             if (consoleImageCol === undefined) throw new Error("ConsoleImage is not found (this shouldn't happen)") ;
 
-            // don't skip if component store has a change
-            if (skipped && consoleImageCol.lastUpdatedTime >= lastUpdatedTimeRequirement) {
+            // don't skip if the entities' spatial bounds changed (position/size) -- the octree only
+            // needs to be touched for spatial reasons; image *content* (color/glyphs) changes don't move
+            // anything, and blit() already reads the current pixels off the same live ConsoleImage
+            // reference every frame regardless of whether it's reinserted here.
+            if (skipped && renderBoundsCol.lastUpdatedTime >= lastUpdatedTimeRequirement) {
                 skipped = false
             }
 

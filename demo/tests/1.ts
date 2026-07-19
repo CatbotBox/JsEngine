@@ -61,12 +61,25 @@ function createCross(position: LocalPosition, parent?: Entity, name?: string, ..
     return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
 }
 
+class FadeToColor extends Component {
+    public color: [number, number, number];
+    public fadeTime: number;
+    public currentFadeTime: number = 0;
+}
+
+class OriginalColor extends Component {
+    public color: [number, number, number];
+}
+
 function createPixel(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
     const objectEntity = buffer.createEntity(name);
     const r = Math.round(Math.random() * 255)
     const g = Math.round(Math.random() * 255)
     const b = Math.round(Math.random() * 255)
     const pixelImage = new ConsoleImage();
+    const originalColor = new OriginalColor()
+    originalColor.color = [r, g, b];
+    buffer.addComponent(objectEntity, originalColor)
     pixelImage.transparentChar = '0'
     const color = Ansi.bgRGB(r, g, b)
     pixelImage.image = [
@@ -82,6 +95,7 @@ function createPixel(position: LocalPosition, parent?: Entity, name?: string, ..
     }
     return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
 }
+
 
 class PlayerTag extends Component {
 
@@ -154,11 +168,19 @@ keyboardInput.when({name: 'space'}, () => {
         const newPos = new LocalPosition();
         newPos.x = x + localToWorld.position[0]
         newPos.y = y + localToWorld.position[1]
-        createPixel(newPos);
+        // if (Math.random() < 0.5) {
+        const fadeToColor = new FadeToColor();
+        fadeToColor.color = [255, 183, 206]
+        fadeToColor.fadeTime = Math.random() * 5000 + 5000;
+        createPixel(newPos, null, null, fadeToColor);
+        // } else {
+        //     createPixel(newPos);
+        // }
     }
 })
 keyboardInput.when({name: 'return'}, () => {
     const renderer = world.tryGetSystem(RenderingSystemGroup);
+    console.log('Rendering system group', renderer);
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
     world.getOrCreateSystem(DebugSystem).logEntities();
@@ -183,6 +205,69 @@ keyboardInput.when({name: 'c', ctrl: true}, () => {
 
 console.log(cameraEntity)
 
+class FadeSystem extends System {
+
+    private _query = this.createEntityQuery([OriginalColor, FadeToColor, ConsoleImage])
+
+    protected onCreate() {
+        this.requireAllForUpdate(this._query);
+    }
+
+    public count() {
+        return this._query.entityCount()
+    }
+
+    private interpolate(color1: [number, number, number], color2: [number, number, number], scale: number): [number, number, number] {
+        if (scale >= 1) return color2;
+        if (scale <= 0) return color1;
+        const diff = [
+            color2[0] - color1[0],
+            color2[1] - color1[1],
+            color2[2] - color1[2]
+        ]
+        diff[0] *= scale;
+        diff[1] *= scale;
+        diff[2] *= scale;
+        diff[0] += color1[0];
+        diff[1] += color1[1];
+        diff[2] += color1[2];
+        diff[0] = Math.round(diff[0]);
+        diff[1] = Math.round(diff[1]);
+        diff[2] = Math.round(diff[2]);
+        return diff;
+
+    }
+
+    onUpdate(): void {
+        console.log(this._query.entityCount());
+        const deltaTime = this.world.time.deltaTime;
+        this._query.stream({
+            originalColor: OriginalColor,
+            fadeToColor: FadeToColor,
+            image: ConsoleImage
+        }, {
+            includeEntity: true
+        }).forEach(({entity, image, fadeToColor, originalColor}) => {
+            fadeToColor.currentFadeTime += deltaTime;
+
+            const scale = fadeToColor.currentFadeTime / fadeToColor.fadeTime;
+            const finalColor = this.interpolate(originalColor.color, fadeToColor.color, scale)
+            const color = Ansi.bgRGB(finalColor[0], finalColor[1], finalColor[2])
+            image.image = [
+                color + ' ',
+            ]
+            if (fadeToColor.currentFadeTime >= fadeToColor.fadeTime) {
+                originalColor.color = fadeToColor.color;
+                // fade is done: stop touching this entity's ConsoleImage every frame and move it
+                // out of the shared "fading pixel" archetype so it no longer contributes to the
+                // per-archetype change-tracking cascade (bounds recompute + octree rebatch) that
+                // every other still-fading pixel triggers each frame.
+                buffer.removeComponent(entity, FadeToColor);
+                buffer.removeComponent(entity, OriginalColor);
+            }
+        })
+    }
+}
 
 class DebugSystem extends System {
     private _query = this.createEntityQuery([LocalToWorld])
@@ -211,9 +296,11 @@ class DebugSystem extends System {
         fpsCounterImage.image = [
             Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
         ]
-
+        const fadeSystemCount = this.world.getOrCreateSystem(FadeSystem).count();
         entityCounterImage.image = [
-            Ansi.colors.fg.green + 'Entities: ' + (this.world.entityCount),
+            Ansi.colors.fg.green + 'Entities: ' +
+            // (this.world.entityCount),
+            fadeSystemCount.toFixed(2),
         ]
 
         // .map(e => ((e.entity as any)));
@@ -263,6 +350,9 @@ class DebugSystem extends System {
 world.ensureSystemExists(Console2DRenderPassSystem);
 world.ensureSystemExists(ConsoleHudRenderPassSystem);
 
+
 world.ensureSystemExists(DebugSystem)
+
+world.ensureSystemExists(FadeSystem);
 
 world.startLoop()
