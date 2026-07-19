@@ -14,7 +14,9 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
 
     private _backgroundChar: string = Ansi.colors.bg.black + Ansi.colors.fg.black + " ";
-    private _prevScreen: string = ""
+    private _prevRows: string[] = [];
+    private _prevWidth = -1;
+    private _forceRedraw = true;
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -63,23 +65,40 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
             }
 
             process.stdout.write("\x1b[J");   // clear to end of screen (handles shorter frames)
+            this._forceRedraw = true;         // error text corrupted the tracked screen state
         }
 
 
         super.onUpdate()
 
-        const frame = screenBuffer.flush();
+        // Damage-tracked output: rows are self-contained ANSI strings, so only
+        // the rows that actually changed since the previous frame are written,
+        // each addressed with a cursor-move. This collapses a static scene to
+        // zero bytes and a HUD tick to a couple of rows instead of ~200KB.
+        const rows = screenBuffer.flushRows();
+        const prevRows = this._prevRows;
+        const fullRedraw = this._forceRedraw
+            || rows.length !== prevRows.length
+            || screenBuffer.cellWidth !== this._prevWidth;
 
-        if (frame === this._prevScreen) {
-            // identical frame, skip render
-            return;
+        let out = "";
+        if (fullRedraw) {
+            out = "\x1b[H" + rows.join("\n") + "\x1b[J";
+        } else {
+            for (let y = 0; y < rows.length; y++) {
+                if (rows[y] !== prevRows[y]) {
+                    out += `\x1b[${y + 1};1H` + rows[y];
+                }
+            }
         }
 
-        process.stdout.write("\x1b[H");   // cursor to 1,1 (home)
-        process.stdout.write(frame);      // write the full frame
-        process.stdout.write("\x1b[J");   // clear to end of screen (handles shorter frames)
+        if (out.length > 0) {
+            process.stdout.write(out);
+        }
 
-        this._prevScreen = frame;
+        this._prevRows = rows;
+        this._prevWidth = screenBuffer.cellWidth;
+        this._forceRedraw = false;
         // swap buffers
         dualScreenBuffer.swapBuffer();
 
@@ -93,6 +112,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
         process.stdout.write(Ansi.modes.altScreenEnter); // alt buffer + save cursor
         process.stdout.write(Ansi.cursor.hide);
         process.stdout.write("\x1b[?7l");    // disable autowrap
+        this._forceRedraw = true;            // fresh alt screen, nothing on it yet
         this.update();
     }
 

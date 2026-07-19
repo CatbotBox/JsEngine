@@ -77,6 +77,14 @@ export class VecArray<factor extends number, length extends number = number> {
         return this.rawData.subarray(index * this.factor, (index + 1) * this.factor) as Vec<factor>;
     }
 
+    /**
+     * Direct access to the flat backing storage (element i lives at [i * factor .. i * factor + factor)).
+     * Unlike at(), this allocates nothing — use it in per-frame hot loops.
+     */
+    public get raw(): Float32Array {
+        return this.rawData;
+    }
+
     public select(index: number): VecArraySelector<factor, length> {
         return new VecArraySelector<factor, length>(this, this.factor, index)
     }
