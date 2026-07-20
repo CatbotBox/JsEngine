@@ -37,7 +37,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     buffer.addComponent(cameraEntity, new LocalToWorld());
     buffer.addComponent(cameraEntity, new LocalPosition());
     buffer.addComponent(cameraEntity, new RenderBounds());
-    const cameraRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
+    buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
     keyboardInput.when({name: 'l'}, () => {
@@ -46,136 +46,170 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     keyboardInput.when({name: 'm'}, () => {
         fov.degrees /= 1.01;
     })
-
-    // keyboardInput.when({name: 'w'}, () => {
-    //     cameraPosition.y -= 1;
-    // })
-    // keyboardInput.when({name: 's'}, () => {
-    //     cameraPosition.y += 1;
-    // })
-    // keyboardInput.when({name: 'a'}, () => {
-    //     cameraPosition.x -= 1;
-    // })
-    // keyboardInput.when({name: 'd'}, () => {
-    //     cameraPosition.x += 1;
-    // })
 }
 
 
 // Mesh Stuff
 {
+    const meshes: { name: string, mesh: Mesh }[] = [
+        {name: 'cube', mesh: Mesh.fromFile("./demo/3d/cube.obj")},
+        {name: 'monkey', mesh: Mesh.fromFile("./demo/3d/blender_monkey.obj")},
+        {name: 'plant', mesh: Mesh.fromFile("./demo/3d/indoor plant_02.obj")},
+    ];
 
-    // mesh constructed in builder works its just one-sided and not complex enough
-//     const builder = new MeshBuilder();
-//     builder.vertices = [[40, 10, 1], [25, 30, 1], [0, 35, 1], [30, 10, 1], [75, 60, 1], [50, -35, 1]
-//         , [-10, -10, 0], [10, -10, 0], [-10, 10, 0], [10, 10, 0]]
-// // builder.uvs = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
-// // builder.normals = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
-//
-//     builder.triangles = [[0, 1, 2], [5, 4, 3], [6, 7, 8], [8, 7, 9]]
-//     builder.generateNormals();
-//
-//     builder.generateUvs();
-    const meshes: Mesh[] = [];
-    meshes.push(Mesh.fromFile("./demo/3d/cube.obj"));
-    meshes.push(Mesh.fromFile("./demo/3d/blender_monkey.obj"));
-    meshes.push(Mesh.fromFile("./demo/3d/indoor plant_02.obj"));
-    // meshes.push(new Mesh(builder));
+    let selectedMeshIndex = 0;
 
-    const testMesh = buffer.createEntity();
-    const testMesh2 = buffer.createEntity();
-    const testMesh3 = buffer.createEntity();
+    interface SpawnedModel {
+        entity: ReturnType<typeof buffer.createEntity>;
+        position: LocalPosition;
+        rotation: LocalRotation;
+        scale: LocalScale;
+    }
 
-    let meshIndex = 0;
-    const renderMesh = buffer.addTrackedComponent(testMesh, new RenderMesh(meshes[0]));
-    const renderMesh2 = buffer.addTrackedComponent(testMesh2, new RenderMesh(meshes[0]));
-    const renderMesh3 = buffer.addTrackedComponent(testMesh3, new RenderMesh(meshes[0]));
+    const spawned: SpawnedModel[] = [];
+
+    // Shared transform state so new spawns match the rest of the group
+    const euler: Vec3 = [0, 0, 0];
+    let currentScale: Vec3 = [1, 1, 1];
+    const groupOffset: Vec3 = [0, 0, 10];
+    const spacing = 5;
+
+    // Preview HUD (bottom-right corner) showing the model that will be spawned next
+    const previewEntity = buffer.createEntity("spawnPreview");
+    const previewImage = buffer.addTrackedComponent(previewEntity, new ConsoleImage());
+    previewImage.transparentChar = undefined;
+    buffer.addComponent(previewEntity, new HudElement());
+    const previewAnchor = new ConsoleImageAnchor();
+    previewAnchor.anchorPosition = 'bottom-right';
+    buffer.addComponent(previewEntity, previewAnchor);
+
+    const updatePreview = () => {
+        previewImage.image = [
+            Ansi.colors.fg.cyan + 'Next: ' + meshes[selectedMeshIndex].name
+            + '  [spawned: ' + spawned.length + '] ', //add space for padding
+        ];
+    }
+
+    // Re-space all spawned models evenly along the x axis, centered on the group offset
+    const relayout = () => {
+        const n = spawned.length;
+        spawned.forEach((s, i) => {
+            s.position.x = groupOffset[0] + (i - (n - 1) / 2) * spacing;
+            s.position.y = groupOffset[1];
+            s.position.z = groupOffset[2];
+        });
+    }
+
+    const spawnModel = () => {
+        const entity = buffer.createEntity();
+        buffer.addComponent(entity, new RenderMesh(meshes[selectedMeshIndex].mesh));
+        buffer.addComponent(entity, new LocalToWorld());
+        const position = buffer.addTrackedComponent(entity, new LocalPosition());
+        const rotation = buffer.addTrackedComponent(entity, new LocalRotation());
+        const scale = buffer.addTrackedComponent(entity, new LocalScale());
+
+        rotation.xyzw = Quaternions.eulerToQuat(euler);
+        scale.xyz = [...currentScale] as Vec3;
+
+        spawned.push({entity, position, rotation, scale});
+        relayout();
+        updatePreview();
+    }
+
+    const despawnLast = () => {
+        const last = spawned.pop();
+        if (!last) return;
+        buffer.destroyEntity(last.entity);
+        relayout();
+        updatePreview();
+    }
+
+    // space: spawn a new model | backspace: remove the last one | n: cycle which model spawns next
     keyboardInput.when({name: 'space'}, () => {
-        meshIndex += 1;
-        if (meshIndex === meshes.length) meshIndex = 0;
-        renderMesh.mesh = meshes[meshIndex];
-        renderMesh2.mesh = meshes[meshIndex];
-        renderMesh3.mesh = meshes[meshIndex];
+        spawnModel();
+    })
+    keyboardInput.when({name: 'backspace'}, () => {
+        despawnLast();
+    })
+    keyboardInput.when({name: 'n'}, () => {
+        selectedMeshIndex = (selectedMeshIndex + 1) % meshes.length;
+        updatePreview();
     })
 
-    const cubePosition = buffer.addTrackedComponent(testMesh, new LocalPosition(0, 0, 10));
-    const cubePosition2 = buffer.addTrackedComponent(testMesh2, new LocalPosition(5, 0, 10));
-    const cubePosition3 = buffer.addTrackedComponent(testMesh3, new LocalPosition(-5, 0, 10));
+    // wasd/qe: move the whole group
     keyboardInput.when({name: 'w'}, () => {
-        cubePosition.y -= 0.05;
+        groupOffset[1] -= 0.05;
+        relayout();
     })
     keyboardInput.when({name: 's'}, () => {
-        cubePosition.y += 0.05;
+        groupOffset[1] += 0.05;
+        relayout();
     })
     keyboardInput.when({name: 'a'}, () => {
-        cubePosition.x -= 0.05;
+        groupOffset[0] -= 0.05;
+        relayout();
     })
     keyboardInput.when({name: 'd'}, () => {
-        cubePosition.x += 0.05;
+        groupOffset[0] += 0.05;
+        relayout();
     })
     keyboardInput.when({name: 'q'}, () => {
-        cubePosition.z -= 0.05;
+        groupOffset[2] -= 0.05;
+        relayout();
     })
     keyboardInput.when({name: 'e'}, () => {
-        cubePosition.z += 0.05;
+        groupOffset[2] += 0.05;
+        relayout();
     })
 
-    buffer.addComponent(testMesh, new LocalToWorld());
-    buffer.addComponent(testMesh2, new LocalToWorld());
-    buffer.addComponent(testMesh3, new LocalToWorld());
-    const rotation = buffer.addTrackedComponent(testMesh, new LocalRotation());
-    const rotation2 = buffer.addTrackedComponent(testMesh2, new LocalRotation());
-    const rotation3 = buffer.addTrackedComponent(testMesh3, new LocalRotation());
+    // arrows: rotate all spawned models together
+    const applyRotation = () => {
+        const quat = Quaternions.eulerToQuat(euler);
+        for (const s of spawned) {
+            s.rotation.xyzw = quat;
+        }
+    }
 
-    const euler: Vec3 = [0, 0, 0]
     keyboardInput.when({name: 'up'}, ({shift}) => {
-        const value = shift ? -0.1 : 0.1;
-        euler[0] += value;
-        rotation.xyzw = Quaternions.eulerToQuat(euler);
-        rotation2.xyzw = Quaternions.eulerToQuat(euler);
-        rotation3.xyzw = Quaternions.eulerToQuat(euler);
-
+        euler[0] += shift ? -0.1 : 0.1;
+        applyRotation();
     })
     keyboardInput.when({name: 'left'}, ({shift}) => {
-        const value = shift ? -0.1 : 0.1;
-        euler[1] += value
-        rotation.xyzw = Quaternions.eulerToQuat(euler);
-        rotation2.xyzw = Quaternions.eulerToQuat(euler);
-        rotation3.xyzw = Quaternions.eulerToQuat(euler);
+        euler[1] += shift ? -0.1 : 0.1;
+        applyRotation();
     })
     keyboardInput.when({name: 'right'}, ({shift}) => {
-        const value = shift ? -0.1 : 0.1;
-        euler[2] += value
-        rotation.xyzw = Quaternions.eulerToQuat(euler);
-        rotation2.xyzw = Quaternions.eulerToQuat(euler);
-        rotation3.xyzw = Quaternions.eulerToQuat(euler);
+        euler[2] += shift ? -0.1 : 0.1;
+        applyRotation();
     })
     keyboardInput.when({name: 'down'}, ({shift}) => {
         const value = shift ? -0.1 : 0.1;
-        euler[0] += value
-        euler[1] += value
-        euler[2] += value
-        rotation.xyzw = Quaternions.eulerToQuat(euler);
-        rotation2.xyzw = Quaternions.eulerToQuat(euler);
-        rotation3.xyzw = Quaternions.eulerToQuat(euler);
+        euler[0] += value;
+        euler[1] += value;
+        euler[2] += value;
+        applyRotation();
     })
 
-    const scale = buffer.addTrackedComponent(testMesh, new LocalScale());
-    const scale2 = buffer.addTrackedComponent(testMesh2, new LocalScale());
-    const scale3 = buffer.addTrackedComponent(testMesh3, new LocalScale());
-
+    // i/o: scale all spawned models together
     const scaleFactor: Vec3 = [1.02, 1.02, 1.02];
+
+    const applyScale = () => {
+        for (const s of spawned) {
+            s.scale.xyz = [...currentScale] as Vec3;
+        }
+    }
+
     keyboardInput.when({name: 'i'}, () => {
-        scale.xyz = Vec.mul(scale.xyz, scaleFactor);
-        scale2.xyz = Vec.mul(scale.xyz, scaleFactor);
-        scale3.xyz = Vec.mul(scale.xyz, scaleFactor);
+        currentScale = Vec.mul(currentScale, scaleFactor) as Vec3;
+        applyScale();
     })
     keyboardInput.when({name: 'o'}, () => {
-        scale.xyz = Vec.div(scale.xyz, scaleFactor);
-        scale2.xyz = Vec.div(scale.xyz, scaleFactor);
-        scale3.xyz = Vec.div(scale.xyz, scaleFactor);
+        currentScale = Vec.div(currentScale, scaleFactor) as Vec3;
+        applyScale();
     })
 
+    // start with one model on screen
+    spawnModel();
 }
 
 
@@ -184,7 +218,8 @@ keyboardInput.when({name: 'return'}, () => {
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
 })
-keyboardInput.when({name: 'backspace'}, () => {
+// backspace is now used for despawning, so the 2D render pass toggle moved to 'b'
+keyboardInput.when({name: 'b'}, () => {
     const renderer = world.tryGetSystem(Console2DRenderPassSystem);
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
@@ -208,8 +243,6 @@ class DebugSystem extends System {
 
     protected onCreate() {
         const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
-        // this.requireAnyForUpdate(this._query);
-        // this.enabled = false;
         keyboardInput.when({name: 'tab'}, () => {
             this._toggle = !this._toggle;
             buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
