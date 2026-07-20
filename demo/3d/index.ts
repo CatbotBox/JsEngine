@@ -17,7 +17,6 @@ import {
 
 } from "../../src/js_engine/rendering/console";
 
-import {Console2DRenderPassSystem} from "../../src/js_engine/rendering/console/2d";
 import {AverageStat} from "../../src/js_engine/datatypes";
 import {Console3DRenderPassSystem} from "../../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
 import {RenderMesh} from "../../src/js_engine/rendering/3d/renderMesh";
@@ -29,49 +28,25 @@ import {FieldOfView} from "../../src/js_engine/rendering/3d/fieldOfView";
 const world = new DebugWorld();
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
 
-//Camera Stuff
+
+// Setup
 {
+    //Camera
     const cameraEntity = buffer.createEntity("cameraEntity");
 
     buffer.addComponent(cameraEntity, new Camera());
     buffer.addComponent(cameraEntity, new LocalToWorld());
-    buffer.addComponent(cameraEntity, new LocalPosition());
+    const camPos = buffer.addTrackedComponent(cameraEntity, new LocalPosition(0, 0, -10));
     buffer.addComponent(cameraEntity, new RenderBounds());
     buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
-    keyboardInput.when({name: 'l'}, () => {
-        fov.degrees *= 1.01;
-    })
-    keyboardInput.when({name: 'm'}, () => {
-        fov.degrees /= 1.01;
-    })
-}
+    //Meshes
+    let meshes: { name: string, mesh: Mesh, color: number }[] = [];
 
-
-// Mesh Stuff
-{
-    const fs = require("fs");
-    const files = fs.readdirSync("./demo/3d/").filter(file => file.endsWith(".obj")).map(file => file.split("."));
-    // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
-    const namedColors: Record<string, number> = {
-        "cube": 0x4FA3F7,              // blue
-        "blender_monkey": 0xF7A44F,    // orange
-        "indoor plant_02": 0x66C96A,   // green
-    };
-    const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
-    const meshes: { name: string, mesh: Mesh, color: number }[] = files.map((file, index) => ({
-        name: file[0],
-        mesh: Mesh.fromFile("./demo/3d/" + file[0] + "." + file[1]),
-        color: namedColors[file[0]] ?? palette[index % palette.length],
-    }));
-    // [
-    //     {name: 'cube', mesh: Mesh.fromFile("./demo/3d/cube.obj")},
-    //     {name: 'monkey', mesh: Mesh.fromFile("./demo/3d/blender_monkey.obj")},
-    //     {name: 'plant', mesh: Mesh.fromFile("./demo/3d/indoor plant_02.obj")},
-    // ];
 
     let selectedMeshIndex = 0;
+    let totalTriCount = 0;
 
     interface SpawnedModel {
         entity: ReturnType<typeof buffer.createEntity>;
@@ -82,10 +57,10 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 
     const spawned: SpawnedModel[] = [];
 
+    // Rendering Transforms
     // Shared transform state so new spawns match the rest of the group
     const euler: Vec3 = [0, 0, 0];
     let currentScale: Vec3 = [1, 1, 1];
-    const groupOffset: Vec3 = [0, 0, 10];
     const spacing = 5;
 
     // Preview HUD (bottom-right corner) showing the model that will be spawned next
@@ -97,10 +72,74 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     previewAnchor.anchorPosition = 'bottom-right';
     buffer.addComponent(previewEntity, previewAnchor);
 
+    // Functions
+    const fetchModels = () => {
+        const fs = require("fs");
+        const folders = ["./demo/3d/", "./"].filter(folder => fs.existsSync(folder));
+        const files: {
+            path: string,
+            name: string
+        }[] = folders.map(folder => fs.readdirSync(folder).filter(file => file.endsWith(".obj")).map(file => {
+            const data = file.split(".");
+            return {
+                name: data[0],
+                path: folder + data[0] + "." + data[1]
+            }
+        })).flat();
+        // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
+        const namedColors: Record<string, number> = {
+            "cube": 0x4FA3F7,              // blue
+            "blender_monkey": 0xF7A44F,    // orange
+            "indoor plant_02": 0x66C96A,   // green
+        };
+        const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
+        meshes = files.map((file, index) => ({
+            name: file.name,
+            mesh: Mesh.fromFile(file.path),
+            color: namedColors[file.name] ?? palette[index % palette.length],
+        }));
+        updatePreview();
+    }
+
+    function formatCompact(num: number): string {
+        const abs = Math.abs(num);
+        const sign = num < 0 ? '-' : '';
+        const units: [number, string][] = [
+            [1e12, 'T'],
+            [1e9, 'B'],
+            [1e6, 'M'],
+            [1e3, 'k'],
+        ];
+
+        for (let i = 0; i < units.length; i++) {
+            const [value, suffix] = units[i];
+            if (abs >= value) {
+                let scaled = Number((abs / value).toPrecision(3));
+
+                // rounding can push e.g. 999.5k -> 1000k; bump to next unit up
+                if (scaled >= 1000 && i > 0) {
+                    const [nextValue, nextSuffix] = units[i - 1];
+                    scaled = Number((abs / nextValue).toPrecision(3));
+                    return `${sign}${scaled}${nextSuffix}`;
+                }
+                return `${sign}${scaled}${suffix}`;
+            }
+        }
+        return `${sign}${abs}`;
+    }
+
     const updatePreview = () => {
+        if (meshes.length == 0) {
+            previewImage.image = [
+                Ansi.colors.fg.cyan + 'no meshes found, add an obj file in the same folder as this file and press r'
+                + '  [spawned: ' + spawned.length + '] ', //add space for padding
+            ];
+            return;
+        }
         previewImage.image = [
             Ansi.colors.fg.cyan + 'Next: ' + meshes[selectedMeshIndex].name
             + '  [spawned: ' + spawned.length + '] ', //add space for padding
+            formatCompact(totalTriCount) + ' triangles'
         ];
     }
 
@@ -119,13 +158,14 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
             const y = Math.floor(i / sx) % sy;
             const z = Math.floor(i / (sx * sy));
 
-            s.position.x = groupOffset[0] + (x - (sx - 1) / 2) * spacing;
-            s.position.y = groupOffset[1] + (y - (sy - 1) / 2) * spacing;
-            s.position.z = groupOffset[2] + (z - (sz - 1) / 2) * spacing;
+            s.position.x = (x - (sx - 1) / 2) * spacing;
+            s.position.y = (y - (sy - 1) / 2) * spacing;
+            s.position.z = (z - (sz - 1) / 2) * spacing;
         });
     }
 
     const spawnModel = () => {
+        if (meshes.length == 0) return;
         const entity = buffer.createEntity();
         buffer.addComponent(entity, new RenderMesh(meshes[selectedMeshIndex].mesh, meshes[selectedMeshIndex].color));
         buffer.addComponent(entity, new LocalToWorld());
@@ -137,6 +177,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         scale.xyz = [...currentScale] as Vec3;
 
         spawned.push({entity, position, rotation, scale});
+        totalTriCount += meshes[selectedMeshIndex].mesh.triangleCount;
         relayout();
         updatePreview();
     }
@@ -145,47 +186,12 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         const last = spawned.pop();
         if (!last) return;
         buffer.destroyEntity(last.entity);
+        const renderMesh = world.entityManager.getComponent(last.entity, RenderMesh) as RenderMesh;
+        totalTriCount -= renderMesh.mesh!.triangleCount;
         relayout();
         updatePreview();
     }
 
-    // space: spawn a new model | backspace: remove the last one | n: cycle which model spawns next
-    keyboardInput.when({name: 'space'}, () => {
-        spawnModel();
-    })
-    keyboardInput.when({name: 'backspace'}, () => {
-        despawnLast();
-    })
-    keyboardInput.when({name: 'n'}, () => {
-        selectedMeshIndex = (selectedMeshIndex + 1) % meshes.length;
-        updatePreview();
-    })
-
-    // wasd/qe: move the whole group
-    keyboardInput.when({name: 'w'}, () => {
-        groupOffset[1] -= 0.05;
-        relayout();
-    })
-    keyboardInput.when({name: 's'}, () => {
-        groupOffset[1] += 0.05;
-        relayout();
-    })
-    keyboardInput.when({name: 'a'}, () => {
-        groupOffset[0] -= 0.05;
-        relayout();
-    })
-    keyboardInput.when({name: 'd'}, () => {
-        groupOffset[0] += 0.05;
-        relayout();
-    })
-    keyboardInput.when({name: 'q'}, () => {
-        groupOffset[2] -= 0.05;
-        relayout();
-    })
-    keyboardInput.when({name: 'e'}, () => {
-        groupOffset[2] += 0.05;
-        relayout();
-    })
 
     // arrows: rotate all spawned models together
     const applyRotation = () => {
@@ -194,26 +200,6 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
             s.rotation.xyzw = quat;
         }
     }
-
-    keyboardInput.when({name: 'up'}, ({shift}) => {
-        euler[0] += shift ? -0.1 : 0.1;
-        applyRotation();
-    })
-    keyboardInput.when({name: 'left'}, ({shift}) => {
-        euler[1] += shift ? -0.1 : 0.1;
-        applyRotation();
-    })
-    keyboardInput.when({name: 'right'}, ({shift}) => {
-        euler[2] += shift ? -0.1 : 0.1;
-        applyRotation();
-    })
-    keyboardInput.when({name: 'down'}, ({shift}) => {
-        const value = shift ? -0.1 : 0.1;
-        euler[0] += value;
-        euler[1] += value;
-        euler[2] += value;
-        applyRotation();
-    })
 
     // i/o: scale all spawned models together
     const scaleFactor: Vec3 = [1.02, 1.02, 1.02];
@@ -224,43 +210,118 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         }
     }
 
-    keyboardInput.when({name: 'i'}, () => {
-        currentScale = Vec.mul(currentScale, scaleFactor) as Vec3;
-        applyScale();
-    })
-    keyboardInput.when({name: 'o'}, () => {
-        currentScale = Vec.div(currentScale, scaleFactor) as Vec3;
-        applyScale();
-    })
+    const registerInputs = () => {
+        // space: spawn a new model | backspace: remove the last one | n: cycle which model spawns next
+        keyboardInput.when({name: 'space'}, () => {
+            spawnModel();
+        })
+        keyboardInput.when({name: 'backspace'}, () => {
+            despawnLast();
+        })
+        keyboardInput.when({name: 'n'}, () => {
+            selectedMeshIndex = (selectedMeshIndex + 1) % meshes.length;
+            updatePreview();
+        })
+        keyboardInput.when({name: 'r'}, () => {
+            fetchModels();
+        })
 
+        // wasd/qe: move the whole group
+        keyboardInput.when({name: 'w'}, () => {
+            camPos.y += 0.05;
+        })
+        keyboardInput.when({name: 's'}, () => {
+            camPos.y -= 0.05;
+        })
+        keyboardInput.when({name: 'a'}, () => {
+            camPos.x -= 0.05;
+        })
+        keyboardInput.when({name: 'd'}, () => {
+            camPos.x += 0.05;
+        })
+        keyboardInput.when({name: 'q'}, () => {
+            camPos.z += 0.05;
+        })
+        keyboardInput.when({name: 'e'}, () => {
+            camPos.z -= 0.05;
+        })
+
+        keyboardInput.when({name: 'up'}, ({shift}) => {
+            euler[0] += shift ? -0.1 : 0.1;
+            applyRotation();
+        })
+        keyboardInput.when({name: 'left'}, ({shift}) => {
+            euler[1] += shift ? -0.1 : 0.1;
+            applyRotation();
+        })
+        keyboardInput.when({name: 'right'}, ({shift}) => {
+            euler[2] += shift ? -0.1 : 0.1;
+            applyRotation();
+        })
+        keyboardInput.when({name: 'down'}, ({shift}) => {
+            const value = shift ? -0.1 : 0.1;
+            euler[0] += value;
+            euler[1] += value;
+            euler[2] += value;
+            applyRotation();
+        })
+
+        keyboardInput.when({name: 'i'}, () => {
+            currentScale = Vec.mul(currentScale, scaleFactor) as Vec3;
+            applyScale();
+        })
+        keyboardInput.when({name: 'o'}, () => {
+            currentScale = Vec.div(currentScale, scaleFactor) as Vec3;
+            applyScale();
+        })
+
+        keyboardInput.when({name: 'l'}, () => {
+            fov.degrees *= 1.01;
+        })
+        keyboardInput.when({name: 'm'}, () => {
+            fov.degrees /= 1.01;
+        })
+
+        // keyboardInput.when({name: 'return'}, () => {
+        //     const renderer = world.tryGetSystem(RenderingSystemGroup);
+        //     if (!renderer) return;
+        //     renderer.enabled = !renderer.enabled;
+        // })
+
+        keyboardInput.when({name: 'b'}, () => {
+            const renderer = world.tryGetSystem(Console3DRenderPassSystem);
+            if (!renderer) return;
+            renderer.enabled = !renderer.enabled;
+        })
+
+        keyboardInput.when({name: 'tab'}, () => {
+            const renderer = world.tryGetSystem(ConsoleHudRenderPassSystem);
+            if (!renderer) return;
+            renderer.enabled = !renderer.enabled;
+        })
+
+        keyboardInput.when({name: 'g'}, () => {
+            world.logSystemUpdateOrder();
+        })
+
+        keyboardInput.when({name: 'c', ctrl: true}, () => {
+            const renderer = world.tryGetSystem(RenderingSystemGroup);
+            if (!renderer) return;
+            renderer.enabled = !renderer.enabled;
+            world.stop()
+            process.exit(0);
+        })
+
+    }
+
+    registerInputs();
+    fetchModels();
     // start with one model on screen
     spawnModel();
 }
 
-
-keyboardInput.when({name: 'return'}, () => {
-    const renderer = world.tryGetSystem(RenderingSystemGroup);
-    if (!renderer) return;
-    renderer.enabled = !renderer.enabled;
-})
-// backspace is now used for despawning, so the 2D render pass toggle moved to 'b'
-keyboardInput.when({name: 'b'}, () => {
-    const renderer = world.tryGetSystem(Console2DRenderPassSystem);
-    if (!renderer) return;
-    renderer.enabled = !renderer.enabled;
-})
-keyboardInput.when({name: 'g'}, () => {
-    world.logSystemUpdateOrder();
-})
-
-keyboardInput.when({name: 'c', ctrl: true}, () => {
-    world.stop()
-    process.exit(0);
-})
-
-
+//systems
 class DebugSystem extends System {
-    private _hudQuery = this.createEntityQuery([HudElement])
     private _toggle = true;
     private _fpsCounter = new AverageStat(10)
     private _entityCounterImage!: ConsoleImage;
@@ -268,12 +329,7 @@ class DebugSystem extends System {
 
     protected onCreate() {
         const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
-        keyboardInput.when({name: 'tab'}, () => {
-            this._toggle = !this._toggle;
-            buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
-            console.log("toggle hud", this._hudQuery.entityCount() + " | " + this._hudQuery.entityCountUnfiltered());
-            console.log(this._hudQuery.archetypes)
-        })
+
 
         //hud element
 // entityCounter
