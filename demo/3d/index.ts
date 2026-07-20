@@ -79,6 +79,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     const meshes: Mesh[] = [];
     meshes.push(Mesh.fromFile("./demo/3d/cube.obj"));
     meshes.push(Mesh.fromFile("./demo/3d/blender_monkey.obj"));
+    meshes.push(Mesh.fromFile("./demo/3d/indoor plant_02.obj"));
     // meshes.push(new Mesh(builder));
 
     const testMesh = buffer.createEntity();
