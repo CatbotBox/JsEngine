@@ -8,6 +8,12 @@ export interface MeshRasterizerConfig {
     maxDepthFade: number;
     /** ANDed onto packed colors; dropping low bits lengthens ANSI color runs. */
     colorQuantMask: number;
+    /**
+     * Antialiasing factor: each cell is rasterized as supersample×supersample
+     * subsamples whose colors are averaged (uncovered subsamples count as
+     * black). 1 disables AA and reproduces the single-sample pipeline exactly.
+     */
+    supersample: number;
     /** Worker threads to use (0 disables threading entirely). */
     workerCount: number;
     /** Dispatch to the pool only when a batch has at least this many triangles… */
@@ -40,6 +46,11 @@ export class MeshRasterizer {
     private localColorLayer = new Int32Array(0);
     private usingPool = false;
 
+    // Cell-resolution buffers the supersampled layers are resolved into before
+    // depth-compositing (unused when supersample == 1).
+    private resolveDepth = new Float32Array(0);
+    private resolveColor = new Int32Array(0);
+
     private viewVerts = new Float64Array(0);
 
     // Frame state
@@ -49,6 +60,12 @@ export class MeshRasterizer {
     private height = 0;
     private halfWidth = 0;
     private halfHeight = 0;
+    // Supersampling: raster* dimensions are the subsample grid (cell dims × ss)
+    // that the kernel, layers and band binning all operate in.
+    private ss = 1;
+    private ssArea = 1;
+    private rasterWidth = 0;
+    private rasterHeight = 0;
     private triCount = 0;
     private bboxAreaAccum = 0;
     private bandCount = 1;
@@ -61,31 +78,40 @@ export class MeshRasterizer {
         this.height = height;
         this.halfWidth = width / 2;
         this.halfHeight = height / 2;
+        const ss = Math.max(1, Math.min(4, Math.floor(config.supersample) || 1));
+        this.ss = ss;
+        this.ssArea = ss * ss;
+        this.rasterWidth = width * ss;
+        this.rasterHeight = height * ss;
         this.triCount = 0;
         this.bboxAreaAccum = 0;
 
-        const cellCount = width * height;
+        const rasterCells = this.rasterWidth * this.rasterHeight;
         const pool = this.ensurePool(config.workerCount);
-        this.usingPool = pool !== undefined && cellCount <= RasterWorkerPool.MAX_CELLS;
+        this.usingPool = pool !== undefined && rasterCells <= RasterWorkerPool.MAX_CELLS;
 
         if (this.usingPool) {
             this.triData = pool!.triData;
             this.depthLayer = pool!.depthLayer;
             this.colorLayer = pool!.colorLayer;
             this.bandCount = pool!.workerCount + 1;
-            this.rowsPerBand = height > 0 ? Math.ceil(height / this.bandCount) : 1;
+            this.rowsPerBand = this.rasterHeight > 0 ? Math.ceil(this.rasterHeight / this.bandCount) : 1;
             pool!.bandCounts.fill(0);
         } else {
             this.bandCount = 1;
-            if (this.localDepthLayer.length < cellCount) {
-                this.localDepthLayer = new Float32Array(cellCount);
-                this.localColorLayer = new Int32Array(cellCount);
+            if (this.localDepthLayer.length < rasterCells) {
+                this.localDepthLayer = new Float32Array(rasterCells);
+                this.localColorLayer = new Int32Array(rasterCells);
             }
             this.triData = this.localTriData;
             this.depthLayer = this.localDepthLayer;
             this.colorLayer = this.localColorLayer;
         }
-        this.depthLayer.fill(Number.POSITIVE_INFINITY, 0, cellCount);
+        if (ss > 1 && this.resolveDepth.length < width * height) {
+            this.resolveDepth = new Float32Array(width * height);
+            this.resolveColor = new Int32Array(width * height);
+        }
+        this.depthLayer.fill(Number.POSITIVE_INFINITY, 0, rasterCells);
     }
 
     private ensurePool(workerCount: number): RasterWorkerPool | undefined {
@@ -233,6 +259,12 @@ export class MeshRasterizer {
             scy = this.halfHeight + cy;
         }
 
+        // Scale into the subsample grid (×1 when AA is off — bit-identical).
+        const ss = this.ss;
+        sax *= ss; say *= ss;
+        sbx *= ss; sby *= ss;
+        scx *= ss; scy *= ss;
+
         // Backface / degenerate cull: only one winding can ever pass the
         // kernel's inside test, so skip the rest before they cost anything.
         const area2 = (sbx - sax) * (scy - say) - (sby - say) * (scx - sax);
@@ -243,11 +275,11 @@ export class MeshRasterizer {
         let maxX = sax > sbx ? sax : sbx; if (scx > maxX) maxX = scx;
         let minY = say < sby ? say : sby; if (scy < minY) minY = scy;
         let maxY = say > sby ? say : sby; if (scy > maxY) maxY = scy;
-        if (maxX <= 0 || minX >= this.width || maxY <= 0 || minY >= this.height) return;
+        if (maxX <= 0 || minX >= this.rasterWidth || maxY <= 0 || minY >= this.rasterHeight) return;
 
         const clampedMinY = minY > 0 ? minY : 0;
-        const clampedMaxY = maxY < this.height ? maxY : this.height;
-        const clampedWidth = (maxX < this.width ? maxX : this.width) - (minX > 0 ? minX : 0);
+        const clampedMaxY = maxY < this.rasterHeight ? maxY : this.rasterHeight;
+        const clampedWidth = (maxX < this.rasterWidth ? maxX : this.rasterWidth) - (minX > 0 ? minX : 0);
         this.bboxAreaAccum += clampedWidth * (clampedMaxY - clampedMinY);
 
         if (this.triCount * TRI_STRIDE >= this.triData.length) {
@@ -292,29 +324,82 @@ export class MeshRasterizer {
 
     private flushBatch(prepareForMore: boolean): void {
         if (this.triCount === 0) return;
-        const {width, height, config} = this;
-        const quantMask = config.colorQuantMask & 0xFFFFFF;
+        const {rasterWidth, rasterHeight, config, ss} = this;
+        // When supersampling, quantize after the resolve average instead of per
+        // subsample, otherwise the average un-quantizes the colors again.
+        const quantMask = ss === 1 ? config.colorQuantMask & 0xFFFFFF : 0xFFFFFF;
 
         const pool = this.usingPool ? this.pool : undefined;
         const threaded = pool !== undefined
-            && (this.triCount >= config.threadTriangleThreshold || this.bboxAreaAccum >= config.threadAreaThreshold);
+            && (this.triCount >= config.threadTriangleThreshold || this.bboxAreaAccum >= config.threadAreaThreshold * this.ssArea);
 
         if (threaded) {
-            if (!pool!.dispatch(this.triCount, width, height, config.maxDepthFade, quantMask)) {
+            if (!pool!.dispatch(this.triCount, rasterWidth, rasterHeight, config.maxDepthFade, quantMask)) {
                 // Pool broke mid-frame; dispatch() already completed the layers
                 // synchronously. Future frames go single-threaded.
                 this.poolBroken = true;
             }
         } else {
-            rasterizeTriangleBand(this.triData, this.triCount, null, 0, 0, this.depthLayer, this.colorLayer, width, 0, height, config.maxDepthFade, quantMask);
+            rasterizeTriangleBand(this.triData, this.triCount, null, 0, 0, this.depthLayer, this.colorLayer, rasterWidth, 0, rasterHeight, config.maxDepthFade, quantMask);
         }
 
-        this.screenBuffer.mergeRgbLayer(this.depthLayer, this.colorLayer);
+        if (ss === 1) {
+            this.screenBuffer.mergeRgbLayer(this.depthLayer, this.colorLayer);
+        } else {
+            this.resolveSupersampled();
+            this.screenBuffer.mergeRgbLayer(this.resolveDepth, this.resolveColor);
+        }
         this.triCount = 0;
         this.bboxAreaAccum = 0;
         if (prepareForMore) {
-            this.depthLayer.fill(Number.POSITIVE_INFINITY, 0, width * height);
+            this.depthLayer.fill(Number.POSITIVE_INFINITY, 0, rasterWidth * rasterHeight);
             if (this.usingPool) this.pool!.bandCounts.fill(0);
+        }
+    }
+
+    /**
+     * Collapse the subsample layers down to cell resolution: a cell's color is
+     * the average of its covered subsamples (uncovered ones count as black, so
+     * silhouette edges fade toward the terminal background), its depth the
+     * closest covered subsample. Cells with no covered subsample stay +Infinity
+     * so mergeRgbLayer skips them.
+     */
+    private resolveSupersampled(): void {
+        const {width, height, ss, ssArea, rasterWidth} = this;
+        const srcDepth = this.depthLayer;
+        const srcColor = this.colorLayer;
+        const outDepth = this.resolveDepth;
+        const outColor = this.resolveColor;
+        const quantMask = this.config.colorQuantMask & 0xFFFFFF;
+
+        for (let cy = 0; cy < height; cy++) {
+            const rowBase = cy * ss * rasterWidth;
+            const outBase = cy * width;
+            for (let cx = 0; cx < width; cx++) {
+                let minDepth = Number.POSITIVE_INFINITY;
+                let r = 0, g = 0, b = 0, covered = 0;
+                const cellBase = rowBase + cx * ss;
+                for (let sy = 0; sy < ss; sy++) {
+                    let si = cellBase + sy * rasterWidth;
+                    for (let sx = 0; sx < ss; sx++, si++) {
+                        const d = srcDepth[si];
+                        if (d < Number.POSITIVE_INFINITY) {
+                            covered++;
+                            if (d < minDepth) minDepth = d;
+                            const c = srcColor[si];
+                            r += (c >> 16) & 255;
+                            g += (c >> 8) & 255;
+                            b += c & 255;
+                        }
+                    }
+                }
+                if (covered === 0) {
+                    outDepth[outBase + cx] = Number.POSITIVE_INFINITY;
+                    continue;
+                }
+                outDepth[outBase + cx] = minDepth;
+                outColor[outBase + cx] = ((Math.round(r / ssArea) << 16) | (Math.round(g / ssArea) << 8) | Math.round(b / ssArea)) & quantMask;
+            }
         }
     }
 
