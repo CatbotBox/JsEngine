@@ -241,22 +241,24 @@ export class MeshRasterizer {
         cx: number, cy: number, cz: number,
         focalLength: number | undefined, cellRatio: number, baseColor: number,
     ): void {
+        // View space is Y-up (world convention, and what .obj files store) while
+        // screen rows grow downward, so the vertical axis flips during projection.
         let sax: number, say: number, sbx: number, sby: number, scx: number, scy: number;
         if (focalLength !== undefined) {
             const ppuA = focalLength / az, ppuB = focalLength / bz, ppuC = focalLength / cz;
             sax = this.halfWidth + ax * ppuA * cellRatio;
-            say = this.halfHeight + ay * ppuA;
+            say = this.halfHeight - ay * ppuA;
             sbx = this.halfWidth + bx * ppuB * cellRatio;
-            sby = this.halfHeight + by * ppuB;
+            sby = this.halfHeight - by * ppuB;
             scx = this.halfWidth + cx * ppuC * cellRatio;
-            scy = this.halfHeight + cy * ppuC;
+            scy = this.halfHeight - cy * ppuC;
         } else {
             sax = this.halfWidth + ax * cellRatio;
-            say = this.halfHeight + ay;
+            say = this.halfHeight - ay;
             sbx = this.halfWidth + bx * cellRatio;
-            sby = this.halfHeight + by;
+            sby = this.halfHeight - by;
             scx = this.halfWidth + cx * cellRatio;
-            scy = this.halfHeight + cy;
+            scy = this.halfHeight - cy;
         }
 
         // Scale into the subsample grid (×1 when AA is off — bit-identical).
@@ -267,7 +269,11 @@ export class MeshRasterizer {
 
         // Backface / degenerate cull: only one winding can ever pass the
         // kernel's inside test, so skip the rest before they cost anything.
-        const area2 = (sbx - sax) * (scy - say) - (sby - say) * (scx - sax);
+        // Mirroring Y above reversed screen-space winding, so vertices are
+        // emitted as A, C, B (see the pack below) and culled in that same order
+        // — flipping the projection without this would cull exactly the faces
+        // that should be visible and draw the ones that shouldn't.
+        const area2 = (scx - sax) * (sby - say) - (scy - say) * (sbx - sax);
         if (area2 >= 0) return;
 
         // Off-screen cull + workload estimate for the threading heuristic.
@@ -296,15 +302,17 @@ export class MeshRasterizer {
 
         const o = this.triCount * TRI_STRIDE;
         const tris = this.triData;
+        // Packed as A, C, B — the Y mirror's winding fix. Each slot's 1/z stays
+        // paired with its own vertex, so depth interpolation is unaffected.
         tris[o] = sax;
         tris[o + 1] = say;
-        tris[o + 2] = sbx;
-        tris[o + 3] = sby;
-        tris[o + 4] = scx;
-        tris[o + 5] = scy;
+        tris[o + 2] = scx;
+        tris[o + 3] = scy;
+        tris[o + 4] = sbx;
+        tris[o + 5] = sby;
         tris[o + 6] = 1 / az;
-        tris[o + 7] = 1 / bz;
-        tris[o + 8] = 1 / cz;
+        tris[o + 7] = 1 / cz;
+        tris[o + 8] = 1 / bz;
         tris[o + 9] = baseColor;
 
         // Band binning: record which row bands this triangle overlaps so each
