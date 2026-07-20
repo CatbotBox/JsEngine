@@ -88,7 +88,8 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         })).flat();
         // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
         const namedColors: Record<string, number> = {
-            "cube": 0x4FA3F7,              // blue
+            "bugatti": 0x4FA3F7,           // blue
+            "cube": 0xF7F14F,              // yellow
             "blender_monkey": 0xF7A44F,    // orange
             "indoor plant_02": 0x66C96A,   // green
         };
@@ -211,7 +212,8 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     }
 
     const registerInputs = () => {
-        // space: spawn a new model | backspace: remove the last one | n: cycle which model spawns next
+        // space: spawn a new model | backspace: remove the last one
+        // n: cycle which model spawns next | r: reload model list
         keyboardInput.when({name: 'space'}, () => {
             spawnModel();
         })
@@ -226,12 +228,13 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
             fetchModels();
         })
 
-        // wasd/qe: move the whole group
+        // wasd + qe: move the whole group (fly-camera style)
+        // w/s: forward/back | a/d: left/right | q/e: down/up
         keyboardInput.when({name: 'w'}, () => {
-            camPos.y += 0.05;
+            camPos.z += 0.05;
         })
         keyboardInput.when({name: 's'}, () => {
-            camPos.y -= 0.05;
+            camPos.z -= 0.05;
         })
         keyboardInput.when({name: 'a'}, () => {
             camPos.x -= 0.05;
@@ -240,46 +243,46 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
             camPos.x += 0.05;
         })
         keyboardInput.when({name: 'q'}, () => {
-            camPos.z += 0.05;
+            camPos.y -= 0.05;
         })
         keyboardInput.when({name: 'e'}, () => {
-            camPos.z -= 0.05;
+            camPos.y += 0.05;
         })
 
-        keyboardInput.when({name: 'up'}, ({shift}) => {
-            euler[0] += shift ? -0.1 : 0.1;
+        // arrow keys: rotate (up/down = pitch, left/right = yaw)
+        keyboardInput.when({name: 'up'}, () => {
+            euler[0] += 0.1;
             applyRotation();
         })
-        keyboardInput.when({name: 'left'}, ({shift}) => {
-            euler[1] += shift ? -0.1 : 0.1;
+        keyboardInput.when({name: 'left'}, () => {
+            euler[1] -= 0.1;
             applyRotation();
         })
-        keyboardInput.when({name: 'right'}, ({shift}) => {
-            euler[2] += shift ? -0.1 : 0.1;
+        keyboardInput.when({name: 'right'}, () => {
+            euler[1] += 0.1;
             applyRotation();
         })
-        keyboardInput.when({name: 'down'}, ({shift}) => {
-            const value = shift ? -0.1 : 0.1;
-            euler[0] += value;
-            euler[1] += value;
-            euler[2] += value;
+        keyboardInput.when({name: 'down'}, () => {
+            euler[0] -= 0.1;
             applyRotation();
         })
 
+        // i/o: scale down/up
         keyboardInput.when({name: 'i'}, () => {
-            currentScale = Vec.mul(currentScale, scaleFactor) as Vec3;
-            applyScale();
-        })
-        keyboardInput.when({name: 'o'}, () => {
             currentScale = Vec.div(currentScale, scaleFactor) as Vec3;
             applyScale();
         })
-
-        keyboardInput.when({name: 'l'}, () => {
-            fov.degrees *= 1.01;
+        keyboardInput.when({name: 'o'}, () => {
+            currentScale = Vec.mul(currentScale, scaleFactor) as Vec3;
+            applyScale();
         })
-        keyboardInput.when({name: 'm'}, () => {
+
+        // z/x: zoom in/out (field of view)
+        keyboardInput.when({name: 'z'}, () => {
             fov.degrees /= 1.01;
+        })
+        keyboardInput.when({name: 'x'}, () => {
+            fov.degrees *= 1.01;
         })
 
         // keyboardInput.when({name: 'return'}, () => {
@@ -288,7 +291,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         //     renderer.enabled = !renderer.enabled;
         // })
 
-        keyboardInput.when({name: 'b'}, () => {
+        keyboardInput.when({name: 'v'}, () => {
             const renderer = world.tryGetSystem(Console3DRenderPassSystem);
             if (!renderer) return;
             renderer.enabled = !renderer.enabled;
@@ -311,7 +314,6 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
             world.stop()
             process.exit(0);
         })
-
     }
 
     registerInputs();
