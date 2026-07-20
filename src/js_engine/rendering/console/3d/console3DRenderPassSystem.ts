@@ -172,7 +172,7 @@ export class Console3DRenderPassSystem extends System {
 
             const ppu = focalLength !== undefined ? focalLength / vz : 1;
             const sx = halfW + vx * ppu * cellRatio;
-            const sy = halfH + vy * ppu;
+            const sy = halfH - vy * ppu; // Y-up view space → Y-down screen rows, as in emitTriangle
             if (sx < minX) minX = sx;
             if (sx > maxX) maxX = sx;
             if (sy < minY) minY = sy;
