@@ -51,11 +51,18 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 
 // Mesh Stuff
 {
-    const meshes: { name: string, mesh: Mesh }[] = [
-        {name: 'cube', mesh: Mesh.fromFile("./demo/3d/cube.obj")},
-        {name: 'monkey', mesh: Mesh.fromFile("./demo/3d/blender_monkey.obj")},
-        {name: 'plant', mesh: Mesh.fromFile("./demo/3d/indoor plant_02.obj")},
-    ];
+    const fs = require("fs");
+    const files = fs.readdirSync("./demo/3d/").filter(file => file.endsWith(".obj")).map(file => file.split("."));
+    console.dir(files);
+    const meshes: { name: string, mesh: Mesh }[] = files.map((file) => ({
+        name: file[0],
+        mesh: Mesh.fromFile("./demo/3d/" + file[0] + "." + file[1]),
+    }));
+    // [
+    //     {name: 'cube', mesh: Mesh.fromFile("./demo/3d/cube.obj")},
+    //     {name: 'monkey', mesh: Mesh.fromFile("./demo/3d/blender_monkey.obj")},
+    //     {name: 'plant', mesh: Mesh.fromFile("./demo/3d/indoor plant_02.obj")},
+    // ];
 
     let selectedMeshIndex = 0;
 
@@ -90,13 +97,24 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         ];
     }
 
-    // Re-space all spawned models evenly along the x axis, centered on the group offset
+// Re-space all spawned models in a 3D grid, centered on the group offset
     const relayout = () => {
         const n = spawned.length;
+        if (n === 0) return;
+
+        // Roughly cubic dimensions
+        const sx = Math.ceil(Math.cbrt(n));
+        const sy = Math.ceil(Math.sqrt(n / sx));
+        const sz = Math.ceil(n / (sx * sy));
+
         spawned.forEach((s, i) => {
-            s.position.x = groupOffset[0] + (i - (n - 1) / 2) * spacing;
-            s.position.y = groupOffset[1];
-            s.position.z = groupOffset[2];
+            const x = i % sx;
+            const y = Math.floor(i / sx) % sy;
+            const z = Math.floor(i / (sx * sy));
+
+            s.position.x = groupOffset[0] + (x - (sx - 1) / 2) * spacing;
+            s.position.y = groupOffset[1] + (y - (sy - 1) / 2) * spacing;
+            s.position.z = groupOffset[2] + (z - (sz - 1) / 2) * spacing;
         });
     }
 
