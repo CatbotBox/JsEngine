@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Confirms the raster worker pool actually spins up on this runtime, that
  * threaded output is bit-identical to single-threaded output, and how the two
  * compare on time for a heavy mesh.
  *
- * Run: bun benchmark/verifyThreading.ts
+ * Run: bun tests/verifyThreading.ts
  */
 import {MeshRasterizer} from "../src/js_engine/rendering/console/3d/meshRasterizer";
 import {RasterWorkerPool} from "../src/js_engine/rendering/console/3d/rasterWorkerPool";
@@ -86,3 +86,4 @@ if (!threaded.poolUsable) {
     process.exit(1);
 }
 console.log("threading OK");
+
