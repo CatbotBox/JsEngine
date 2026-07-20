@@ -99,12 +99,6 @@ export class Console3DRenderPassSystem extends System {
         const height = cameraEntity.screenSize.y | 0;
         const cellRatio = cameraEntity.consoleCellRatio.value;
         const invertedCameraMatrix = LocalToWorld.invertAffine(cameraEntity.localToWorld.matrix);
-        // Quick fix: mirror the camera's vertical axis so the upside-down
-        // output cancels out, without touching the rasterizer itself.
-        invertedCameraMatrix[1] *= -1;
-        invertedCameraMatrix[5] *= -1;
-        invertedCameraMatrix[9] *= -1;
-        invertedCameraMatrix[13] *= -1;
         const focalLength = cameraEntity.fov !== undefined
             ? height / (Math.tan(cameraEntity.fov.radians / 2) * 2)
             : undefined;
