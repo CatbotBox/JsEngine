@@ -6,6 +6,43 @@ export class Mesh {
     public readonly vertCount: number;
     public readonly triangleCount: number;
 
+    private _bounds?: Float32Array;
+
+    /**
+     * Mesh-local AABB as [xMin, yMin, zMin, xMax, yMax, zMax], computed from
+     * the vertices on first access and cached (vertex data is immutable).
+     */
+    public get bounds(): Float32Array {
+        if (this._bounds === undefined) {
+            const bounds = new Float32Array(6);
+            const raw = this.vertices.raw;
+            const count = this.vertCount * 3;
+            let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY, zMin = Number.POSITIVE_INFINITY;
+            let xMax = Number.NEGATIVE_INFINITY, yMax = Number.NEGATIVE_INFINITY, zMax = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < count; i += 3) {
+                const x = raw[i], y = raw[i + 1], z = raw[i + 2];
+                if (x < xMin) xMin = x;
+                if (x > xMax) xMax = x;
+                if (y < yMin) yMin = y;
+                if (y > yMax) yMax = y;
+                if (z < zMin) zMin = z;
+                if (z > zMax) zMax = z;
+            }
+            if (this.vertCount === 0) {
+                bounds.fill(0);
+            } else {
+                bounds[0] = xMin;
+                bounds[1] = yMin;
+                bounds[2] = zMin;
+                bounds[3] = xMax;
+                bounds[4] = yMax;
+                bounds[5] = zMax;
+            }
+            this._bounds = bounds;
+        }
+        return this._bounds;
+    }
+
     private get verticesIndexStart(): number {
         return 0;
     }

@@ -11,6 +11,7 @@ import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {FieldOfView} from "../../3d/fieldOfView";
 import {ConsoleCellRatio} from "../../consoleCellRatio";
 import {MeshRasterizer, MeshRasterizerConfig} from "./meshRasterizer";
+import {RenderMeshBoundsSystem} from "../../3d/renderMeshBoundsSystem";
 
 function defaultWorkerCount(): number {
     const env = typeof process !== "undefined" ? process.env.JSENGINE_RASTER_THREADS : undefined;
@@ -37,6 +38,11 @@ export class Console3DRenderPassSystem extends System {
      * much shorter ANSI output. Set to 0xFFFFFF for exact colors.
      */
     public static colorQuantMask = 0xFCFCFC;
+    /**
+     * Antialiasing: cells are rasterized as supersample² subsamples and
+     * averaged (2 is a good default; 1 disables AA entirely).
+     */
+    public static supersample = 2;
     /** Worker threads for rasterization; 0 forces single-threaded. Overridable via JSENGINE_RASTER_THREADS. */
     public static workerCount = defaultWorkerCount();
     /** Batches smaller than both thresholds rasterize on the main thread (thread wake-up isn't free). */
@@ -63,12 +69,14 @@ export class Console3DRenderPassSystem extends System {
         this.requireAllForUpdate(this._cameraQuery);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
         this.requireAnyForUpdate(this._selectiveRenderQuery);
+        this.world.ensureSystemExists(RenderMeshBoundsSystem);
     }
 
     private static currentConfig(): MeshRasterizerConfig {
         return {
             maxDepthFade: Console3DRenderPassSystem.maxDepthFade,
             colorQuantMask: Console3DRenderPassSystem.colorQuantMask,
+            supersample: Console3DRenderPassSystem.supersample,
             workerCount: Console3DRenderPassSystem.workerCount,
             threadTriangleThreshold: Console3DRenderPassSystem.threadTriangleThreshold,
             threadAreaThreshold: Console3DRenderPassSystem.threadAreaThreshold,
@@ -104,7 +112,7 @@ export class Console3DRenderPassSystem extends System {
         }).forEach(({renderMesh, localToWorld}) => {
             if (renderMesh.mesh === undefined) return;
             LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, this._modelViewScratch as Vec16);
-            rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, 0xFFFFFF);
+            rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, renderMesh.color);
         });
 
         // Entities carrying WorldSpaceRenderBounds get a cheap conservative
@@ -117,7 +125,7 @@ export class Console3DRenderPassSystem extends System {
             if (renderMesh.mesh === undefined) return;
             if (!Console3DRenderPassSystem.boundsMayBeVisible(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
             LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, this._modelViewScratch as Vec16);
-            rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, 0xFFFFFF);
+            rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, renderMesh.color);
         });
 
         rasterizer.endFrame();

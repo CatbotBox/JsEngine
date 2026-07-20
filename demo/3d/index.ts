@@ -53,9 +53,17 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 {
     const fs = require("fs");
     const files = fs.readdirSync("./demo/3d/").filter(file => file.endsWith(".obj")).map(file => file.split("."));
-    const meshes: { name: string, mesh: Mesh }[] = files.map((file) => ({
+    // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
+    const namedColors: Record<string, number> = {
+        "cube": 0x4FA3F7,              // blue
+        "blender_monkey": 0xF7A44F,    // orange
+        "indoor plant_02": 0x66C96A,   // green
+    };
+    const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
+    const meshes: { name: string, mesh: Mesh, color: number }[] = files.map((file, index) => ({
         name: file[0],
         mesh: Mesh.fromFile("./demo/3d/" + file[0] + "." + file[1]),
+        color: namedColors[file[0]] ?? palette[index % palette.length],
     }));
     // [
     //     {name: 'cube', mesh: Mesh.fromFile("./demo/3d/cube.obj")},
@@ -119,7 +127,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 
     const spawnModel = () => {
         const entity = buffer.createEntity();
-        buffer.addComponent(entity, new RenderMesh(meshes[selectedMeshIndex].mesh));
+        buffer.addComponent(entity, new RenderMesh(meshes[selectedMeshIndex].mesh, meshes[selectedMeshIndex].color));
         buffer.addComponent(entity, new LocalToWorld());
         const position = buffer.addTrackedComponent(entity, new LocalPosition());
         const rotation = buffer.addTrackedComponent(entity, new LocalRotation());
