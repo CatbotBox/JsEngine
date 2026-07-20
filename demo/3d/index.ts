@@ -53,7 +53,6 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 {
     const fs = require("fs");
     const files = fs.readdirSync("./demo/3d/").filter(file => file.endsWith(".obj")).map(file => file.split("."));
-    console.dir(files);
     const meshes: { name: string, mesh: Mesh }[] = files.map((file) => ({
         name: file[0],
         mesh: Mesh.fromFile("./demo/3d/" + file[0] + "." + file[1]),
