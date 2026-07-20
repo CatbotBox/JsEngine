@@ -1,13 +1,13 @@
-/**
+﻿/**
  * Renders the same scenes through the pre-rewrite renderer (checked out from
  * git history into _legacy/) and the new renderer, then compares the resulting
  * cell grids: per-cell coverage, depth and color.
  *
  * The old pipeline computed in Float32 (VecArray) while the new one uses
- * Float64, so pixels exactly on triangle edges can flip — a small mismatch
+ * Float64, so pixels exactly on triangle edges can flip â€” a small mismatch
  * rate is expected and reported; large mismatches mean a real bug.
  *
- * Run: bun benchmark/verifyParity.ts
+ * Run: bun tests/verifyParity.ts
  */
 import {Console3DRenderPassSystem as LegacySystem} from "./_legacy/legacy3DSystem";
 import {ScreenBuffer as LegacyScreenBuffer} from "./_legacy/legacyScreenBuffer";
@@ -25,7 +25,7 @@ const WIDTH = 240;
 const HEIGHT = 64;
 const FRAMES = 24;
 
-// Compare exact colors — disable quantization for parity purposes.
+// Compare exact colors â€” disable quantization for parity purposes.
 NewSystem.colorQuantMask = 0xFFFFFF;
 
 const screenSize = new ScreenSize();
@@ -82,7 +82,7 @@ const meshes: [string, Mesh][] = [
     ["cube", Mesh.fromFile("./demo/3d/cube.obj")],
     ["monkey", Mesh.fromFile("./demo/3d/blender_monkey.obj")],
 ];
-// Heavy mesh, not checked into the repo — used when present.
+// Heavy mesh, not checked into the repo â€” used when present.
 if (require("fs").existsSync("./demo/3d/indoor plant_02.obj")) {
     meshes.push(["plant", Mesh.fromFile("./demo/3d/indoor plant_02.obj")]);
 }
@@ -144,4 +144,5 @@ if (worst > 0.005) {
     console.error("PARITY FAILURE: too many mismatching cells");
     process.exit(1);
 }
-console.log("parity OK (differences within float32→float64 edge tolerance)");
+console.log("parity OK (differences within float32â†’float64 edge tolerance)");
+

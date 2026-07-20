@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Headless integration smoke test: drives a real DebugWorld with the full
  * rendering stack (3D pass + HUD + render group) with stdout captured, and
  * asserts frames are produced, damage tracking suppresses unchanged frames,
  * and scene changes produce new output.
  *
- * Run: bun benchmark/verifyWorld.ts
+ * Run: bun tests/verifyWorld.ts
  */
 process.env.COLUMNS = "200";
 process.env.LINES = "60";
@@ -83,13 +83,13 @@ expect(captured.includes("\x1b[48;2;"), "3D pass wrote truecolor cells");
 // char, so strip ANSI before searching for the marker text.
 expect(Ansi.strip(captured).includes("HUDMARKER"), "HUD element composited over the frame");
 
-// Static scene → damage tracking should emit nothing new.
+// Static scene â†’ damage tracking should emit nothing new.
 const lenBefore = captured.length;
 tick();
 tick();
 expect(captured.length === lenBefore, `static frames write zero bytes (wrote ${captured.length - lenBefore})`);
 
-// Rotate the mesh → new frame bytes must appear.
+// Rotate the mesh â†’ new frame bytes must appear.
 rotation.xyzw = Quaternions.eulerToQuat([0.4, 0.6, 0]);
 tick();
 const deltaBytes = captured.length - lenBefore;
@@ -110,3 +110,4 @@ if (failures > 0) {
     process.exit(1);
 }
 log("world smoke test OK");
+
