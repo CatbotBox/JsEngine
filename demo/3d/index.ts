@@ -3,7 +3,7 @@
     System,
     DebugWorld
 } from "../../src/js_engine";
-import {keyboardInput} from "../../src/js_engine/input";
+import {consoleInput as input, Key} from "../../src/js_engine/input";
 
 import {Camera, HudElement, RenderBounds, RenderingSystemGroup} from "../../src/js_engine/rendering";
 
@@ -38,7 +38,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     buffer.addComponent(cameraEntity, new LocalToWorld());
     const camPos = buffer.addTrackedComponent(cameraEntity, new LocalPosition(0, 0, -10));
     buffer.addComponent(cameraEntity, new RenderBounds());
-    buffer.addTrackedComponent(cameraEntity, new LocalRotation());
+    const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
     //Meshes
@@ -63,6 +63,13 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     let currentScale: Vec3 = [1, 1, 1];
     const spacing = 5;
 
+    // Camera look state (driven by the mouse — see registerInputs)
+    let camYaw = 0;
+    let camPitch = 0;
+    // Current look orientation as a quaternion; movement is rotated by this so
+    // "forward" follows where the camera is pointing.
+    let camQuat = Quaternions.eulerToQuat([0, 0, 0]);
+
     // Preview HUD (bottom-right corner) showing the model that will be spawned next
     const previewEntity = buffer.createEntity("spawnPreview");
     const previewImage = buffer.addTrackedComponent(previewEntity, new ConsoleImage());
@@ -71,6 +78,20 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     const previewAnchor = new ConsoleImageAnchor();
     previewAnchor.anchorPosition = 'bottom-right';
     buffer.addComponent(previewEntity, previewAnchor);
+
+    // Controls legend (top-left corner)
+    const controlsEntity = buffer.createEntity("controls");
+    const controlsImage = buffer.addTrackedComponent(controlsEntity, new ConsoleImage());
+    controlsImage.transparentChar = undefined;
+    controlsImage.image = [
+        Ansi.colors.fg.cyan + 'wasd/qe move  arrows rotate  i/o scale  z/x fov',
+        Ansi.colors.fg.cyan + 'drag: look   scroll: zoom',
+        Ansi.colors.fg.cyan + 'space spawn  bksp despawn  n next  r reload  ^C quit',
+    ];
+    buffer.addComponent(controlsEntity, new HudElement());
+    const controlsAnchor = new ConsoleImageAnchor();
+    controlsAnchor.anchorPosition = 'top-left';
+    buffer.addComponent(controlsEntity, controlsAnchor);
 
     // Functions
     const fetchModels = () => {
@@ -99,10 +120,12 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
             mesh: Mesh.fromFile(file.path),
             color: namedColors[file.name] ?? palette[index % palette.length],
         }));
+        // keep the selection valid if the list shrank
+        if (selectedMeshIndex >= meshes.length) selectedMeshIndex = 0;
         updatePreview();
     }
 
-    function formatCompact(num: number): string {
+    const formatCompact = (num: number): string => {
         const abs = Math.abs(num);
         const sign = num < 0 ? '-' : '';
         const units: [number, string][] = [
@@ -211,108 +234,165 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         }
     }
 
+    // mouse: rotate the CAMERA (FPS-style look). Pitch is clamped to avoid flipping.
+    const applyCameraLook = () => {
+        const limit = Math.PI / 2 - 0.01;
+        camPitch = Math.max(-limit, Math.min(limit, camPitch));
+        camQuat = Quaternions.eulerToQuat([camPitch, camYaw, 0]);
+        camRot.xyzw = camQuat;
+    }
+
+    // Rotate a vector by a quaternion [x,y,z,w] (standard v + 2w(q×v) + 2q×(q×v)).
+    // Convention-agnostic: uses the exact quat the engine built, so movement always
+    // lines up with the view regardless of eulerToQuat's internal axis order.
+    const rotateByQuat = (q: ArrayLike<number>, v: Vec3): Vec3 => {
+        const x = q[0], y = q[1], z = q[2], w = q[3];
+        const [vx, vy, vz] = v;
+        const tx = 2 * (y * vz - z * vy);
+        const ty = 2 * (z * vx - x * vz);
+        const tz = 2 * (x * vy - y * vx);
+        return [
+            vx + w * tx + (y * tz - z * ty),
+            vy + w * ty + (z * tx - x * tz),
+            vz + w * tz + (x * ty - y * tx),
+        ];
+    }
+
+    // Move the camera along a look-relative axis (forward = +Z, right = +X at rest).
+    const moveSpeed = 0.05;
+    const moveLocal = (localDir: Vec3, amount: number) => {
+        const [dx, dy, dz] = rotateByQuat(camQuat, localDir);
+        camPos.x += dx * amount;
+        camPos.y += dy * amount;
+        camPos.z += dz * amount;
+    }
+
     const registerInputs = () => {
+        input.enable({mouse: true, hideCursor: true})
+
+        // Ctrl+C: the input system no longer force-quits, so we own shutdown here.
+        // (Raw mode has no auto-SIGINT — without a handler like this, Ctrl+C does
+        //  nothing, so keep some exit path registered.)
+        input.onKeyMatch({name: 'c', ctrl: true}, () => {
+            const renderer = world.tryGetSystem(RenderingSystemGroup);
+            if (renderer) renderer.enabled = false;
+            world.stop();
+            input.disable();
+            process.exit(0);
+        })
+
+        // ---- spawning ----
         // space: spawn a new model | backspace: remove the last one
         // n: cycle which model spawns next | r: reload model list
-        keyboardInput.when({name: 'space'}, () => {
-            spawnModel();
-        })
-        keyboardInput.when({name: 'backspace'}, () => {
-            despawnLast();
-        })
-        keyboardInput.when({name: 'n'}, () => {
+        input.whenKeyDown(Key.Space, () => spawnModel())
+        input.whenKeyDown(Key.Backspace, () => despawnLast())
+        input.whenKeyDown(Key.N, () => {
+            if (meshes.length === 0) return;
             selectedMeshIndex = (selectedMeshIndex + 1) % meshes.length;
             updatePreview();
         })
-        keyboardInput.when({name: 'r'}, () => {
-            fetchModels();
+        input.whenKeyDown(Key.R, () => fetchModels())
+
+        // ---- movement (whenKey = repeats while held) ----
+        // wasd moves relative to where the camera is looking; q/e are world up/down
+        // w/s: forward/back | a/d: strafe left/right | q/e: down/up
+        input.whenKey(Key.W, () => moveLocal([0, 0, 1], moveSpeed))
+        input.whenKey(Key.S, () => moveLocal([0, 0, 1], -moveSpeed))
+        input.whenKey(Key.D, () => moveLocal([1, 0, 0], moveSpeed))
+        input.whenKey(Key.A, () => moveLocal([1, 0, 0], -moveSpeed))
+        input.whenKey(Key.Q, () => {
+            camPos.y -= moveSpeed;
+        })
+        input.whenKey(Key.E, () => {
+            camPos.y += moveSpeed;
         })
 
-        // wasd + qe: move the whole group (fly-camera style)
-        // w/s: forward/back | a/d: left/right | q/e: down/up
-        keyboardInput.when({name: 'w'}, () => {
-            camPos.z += 0.05;
-        })
-        keyboardInput.when({name: 's'}, () => {
-            camPos.z -= 0.05;
-        })
-        keyboardInput.when({name: 'a'}, () => {
-            camPos.x -= 0.05;
-        })
-        keyboardInput.when({name: 'd'}, () => {
-            camPos.x += 0.05;
-        })
-        keyboardInput.when({name: 'q'}, () => {
-            camPos.y -= 0.05;
-        })
-        keyboardInput.when({name: 'e'}, () => {
-            camPos.y += 0.05;
-        })
-
-        // arrow keys: rotate (up/down = pitch, left/right = yaw)
-        keyboardInput.when({name: 'up'}, () => {
+        // ---- model rotation (arrow keys) ----
+        // up/down = pitch, left/right = yaw
+        input.whenKey(Key.Up, () => {
             euler[0] += 0.1;
             applyRotation();
         })
-        keyboardInput.when({name: 'left'}, () => {
-            euler[1] -= 0.1;
-            applyRotation();
-        })
-        keyboardInput.when({name: 'right'}, () => {
-            euler[1] += 0.1;
-            applyRotation();
-        })
-        keyboardInput.when({name: 'down'}, () => {
+        input.whenKey(Key.Down, () => {
             euler[0] -= 0.1;
             applyRotation();
         })
+        input.whenKey(Key.Left, () => {
+            euler[1] -= 0.1;
+            applyRotation();
+        })
+        input.whenKey(Key.Right, () => {
+            euler[1] += 0.1;
+            applyRotation();
+        })
 
-        // i/o: scale down/up
-        keyboardInput.when({name: 'i'}, () => {
+        // ---- model scale (i/o) ----
+        input.whenKey(Key.I, () => {
             currentScale = Vec.div(currentScale, scaleFactor) as Vec3;
             applyScale();
         })
-        keyboardInput.when({name: 'o'}, () => {
+        input.whenKey(Key.O, () => {
             currentScale = Vec.mul(currentScale, scaleFactor) as Vec3;
             applyScale();
         })
 
-        // z/x: zoom in/out (field of view)
-        keyboardInput.when({name: 'z'}, () => {
+        // ---- field of view (z/x) ----
+        input.whenKey(Key.Z, () => {
             fov.degrees /= 1.01;
         })
-        keyboardInput.when({name: 'x'}, () => {
+        input.whenKey(Key.X, () => {
             fov.degrees *= 1.01;
         })
 
-        // keyboardInput.when({name: 'return'}, () => {
+        // ---- render toggles (once per press) ----
+        input.whenKeyDown(Key.V, () => {
+            const renderer = world.tryGetSystem(Console3DRenderPassSystem);
+            if (renderer) renderer.enabled = !renderer.enabled;
+        })
+        input.whenKeyDown(Key.Tab, () => {
+            const renderer = world.tryGetSystem(ConsoleHudRenderPassSystem);
+            if (renderer) renderer.enabled = !renderer.enabled;
+        })
+        input.whenKeyDown(Key.G, () => world.logSystemUpdateOrder())
+
+        // input.whenKeyDown(Key.Enter, () => {
         //     const renderer = world.tryGetSystem(RenderingSystemGroup);
-        //     if (!renderer) return;
-        //     renderer.enabled = !renderer.enabled;
+        //     if (renderer) renderer.enabled = !renderer.enabled;
         // })
 
-        keyboardInput.when({name: 'v'}, () => {
-            const renderer = world.tryGetSystem(Console3DRenderPassSystem);
-            if (!renderer) return;
-            renderer.enabled = !renderer.enabled;
+        // ---- MOUSE: hold LEFT and drag to rotate the camera ----
+        // Terminal coords are absolute cells, so we accumulate deltas ourselves.
+        // (Flip the += signs below for inverted look. * 0.5 on pitch compensates
+        //  for the ~2:1 height:width aspect of terminal cells.)
+        let lastX = 0;
+        let lastY = 0;
+        let looking = false;
+        const sensitivity = 0.03; // radians per cell
+
+        input.onMouseDown.add((e) => {
+            if (e.button !== 'left') return;
+            looking = true;
+            lastX = e.x;
+            lastY = e.y;
+        })
+        input.onMouseUp.add((e) => {
+            if (e.button === 'left') looking = false;
+        })
+        input.onMouseMove.add((e) => {
+            if (!looking) return;
+            const dx = e.x - lastX;
+            const dy = e.y - lastY;
+            lastX = e.x;
+            lastY = e.y;
+            camYaw += dx * sensitivity;
+            camPitch += dy * sensitivity * 0.5;
+            applyCameraLook();
         })
 
-        keyboardInput.when({name: 'tab'}, () => {
-            const renderer = world.tryGetSystem(ConsoleHudRenderPassSystem);
-            if (!renderer) return;
-            renderer.enabled = !renderer.enabled;
-        })
-
-        keyboardInput.when({name: 'g'}, () => {
-            world.logSystemUpdateOrder();
-        })
-
-        keyboardInput.when({name: 'c', ctrl: true}, () => {
-            const renderer = world.tryGetSystem(RenderingSystemGroup);
-            if (!renderer) return;
-            renderer.enabled = !renderer.enabled;
-            world.stop()
-            process.exit(0);
+        // ---- MOUSE WHEEL: zoom via field of view ----
+        input.onWheel.add((e) => {
+            const factor = e.button === 'wheelUp' ? 1 / 1.05 : 1.05;
+            fov.degrees = Math.max(10, Math.min(120, fov.degrees * factor));
         })
     }
 
