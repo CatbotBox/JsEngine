@@ -5,7 +5,7 @@ import {
     System,
     DebugWorld
 } from "../../src/js_engine";
-import {keyboardInput} from "../../src/js_engine/input";
+import {consoleInput, Key} from "../../src/js_engine/input";
 
 import {Camera, HudElement, RenderBounds, RenderingSystemGroup} from "../../src/js_engine/rendering";
 
@@ -133,35 +133,35 @@ const fpsAnchor = new ConsoleImageAnchor()
 fpsAnchor.anchorPosition = 'top-right';
 buffer.addComponent(fpsCounterEntity, fpsAnchor);
 
-
-keyboardInput.when({name: 'up'}, () => {
+consoleInput.enable()
+consoleInput.whenKey(Key.Up, () => {
     position.y -= 1;
 })
-keyboardInput.when({name: 'down'}, () => {
+consoleInput.whenKey(Key.Down, () => {
     position.y += 1;
 })
-keyboardInput.when({name: 'left'}, () => {
+consoleInput.whenKey(Key.Left, () => {
     position.x -= 1;
 })
-keyboardInput.when({name: 'right'}, () => {
+consoleInput.whenKey(Key.Right, () => {
     position.x += 1;
 })
 
-keyboardInput.when({name: 'w'}, () => {
+consoleInput.whenKey(Key.W, () => {
     cameraPosition.y -= 1;
 })
-keyboardInput.when({name: 's'}, () => {
+consoleInput.whenKey(Key.S, () => {
     cameraPosition.y += 1;
 })
-keyboardInput.when({name: 'a'}, () => {
+consoleInput.whenKey(Key.A, () => {
     cameraPosition.x -= 1;
 })
-keyboardInput.when({name: 'd'}, () => {
+consoleInput.whenKey(Key.D, () => {
     cameraPosition.x += 1;
 })
 
 
-keyboardInput.when({name: 'space'}, () => {
+consoleInput.whenKey(Key.Space, () => {
     for (let i = 0; i < 1_000; i++) {
         const x = (Math.random() - 0.5) * 100
         const y = (Math.random() - 0.5) * 100
@@ -178,23 +178,23 @@ keyboardInput.when({name: 'space'}, () => {
         // }
     }
 })
-keyboardInput.when({name: 'return'}, () => {
+consoleInput.whenKey(Key.Enter, () => {
     const renderer = world.tryGetSystem(RenderingSystemGroup);
     console.log('Rendering system group', renderer);
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
     world.getOrCreateSystem(DebugSystem).logEntities();
 })
-keyboardInput.when({name: 'backspace'}, () => {
+consoleInput.whenKey(Key.Backspace, () => {
     const renderer = world.tryGetSystem(Console2DRenderPassSystem);
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
 })
-keyboardInput.when({name: 'g'}, () => {
+consoleInput.whenKey(Key.G, () => {
     world.logSystemUpdateOrder();
 })
 
-keyboardInput.when({name: 'c', ctrl: true}, () => {
+consoleInput.onKeyMatch({name: 'c', ctrl: true}, () => {
     world.stop()
     process.exit(0);
     // if (toggle) keyboardInput.disable();
@@ -278,7 +278,7 @@ class DebugSystem extends System {
     protected onCreate() {
         // this.requireAnyForUpdate(this._query);
         // this.enabled = false;
-        keyboardInput.when({name: 'tab'}, () => {
+        consoleInput.whenKeyDown(Key.Tab, () => {
             this._toggle = !this._toggle;
             buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
             console.log("toggle hud", this._hudQuery.entityCount() + " | " + this._hudQuery.entityCountUnfiltered());
@@ -296,12 +296,19 @@ class DebugSystem extends System {
         fpsCounterImage.image = [
             Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
         ]
-        const fadeSystemCount = this.world.getOrCreateSystem(FadeSystem).count();
-        entityCounterImage.image = [
-            Ansi.colors.fg.green + 'Entities: ' +
-            // (this.world.entityCount),
-            fadeSystemCount.toFixed(2),
-        ]
+        const fadeSystem = this.world.tryGetSystem(FadeSystem);
+        if (fadeSystem) {
+            const fadeSystemCount = fadeSystem.count();
+            entityCounterImage.image = [
+                Ansi.colors.fg.green + 'Entities: ' +
+                // (this.world.entityCount),
+                fadeSystemCount.toFixed(2),
+            ]
+        } else {
+            entityCounterImage.image = [
+                Ansi.colors.fg.green + 'Fade System Not Active'
+            ]
+        }
 
         // .map(e => ((e.entity as any)));
         // console.log(entities)
@@ -353,6 +360,6 @@ world.ensureSystemExists(ConsoleHudRenderPassSystem);
 
 world.ensureSystemExists(DebugSystem)
 
-world.ensureSystemExists(FadeSystem);
+// world.ensureSystemExists(FadeSystem);
 
 world.startLoop()

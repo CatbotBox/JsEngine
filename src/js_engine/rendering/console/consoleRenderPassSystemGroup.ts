@@ -33,7 +33,8 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
     protected onCreate() {
         this.requireAllForUpdate(this._cameraQuery) // always require a camera
         this.world.ensureSystemExists(ConsoleCameraSizingSystem);
-        this.world.ensureSystemExists(ConsoleCellSizingSystem);
+        // Disabling as this conflicts with the new input system; This system also doesn't properly work anyways
+        // this.world.ensureSystemExists(ConsoleCellSizingSystem);
     }
 
     public onDestroy() {
