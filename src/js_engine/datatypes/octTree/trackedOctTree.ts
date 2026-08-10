@@ -40,6 +40,13 @@ export class TrackedOctree<T, U> {
     private readonly maxDepth: number;   // controls node fanout, not world size
     private readonly looseFactor: number;
     private _count: number = 0;
+    private _version: number = 0;
+    private _lastQuery: { version: number, range: AABB, result: TrackedOctItem<T, U>[] } = {
+        version: -1,
+        range: undefined as any as AABB,
+        result: undefined as any as []
+    }
+
     get count(): number {
         return this._count;
     }
@@ -60,12 +67,14 @@ export class TrackedOctree<T, U> {
     /** Remove everything. */
     clear() {
         this.root = null;
+        this._version = 0;
         this.batchIndex.clear();
         this.count = 0;
     }
 
     /** Insert a single item (auto-grows if needed). */
     insert(item: TrackedOctItem<T, U>) {
+        this._version++;
         this.ensureRootInitialized(item.bounds);
         this.ensureFits(item.bounds);
         this.insertInto(this.root!, item);
@@ -75,6 +84,7 @@ export class TrackedOctree<T, U> {
     /** Insert many items with the same batch (auto-grows once as needed). */
     insertBatch(batchId: U, items: Omit<TrackedOctItem<T, U>, "batchId">[]) {
         if (items.length === 0) return;
+        this._version++;
 
         // Initialize root from the first item if needed
         this.ensureRootInitialized(items[0].bounds);
@@ -95,6 +105,7 @@ export class TrackedOctree<T, U> {
     removeBatch(batchId: U) {
         const nodes = this.batchIndex.get(batchId);
         if (!nodes || nodes.size === 0) return;
+        this._version++;
 
         const arr = Array.from(nodes);
         for (const node of arr) {
@@ -118,9 +129,17 @@ export class TrackedOctree<T, U> {
 
     /** Query overlapping items. */
     query(range: AABB): TrackedOctItem<T, U>[] {
+        if (this._version === this._lastQuery.version && AABB.equals(range, this._lastQuery.range)) {
+            return this._lastQuery.result;
+        }
         const out: TrackedOctItem<T, U>[] = [];
         if (!this.root) return out;
         this.queryNode(this.root, range, out);
+        this._lastQuery = {
+            version: this._version,
+            range,
+            result: out
+        }
         return out;
     }
 
