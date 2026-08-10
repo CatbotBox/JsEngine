@@ -13,6 +13,14 @@ export interface AABB {
 }
 
 export namespace AABB {
+    export function equals(a: AABB, b: AABB) {
+        return a.xMin === b.xMin
+            && a.xMax === b.xMax
+            && a.yMin === b.yMin
+            && a.yMax === b.yMax
+            && a.zMin === b.zMin
+            && a.zMax === b.zMax;
+    }
 
     export function fromMinMax(min: Vec3, max: Vec3): Readonly<AABB> {
         return {
