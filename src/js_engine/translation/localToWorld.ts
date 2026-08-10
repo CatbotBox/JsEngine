@@ -183,7 +183,7 @@ export class LocalToWorld extends Component {
             out = new Float32Array(16) as Vec16;
         }
         if (ArrayBuffer.isView(out)) {
-            out.set(identity);
+            (out as Float32Array).set(identity);
             return out;
         }
         for (let i = 0; i < identity.length; i++) {

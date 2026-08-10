@@ -67,6 +67,7 @@ export abstract class Component {
                 return Reflect.get(t, prop, receiver);
             },
             set(t, prop, value, receiver) {
+                if (Reflect.get(t, prop, receiver) === value) return true;
                 modified();
                 return Reflect.set(t, prop, value, receiver);
             },

@@ -79,7 +79,5 @@ export class ConsoleCameraSizingSystem extends System {
         const {columns, rows} = getRawTerminalSize();
         cameraEntity.screenSize.x = columns;
         cameraEntity.screenSize.y = rows - 1; // leave one row for the prompt
-
-        console.log("Resize: " + JSON.stringify(cameraEntity.screenSize, null, 2));
     }
 }
