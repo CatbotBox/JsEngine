@@ -13,9 +13,8 @@ type BuildTuple<N extends number, T, R extends unknown[] = []> =
 // and also compatible with Float32Array or number[] at runtime.
 // NOTE: labels are not included here (TS can't compute them).
 export type Vec<N extends number> =
-// BuildTuple<N, number> &
     ((Float32Array | number[]) &
-        { length: N } ) | Vec<NoUnion<N>>
+        { length: NoUnion<N> })
 
 export type truthVec<N> = boolean[] & { length: N }
 
@@ -28,7 +27,7 @@ export type Vec16 = Vec<16>;
 
 // export type Vec = [x: number, y: number, z: number] & (Float32Array | Array<number>) & { length: 3 };
 export namespace Vec {
-    export function equals(vec1: Vec<any>, vec2: Vec<any>): boolean {
+    export function equals(vec1: Vec<number>, vec2: Vec<number>): boolean {
         if (vec1 == vec2) return true;
         if (vec1.length !== vec2.length) {
             return false;
