@@ -58,17 +58,18 @@ function createCross(position: LocalPosition, parent?: Entity, name?: string, ..
     for (const additionalComponent of additionalComponents) {
         buffer.addComponent(objectEntity, additionalComponent);
     }
-    return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
+    const position2 = buffer.addTrackedComponent(objectEntity, position);
+    return [objectEntity, position2, localToWorld];
 }
 
 class FadeToColor extends Component {
-    public color: [number, number, number];
-    public fadeTime: number;
+    public color: [number, number, number] = [255, 255, 255];
+    public fadeTime: number = 0;
     public currentFadeTime: number = 0;
 }
 
 class OriginalColor extends Component {
-    public color: [number, number, number];
+    public color: [number, number, number] = [255, 255, 255];
 }
 
 function createPixel(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
@@ -135,7 +136,11 @@ buffer.addComponent(fpsCounterEntity, fpsAnchor);
 
 consoleInput.enable()
 consoleInput.whenKey(Key.Up, () => {
+    console.log("up")
+    console.log(position.x, position.y);
     position.y -= 1;
+    console.log("after");
+    console.log(position.x, position.y);
 })
 consoleInput.whenKey(Key.Down, () => {
     position.y += 1;
@@ -148,15 +153,19 @@ consoleInput.whenKey(Key.Right, () => {
 })
 
 consoleInput.whenKey(Key.W, () => {
+    position.y += 1;
     cameraPosition.y -= 1;
 })
 consoleInput.whenKey(Key.S, () => {
+    position.y += 1;
     cameraPosition.y += 1;
 })
 consoleInput.whenKey(Key.A, () => {
+    position.y += 1;
     cameraPosition.x -= 1;
 })
 consoleInput.whenKey(Key.D, () => {
+    position.y += 1;
     cameraPosition.x += 1;
 })
 
@@ -172,7 +181,7 @@ consoleInput.whenKey(Key.Space, () => {
         const fadeToColor = new FadeToColor();
         fadeToColor.color = [255, 183, 206]
         fadeToColor.fadeTime = Math.random() * 5000 + 5000;
-        createPixel(newPos, null, null, fadeToColor);
+        createPixel(newPos, undefined, undefined, fadeToColor);
         // } else {
         //     createPixel(newPos);
         // }
@@ -220,7 +229,7 @@ class FadeSystem extends System {
     private interpolate(color1: [number, number, number], color2: [number, number, number], scale: number): [number, number, number] {
         if (scale >= 1) return color2;
         if (scale <= 0) return color1;
-        const diff = [
+        const diff: [number, number, number] = [
             color2[0] - color1[0],
             color2[1] - color1[1],
             color2[2] - color1[2]
@@ -239,7 +248,6 @@ class FadeSystem extends System {
     }
 
     onUpdate(): void {
-        console.log(this._query.entityCount());
         const deltaTime = this.world.time.deltaTime;
         this._query.stream({
             originalColor: OriginalColor,
@@ -360,6 +368,6 @@ world.ensureSystemExists(ConsoleHudRenderPassSystem);
 
 world.ensureSystemExists(DebugSystem)
 
-// world.ensureSystemExists(FadeSystem);
+world.ensureSystemExists(FadeSystem);
 
 world.startLoop()
