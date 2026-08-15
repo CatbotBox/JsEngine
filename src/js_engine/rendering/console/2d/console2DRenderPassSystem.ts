@@ -45,6 +45,7 @@ export class Console2DRenderPassSystem extends System {
             screenSize: ScreenSize,
             localToWorld: LocalToWorld,
         });
+        const camBoundsStart = performance.now();
         const cameraBounds = new RenderBounds();
         const position = cameraEntity.localToWorld.position;
         const screenSize = cameraEntity.screenSize;
@@ -59,17 +60,25 @@ export class Console2DRenderPassSystem extends System {
         cameraBounds.yMax = Math.max(y0, y1);
         cameraBounds.zMin = -1000;
         cameraBounds.zMax = 1000;
+        const camBoundsEnd = performance.now();
 
+        const updateOctTreeStart = performance.now();
         this.updateOctTree();
+        const updateOctTreeEnd = performance.now();
 
         // Prepare current buffer
         const dualScreenBuffer = this.world.resources.tryGet(ConsoleScreenBuffer);
         if (!dualScreenBuffer) return;
         const screenBuffer = dualScreenBuffer.screenBuffer;
 
-        const octTree = this._octTree;
-        const matches = octTree.query(cameraBounds);
 
+        const octTree = this._octTree;
+
+        const octTreeQueryStart = performance.now();
+        const matches = octTree.query(cameraBounds);
+        const octTreeQueryEnd = performance.now();
+
+        const octTreeResultResolverStart = performance.now();
         matches.forEach(({bounds, payload}) => {
             // World → screen transform (top-left anchoring)
             const screenX = Math.floor(bounds.xMin - cameraBounds.xMin);
@@ -79,6 +88,12 @@ export class Console2DRenderPassSystem extends System {
             // The blitter will clip to the current screen automatically.
             screenBuffer.blit(payload.consoleImage, screenX, screenY, payload.zHeight);
         });
+        const octTreeResultResolverEnd = performance.now();
+
+        console.log("Camera Bounds : " + (camBoundsEnd - camBoundsStart));
+        console.log("update OctTree : " + (updateOctTreeEnd - updateOctTreeStart));
+        console.log("OctTree Query : " + (octTreeQueryEnd - octTreeQueryStart));
+        console.log("OctTree Result Resolver (" + matches.length + " items): " + (octTreeResultResolverEnd - octTreeResultResolverStart));
     }
 
 
