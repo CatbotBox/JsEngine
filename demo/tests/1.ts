@@ -1,3 +1,4 @@
+import {Vec} from "../../src/js_engine/math/types/vec";
 import {
     Component,
     Entity,
@@ -175,8 +176,8 @@ consoleInput.whenKey(Key.Space, () => {
         const x = (Math.random() - 0.5) * 100
         const y = (Math.random() - 0.5) * 100
         const newPos = new LocalPosition();
-        newPos.x = x + localToWorld.position[0]
-        newPos.y = y + localToWorld.position[1]
+        newPos.x = x + Vec.x(localToWorld.position)
+        newPos.y = y + Vec.y(localToWorld.position)
         // if (Math.random() < 0.5) {
         const fadeToColor = new FadeToColor();
         fadeToColor.color = [255, 183, 206]

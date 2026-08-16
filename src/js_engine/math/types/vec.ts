@@ -1,155 +1,245 @@
-﻿type UnionToIntersection<U> =
-    (U extends any ? (k: U) => void : never) extends ((k: infer I) => void) ? I : never
+﻿declare const VecTag: unique symbol;
 
-type NoUnion<Key> =
-// If this is a simple type UnionToIntersection<Key> will be the same type, otherwise it will an intersection of all types in the union and probably will not extend `Key`
-    [Key] extends [UnionToIntersection<Key>] ? Key : never;
+export type Vec<N extends number> = { readonly [VecTag]: N };
 
-// Build a tuple of length N with element type T
-type BuildTuple<N extends number, T, R extends unknown[] = []> =
-    R['length'] extends N ? R : BuildTuple<N, T, [...R, T]>;
-
-// Generic vector: fixed-length numeric tuple
-// and also compatible with Float32Array or number[] at runtime.
-// NOTE: labels are not included here (TS can't compute them).
-export type Vec<N extends number> =
-    ((Float32Array | number[]) &
-        { length: NoUnion<N> })
-
-export type truthVec<N> = boolean[] & { length: N }
-
-// Concrete aliases
 export type Vec2 = Vec<2>;
 export type Vec3 = Vec<3>;
 export type Vec4 = Vec<4>;
 export type Vec16 = Vec<16>;
 
+/** Boolean companion for the comparison helpers. */
+export type truthVec<N> = boolean[] & { length: N };
 
-// export type Vec = [x: number, y: number, z: number] & (Float32Array | Array<number>) & { length: 3 };
+/** Escape hatch for code that must touch the backing store (serialisation, GPU upload). */
+export function asFloat32Array<N extends number>(v: Vec<N>): Float32Array {
+    return v as unknown as Float32Array;
+}
+
+/** Wrap an existing Float32Array as a Vec without copying. The caller owns the buffer. */
+export function fromFloat32Array<N extends number>(raw: Float32Array): Vec<N> {
+    return raw as unknown as Vec<N>;
+}
+
+const f = <N extends number>(v: Vec<N>): Float32Array => v as unknown as Float32Array;
+
 export namespace Vec {
-    export function equals(vec1: Vec<number>, vec2: Vec<number>): boolean {
-        if (vec1 == vec2) return true;
-        if (vec1.length !== vec2.length) {
-            return false;
-        }
-        for (let i = 0; i < vec1.length; i++) {
-            if (vec1[i] !== vec2[i]) {
-                return false;
-            }
-        }
-        return true;
+    export function alloc<N extends number>(size: N): Vec<N> {
+        return new Float32Array(size) as unknown as Vec<N>;
     }
 
-    export function dot<N extends number>(...vectors: Vec<NoUnion<N>>[]): number {
-        const multiplied = mul(...vectors);
-        let sum: number = 0;
-        for (let i = 0; i < multiplied.length; i++) {
-            sum += multiplied[i];
-        }
+    export function alloc2(x = 0, y = 0): Vec2 {
+        const v = new Float32Array(2);
+        v[0] = x;
+        v[1] = y;
+        return v as unknown as Vec2;
+    }
+
+    export function alloc3(x = 0, y = 0, z = 0): Vec3 {
+        const v = new Float32Array(3);
+        v[0] = x;
+        v[1] = y;
+        v[2] = z;
+        return v as unknown as Vec3;
+    }
+
+    export function alloc4(x = 0, y = 0, z = 0, w = 0): Vec4 {
+        const v = new Float32Array(4);
+        v[0] = x;
+        v[1] = y;
+        v[2] = z;
+        v[3] = w;
+        return v as unknown as Vec4;
+    }
+
+    /** Copy of `src`. Prefer `copy(out, src)` where an `out` already exists. */
+    export function clone<N extends number>(src: Vec<N>): Vec<N> {
+        const s = f(src);
+        const v = new Float32Array(s.length);
+        v.set(s);
+        return v as unknown as Vec<N>;
+    }
+
+    export function of<N extends number>(values: ArrayLike<number>): Vec<N> {
+        const v = new Float32Array(values.length);
+        v.set(values as never);
+        return v as unknown as Vec<N>;
+    }
+
+    export function size<N extends number>(v: Vec<N>): number {
+        return f(v).length;
+    }
+
+    export function get<N extends number>(v: Vec<N>, index: number): number {
+        return f(v)[index];
+    }
+
+    export function set<N extends number>(v: Vec<N>, index: number, value: number): void {
+        f(v)[index] = value;
+    }
+
+    export function x<N extends number>(v: Vec<N>): number {
+        return f(v)[0];
+    }
+
+    export function y<N extends number>(v: Vec<N>): number {
+        return f(v)[1];
+    }
+
+    export function z<N extends number>(v: Vec<N>): number {
+        return f(v)[2];
+    }
+
+    export function w<N extends number>(v: Vec<N>): number {
+        return f(v)[3];
+    }
+
+    export function setX<N extends number>(v: Vec<N>, value: number): void {
+        f(v)[0] = value;
+    }
+
+    export function setY<N extends number>(v: Vec<N>, value: number): void {
+        f(v)[1] = value;
+    }
+
+    export function setZ<N extends number>(v: Vec<N>, value: number): void {
+        f(v)[2] = value;
+    }
+
+    export function setW<N extends number>(v: Vec<N>, value: number): void {
+        f(v)[3] = value;
+    }
+
+    export function set3<N extends number>(v: Vec<N>, x: number, y: number, z: number): Vec<N> {
+        const t = f(v);
+        t[0] = x;
+        t[1] = y;
+        t[2] = z;
+        return v;
+    }
+
+    /** Copy `src` into `out`. Accepts a plain array so callers can seed from literals. */
+    export function copy<N extends number>(out: Vec<N>, src: Vec<N> | ArrayLike<number>): Vec<N> {
+        f(out).set(src instanceof Float32Array ? src : (src as ArrayLike<number>) as never);
+        return out;
+    }
+
+    export function fill<N extends number>(out: Vec<N>, value: number): Vec<N> {
+        f(out).fill(value);
+        return out;
+    }
+
+    /** Spread into a plain array. Debugging and serialisation only — allocates. */
+    export function toArray<N extends number>(v: Vec<N>): number[] {
+        return Array.from(f(v));
+    }
+
+    export function addInto<N extends number>(out: Vec<N>, a: Vec<N>, b: Vec<N>): Vec<N> {
+        const o = f(out), x = f(a), y = f(b);
+        for (let i = 0; i < o.length; i++) o[i] = x[i] + y[i];
+        return out;
+    }
+
+    export function subInto<N extends number>(out: Vec<N>, a: Vec<N>, b: Vec<N>): Vec<N> {
+        const o = f(out), x = f(a), y = f(b);
+        for (let i = 0; i < o.length; i++) o[i] = x[i] - y[i];
+        return out;
+    }
+
+    export function mulInto<N extends number>(out: Vec<N>, a: Vec<N>, b: Vec<N>): Vec<N> {
+        const o = f(out), x = f(a), y = f(b);
+        for (let i = 0; i < o.length; i++) o[i] = x[i] * y[i];
+        return out;
+    }
+
+    export function divInto<N extends number>(out: Vec<N>, a: Vec<N>, b: Vec<N>): Vec<N> {
+        const o = f(out), x = f(a), y = f(b);
+        for (let i = 0; i < o.length; i++) o[i] = x[i] / y[i];
+        return out;
+    }
+
+    export function scaleInto<N extends number>(out: Vec<N>, a: Vec<N>, scalar: number): Vec<N> {
+        const o = f(out), x = f(a);
+        for (let i = 0; i < o.length; i++) o[i] = x[i] * scalar;
+        return out;
+    }
+
+    export function minInto<N extends number>(out: Vec<N>, a: Vec<N>, b: Vec<N>): Vec<N> {
+        const o = f(out), x = f(a), y = f(b);
+        for (let i = 0; i < o.length; i++) o[i] = x[i] < y[i] ? x[i] : y[i];
+        return out;
+    }
+
+    export function maxInto<N extends number>(out: Vec<N>, a: Vec<N>, b: Vec<N>): Vec<N> {
+        const o = f(out), x = f(a), y = f(b);
+        for (let i = 0; i < o.length; i++) o[i] = x[i] > y[i] ? x[i] : y[i];
+        return out;
+    }
+
+    export function dot<N extends number>(a: Vec<N>, b: Vec<N>): number {
+        const x = f(a), y = f(b);
+        let sum = 0;
+        for (let i = 0; i < x.length; i++) sum += x[i] * y[i];
         return sum;
     }
 
-    export function mul<N extends number>(...vectors: Vec<NoUnion<N>>[]): Vec<NoUnion<N>> {
-        if (vectors.length === 1) return vectors[0];
-        if (vectors.length === 0) throw new Error('No vectors provided');
-        const result: Vec<NoUnion<N>> = [...vectors[0]] as Vec<NoUnion<N>>;
-        for (let i = 1; i < vectors.length; i++) {
-            for (let j = 0; j < vectors[i].length; j++) {
-                result[j] *= vectors[i][j];
-            }
-        }
-        return result;
+    export function lengthSquared<N extends number>(v: Vec<N>): number {
+        return dot(v, v);
     }
 
-    export function add<N extends number>(...vectors: Vec<NoUnion<N>>[]): Vec<NoUnion<N>> {
-        if (vectors.length === 1) return vectors[0];
-        if (vectors.length === 0) throw new Error('No vectors provided');
-        const result: Vec<NoUnion<N>> = [...vectors[0]] as Vec<NoUnion<N>>;
-        for (let i = 1; i < vectors.length; i++) {
-            for (let j = 0; j < vectors[i].length; j++) {
-                result[j] += vectors[i][j];
-            }
-        }
-        return result;
+    export function length<N extends number>(v: Vec<N>): number {
+        return Math.sqrt(dot(v, v));
     }
 
-    export function div<N extends number>(vector: Vec<NoUnion<N>>, ...vectors: Vec<NoUnion<N>>[]): Vec<NoUnion<N>> {
-        const result: Vec<NoUnion<N>> = [...vector] as Vec<NoUnion<N>>;
-        for (let i = 0; i < vectors.length; i++) {
-            for (let j = 0; j < vectors[i].length; j++) {
-                result[j] /= vectors[i][j];
-            }
-        }
-        return result;
+    export function normalizeInto<N extends number>(out: Vec<N>, a: Vec<N>): Vec<N> {
+        const len = length(a);
+        return len === 0 ? copy(out, a) : scaleInto(out, a, 1 / len);
     }
 
-    export function sub<N extends number>(vector: Vec<NoUnion<N>>, ...vectors: Vec<NoUnion<N>>[]): Vec<NoUnion<N>> {
-        const result: Vec<NoUnion<N>> = [...vector] as Vec<NoUnion<N>>;
-
-        for (let i = 0; i < vectors.length; i++) {
-            for (let j = 0; j < vectors[i].length; j++) {
-                result[j] -= vectors[i][j];
-            }
-        }
-        return result;
+    export function crossInto(out: Vec3, a: Vec3, b: Vec3): Vec3 {
+        const x = f(a), y = f(b);
+        const cx = x[1] * y[2] - x[2] * y[1];
+        const cy = x[2] * y[0] - x[0] * y[2];
+        const cz = x[0] * y[1] - x[1] * y[0];
+        const o = f(out);
+        o[0] = cx;  // via locals, so out may alias a or b
+        o[1] = cy;
+        o[2] = cz;
+        return out;
     }
 
-    export function min<N extends number>(...vectors: Vec<NoUnion<N>>[]): Vec<NoUnion<N>> {
-        if (vectors.length === 1) return vectors[0];
-        if (vectors.length === 0) throw new Error('No vectors provided');
-        const result: Vec<NoUnion<N>> = [...vectors[0]] as Vec<NoUnion<N>>;
-        for (let i = 1; i < vectors.length; i++) {
-            for (let j = 0; j < vectors[i].length; j++) {
-                if (result[j] > vectors[i][j])
-                    result[j] = vectors[i][j];
-            }
-        }
-        return result;
+    export function equals<N extends number>(a: Vec<N>, b: Vec<N>): boolean {
+        if (a === b) return true;
+        const x = f(a), y = f(b);
+        if (x.length !== y.length) return false;
+        for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+        return true;
     }
 
-    export function max<N extends number>(...vectors: Vec<NoUnion<N>>[]): Vec<NoUnion<N>> {
-        if (vectors.length === 1) return vectors[0];
-        if (vectors.length === 0) throw new Error('No vectors provided');
-        const result: Vec<NoUnion<N>> = [...vectors[0]] as Vec<NoUnion<N>>;
-        for (let i = 1; i < vectors.length; i++) {
-            for (let j = 0; j < vectors[i].length; j++) {
-                if (result[j] < vectors[i][j])
-                    result[j] = vectors[i][j];
-            }
-        }
-        return result;
+    export function moreThan<N extends number>(a: Vec<N>, b: Vec<N>): truthVec<N> {
+        const x = f(a), y = f(b);
+        const r = new Array(x.length) as truthVec<N>;
+        for (let i = 0; i < x.length; i++) r[i] = x[i] > y[i];
+        return r;
     }
 
-    export function moreThan<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
-        const result = new Array(a.length) as truthVec<NoUnion<N>>;
-        for (let i = 0; i < a.length; i++) {
-            result[i] = a[i] > b[i];
-        }
-        return result;
+    export function moreOrEquals<N extends number>(a: Vec<N>, b: Vec<N>): truthVec<N> {
+        const x = f(a), y = f(b);
+        const r = new Array(x.length) as truthVec<N>;
+        for (let i = 0; i < x.length; i++) r[i] = x[i] >= y[i];
+        return r;
     }
 
-    export function moreOrEquals<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
-        const result = new Array(a.length) as truthVec<NoUnion<N>>;
-        for (let i = 0; i < a.length; i++) {
-            result[i] = a[i] >= b[i];
-        }
-        return result;
+    export function lessThan<N extends number>(a: Vec<N>, b: Vec<N>): truthVec<N> {
+        const x = f(a), y = f(b);
+        const r = new Array(x.length) as truthVec<N>;
+        for (let i = 0; i < x.length; i++) r[i] = x[i] < y[i];
+        return r;
     }
 
-    export function lessThan<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
-        const result = new Array(a.length) as truthVec<NoUnion<N>>;
-        for (let i = 0; i < a.length; i++) {
-            result[i] = a[i] < b[i];
-        }
-        return result;
-    }
-
-    export function lessOrEquals<N extends number>(a: Vec<NoUnion<N>>, b: Vec<NoUnion<N>>): truthVec<NoUnion<N>> {
-        const result = new Array(a.length) as truthVec<NoUnion<N>>;
-        for (let i = 0; i < a.length; i++) {
-            result[i] = a[i] <= b[i];
-        }
-        return result;
+    export function lessOrEquals<N extends number>(a: Vec<N>, b: Vec<N>): truthVec<N> {
+        const x = f(a), y = f(b);
+        const r = new Array(x.length) as truthVec<N>;
+        for (let i = 0; i < x.length; i++) r[i] = x[i] <= y[i];
+        return r;
     }
 }
-

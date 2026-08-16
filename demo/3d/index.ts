@@ -21,7 +21,7 @@ import {AverageStat} from "../../src/js_engine/datatypes";
 import {Console3DRenderPassSystem} from "../../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
 import {RenderMesh} from "../../src/js_engine/rendering/3d/renderMesh";
 import {Mesh} from "../../src/js_engine/rendering/3d/mesh";
-import {Vec, Vec3} from "../../src/js_engine/math/types/vec";
+import {Vec, Vec3, Vec4} from "../../src/js_engine/math/types/vec";
 import {Quaternions} from "../../src/js_engine/math/quaternions";
 import {FieldOfView} from "../../src/js_engine/rendering/3d/fieldOfView";
 
@@ -59,16 +59,17 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 
     // Rendering Transforms
     // Shared transform state so new spawns match the rest of the group
-    const euler: Vec3 = [0, 0, 0];
-    let currentScale: Vec3 = [1, 1, 1];
+    const euler: Vec3 = Vec.alloc3(0, 0, 0);
+    let currentScale: Vec3 = Vec.alloc3(1, 1, 1);
     const spacing = 5;
 
     // Camera look state (driven by the mouse — see registerInputs)
     let camYaw = 0;
     let camPitch = 0;
+    const camEulerScratch: Vec3 = Vec.alloc3();
     // Current look orientation as a quaternion; movement is rotated by this so
     // "forward" follows where the camera is pointing.
-    let camQuat = Quaternions.eulerToQuat([0, 0, 0]);
+    let camQuat = Quaternions.eulerToQuat(Vec.alloc3(0, 0, 0));
 
     // Preview HUD (bottom-right corner) showing the model that will be spawned next
     const previewEntity = buffer.createEntity("spawnPreview");
@@ -198,7 +199,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         const scale = buffer.addTrackedComponent(entity, new LocalScale());
 
         rotation.xyzw = Quaternions.eulerToQuat(euler);
-        scale.xyz = [...currentScale] as Vec3;
+        scale.xyz = currentScale;
 
         spawned.push({entity, position, rotation, scale});
         totalTriCount += meshes[selectedMeshIndex].mesh.triangleCount;
@@ -226,11 +227,11 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     }
 
     // i/o: scale all spawned models together
-    const scaleFactor: Vec3 = [1.02, 1.02, 1.02];
+    const scaleFactor: Vec3 = Vec.alloc3(1.02, 1.02, 1.02);
 
     const applyScale = () => {
         for (const s of spawned) {
-            s.scale.xyz = [...currentScale] as Vec3;
+            s.scale.xyz = currentScale;
         }
     }
 
@@ -238,30 +239,35 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
     const applyCameraLook = () => {
         const limit = Math.PI / 2 - 0.01;
         camPitch = Math.max(-limit, Math.min(limit, camPitch));
-        camQuat = Quaternions.eulerToQuat([camPitch, camYaw, 0]);
+        camQuat = Quaternions.eulerToQuat(Vec.set3(camEulerScratch, camPitch, camYaw, 0));
         camRot.xyzw = camQuat;
     }
 
     // Rotate a vector by a quaternion [x,y,z,w] (standard v + 2w(q×v) + 2q×(q×v)).
     // Convention-agnostic: uses the exact quat the engine built, so movement always
     // lines up with the view regardless of eulerToQuat's internal axis order.
-    const rotateByQuat = (q: ArrayLike<number>, v: Vec3): Vec3 => {
-        const x = q[0], y = q[1], z = q[2], w = q[3];
-        const [vx, vy, vz] = v;
+    const DIR_FWD: Vec3 = Vec.alloc3(0, 0, 1);
+    const DIR_RIGHT: Vec3 = Vec.alloc3(1, 0, 0);
+    const rotateScratch: Vec3 = Vec.alloc3();
+
+    const rotateByQuat = (q: Vec4, v: Vec3): Vec3 => {
+        const x = Vec.x(q), y = Vec.y(q), z = Vec.z(q), w = Vec.w(q);
+        const vx = Vec.x(v), vy = Vec.y(v), vz = Vec.z(v);
         const tx = 2 * (y * vz - z * vy);
         const ty = 2 * (z * vx - x * vz);
         const tz = 2 * (x * vy - y * vx);
-        return [
+        return Vec.set3(rotateScratch,
             vx + w * tx + (y * tz - z * ty),
             vy + w * ty + (z * tx - x * tz),
             vz + w * tz + (x * ty - y * tx),
-        ];
+        );
     }
 
     // Move the camera along a look-relative axis (forward = +Z, right = +X at rest).
     const moveSpeed = 0.05;
     const moveLocal = (localDir: Vec3, amount: number) => {
-        const [dx, dy, dz] = rotateByQuat(camQuat, localDir);
+        const d = rotateByQuat(camQuat, localDir);
+        const dx = Vec.x(d), dy = Vec.y(d), dz = Vec.z(d);
         camPos.x += dx * amount;
         camPos.y += dy * amount;
         camPos.z += dz * amount;
@@ -296,10 +302,10 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         // ---- movement (whenKey = repeats while held) ----
         // wasd moves relative to where the camera is looking; q/e are world up/down
         // w/s: forward/back | a/d: strafe left/right | q/e: down/up
-        input.whenKey(Key.W, () => moveLocal([0, 0, 1], moveSpeed))
-        input.whenKey(Key.S, () => moveLocal([0, 0, 1], -moveSpeed))
-        input.whenKey(Key.D, () => moveLocal([1, 0, 0], moveSpeed))
-        input.whenKey(Key.A, () => moveLocal([1, 0, 0], -moveSpeed))
+        input.whenKey(Key.W, () => moveLocal(DIR_FWD, moveSpeed))
+        input.whenKey(Key.S, () => moveLocal(DIR_FWD, -moveSpeed))
+        input.whenKey(Key.D, () => moveLocal(DIR_RIGHT, moveSpeed))
+        input.whenKey(Key.A, () => moveLocal(DIR_RIGHT, -moveSpeed))
         input.whenKey(Key.Q, () => {
             camPos.y -= moveSpeed;
         })
@@ -310,29 +316,29 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
         // ---- model rotation (arrow keys) ----
         // up/down = pitch, left/right = yaw
         input.whenKey(Key.Up, () => {
-            euler[0] += 0.1;
+            Vec.setX(euler, Vec.x(euler) + 0.1);
             applyRotation();
         })
         input.whenKey(Key.Down, () => {
-            euler[0] -= 0.1;
+            Vec.setX(euler, Vec.x(euler) - 0.1);
             applyRotation();
         })
         input.whenKey(Key.Left, () => {
-            euler[1] -= 0.1;
+            Vec.setY(euler, Vec.y(euler) - 0.1);
             applyRotation();
         })
         input.whenKey(Key.Right, () => {
-            euler[1] += 0.1;
+            Vec.setY(euler, Vec.y(euler) + 0.1);
             applyRotation();
         })
 
         // ---- model scale (i/o) ----
         input.whenKey(Key.I, () => {
-            currentScale = Vec.div(currentScale, scaleFactor) as Vec3;
+            Vec.divInto(currentScale, currentScale, scaleFactor);
             applyScale();
         })
         input.whenKey(Key.O, () => {
-            currentScale = Vec.mul(currentScale, scaleFactor) as Vec3;
+            Vec.mulInto(currentScale, currentScale, scaleFactor);
             applyScale();
         })
 

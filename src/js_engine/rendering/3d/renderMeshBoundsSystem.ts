@@ -1,3 +1,4 @@
+import {asFloat32Array} from "../../math/types/vec";
 import {System} from "../../core";
 import {LocalToWorld} from "../../translation";
 import {RenderMesh} from "./renderMesh";
@@ -34,7 +35,7 @@ export class RenderMeshBoundsSystem extends System {
             if (mesh === undefined) return;
 
             const mb = mesh.bounds;
-            const m = localToWorld.matrix;
+            const m = asFloat32Array(localToWorld.matrix);
 
             // Some matrix magic
 
