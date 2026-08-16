@@ -3,10 +3,15 @@
 import {AABB} from "../datatypes/AABB";
 import {EntityWriteOptions} from "../core/entityWriteOptions";
 import {WorldSpaceRenderBounds} from "./worldSpaceRenderBounds";
-import {Vec3} from "../math/types/vec";
+import {asFloat32Array, fromFloat32Array, Vec3} from "../math/types/vec";
 
-export class RenderBounds extends Component implements AABB {
+export class RenderBounds extends Component {
     private _values: Float32Array = new Float32Array(6);
+
+    /** Live AABB view over this component's storage — same buffer, no copy. */
+    get bounds(): AABB {
+        return AABB.wrap(this._values);
+    }
 
     setup(entity: Entity, entityManager: EntityWriteOptions) {
         entityManager.addComponent(entity, new WorldSpaceRenderBounds())
@@ -37,11 +42,11 @@ export class RenderBounds extends Component implements AABB {
     }
 
     get min(): Vec3 {
-        return this._values.subarray(0, 3) as Vec3;
+        return fromFloat32Array<3>(this._values.subarray(0, 3));
     }
 
     set min(value: Vec3) {
-        this._values.set(value, 0)
+        this._values.set(asFloat32Array(value), 0)
     }
 
 
@@ -70,11 +75,11 @@ export class RenderBounds extends Component implements AABB {
     }
 
     get max(): Vec3 {
-        return this._values.subarray(3, 6) as Vec3;
+        return fromFloat32Array<3>(this._values.subarray(3, 6));
     }
 
     set max(value: Vec3) {
-        this._values.set(value, 3)
+        this._values.set(asFloat32Array(value), 3)
     }
 
 

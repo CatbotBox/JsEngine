@@ -1,4 +1,5 @@
-﻿import {System} from "../core";
+import {Vec} from "../math/types/vec";
+import {System} from "../core";
 import {LocalToWorld} from "../translation";
 import {WorldSpaceRenderBounds} from "./worldSpaceRenderBounds";
 import {RenderBounds} from "./renderBounds";
@@ -34,9 +35,9 @@ export class WorldSpaceRenderBoundsComputeSystem extends System {
         }).forEach(({bounds, localToWorld, worldBounds, offset}) => {
             const position = localToWorld.position;
             // base position after offset
-            const px = position[0] + (offset?.x || 0);
-            const py = position[1] + (offset?.y || 0);
-            const pz = position[2] + (offset?.z || 0);
+            const px = Vec.x(position) + (offset?.x || 0);
+            const py = Vec.y(position) + (offset?.y || 0);
+            const pz = Vec.z(position) + (offset?.z || 0);
             // const px = position.x + (offset?.x || 0);
             // const py = position.y + (offset?.y || 0);
 

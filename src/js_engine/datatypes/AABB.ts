@@ -1,105 +1,173 @@
-﻿import {Vec3} from "../math/types/vec";
+﻿import {fromFloat32Array, Vec3} from "../math/types/vec";
 
-export interface AABB {
-    readonly xMin: number;
-    readonly yMin: number;
-    readonly zMin: number;
-    readonly xMax: number;
-    readonly yMax: number;
-    readonly zMax: number;
+declare const AABBTag: unique symbol;
 
-    readonly min: Vec3;
-    readonly max: Vec3;
-}
+/** Runtime representation: Float32Array(6), [xMin,yMin,zMin,xMax,yMax,zMax]. */
+export type AABB = { readonly [AABBTag]: true };
+
+// const AABB_X_MIN = 0;
+// const AABB_Y_MIN = 1;
+// const AABB_Z_MIN = 2;
+// const AABB_X_MAX = 3;
+// const AABB_Y_MAX = 4;
+// const AABB_Z_MAX = 5;
+export const AABB_STRIDE = 6;
+
+const castAsFloat32Array = (b: AABB): Float32Array => b as unknown as Float32Array;
 
 export namespace AABB {
-    export function equals(a: AABB, b: AABB) {
-        return a.xMin === b.xMin
-            && a.xMax === b.xMax
-            && a.yMin === b.yMin
-            && a.yMax === b.yMax
-            && a.zMin === b.zMin
-            && a.zMax === b.zMax;
+    export function wrap(raw: Float32Array): AABB {
+        if (raw.length < AABB_STRIDE) {
+            throw new Error(`AABB.wrap: need at least ${AABB_STRIDE} floats, got ${raw.length}`);
+        }
+        return raw as unknown as AABB;
     }
 
-    export function fromMinMax(min: Vec3, max: Vec3): Readonly<AABB> {
-        return {
-            min,
-            max,
-            xMin: min[0],
-            xMax: max[0],
-            yMin: min[1],
-            yMax: max[1],
-            zMin: min[2],
-            zMax: max[2],
-        }
+    /** Escape hatch for code that must touch the backing store. */
+    export function asFloat32Array(b: AABB): Float32Array {
+        return castAsFloat32Array(b);
     }
 
-    export function fromExplicit(aabb: Omit<AABB, "min" | "max">): Readonly<AABB> {
-        return {
-            ...aabb,
-            min:[aabb.xMin, aabb.yMin,aabb.zMin],
-            max :[aabb.xMax, aabb.yMax,aabb.zMax],
-        }
+    export function alloc(): AABB {
+        return new Float32Array(AABB_STRIDE) as unknown as AABB;
+    }
+
+    /** Allocate and fill. Prefer `writeInto` where an `out` already exists. */
+    export function of(
+        xMin: number, yMin: number, zMin: number,
+        xMax: number, yMax: number, zMax: number,
+    ): AABB {
+        const b = new Float32Array(AABB_STRIDE);
+        b[0] = xMin;
+        b[1] = yMin;
+        b[2] = zMin;
+        b[3] = xMax;
+        b[4] = yMax;
+        b[5] = zMax;
+        return b as unknown as AABB;
+    }
+
+    export function writeInto(
+        out: AABB,
+        xMin: number, yMin: number, zMin: number,
+        xMax: number, yMax: number, zMax: number,
+    ): AABB {
+        const o = castAsFloat32Array(out);
+        o[0] = xMin;
+        o[1] = yMin;
+        o[2] = zMin;
+        o[3] = xMax;
+        o[4] = yMax;
+        o[5] = zMax;
+        return out;
+    }
+
+    export function fromMinMax(min: Vec3, max: Vec3): AABB {
+        const mn = min as unknown as Float32Array, mx = max as unknown as Float32Array;
+        return of(mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]);
+    }
+
+    export function copy(out: AABB, src: AABB): AABB {
+        castAsFloat32Array(out).set(castAsFloat32Array(src));
+        return out;
+    }
+
+    export function clone(src: AABB): AABB {
+        const b = new Float32Array(AABB_STRIDE);
+        b.set(castAsFloat32Array(src));
+        return b as unknown as AABB;
+    }
+
+    // ---------------------------------------------------------------- access
+
+    export function xMin(b: AABB): number {
+        return castAsFloat32Array(b)[0];
+    }
+
+    export function yMin(b: AABB): number {
+        return castAsFloat32Array(b)[1];
+    }
+
+    export function zMin(b: AABB): number {
+        return castAsFloat32Array(b)[2];
+    }
+
+    export function xMax(b: AABB): number {
+        return castAsFloat32Array(b)[3];
+    }
+
+    export function yMax(b: AABB): number {
+        return castAsFloat32Array(b)[4];
+    }
+
+    export function zMax(b: AABB): number {
+        return castAsFloat32Array(b)[5];
+    }
+
+    export function min(b: AABB): Vec3 {
+        return fromFloat32Array<3>(castAsFloat32Array(b).subarray(0, 3));
+    }
+
+    export function max(b: AABB): Vec3 {
+        return fromFloat32Array<3>(castAsFloat32Array(b).subarray(3, 6));
+    }
+
+    export function equals(a: AABB, b: AABB): boolean {
+        const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
+        return x[0] === y[0] && x[1] === y[1] && x[2] === y[2]
+            && x[3] === y[3] && x[4] === y[4] && x[5] === y[5];
     }
 
     export function intersects(a: AABB, b: AABB): boolean {
+        const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
         return !(
-            b.xMax < a.xMin || b.xMin > a.xMax ||
-            b.yMax < a.yMin || b.yMin > a.yMax ||
-            b.zMax < a.zMin || b.zMin > a.zMax
+            y[3] < x[0] || y[0] > x[3] ||
+            y[4] < x[1] || y[1] > x[4] ||
+            y[5] < x[2] || y[2] > x[5]
         );
     }
 
     export function contains(a: AABB, b: AABB): boolean {
+        const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
         return (
-            b.xMin >= a.xMin && b.xMax <= a.xMax &&
-            b.yMin >= a.yMin && b.yMax <= a.yMax &&
-            b.zMin >= a.zMin && b.zMax <= a.zMax
+            y[0] >= x[0] && y[3] <= x[3] &&
+            y[1] >= x[1] && y[4] <= x[4] &&
+            y[2] >= x[2] && y[5] <= x[5]
         );
     }
 
-    export function union(a: AABB, b: AABB): AABB {
-        const xMin = Math.min(a.xMin, b.xMin);
-        const yMin = Math.min(a.yMin, b.yMin);
-        const zMin = Math.min(a.zMin, b.zMin);
-        const xMax = Math.max(a.xMax, b.xMax);
-        const yMax = Math.max(a.yMax, b.yMax);
-        const zMax = Math.max(a.zMax, b.zMax);
-
-        const min: Vec3 = [xMin, yMin, zMin];
-        const max: Vec3 = [xMax, yMax, zMax];
-
-        return {
-            xMin, yMin, zMin,
-            xMax, yMax, zMax,
-            min, max
-        }
+    export function unionInto(out: AABB, a: AABB, b: AABB): AABB {
+        const o = castAsFloat32Array(out), x = castAsFloat32Array(a), y = castAsFloat32Array(b);
+        const xMin = x[0] < y[0] ? x[0] : y[0];
+        const yMin = x[1] < y[1] ? x[1] : y[1];
+        const zMin = x[2] < y[2] ? x[2] : y[2];
+        const xMax = x[3] > y[3] ? x[3] : y[3];
+        const yMax = x[4] > y[4] ? x[4] : y[4];
+        const zMax = x[5] > y[5] ? x[5] : y[5];
+        o[0] = xMin;
+        o[1] = yMin;
+        o[2] = zMin;
+        o[3] = xMax;
+        o[4] = yMax;
+        o[5] = zMax;
+        return out;
     }
 
-    export function inflate(b: AABB, factor: number): AABB {
-        if (factor === 1) return b;
-        const cx = (b.xMin + b.xMax) * 0.5;
-        const cy = (b.yMin + b.yMax) * 0.5;
-        const cz = (b.zMin + b.zMax) * 0.5;
-        const hx = Math.max(0.5, (b.xMax - b.xMin) * 0.5 * factor);
-        const hy = Math.max(0.5, (b.yMax - b.yMin) * 0.5 * factor);
-        const hz = Math.max(0.5, (b.zMax - b.zMin) * 0.5 * factor);
-        const xMin = cx - hx;
-        const yMin = cy - hy;
-        const zMin = cz - hz;
-        const xMax = cx + hx;
-        const yMax = cy + hy;
-        const zMax = cz + hz;
-
-
-        const min: Vec3 = [xMin, yMin, zMin];
-        const max: Vec3 = [xMax, yMax, zMax];
-
-        return {
-            xMin, yMin, zMin,
-            xMax, yMax, zMax,
-            min, max
-        }
+    export function inflateInto(out: AABB, b: AABB, factor: number): AABB {
+        const s = castAsFloat32Array(b);
+        const cx = (s[0] + s[3]) * 0.5;
+        const cy = (s[1] + s[4]) * 0.5;
+        const cz = (s[2] + s[5]) * 0.5;
+        const hx = Math.max(0.5, (s[3] - s[0]) * 0.5 * factor);
+        const hy = Math.max(0.5, (s[4] - s[1]) * 0.5 * factor);
+        const hz = Math.max(0.5, (s[5] - s[2]) * 0.5 * factor);
+        const o = castAsFloat32Array(out);
+        o[0] = cx - hx;
+        o[1] = cy - hy;
+        o[2] = cz - hz;
+        o[3] = cx + hx;
+        o[4] = cy + hy;
+        o[5] = cz + hz;
+        return out;
     }
 }

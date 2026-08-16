@@ -5,7 +5,7 @@ import {LocalToWorld} from "../../../translation";
 import {ScreenSize} from "../../screenSize";
 import {ConsoleRenderPassSystemGroup} from "../consoleRenderPassSystemGroup";
 import {Mesh} from "../../3d/mesh";
-import {Vec16} from "../../../math/types/vec";
+import {asFloat32Array, fromFloat32Array, Vec16} from "../../../math/types/vec";
 import {RenderMesh} from "../../3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {FieldOfView} from "../../3d/fieldOfView";
@@ -111,7 +111,7 @@ export class Console3DRenderPassSystem extends System {
             localToWorld: LocalToWorld,
         }).forEach(({renderMesh, localToWorld}) => {
             if (renderMesh.mesh === undefined) return;
-            LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, this._modelViewScratch as Vec16);
+            LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, fromFloat32Array<16>(this._modelViewScratch));
             rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, renderMesh.color);
         });
 
@@ -124,7 +124,7 @@ export class Console3DRenderPassSystem extends System {
         }).forEach(({renderMesh, localToWorld, bounds}) => {
             if (renderMesh.mesh === undefined) return;
             if (!Console3DRenderPassSystem.boundsMayBeVisible(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
-            LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, this._modelViewScratch as Vec16);
+            LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, fromFloat32Array<16>(this._modelViewScratch));
             rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, renderMesh.color);
         });
 
@@ -144,7 +144,7 @@ export class Console3DRenderPassSystem extends System {
         width: number,
         height: number,
     ): boolean {
-        const m = invertedCameraMatrix;
+        const m = asFloat32Array(invertedCameraMatrix);
         const NEAR = 0.1;
         const halfW = width / 2, halfH = height / 2;
 
@@ -205,7 +205,7 @@ export class Console3DRenderPassSystem extends System {
             : undefined;
 
         rasterizer.beginFrame(screenBuffer, width, height, this.currentConfig());
-        const modelView = LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix) as Float32Array;
+        const modelView = asFloat32Array(LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix));
         rasterizer.addMesh(mesh, modelView, focalLength, consoleCellRatio.value, 0xFFFFFF);
         rasterizer.endFrame();
     }

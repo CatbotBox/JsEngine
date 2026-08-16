@@ -1,4 +1,4 @@
-﻿import {Vec2, Vec3} from "../../math/types/vec";
+﻿import {Vec, Vec2, Vec3} from "../../math/types/vec";
 import {Vec3Array, VecArray} from "../../math/types/vecArray";
 
 export class Mesh {
@@ -82,7 +82,7 @@ export class Mesh {
 
         this.triangleCount = builder.triangles.length;
         this.vertCount = builder.vertices.length;
-        const data = [...builder.vertices, ...builder.normals, ...builder.uvs.map(value => [...value, 0] as Vec3), ...builder.triangles];
+        const data = [...builder.vertices, ...builder.normals, ...builder.uvs.map(uv => Vec.alloc3(Vec.x(uv), Vec.y(uv), 0)), ...builder.triangles];
         this.data = new VecArray(data, 3);
     }
 
@@ -118,7 +118,7 @@ export class Mesh {
 
                 // Expecting at least x, y, z
                 if (vertexData.length >= 3) {
-                    meshBuilder.vertices.push(vertexData as Vec3);
+                    meshBuilder.vertices.push(Vec.of<3>(vertexData));
                 }
 
                 // Texture coords: "vt " (parsed & ignored here unless you wire them into MeshBuilder)
@@ -143,7 +143,7 @@ export class Mesh {
 
                 // Expect nx, ny, nz
                 if (normalData.length >= 3) {
-                    meshBuilder.normals.push(normalData as Vec3);
+                    meshBuilder.normals.push(Vec.of<3>(normalData));
                 }
 
                 return;
@@ -177,17 +177,17 @@ export class Mesh {
 
                 // Triangulate polygon as fan: (0,1,2), (0,2,3), ...
                 // Using only position indices (data[0])
-                meshBuilder.triangles.push([
-                    faceData[0][0],
-                    faceData[1][0],
-                    faceData[2][0],
-                ]);
+                meshBuilder.triangles.push(Vec.of<3>([
+                        faceData[0][0],
+                        faceData[1][0],
+                        faceData[2][0],
+                    ]));
 
                 for (let i = 3; i < faceData.length; i++) {
                     const p0 = faceData[0][0];
                     const p1 = faceData[i - 1][0];
                     const p2 = faceData[i][0];
-                    meshBuilder.triangles.push([p0, p1, p2]);
+                    meshBuilder.triangles.push(Vec.of<3>([p0, p1, p2]));
                 }
             }
         });
@@ -214,14 +214,14 @@ export class MeshBuilder {
     public generateNormals(): void {
         // for now just set to 0
         for (let i = 0; i < this.vertices.length; i++) {
-            this.normals[i] = [0, 0, 0]
+            this.normals[i] = Vec.alloc3()
         }
     }
 
     public generateUvs(): void {
         // for now just set to 0
         for (let i = 0; i < this.vertices.length; i++) {
-            this.uvs[i] = [0, 0]
+            this.uvs[i] = Vec.alloc2()
         }
     }
 
@@ -243,7 +243,7 @@ export class MeshBuilder {
     private verifyTriangles() {
         this.triangles.forEach((tri) => {
             for (let i = 0; i < 3; i++) {
-                if (tri[i] > this.vertices.length || tri[i] < 0)
+                if (Vec.get(tri, i) > this.vertices.length || Vec.get(tri, i) < 0)
                     throw new Error("Invalid Triangle");
             }
         })

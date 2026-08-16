@@ -1,5 +1,5 @@
 ﻿import {Component} from "../core";
-import {Vec3} from "../math/types/vec";
+import {asFloat32Array, fromFloat32Array, Vec3} from "../math/types/vec";
 
 export class LocalPosition extends Component {
     private _values = new Float32Array(3);
@@ -38,11 +38,11 @@ export class LocalPosition extends Component {
     }
 
     get xyz(): Vec3 {
-        return this._values as Vec3;
+        return fromFloat32Array<3>(this._values);
     }
 
     set xyz(value: Vec3) {
-        this._values.set(value);
+        this._values.set(asFloat32Array(value));
     }
 
     override copyTo(other: this) {

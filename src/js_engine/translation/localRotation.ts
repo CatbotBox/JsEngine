@@ -1,5 +1,5 @@
 ﻿import {Component} from "../core";
-import {Vec4} from "../math/types/vec";
+import {asFloat32Array, fromFloat32Array, Vec4} from "../math/types/vec";
 
 export class LocalRotation extends Component {
     private _values = new Float32Array(4);
@@ -45,11 +45,11 @@ export class LocalRotation extends Component {
     }
 
     get xyzw(): Vec4 {
-        return this._values as Vec4;
+        return fromFloat32Array<4>(this._values);
     }
 
     set xyzw(value: Vec4) {
-        this._values.set(value);
+        this._values.set(asFloat32Array(value));
     }
 
     override copyTo(other: this) {

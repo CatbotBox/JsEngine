@@ -1,5 +1,7 @@
 ﻿import {Component} from "../core";
-import {Vec16, Vec3, Vec4} from "../math/types/vec";
+import {asFloat32Array, fromFloat32Array, Vec, Vec16, Vec3, Vec4} from "../math/types/vec";
+
+const raw = (v: Vec<number>): Float32Array => asFloat32Array(v);
 
 // Column-major index helpers (OpenGL/GLSL style)
 export const M4 = {
@@ -45,27 +47,33 @@ export class LocalToWorld extends Component {
      */
     private readonly _matrix: Float32Array;
 
-    public get matrix(): Float32Array & { length: 16 } {
-        return this._matrix as Float32Array & { length: 16 };
+    /** Live view over this component's storage — writes land in the matrix. */
+    public get matrix(): Vec16 {
+        return fromFloat32Array<16>(this._matrix);
     }
 
-    public set matrix(value: Float32Array & { length: 16 }) {
-        this._matrix.set(value);
+    public set matrix(value: Vec16) {
+        this._matrix.set(raw(value));
     }
 
     // ---------- Position ----------
+    /** Live view over the translation column — writes land in the matrix. */
     public get position(): Vec3 {
-        const m = this._matrix;
-        return m.subarray(M4.tx, M4.tz + 1) as Vec3;
+        return fromFloat32Array<3>(this._matrix.subarray(M4.tx, M4.tz + 1));
     }
 
     public set position(p: Vec3) {
-        const m = this._matrix;
-        m.subarray(M4.tx, M4.tz + 1).set(p)
+        this._matrix.set(raw(p), M4.tx);
     }
 
     // ---------- Scale ----------
+    /** Allocates. Use scaleInto() on any path that runs per frame. */
     public get scale(): Vec3 {
+        return this.scaleInto(Vec.alloc3());
+    }
+
+    /** Decompose scale from the basis columns into `out`, allocating nothing. */
+    public scaleInto(out: Vec3): Vec3 {
         const m = this._matrix;
         // column lengths (|basis|)
         const sx = Math.hypot(...m.subarray(0, 3));
@@ -83,8 +91,7 @@ export class LocalToWorld extends Component {
         const handedDot = cx * nx2 + cy * ny2 + cz * nz2; // ~det sign
 
 
-        const returnValue = handedDot < 0 ? new Float32Array([-sx, sy, sz]) : new Float32Array([sx, sy, sz]);
-        return returnValue as Vec3;
+        return Vec.set3(out, handedDot < 0 ? -sx : sx, sy, sz);
     }
 
     public set scale(s: Vec3) {
@@ -95,7 +102,13 @@ export class LocalToWorld extends Component {
     }
 
     // ---------- Rotation (as quaternion [x,y,z,w]) ----------
+    /** Allocates. Use rotationInto() on any path that runs per frame. */
     public get rotation(): Vec4 {
+        return this.rotationInto(Vec.alloc4());
+    }
+
+    /** Decompose rotation as a quaternion [x,y,z,w] into `out`, allocating nothing. */
+    public rotationInto(out: Vec4): Vec4 {
         const m = this._matrix;
 
         // Extract and normalize basis (remove scale, handle reflection)
@@ -103,7 +116,7 @@ export class LocalToWorld extends Component {
         let sy = Math.hypot(m[4], m[5], m[6]);
         let sz = Math.hypot(m[8], m[9], m[10]);
 
-        if (sx === 0 || sy === 0 || sz === 0) return [0, 0, 0, 1];
+        if (sx === 0 || sy === 0 || sz === 0) return Vec.copy(out, [0, 0, 0, 1]);
 
         let r00 = m[0] / sx, r10 = m[1] / sx, r20 = m[2] / sx;
         let r01 = m[4] / sy, r11 = m[5] / sy, r21 = m[6] / sy;
@@ -151,7 +164,12 @@ export class LocalToWorld extends Component {
         }
         // normalize (numeric safety)
         const n = Math.hypot(x, y, z, w) || 1;
-        return [x / n, y / n, z / n, w / n];
+        const o = raw(out);
+        o[0] = x / n;
+        o[1] = y / n;
+        o[2] = z / n;
+        o[3] = w / n;
+        return out;
     }
 
     public set rotation(q: Vec4) {
@@ -178,49 +196,43 @@ export class LocalToWorld extends Component {
     // ======================================================
 
     /** out = Identity */
-    public static identity(out?: Vec16): Vec16 {
-        if (out === undefined) {
-            out = new Float32Array(16) as Vec16;
-        }
-        if (ArrayBuffer.isView(out)) {
-            (out as Float32Array).set(identity);
-            return out;
-        }
-        for (let i = 0; i < identity.length; i++) {
-            out[i] = identity[i];
-        }
+    public static identity(out: Vec16 = Vec.alloc<16>(16)): Vec16 {
+        // A Vec is always Float32Array-backed now, so the old plain-array branch
+        // is gone along with the union type that made it necessary.
+        raw(out).set(identity);
         return out;
     }
 
     /** Build column-major mat4 from TRS (vec4 is [x,y,z,w]) */
     public static fromTRS(out: Vec16, p: Vec3, q: Vec4, s: Vec3): Vec16 {
-        const [x, y, z, w] = q;
+        const qv = raw(q), pv = raw(p), sv = raw(s), out_ = raw(out);
+        const x = qv[0], y = qv[1], z = qv[2], w = qv[3];
         const x2 = x + x, y2 = y + y, z2 = z + z;
         const xx = x * x2, yy = y * y2, zz = z * z2;
         const xy = x * y2, xz = x * z2, yz = y * z2;
         const wx = w * x2, wy = w * y2, wz = w * z2;
-        const sx = s[0], sy = s[1], sz = s[2];
+        const sx = sv[0], sy = sv[1], sz = sv[2];
 
         // Upper-left 3x3 (column-major)
-        out[0] = (1 - (yy + zz)) * sx;
-        out[1] = (xy + wz) * sx;
-        out[2] = (xz - wy) * sx;
-        out[3] = 0;
+        out_[0] = (1 - (yy + zz)) * sx;
+        out_[1] = (xy + wz) * sx;
+        out_[2] = (xz - wy) * sx;
+        out_[3] = 0;
 
-        out[4] = (xy - wz) * sy;
-        out[5] = (1 - (xx + zz)) * sy;
-        out[6] = (yz + wx) * sy;
-        out[7] = 0;
+        out_[4] = (xy - wz) * sy;
+        out_[5] = (1 - (xx + zz)) * sy;
+        out_[6] = (yz + wx) * sy;
+        out_[7] = 0;
 
-        out[8] = (xz + wy) * sz;
-        out[9] = (yz - wx) * sz;
-        out[10] = (1 - (xx + yy)) * sz;
-        out[11] = 0;
+        out_[8] = (xz + wy) * sz;
+        out_[9] = (yz - wx) * sz;
+        out_[10] = (1 - (xx + yy)) * sz;
+        out_[11] = 0;
 
-        out[12] = p[0];
-        out[13] = p[1];
-        out[14] = p[2];
-        out[15] = 1;
+        out_[12] = pv[0];
+        out_[13] = pv[1];
+        out_[14] = pv[2];
+        out_[15] = 1;
         return out;
     }
 
@@ -231,47 +243,48 @@ export class LocalToWorld extends Component {
 
     /** out = a * b (column-major) */
     static mul(a: Vec16, b: Vec16, out: Vec16 = this.identity()): Vec16 {
-        const a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
-        const a4 = a[4], a5 = a[5], a6 = a[6], a7 = a[7];
-        const a8 = a[8], a9 = a[9], a10 = a[10], a11 = a[11];
-        const a12 = a[12], a13 = a[13], a14 = a[14], a15 = a[15];
+        const av = raw(a), bv = raw(b), o = raw(out);
+        const a0 = av[0], a1 = av[1], a2 = av[2], a3 = av[3];
+        const a4 = av[4], a5 = av[5], a6 = av[6], a7 = av[7];
+        const a8 = av[8], a9 = av[9], a10 = av[10], a11 = av[11];
+        const a12 = av[12], a13 = av[13], a14 = av[14], a15 = av[15];
 
         // col 0
-        let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
-        out[0] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
-        out[1] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
-        out[2] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
-        out[3] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
+        let b0 = bv[0], b1 = bv[1], b2 = bv[2], b3 = bv[3];
+        o[0] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
+        o[1] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
+        o[2] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
+        o[3] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
 
         // col 1
-        b0 = b[4];
-        b1 = b[5];
-        b2 = b[6];
-        b3 = b[7];
-        out[4] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
-        out[5] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
-        out[6] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
-        out[7] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
+        b0 = bv[4];
+        b1 = bv[5];
+        b2 = bv[6];
+        b3 = bv[7];
+        o[4] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
+        o[5] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
+        o[6] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
+        o[7] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
 
         // col 2
-        b0 = b[8];
-        b1 = b[9];
-        b2 = b[10];
-        b3 = b[11];
-        out[8] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
-        out[9] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
-        out[10] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
-        out[11] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
+        b0 = bv[8];
+        b1 = bv[9];
+        b2 = bv[10];
+        b3 = bv[11];
+        o[8] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
+        o[9] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
+        o[10] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
+        o[11] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
 
         // col 3
-        b0 = b[12];
-        b1 = b[13];
-        b2 = b[14];
-        b3 = b[15];
-        out[12] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
-        out[13] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
-        out[14] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
-        out[15] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
+        b0 = bv[12];
+        b1 = bv[13];
+        b2 = bv[14];
+        b3 = bv[15];
+        o[12] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
+        o[13] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
+        o[14] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
+        o[15] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
         return out;
     }
 
@@ -285,30 +298,33 @@ export class LocalToWorld extends Component {
         return out;
     }
 
-    /** Transform a point (x,y,z,1) */
-    public static transformPoint(m: Vec16, point: Vec3, out: Vec3 = [0, 0, 0]): Vec3 {
-        const ox = m[0] * point[0] + m[4] * point[1] + m[8] * point[2] + m[12];
-        const oy = m[1] * point[0] + m[5] * point[1] + m[9] * point[2] + m[13];
-        const oz = m[2] * point[0] + m[6] * point[1] + m[10] * point[2] + m[14];
-        out[0] = ox;
-        out[1] = oy;
-        out[2] = oz;
+    /** Transform a point (x,y,z,1). Pass `out` on per-frame paths to avoid allocating. */
+    public static transformPoint(m: Vec16, point: Vec3, out: Vec3 = Vec.alloc3()): Vec3 {
+        const mm = raw(m), p = raw(point), o = raw(out);
+        const ox = mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12];
+        const oy = mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13];
+        const oz = mm[2] * p[0] + mm[6] * p[1] + mm[10] * p[2] + mm[14];
+        o[0] = ox;  // via locals, so out may alias point
+        o[1] = oy;
+        o[2] = oz;
         return out;
     }
 
-    /** Transform a direction (x,y,z,0) */
-    public static transformDir(m: Float32Array, direction: Vec3, out: Vec3 = [0, 0, 0]): Vec3 {
-        const ox = m[0] * direction[0] + m[4] * direction[1] + m[8] * direction[2];
-        const oy = m[1] * direction[0] + m[5] * direction[1] + m[9] * direction[2];
-        const oz = m[2] * direction[0] + m[6] * direction[1] + m[10] * direction[2];
-        out[0] = ox;
-        out[1] = oy;
-        out[2] = oz;
+    /** Transform a direction (x,y,z,0). Pass `out` on per-frame paths. */
+    public static transformDir(m: Vec16, direction: Vec3, out: Vec3 = Vec.alloc3()): Vec3 {
+        const mm = raw(m), d = raw(direction), o = raw(out);
+        const ox = mm[0] * d[0] + mm[4] * d[1] + mm[8] * d[2];
+        const oy = mm[1] * d[0] + mm[5] * d[1] + mm[9] * d[2];
+        const oz = mm[2] * d[0] + mm[6] * d[1] + mm[10] * d[2];
+        o[0] = ox;
+        o[1] = oy;
+        o[2] = oz;
         return out;
     }
 
     /** Invert an affine matrix (ignores perspective) */
-    public static invertAffine(m: Float32Array, out: Vec16 = this.identity()): Vec16 {
+    public static invertAffine(mat: Vec16, out: Vec16 = this.identity()): Vec16 {
+        const m = raw(mat), o = raw(out);
         const a00 = m[0], a01 = m[4], a02 = m[8];
         const a10 = m[1], a11 = m[5], a12 = m[9];
         const a20 = m[2], a21 = m[6], a22 = m[10];
@@ -334,24 +350,24 @@ export class LocalToWorld extends Component {
         const i21 = (-a21 * a00 + a01 * a20) * det;
         const i22 = (a11 * a00 - a01 * a10) * det;
 
-        out[0] = i00;
-        out[4] = i01;
-        out[8] = i02;
-        out[3] = 0;
-        out[1] = i10;
-        out[5] = i11;
-        out[9] = i12;
-        out[7] = 0;
-        out[2] = i20;
-        out[6] = i21;
-        out[10] = i22;
-        out[11] = 0;
+        o[0] = i00;
+        o[4] = i01;
+        o[8] = i02;
+        o[3] = 0;
+        o[1] = i10;
+        o[5] = i11;
+        o[9] = i12;
+        o[7] = 0;
+        o[2] = i20;
+        o[6] = i21;
+        o[10] = i22;
+        o[11] = 0;
 
         const tx = m[12], ty = m[13], tz = m[14];
-        out[12] = -(i00 * tx + i01 * ty + i02 * tz);
-        out[13] = -(i10 * tx + i11 * ty + i12 * tz);
-        out[14] = -(i20 * tx + i21 * ty + i22 * tz);
-        out[15] = 1;
+        o[12] = -(i00 * tx + i01 * ty + i02 * tz);
+        o[13] = -(i10 * tx + i11 * ty + i12 * tz);
+        o[14] = -(i20 * tx + i21 * ty + i22 * tz);
+        o[15] = 1;
         return out as Vec16;
     }
 }
