@@ -32,7 +32,7 @@ export abstract class Component {
     }
 
     protected copyTo(other: this) {
-        return Object.assign(other, this);
+        return Object.assign(other.constructor, this.constructor);
     }
 
     static clone<T extends Component>(source: T) {

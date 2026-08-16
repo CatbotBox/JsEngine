@@ -12,8 +12,8 @@ import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {EntityArchetype} from "../../../core/entityArchetype";
 import {AABB} from "../../../datatypes/AABB";
 import {Vec} from "../../../math/types/vec";
-import {LinearIndex} from "../../../datatypes/spatial/linearIndex";
-import {QueryHit} from "../../../datatypes/spatial/spatialIndex";
+import {LinearIndex} from "../../../datatypes/spatial";
+import {QueryHit} from "../../../datatypes/spatial";
 
 interface SpritePayload {
     consoleImage: ConsoleImage;
