@@ -45,13 +45,15 @@
     }
 
 
-    constructor(public length: number) {
-        this._queue = new Array(length);
+    constructor(capacity: number) {
+        this._queue = new Array(capacity);
     }
 
 
     public add(item: T): void {
         if (this.isFull) this.capacity = Math.max(this.capacity * 2, 2);
+        this._queue[this.calculateIndex(this.headIndex + this._count)] = item;
+        this._count++;
     }
 
 

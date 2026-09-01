@@ -1,14 +1,12 @@
-import {Entity, ENTITY_GENERATION_MASK, ENTITY_INDEX_BITS, ENTITY_INDEX_MASK, makeEntityHandle} from "./entity";
+﻿import {Entity, ENTITY_GENERATION_MASK, ENTITY_INDEX_BITS, ENTITY_INDEX_MASK, makeEntityHandle} from "./entity";
 import type {EntityArchetype} from "./entityArchetype";
 import type {AnyCT} from "../util/tokenUtils";
 import type {World} from "./world";
 
 /**
  * The global entity registry: parallel side tables indexed by an entity handle's
- * low bits. This replaces the old Symbol-property-on-the-entity-object scheme —
- * entities are integers now, so everything that used to hang off the object
- * (owner archetype, world, debug name) lives here, plus what the archetype's
- * DoubleMap used to hold (the entity's row in its owning archetype).
+ * low bits. An entity is an integer, so everything about it lives here: its owner
+ * archetype, its world, its row within that archetype, and its debug name.
  *
  * Global rather than per-World on purpose: `getOwnerInferred` has no world
  * argument, and cross-world misuse must throw (as before), not silently read

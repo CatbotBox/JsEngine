@@ -1,0 +1,24 @@
+{
+  // Typecheck-only config: the build (tsconfig.json) sets rootDir "src" and so can
+  // only see src/**, which meant demo/ and bench/ were never typechecked at all.
+  // That gap hid ~28 real errors in demo/3d/index.ts during the Vec/AABB rework.
+  //
+  // This config emits nothing and drops rootDir, so it can cover everything:
+  //     bunx tsc -p tsconfig.check.json --noEmit
+  //
+  // Keep tsconfig.json as the build config; this one is the gate.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  // `exclude` is restated because it is inherited from tsconfig.json, which drops
+  // the unit tests from the build output — the gate must still cover them.
+  //
+  // tests/ stays out: verifyParity.ts imports tests/_legacy, a frozen pre-rewrite
+  // snapshot kept for pixel-parity comparison that predates the opaque Vec/AABB
+  // types and cannot typecheck. Excluding it does not help, since it is reached
+  // through an import rather than the include list.
+  "exclude": ["node_modules", "dist"],
+  "include": ["src/**/*", "demo/**/*", "bench/**/*", "scripts/**/*.ts"]
+}
