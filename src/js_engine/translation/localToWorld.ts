@@ -395,16 +395,6 @@ export class LocalToWorld extends Component implements F32Backed {
         return out;
     }
 
-    /** out = a * T(tx,ty,tz) */
-    public static translate(out: Float32Array, a: Float32Array, tx: number, ty: number, tz: number): Float32Array {
-        out.set(a);
-        out[12] = a[0] * tx + a[4] * ty + a[8] * tz + a[12];
-        out[13] = a[1] * tx + a[5] * ty + a[9] * tz + a[13];
-        out[14] = a[2] * tx + a[6] * ty + a[10] * tz + a[14];
-        out[15] = a[3] * tx + a[7] * ty + a[11] * tz + a[15];
-        return out;
-    }
-
     /** Transform a point (x,y,z,1). Pass `out` on per-frame paths to avoid allocating. */
     public static transformPoint(m: ReadonlyVec16, point: ReadonlyVec3, out: Vec3 = Vec3.alloc()): Vec3 {
         const mm = raw(m), p = raw(point), o = raw(out);
@@ -412,18 +402,6 @@ export class LocalToWorld extends Component implements F32Backed {
         const oy = mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13];
         const oz = mm[2] * p[0] + mm[6] * p[1] + mm[10] * p[2] + mm[14];
         o[0] = ox;  // via locals, so out may alias point
-        o[1] = oy;
-        o[2] = oz;
-        return out;
-    }
-
-    /** Transform a direction (x,y,z,0). Pass `out` on per-frame paths. */
-    public static transformDir(m: ReadonlyVec16, direction: ReadonlyVec3, out: Vec3 = Vec3.alloc()): Vec3 {
-        const mm = raw(m), d = raw(direction), o = raw(out);
-        const ox = mm[0] * d[0] + mm[4] * d[1] + mm[8] * d[2];
-        const oy = mm[1] * d[0] + mm[5] * d[1] + mm[9] * d[2];
-        const oz = mm[2] * d[0] + mm[6] * d[1] + mm[10] * d[2];
-        o[0] = ox;
         o[1] = oy;
         o[2] = oz;
         return out;

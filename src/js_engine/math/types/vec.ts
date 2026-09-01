@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fixed-length numeric vectors. The runtime representation is Float32Array; the
  * types below are compile-time brands only, so none of this costs anything.
  *
@@ -23,7 +23,6 @@ export type Vec3 = Vec<3>;
 export type Vec4 = Vec<4>;
 export type Vec16 = Vec<16>;
 
-export type ReadonlyVec2 = ReadonlyVec<2>;
 export type ReadonlyVec3 = ReadonlyVec<3>;
 export type ReadonlyVec4 = ReadonlyVec<4>;
 export type ReadonlyVec16 = ReadonlyVec<16>;
@@ -271,33 +270,5 @@ export namespace Vec {
         if (x.length !== y.length) return false;
         for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
         return true;
-    }
-
-    export function moreThan<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): truthVec<N> {
-        const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
-        const r = new Array(x.length) as truthVec<N>;
-        for (let i = 0; i < x.length; i++) r[i] = x[i] > y[i];
-        return r;
-    }
-
-    export function moreOrEquals<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): truthVec<N> {
-        const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
-        const r = new Array(x.length) as truthVec<N>;
-        for (let i = 0; i < x.length; i++) r[i] = x[i] >= y[i];
-        return r;
-    }
-
-    export function lessThan<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): truthVec<N> {
-        const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
-        const r = new Array(x.length) as truthVec<N>;
-        for (let i = 0; i < x.length; i++) r[i] = x[i] < y[i];
-        return r;
-    }
-
-    export function lessOrEquals<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): truthVec<N> {
-        const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
-        const r = new Array(x.length) as truthVec<N>;
-        for (let i = 0; i < x.length; i++) r[i] = x[i] <= y[i];
-        return r;
     }
 }

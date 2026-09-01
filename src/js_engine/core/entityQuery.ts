@@ -91,7 +91,6 @@ export class EntityQuery<
         if (this.matches(arch)) {
 
             const arr = this.getCachedArchetypes(); // array of refs
-            // this.getCachedArchetypes().push(new WeakRef(arch));
 
             // In-place compaction: single pass, no per-item splicing
             let writeIndex = 0; // write index for the next kept ref
@@ -119,21 +118,6 @@ export class EntityQuery<
             if (this.matches(a)) next.push(new WeakRef(a));
         }
         this._lazyLoaded.cachedArchetypes = next;
-    }
-
-    public getSingletonEntity(options?: { includeDisabled?: boolean }): Entity {
-        let entity: Entity | undefined;
-        for (const arch of this.archetypes) {
-            const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
-            if (entityCount == 0) continue;
-            if (entityCount > 1) throw new Error("More than 1 singleton entity found");
-            if (entityCount == 1) {
-                if (entity != undefined) throw new Error("More than 1 singleton entity found");
-                entity = arch.getEntityAtIndex(0);
-            }
-        }
-        if (entity) return entity;
-        throw new Error("No entity found");
     }
 
     public tryGetSingleton<
@@ -217,14 +201,6 @@ export class EntityQuery<
             count += n;
         }
         return count;
-    }
-
-    /** Iterate all matching entity handles. */
-    public forEachEntity(cb: (entity: Entity) => void): void {
-        for (const arch of this.archetypes) {
-            const n = arch.entityCount;
-            for (let i = 0; i < n; i++) cb(arch.getEntityAtIndex(i));
-        }
     }
 
     /** for loop over entities */

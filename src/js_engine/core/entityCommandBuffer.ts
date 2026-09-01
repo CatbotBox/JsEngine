@@ -224,7 +224,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     private normalizeComponents(input: Map<TokenOrCtor, Component>) {
         const map = new Map<AnyCT, Component>();
         const types: AnyCT[] = [];
-        // const observe = this.options.observeComponents !== false;
 
         for (const [key, comp] of input) {
             const token = this.toToken(key);

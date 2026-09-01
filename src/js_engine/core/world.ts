@@ -76,8 +76,6 @@ export class World extends WorldSource {
     constructor() {
         super(undefined!);
         this.world = this;
-        this._archetypes.onCreateArchetype.add((_archetype) => { /* hook point */
-        });
         this._rootSystemGroup = this.createSystem(RootSystemGroup)
         this.ensureSystemExists(GcSystem)
     }
@@ -146,7 +144,6 @@ export class World extends WorldSource {
             }
             prevCycle = now;
             time.deltaTime = delta;
-            // time.elapsedTime = now;
             this.update();
             updateInProgress = false;
 

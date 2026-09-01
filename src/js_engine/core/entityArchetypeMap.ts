@@ -1,5 +1,5 @@
 import {TokenOrCtor, toTokens} from "../util/tokenUtils";
-﻿import type {ComponentType} from "./component";
+import type {ComponentType} from "./component";
 import {Event} from "../util/event";
 import {EntityArchetype} from "./entityArchetype";
 

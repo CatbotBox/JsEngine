@@ -26,8 +26,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     // ---------- creation / destruction ----------
 
-    /** Create an entity with the given components (keys can be tokens or constructors). */
-        // public createEntity(components: Map<TokenOrCtor, Component> = new Map()): Entity {
     private static emptyMap: Map<AnyCT, Component> = new Map();
 
     public createEntity(name?: string): Entity {
@@ -39,7 +37,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     }
 
     public realizeEntity(entity: Entity) {
-        // const {types, map} = this.normalizeComponents(components);
         const arch = this._world.archetypes.getOrCreate([] as AnyCT[]);
         arch.addEntity(entity, EntityManager.emptyMap, true, this._world.time);
         setOwner(this._world, entity, arch as EntityArchetype<AnyCT>);

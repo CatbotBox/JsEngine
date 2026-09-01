@@ -58,10 +58,6 @@ export function freeEntityHandle(e: Entity): void {
     freeIndices.push(i);
 }
 
-export function isEntityAlive(e: Entity): boolean {
-    return generations[e & ENTITY_INDEX_MASK] === e >>> ENTITY_INDEX_BITS;
-}
-
 export function getOwnerInferred(entity: Entity): EntityArchetype<AnyCT> | undefined {
     const i = entity & ENTITY_INDEX_MASK;
     if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined; // destroyed or recycled
@@ -114,10 +110,4 @@ export function getEntityName(entity: Entity): string | undefined {
     const i = entity & ENTITY_INDEX_MASK;
     if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined;
     return nameOf[i];
-}
-
-export function setEntityName(entity: Entity, name: string | undefined): void {
-    const i = entity & ENTITY_INDEX_MASK;
-    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return;
-    nameOf[i] = name;
 }
