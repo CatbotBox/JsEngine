@@ -1,7 +1,7 @@
+import {TokenOrCtor, toTokens} from "../util/tokenUtils";
 ﻿import type {ComponentType} from "./component";
 import {Event} from "../util/event";
 import {EntityArchetype} from "./entityArchetype";
-import Iterator = NodeJS.Iterator;
 
 class TypeIDProvider<CT extends ComponentType<any> = ComponentType<any>> {
   private _typeIds: WeakMap<CT, number> = new WeakMap();
@@ -32,7 +32,15 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
 
   public onCreateArchetype: Event<EntityArchetype<CT>> = new Event();
 
-  public getOrCreate(componentTypes: CT[]): EntityArchetype<CT> {
+  /**
+   * Accepts tokens or constructors. Normalising matters: the id provider keys off
+   * object identity, so a constructor and its ComponentType used to get different
+   * ids and therefore *different archetypes* — silently, with no error. Passing a
+   * constructor here would build a parallel empty archetype that never matched
+   * anything.
+   */
+  public getOrCreate(types: readonly TokenOrCtor[]): EntityArchetype<CT> {
+    const componentTypes = toTokens(types) as CT[];
     const key = this._typeIdProvider.getKey(componentTypes);
     const arch = this._byKey.get(key)?.deref();
     if (arch) return arch
@@ -57,7 +65,7 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
     return pruneCount;
   }
 
-  public* values(): Iterator<EntityArchetype<CT>> {
+  public* values(): IterableIterator<EntityArchetype<CT>> {
     const kvPair = this._byKey.entries();
     for (const [key, value] of kvPair) {
       const arch = value.deref()

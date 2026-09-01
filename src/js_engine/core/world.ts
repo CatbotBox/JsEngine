@@ -36,6 +36,7 @@ export class World extends WorldSource {
     private _resources: ResourceManager = new ResourceManager();
     protected _systems: Map<SystemCtor<System>, System> = new Map();
     protected _rootSystemGroup: SystemGroup;
+    private _entityManager: EntityManager | undefined;
     public time: Time = new Time();
 
     get archetypes(): EntityArchetypeMap {
@@ -46,8 +47,25 @@ export class World extends WorldSource {
         return this._resources;
     }
 
+    /**
+     * EntityManager holds nothing but a reference to this World, so one instance
+     * per World is enough. This used to be `new EntityManager(this)` on every
+     * read — a getter that allocates is a trap even where, as here, no caller is
+     * on a per-frame path.
+     */
     get entityManager(): EntityManager {
-        return new EntityManager(this)
+        return this._entityManager ??= new EntityManager(this);
+    }
+
+    /**
+     * The group a system attaches to when its `systemGroup()` returns undefined.
+     *
+     * Undefined only during the root group's own construction: `create()` runs
+     * before the assignment below completes, and the root group has no parent.
+     * `System.create()` tolerates that rather than special-casing the type.
+     */
+    get rootSystemGroup(): SystemGroup | undefined {
+        return this._rootSystemGroup;
     }
 
 

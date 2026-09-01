@@ -1,7 +1,22 @@
-﻿import {Entity} from "./entity";
-import {getOwnerInferred} from "./ownership";
-import {EntityWriteOptions} from "./entityWriteOptions";
+import type {Entity} from "./entity";
+import type {EntityWriteOptions} from "./entityWriteOptions";
+import {ComponentType} from "./componentType";
 
+// Re-exported so the many `from "./component"` import sites keep working; the
+// declarations themselves live in componentType.ts.
+export {ComponentType} from "./componentType";
+export type {ComponentCtor, ComponentOf} from "./componentType";
+
+/**
+ * Base class for all component data.
+ *
+ * Declares **no instance fields**, so a subclass instance costs exactly its own
+ * fields and nothing more. Keep it that way — components are stored one flat
+ * column per type and are the highest-count objects in the engine.
+ *
+ * Class identity (`ComponentType`) lives in componentType.ts and change-tracking
+ * Proxies in trackedComponent.ts; neither is per-instance behaviour.
+ */
 export abstract class Component {
 
     /**
@@ -31,89 +46,8 @@ export abstract class Component {
     public setup(entity: Entity, entityManager: EntityWriteOptions): void {
     }
 
-    protected copyTo(other: this) {
-        return Object.assign(other.constructor, this.constructor);
-    }
-
-    static clone<T extends Component>(source: T) {
-        const ctor = source.constructor as ComponentCtor<T>;
-        const copy = new ctor();
-        return source.copyTo(copy);
-    }
-
     // Static helper: fetch the ComponentType token for this class.
-    static type<T extends Component>(this: ComponentCtor<T>): ComponentType<T> {
+    static type<T extends Component>(this: new (...args: any[]) => T): ComponentType<T> {
         return ComponentType.of(this);
     }
-
-    static persistentTrack<T extends Component>(entitySource: Entity, target: T): T {
-        const ctor = target.constructor as ComponentCtor<T>;
-        const componentType = ComponentType.of(ctor);
-        const updateLastUpdateTime = () => {
-            const ownership = getOwnerInferred(entitySource);
-            if (ownership) {
-                const col = ownership.getColumn(componentType)
-                if (col !== undefined) {
-                    col.lastUpdatedTime = performance.now();
-                }
-            }
-        }
-        return this.track(target, updateLastUpdateTime)
-    }
-
-    static track<T extends Component>(target: T, modified: () => void): T {
-        return new Proxy(target as T & object, {
-            get(t, prop, receiver) {
-                return Reflect.get(t, prop, receiver);
-            },
-            set(t, prop, value, receiver) {
-                if (Reflect.get(t, prop, receiver) === value) return true;
-                modified();
-                return Reflect.set(t, prop, value, receiver);
-            },
-            has(t, prop) {
-                return prop in t;
-            },
-            ownKeys(t) {
-                return Reflect.ownKeys(t);
-            },
-            getOwnPropertyDescriptor(t, prop) {
-                return Object.getOwnPropertyDescriptor(t, prop);
-            },
-            // If target is callable, forward calls.
-            apply(t: any, thisArg, argArray) {
-                return Reflect.apply(t, t, argArray);
-            },
-            // If target is a class/constructable function, forward `new`.
-            construct(t: any, argArray, newTarget) {
-                return Reflect.construct(t, argArray, newTarget);
-            },
-        }) as T;
-    }
 }
-
-export type ComponentCtor<T extends Component> = new (...args: any[]) => T;
-
-export class ComponentType<C extends Component = Component> {
-    private static _registry = new WeakMap<Function, ComponentType<any>>();
-    // 👇 brand so ComponentType<A> is NOT compatible with ComponentType<B>
-    // noinspection JSUnusedLocalSymbols
-    private readonly __brand!: C;
-
-    private constructor(public readonly ctor: ComponentCtor<C>) {
-    }
-
-    static of<T extends Component>(ctor: ComponentCtor<T>): ComponentType<T> {
-        let t = this._registry.get(ctor) as ComponentType<T> | undefined;
-        if (!t) {
-            t = new ComponentType<T>(ctor);
-            this._registry.set(ctor, t);
-        }
-        return t;
-    }
-}
-
-// helper: extract instance type carried by a ComponentType
-export type ComponentOf<T extends ComponentType<any>> =
-    T extends ComponentType<infer C> ? C : never;
-

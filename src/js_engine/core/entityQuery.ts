@@ -5,6 +5,7 @@ import {Entity} from "./entity";
 import {EntityStreamOptions} from "./entityStream";
 import {
     AnyCT,
+    CompMap,
     IncU,
     RowFromSpec,
     TokensFrom,
@@ -235,19 +236,29 @@ export class EntityQuery<
     }
 
 
+    /**
+     * Iterate matching entities, declaring which components are read and which
+     * are written:
+     *
+     *     query.stream({
+     *         read:  {pos: LocalPosition},
+     *         write: {bounds: WorldSpaceRenderBounds},
+     *     }).consume(({pos, bounds}) => { ... });
+     *
+     * Reads come back deeply readonly; writes come back mutable and have their
+     * columns stamped once per archetype. See EntityQueryStream for why this
+     * replaced the per-component Proxy.
+     */
     public stream<
-        S extends Record<string, TokenOrCtor>,
+        R extends CompMap = {},
+        W extends CompMap = {},
+        O extends CompMap = {},
         IncludeEntity extends boolean = false
     >(
-        specOrConstructors: S,
+        spec: { read?: R; write?: W; optional?: O },
         options?: EntityStreamOptions<IncludeEntity>
-    ): EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc> {
-        const spec = toTokenSpec(specOrConstructors);
-        return new EntityQueryStream<TokensFrom<S>, IncludeEntity, Inc>(
-            this.archetypes,
-            spec,
-            options
-        );
+    ): EntityQueryStream<R, W, O, IncludeEntity> {
+        return new EntityQueryStream<R, W, O, IncludeEntity>(this.archetypes, spec, options);
     }
 }
 

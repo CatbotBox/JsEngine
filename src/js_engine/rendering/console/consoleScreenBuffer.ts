@@ -28,6 +28,11 @@ const KIND_TEXT = 2;       // arbitrary self-contained ANSI string (2D sprites /
  * ANSI text at flush time, where identical adjacent colors share one escape
  * sequence (run-length), shrinking both CPU time and bytes written to the TTY.
  */
+/** The minimum a blit source must provide: a grid of pre-rendered glyphs. */
+export interface BlittableImage {
+    readonly pixels: readonly (readonly (string | undefined)[])[];
+}
+
 export class ScreenBuffer {
     private width = 0;
     private height = 0;
@@ -100,7 +105,15 @@ export class ScreenBuffer {
      * Clipped automatically to the current buffer.
      */
     //depth refers to distance from camera
-    public blit(image: ConsoleImage, dstX: number, dstY: number, depth: number) {
+    /**
+     * Blit ANSI-decorated image lines at a destination top-left in SCREEN space.
+     * Clipped automatically to the current buffer.
+     *
+     * Takes only what it reads — a pixel grid — rather than a whole ConsoleImage,
+     * so a DeepReadonly component from a read-only query row satisfies it without
+     * a cast. depth is distance from the camera.
+     */
+    public blit(image: BlittableImage, dstX: number, dstY: number, depth: number) {
         const pixels = image.pixels;
         if (this.width === 0 || this.height === 0) return;
 

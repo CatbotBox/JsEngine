@@ -165,6 +165,9 @@ export class Console2DRenderPassSystem extends System {
             payloads.length = 0;
 
             const entityCount = arch.entityCount;
+            // Raw SoA column for the matrix: the old `.position` getter minted a
+            // subarray view per entity per frame just to read one float (tz).
+            const l2wF32 = localToWorldCol?.f32Data;
             for (let id = 0; id < entityCount; id++) {
                 // Pooled payload records: this loop runs over every entity of a
                 // changed archetype, every frame it changes.
@@ -174,9 +177,7 @@ export class Console2DRenderPassSystem extends System {
                     pool[id] = payload;
                 }
                 payload.consoleImage = consoleImageCol.get(id);
-                payload.zHeight = localToWorldCol
-                    ? Vec.z((localToWorldCol.get(id) as LocalToWorld).position)
-                    : 0;
+                payload.zHeight = l2wF32 !== undefined ? l2wF32[(id << 4) + 14] : 0;
 
                 bounds.push((renderBoundsCol.get(id) as WorldSpaceRenderBounds).bounds);
                 payloads.push(payload);

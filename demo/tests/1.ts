@@ -137,11 +137,7 @@ buffer.addComponent(fpsCounterEntity, fpsAnchor);
 
 consoleInput.enable()
 consoleInput.whenKey(Key.Up, () => {
-    console.log("up")
-    console.log(position.x, position.y);
     position.y -= 1;
-    console.log("after");
-    console.log(position.x, position.y);
 })
 consoleInput.whenKey(Key.Down, () => {
     position.y += 1;
@@ -154,19 +150,15 @@ consoleInput.whenKey(Key.Right, () => {
 })
 
 consoleInput.whenKey(Key.W, () => {
-    position.y += 1;
     cameraPosition.y -= 1;
 })
 consoleInput.whenKey(Key.S, () => {
-    position.y += 1;
     cameraPosition.y += 1;
 })
 consoleInput.whenKey(Key.A, () => {
-    position.y += 1;
     cameraPosition.x -= 1;
 })
 consoleInput.whenKey(Key.D, () => {
-    position.y += 1;
     cameraPosition.x += 1;
 })
 
@@ -178,6 +170,14 @@ consoleInput.whenKey(Key.Space, () => {
         const newPos = new LocalPosition();
         newPos.x = x + Vec.x(localToWorld.position)
         newPos.y = y + Vec.y(localToWorld.position)
+        // Distinct depth per pixel. Left at 0, every pixel shares a depth, and
+        // ConsoleScreenBuffer.setPixels breaks ties by blit order -- which is index
+        // batch order, which changes the moment an entity changes archetype. A fade
+        // completing removes two components, so the winner of a shared cell flips and
+        // the pink pixel appears to hop one tile. Pixels spawn into a 100x100 area, so
+        // at 100k+ entities roughly a dozen are stacked on every terminal cell and this
+        // happens constantly. Must stay inside the pass's [-1000, 1000] camera z range.
+        newPos.z = Math.random()
         // if (Math.random() < 0.5) {
         const fadeToColor = new FadeToColor();
         fadeToColor.color = [255, 183, 206]
@@ -227,9 +227,9 @@ class FadeSystem extends System {
         return this._query.entityCount()
     }
 
-    private interpolate(color1: [number, number, number], color2: [number, number, number], scale: number): [number, number, number] {
-        if (scale >= 1) return color2;
-        if (scale <= 0) return color1;
+    private interpolate(color1: readonly [number, number, number], color2: readonly [number, number, number], scale: number): [number, number, number] {
+        if (scale >= 1) return [color2[0], color2[1], color2[2]];
+        if (scale <= 0) return [color1[0], color1[1], color1[2]];
         const diff: [number, number, number] = [
             color2[0] - color1[0],
             color2[1] - color1[1],
@@ -251,12 +251,12 @@ class FadeSystem extends System {
     onUpdate(): void {
         const deltaTime = this.world.time.deltaTime;
         this._query.stream({
-            originalColor: OriginalColor,
-            fadeToColor: FadeToColor,
-            image: ConsoleImage
+            // All three are written: the fade advances its own timer, rewrites the
+            // image, and on completion snaps originalColor to the target colour.
+            write: {originalColor: OriginalColor, fadeToColor: FadeToColor, image: ConsoleImage},
         }, {
             includeEntity: true
-        }).forEach(({entity, image, fadeToColor, originalColor}) => {
+        }).consume(({entity, image, fadeToColor, originalColor}) => {
             fadeToColor.currentFadeTime += deltaTime;
 
             const scale = fadeToColor.currentFadeTime / fadeToColor.fadeTime;

@@ -1,14 +1,14 @@
 ﻿import {Entity} from "./entity";
 import {Component} from "./component";
+import {persistentTrackComponent} from "./trackedComponent";
 import {ComponentType} from "./component";
 import type {ComponentCtor} from "./component";
 import {EntityManager} from "./entityManager";
 import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
-import {NAME} from "./symbols";
 import {EntityWriteOptions} from "./entityWriteOptions";
 import {EntityQuery} from "./entityQuery";
 import {World} from "./world";
-import {requireOwner, setOwner} from "./ownership";
+import {allocEntityHandle, requireOwner, setOwner} from "./ownership";
 import {getEntityComponents, getEntityTokens} from "./entityManagerUtils";
 
 type Pending = {
@@ -38,18 +38,15 @@ export class EntityCommandBuffer implements EntityWriteOptions {
 
     }
 
-    /** Queue entity creation. */
+    /**
+     * Queue entity creation. The handle is allocated immediately (so it can be
+     * referenced by other queued commands); the entity joins an archetype at
+     * playback. (The old object-entity version allocated two entities and named
+     * the one it threw away — handles fixed that by construction.)
+     */
     public createEntity(name?: string): Entity {
-        const entity = new Entity();
-        const e = new Entity();
-        (e as any)[NAME] = name;
+        const entity = allocEntityHandle(name);
         this.createOps.push(entity);
-        // const pending = this.ensure(entity);
-        // for (const [key, component] of components) {
-        //   const token = this.toToken(key);
-        //   pending.addOrSet.set(token, component);
-        //   pending.remove.delete(token); // ensure no remove for this token
-        // }
         return entity;
     }
 
@@ -77,7 +74,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         p.remove.delete(token);
         p.add.set(token, component);
         component.setup(entity, this);
-        return Component.persistentTrack(entity, component);
+        return persistentTrackComponent(entity, component);
     }
 
     public setComponent<T extends Component>(entity: Entity, component: Component): void {
