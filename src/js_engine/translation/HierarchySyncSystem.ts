@@ -38,34 +38,39 @@ export class HierarchySyncSystem extends System {
         }
 
         // ensure children have this entity as parent
-        this._parentQuery.stream({children: Children},
+        this._parentQuery.stream({read: {children: Children}},
             {
                 includeEntity: true,
                 filterLastUpdated: this.lastUpdateTime,
             })
-            .forEach(({children, entity}) => {
-                children.children.forEach((child) => {
+            // consume: one reused row instead of one per entity; `entity` is
+            // read during the callback, never the row itself.
+            .consume(({children, entity}) => {
+                // Indexed loop, not forEach: see Children's class comment.
+                const kids = children.children;
+                for (let i = 0; i < kids.length; i++) {
+                    const child = kids[i];
                     const component = this._childLookup.tryGetComponent(child)
                     if (component) {
                         if (component.entity !== entity) {
                             component.entity = entity;
                         }
-                        return;
+                        continue;
                     }
                     getBuffer().addComponent(child, new Parent(entity));
-                })
+                }
             })
 
         // ensure parents have this entity as children
-        this._childQuery.stream({parent: Parent},
+        this._childQuery.stream({read: {parent: Parent}},
             {
                 includeEntity: true,
                 filterLastUpdated: this.lastUpdateTime,
             })
-            .forEach(({parent, entity}) => {
+            .consume(({parent, entity}) => {
                 const component = this._parentLookup.tryGetComponent(parent.entity)
                 if (component) {
-                    if (!component.children.has(entity)) {
+                    if (!component.has(entity)) {
                         component.addChild(entity);
                     }
                     return;

@@ -96,7 +96,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCo
 
     // Functions
     const fetchModels = () => {
-        const fs = require("fs");
+        const fs = require("fs") as typeof import("fs");
         const folders = ["./demo/3d/", "./"].filter(folder => fs.existsSync(folder));
         const files: {
             path: string,

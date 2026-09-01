@@ -1,32 +1,32 @@
 import {Component} from "../core";
-import {fromFloat32Array, Vec, Vec2} from "../math/types/vec";
+import {Vec, Vec2} from "../math/types/vec";
 
 export class ScreenSize extends Component {
     // Float32Array, not a plain array literal: `vec` hands this out as a Vec2 view,
     // so callers writing through it land here rather than in a detached copy.
-    private _values = new Float32Array(2);
+    private _values: Vec2 = Vec2.alloc();
 
     get vec(): Vec2 {
-        return fromFloat32Array<2>(this._values);
+        return this._values;
     }
 
     set vec(value: Vec2) {
-        Vec.copy(this.vec, value);
+        Vec.copy(this._values, value);
     }
 
     get x(): number {
-        return this._values[0];
+        return Vec.x(this._values);
     }
 
     set x(value: number) {
-        this._values[0] = value;
+        Vec.setX(this._values, value);
     }
 
     get y(): number {
-        return this._values[1];
+        return Vec.y(this._values);
     }
 
     set y(value: number) {
-        this._values[1] = value;
+        Vec.setY(this._values, value);
     }
 }

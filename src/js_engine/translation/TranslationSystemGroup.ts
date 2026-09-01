@@ -17,7 +17,7 @@ export class TranslationSystemGroup extends SystemGroup {
             super.onUpdate();
             cyclesLeft--;
             const count = this._parentQuery.stream({
-                parentTransform: ParentTransform
+                read: {parentTransform: ParentTransform},
             }, {
                 filterLastUpdated: this.lastUpdateTime,
             }).count();

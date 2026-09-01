@@ -1,3 +1,4 @@
+import {DeepReadonly} from "../../../util/tokenUtils";
 import {System} from "../../../core";
 import {Camera} from "../../camera";
 import {ConsoleScreenBuffer, ScreenBuffer} from "../consoleScreenBuffer";
@@ -107,9 +108,8 @@ export class Console3DRenderPassSystem extends System {
         rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, Console3DRenderPassSystem.currentConfig());
 
         this._alwaysRenderQuery.stream({
-            renderMesh: RenderMesh,
-            localToWorld: LocalToWorld,
-        }).forEach(({renderMesh, localToWorld}) => {
+            read: {renderMesh: RenderMesh, localToWorld: LocalToWorld},
+        }).consume(({renderMesh, localToWorld}) => {
             if (renderMesh.mesh === undefined) return;
             LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, fromFloat32Array<16>(this._modelViewScratch));
             rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, renderMesh.color);
@@ -118,10 +118,8 @@ export class Console3DRenderPassSystem extends System {
         // Entities carrying WorldSpaceRenderBounds get a cheap conservative
         // frustum test before their triangles are even touched.
         this._selectiveRenderQuery.stream({
-            renderMesh: RenderMesh,
-            localToWorld: LocalToWorld,
-            bounds: WorldSpaceRenderBounds,
-        }).forEach(({renderMesh, localToWorld, bounds}) => {
+            read: {renderMesh: RenderMesh, localToWorld: LocalToWorld, bounds: WorldSpaceRenderBounds},
+        }).consume(({renderMesh, localToWorld, bounds}) => {
             if (renderMesh.mesh === undefined) return;
             if (!Console3DRenderPassSystem.boundsMayBeVisible(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
             LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, fromFloat32Array<16>(this._modelViewScratch));
@@ -137,7 +135,7 @@ export class Console3DRenderPassSystem extends System {
      * plane, or the whole projected extent falls outside the screen.
      */
     private static boundsMayBeVisible(
-        bounds: WorldSpaceRenderBounds,
+        bounds: DeepReadonly<WorldSpaceRenderBounds>,
         invertedCameraMatrix: Vec16,
         focalLength: number | undefined,
         cellRatio: number,

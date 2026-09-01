@@ -1,5 +1,4 @@
-import {Vec} from "../math/types/vec";
-import {System} from "../core";
+import {System, Unchanged} from "../core";
 import {LocalToWorld} from "../translation";
 import {WorldSpaceRenderBounds} from "./worldSpaceRenderBounds";
 import {RenderBounds} from "./renderBounds";
@@ -25,28 +24,57 @@ export class WorldSpaceRenderBoundsComputeSystem extends System {
 
     onUpdate() {
         this._query.stream({
-            bounds: RenderBounds,
-            worldBounds: WorldSpaceRenderBounds,
-            offset: RenderBoundsOffset,
-            localToWorld: LocalToWorld,
+            // RenderBoundsOffset is not in the query, so it is optional � the body
+            // already reads it as offset?.x.
+            read: {bounds: RenderBounds, localToWorld: LocalToWorld},
+            write: {worldBounds: WorldSpaceRenderBounds},
+            optional: {offset: RenderBoundsOffset},
         }, {
             filterLastUpdated: this.lastUpdateTime,
+            // Derives each entity's output from its own components, so a removal
+            // leaves nothing to redo — see EntityFilterOptions.structuralFilter.
+            structuralFilter: "additions",
             filterBlackList: [RenderBounds]
-        }).forEach(({bounds, localToWorld, worldBounds, offset}) => {
-            const position = localToWorld.position;
-            // base position after offset
-            const px = Vec.x(position) + (offset?.x || 0);
-            const py = Vec.y(position) + (offset?.y || 0);
-            const pz = Vec.z(position) + (offset?.z || 0);
-            // const px = position.x + (offset?.x || 0);
-            // const py = position.y + (offset?.y || 0);
+        }).consumeSpans(({start, end, cols, stores}) => {
+            // SoA hot path: LocalToWorld (16), RenderBounds (6) and
+            // WorldSpaceRenderBounds (6) as raw columns; RenderBoundsOffset is
+            // object-backed and rare, fetched per row from its store.
+            const l2w = cols.localToWorld!;
+            const rb = cols.bounds!;
+            const wb = cols.worldBounds!;
+            const offStore = stores.offset;
 
-            worldBounds.xMin = px + bounds.xMin;
-            worldBounds.xMax = px + bounds.xMax;
-            worldBounds.yMin = py + bounds.yMin;
-            worldBounds.yMax = py + bounds.yMax;
-            worldBounds.zMin = pz + bounds.zMin;
-            worldBounds.zMax = pz + bounds.zMax;
+            // A stationary entity produces the same world bounds every frame. This runs
+            // whenever LocalToWorld is stamped, which happens for a whole archetype as
+            // soon as one entity is added to it — so most of the entities reaching here
+            // have not actually moved. Declining the write (span-granular, same as the
+            // stamp itself) keeps the render pass from rebatching them.
+            let wrote = false;
+            for (let i = start; i < end; i++) {
+                const m = i << 4, b = i * 6;
+                let px = l2w[m + 12], py = l2w[m + 13], pz = l2w[m + 14];
+                if (offStore !== undefined) {
+                    const o = offStore.get(i) as RenderBoundsOffset;
+                    px += o.x;
+                    py += o.y;
+                    pz += o.z;
+                }
+                const xMin = px + rb[b], yMin = py + rb[b + 1], zMin = pz + rb[b + 2];
+                const xMax = px + rb[b + 3], yMax = py + rb[b + 4], zMax = pz + rb[b + 5];
+
+                if (wb[b] === xMin && wb[b + 1] === yMin && wb[b + 2] === zMin
+                    && wb[b + 3] === xMax && wb[b + 4] === yMax && wb[b + 5] === zMax) {
+                    continue;
+                }
+                wb[b] = xMin;
+                wb[b + 1] = yMin;
+                wb[b + 2] = zMin;
+                wb[b + 3] = xMax;
+                wb[b + 4] = yMax;
+                wb[b + 5] = zMax;
+                wrote = true;
+            }
+            return wrote ? undefined : Unchanged;
         })
     }
 

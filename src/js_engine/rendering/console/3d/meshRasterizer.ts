@@ -1,3 +1,4 @@
+import {DeepReadonly} from "../../../util/tokenUtils";
 import {Mesh} from "../../3d/mesh";
 import {ScreenBuffer} from "../consoleScreenBuffer";
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
@@ -140,7 +141,7 @@ export class MeshRasterizer {
      * @param cellRatio   horizontal cell aspect correction factor
      * @param baseColor   packed 0xRRGGBB shaded by depth fade
      */
-    public addMesh(mesh: Mesh, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number): void {
+    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number): void {
         if (this.width === 0 || this.height === 0) return;
 
         const vertCount = mesh.vertCount;

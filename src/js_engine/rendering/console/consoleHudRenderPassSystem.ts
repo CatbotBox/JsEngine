@@ -8,6 +8,11 @@ import {RenderBoundsOffset} from "../renderBoundsOffset";
 import {ConsoleImage} from "./consoleImage";
 import {ConsoleRenderPassSystemGroup} from "./consoleRenderPassSystemGroup";
 
+// Shared defaults for HUD entities that omit an anchor or offset. Allocated once
+// rather than per row — they are never written.
+const DEFAULT_ANCHOR = new ConsoleImageAnchor();
+const DEFAULT_OFFSET = new RenderBoundsOffset();
+
 export class ConsoleHudRenderPassSystem extends System {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
@@ -40,12 +45,18 @@ export class ConsoleHudRenderPassSystem extends System {
 
         // Only consider on-screen objects
         const hudEntities = this._hudObjectQuery
-            .stream({offset: RenderBoundsOffset, img: ConsoleImage, anchor: ConsoleImageAnchor})
-            .collect();
+            .stream({
+                read: {img: ConsoleImage},
+                optional: {offset: RenderBoundsOffset, anchor: ConsoleImageAnchor},
+            });
 
         // HUD elements (screen-space, not world-space)
         // HUD elements (screen-space, not world-space)
-        for (const {img, anchor = new ConsoleImageAnchor(), offset = new RenderBoundsOffset()} of hudEntities) {
+        // consume: the components are passed onward (blit reads img during the
+        // call), but the row object itself never escapes.
+        hudEntities.consume(({img, anchor: rawAnchor, offset: rawOffset}) => {
+            const anchor = rawAnchor ?? DEFAULT_ANCHOR;
+            const offset = rawOffset ?? DEFAULT_OFFSET;
             // Parse anchor into fractions (0 = left/top, 0.5 = center/middle, 1 = right/bottom)
             const [v, h] = (anchor.anchorPosition).split('-') as
                 ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right'];
@@ -66,7 +77,7 @@ export class ConsoleHudRenderPassSystem extends System {
             // console.log("HUD", anchor.anchorPosition, "->", sx, sy, " screen:", screenW, screenH, " img:", imgSize.x, imgSize.y)
             // Blit directly in screen space (cur = current ScreenBuffer)
             screenBuffer.blit(img, sx, sy, Number.NEGATIVE_INFINITY);
-        }
+        });
     }
 
 

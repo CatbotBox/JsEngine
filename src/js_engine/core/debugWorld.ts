@@ -55,7 +55,27 @@ export class DebugWorld extends World {
         return systemInstance;
     }
 
+    /**
+     * Dump the system tree with per-system mean update times.
+     *
+     * The header line matters as much as the timings: a system's cost is mostly a
+     * function of how many entities it sees, so two dumps are only comparable at a
+     * comparable entity count. Without it, a heavier run reads as a regression --
+     * which is exactly the wrong conclusion to reach twice.
+     */
     public logSystemUpdateOrder() {
+        let archetypes = 0, occupied = 0, disabled = 0;
+        for (const archetype of this.archetypes.values()) {
+            archetypes++;
+            if (archetype.entityCountUnfiltered > 0) occupied++;
+            disabled += archetype.entityCountUnfiltered - archetype.entityCount;
+        }
+        console.log(
+            `entities: ${this.entityCount} enabled` +
+            (disabled > 0 ? ` (+${disabled} disabled)` : "") +
+            ` | archetypes: ${occupied} occupied / ${archetypes} total` +
+            ` | frame budget: ${this.targetDeltaTime.toFixed(2)}ms`
+        );
         this.debug(this._rootSystemGroup, true);
     }
 

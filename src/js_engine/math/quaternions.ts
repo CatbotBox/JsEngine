@@ -1,8 +1,9 @@
-import {asFloat32Array, Vec, Vec3, Vec4} from "./types/vec";
+import {asFloat32Array, ReadonlyVec3, ReadonlyVec4, Vec, Vec3, Vec4} from "./types/vec";
 
 export namespace Quaternions {
     // x,y,z,w convention
     export type Quaternion = Vec4;
+    export type ReadonlyQuaternion = ReadonlyVec4;
 
     const raw = asFloat32Array;
 
@@ -16,7 +17,7 @@ export namespace Quaternions {
         | "ZXY" | "ZYX"; // default (yaw Z, pitch Y, roll X)
 
 
-    export function qMulInto(out: Quaternion, a: Quaternion, b: Quaternion): Quaternion {
+    export function qMulInto(out: Quaternion, a: ReadonlyQuaternion, b: ReadonlyQuaternion): Quaternion {
         const av = raw(a), bv = raw(b);
         const ax = av[0], ay = av[1], az = av[2], aw = av[3];
         const bx = bv[0], by = bv[1], bz = bv[2], bw = bv[3];
@@ -33,11 +34,11 @@ export namespace Quaternions {
     }
 
     /** Allocating convenience. Prefer qMulInto on per-frame paths. */
-    export function qMul(a: Quaternion, b: Quaternion): Quaternion {
+    export function qMul(a: ReadonlyQuaternion, b: ReadonlyQuaternion): Quaternion {
         return qMulInto(Vec.alloc4(), a, b);
     }
 
-    export function qNormalizeInto(out: Quaternion, q: Quaternion): Quaternion {
+    export function qNormalizeInto(out: Quaternion, q: ReadonlyQuaternion): Quaternion {
         const v = raw(q);
         const s = Math.hypot(v[0], v[1], v[2], v[3]) || 1;
         const o = raw(out);
@@ -48,12 +49,12 @@ export namespace Quaternions {
         return out;
     }
 
-    export function qNormalize(q: Quaternion): Quaternion {
+    export function qNormalize(q: ReadonlyQuaternion): Quaternion {
         return qNormalizeInto(Vec.alloc4(), q);
     }
 
     /** Axis-angle -> quat (axis must be unit length). */
-    export function qFromAxisAngleInto(out: Quaternion, axis: Vec3, angle: number): Quaternion {
+    export function qFromAxisAngleInto(out: Quaternion, axis: ReadonlyVec3, angle: number): Quaternion {
         const a = raw(axis);
         const h = angle * 0.5, s = Math.sin(h), c = Math.cos(h);
         const o = raw(out);
@@ -64,7 +65,7 @@ export namespace Quaternions {
         return out;
     }
 
-    export function qFromAxisAngle(axis: Vec3, angle: number): Quaternion {
+    export function qFromAxisAngle(axis: ReadonlyVec3, angle: number): Quaternion {
         return qFromAxisAngleInto(Vec.alloc4(), axis, angle);
     }
 
@@ -92,7 +93,7 @@ export namespace Quaternions {
      */
     export function eulerToQuatInto(
         out: Quaternion,
-        euler: Vec3,
+        euler: ReadonlyVec3,
         order: EulerOrder = "ZYX",
         opts?: { deg?: boolean },
     ): Quaternion {
@@ -132,7 +133,7 @@ export namespace Quaternions {
 
     /** Allocating convenience. Prefer eulerToQuatInto on per-frame paths. */
     export function eulerToQuat(
-        euler: Vec3,
+        euler: ReadonlyVec3,
         order: EulerOrder = "ZYX",
         opts?: { deg?: boolean },
     ): Quaternion {

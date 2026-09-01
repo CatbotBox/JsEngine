@@ -1,43 +1,125 @@
-﻿import {Entity} from "./entity";
-import {EntityArchetype} from "./entityArchetype";
-import {AnyCT} from "../util/tokenUtils";
-import {World} from "./world";
+import {Entity, ENTITY_GENERATION_MASK, ENTITY_INDEX_BITS, ENTITY_INDEX_MASK, makeEntityHandle} from "./entity";
+import type {EntityArchetype} from "./entityArchetype";
+import type {AnyCT} from "../util/tokenUtils";
+import type {World} from "./world";
 
-const OWNER = Symbol("ecs_owner");
+/**
+ * The global entity registry: parallel side tables indexed by an entity handle's
+ * low bits. This replaces the old Symbol-property-on-the-entity-object scheme —
+ * entities are integers now, so everything that used to hang off the object
+ * (owner archetype, world, debug name) lives here, plus what the archetype's
+ * DoubleMap used to hold (the entity's row in its owning archetype).
+ *
+ * Global rather than per-World on purpose: `getOwnerInferred` has no world
+ * argument, and cross-world misuse must throw (as before), not silently read
+ * another world's slot.
+ */
+// The world/arch tables are deliberately untyped: a top-level declaration whose
+// type mentions EntityArchetype (whose Maps scriptc cannot lower) disqualifies
+// this whole module from static analysis. The exported accessors carry the types.
+const generations: number[] = [];
+const worldOf: unknown[] = [];
+const archOf: unknown[] = [];
+/** Row within the owning archetype's dense arrays; -1 when unowned. */
+const rowOf: number[] = [];
+const nameOf: (string | undefined)[] = [];
+const freeIndices: number[] = [];
+let nextIndex = 0;
 
-export type OwnerRecord = {
-    world: World;
-    arch: EntityArchetype<AnyCT>;
-};
+export function allocEntityHandle(name?: string): Entity {
+    let i: number;
+    if (freeIndices.length > 0) {
+        i = freeIndices.pop()!;
+    } else {
+        i = nextIndex++;
+        if (i > ENTITY_INDEX_MASK) throw new Error("Entity index space exhausted (2^20 concurrent entities)");
+        generations[i] = 1;
+        worldOf[i] = undefined;
+        archOf[i] = undefined;
+        rowOf[i] = -1;
+    }
+    nameOf[i] = name;
+    return makeEntityHandle(i, generations[i]);
+}
+
+/**
+ * Retire a handle: bump the slot's generation (so every outstanding copy of this
+ * handle goes stale) and recycle the index. Double-frees are no-ops — the stale
+ * handle no longer matches the slot.
+ */
+export function freeEntityHandle(e: Entity): void {
+    const i = e & ENTITY_INDEX_MASK;
+    if (generations[i] !== e >>> ENTITY_INDEX_BITS) return; // stale: slot already recycled
+    let g = (generations[i] + 1) & ENTITY_GENERATION_MASK;
+    if (g === 0) g = 1; // generation 0 is reserved for "never valid"
+    generations[i] = g;
+    worldOf[i] = undefined;
+    archOf[i] = undefined;
+    rowOf[i] = -1;
+    nameOf[i] = undefined;
+    freeIndices.push(i);
+}
+
+export function isEntityAlive(e: Entity): boolean {
+    return generations[e & ENTITY_INDEX_MASK] === e >>> ENTITY_INDEX_BITS;
+}
 
 export function getOwnerInferred(entity: Entity): EntityArchetype<AnyCT> | undefined {
-    const rec = (entity as any)[OWNER] as OwnerRecord | undefined;
-    if (!rec) return undefined; // entity deleted or not fully created yet
-    if (rec.world === undefined) {
-        throw new Error("Entity does not belong to any world, was it initialized correctly?");
-    }
-    return rec.arch;
+    const i = entity & ENTITY_INDEX_MASK;
+    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined; // destroyed or recycled
+    return archOf[i] as EntityArchetype<AnyCT> | undefined;
 }
 
 export function getOwner(world: World, entity: Entity): EntityArchetype<AnyCT> | undefined {
-    const rec = (entity as any)[OWNER] as OwnerRecord | undefined;
-    if (!rec) return undefined;
-    if (rec.world !== world) {
+    const i = entity & ENTITY_INDEX_MASK;
+    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined;
+    const arch = archOf[i] as EntityArchetype<AnyCT> | undefined;
+    if (arch === undefined) return undefined;
+    if (worldOf[i] !== world) {
         throw new Error("Entity belongs to a different World; use its manager.");
     }
-    return rec.arch;
+    return arch;
 }
 
 export function setOwner(world: World, entity: Entity, arch: EntityArchetype<AnyCT> | undefined): void {
-    if (!arch) {
-        delete (entity as any)[OWNER];
+    const i = entity & ENTITY_INDEX_MASK;
+    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return; // stale handle owns nothing
+    if (arch === undefined) {
+        worldOf[i] = undefined;
+        archOf[i] = undefined;
+        rowOf[i] = -1;
         return;
     }
-    (entity as any)[OWNER] = {world: world, arch} as OwnerRecord;
+    worldOf[i] = world;
+    archOf[i] = arch;
 }
 
 export function requireOwner(world: World, entity: Entity): EntityArchetype<AnyCT> {
     const arch = getOwner(world, entity);
     if (!arch) throw new Error("Has entity been created by the EntityManager?");
     return arch;
+}
+
+// ---- row + name accessors (hot paths: no generation check; the archetype's
+// dense array is the source of truth and validates the handle it hands back) ----
+
+export function getEntityRow(entity: Entity): number {
+    const row = rowOf[entity & ENTITY_INDEX_MASK];
+    return row === undefined ? -1 : row;
+}
+
+export function setEntityRow(entity: Entity, row: number): void {
+    rowOf[entity & ENTITY_INDEX_MASK] = row;
+}
+
+export function getEntityName(entity: Entity): string | undefined {
+    const i = entity & ENTITY_INDEX_MASK;
+    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined;
+    return nameOf[i];
+}
+
+export function setEntityName(entity: Entity, name: string | undefined): void {
+    const i = entity & ENTITY_INDEX_MASK;
+    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return;
+    nameOf[i] = name;
 }

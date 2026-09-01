@@ -1,8 +1,12 @@
-﻿import {Component} from "../core";
-import {asFloat32Array, fromFloat32Array, Vec4} from "../math/types/vec";
+import {Component} from "../core";
+import {asFloat32Array, fromFloat32Array, Vec, Vec4} from "../math/types/vec";
+import type {F32Backed} from "../core/componentType";
 
-export class LocalRotation extends Component {
-    private _values = new Float32Array(4);
+export class LocalRotation extends Component implements F32Backed {
+    /** SoA column width: this component's floats live in its archetype's column. */
+    static readonly f32Width = 4;
+
+    private _values: Vec4 = Vec4.alloc();
 
     constructor(x: number = 0, y: number = 0, z: number = 0, w: number = 1) {
         super();
@@ -13,56 +17,58 @@ export class LocalRotation extends Component {
     }
 
     get x(): number {
-        return this._values[0];
+        return Vec.x(this._values);
     }
 
     set x(value: number) {
-        this._values[0] = value;
+        Vec.setX(this._values, value);
     }
 
     get y(): number {
-        return this._values[1];
+        return Vec.y(this._values);
     }
 
     set y(value: number) {
-        this._values[1] = value;
+        Vec.setY(this._values, value);
     }
 
     get z(): number {
-        return this._values[2];
+        return Vec.z(this._values);
     }
 
     set z(value: number) {
-        this._values[2] = value;
+        Vec.setZ(this._values, value);
     }
 
     get w(): number {
-        return this._values[3];
+        return Vec.w(this._values);
     }
 
     set w(value: number) {
-        this._values[3] = value;
+        Vec.setW(this._values, value);
     }
 
     get xyzw(): Vec4 {
-        return fromFloat32Array<4>(this._values);
+        return this._values;
     }
 
     set xyzw(value: Vec4) {
-        this._values.set(asFloat32Array(value));
+        Vec.copy(this._values, value);
     }
 
-    override copyTo(other: this) {
-        other.xyzw = this.xyzw
-        return other;
+    // ---- F32Backed (store-driven; see core/componentType.ts) ----
+
+    writeF32(dst: Float32Array, offset: number): void {
+        dst.set(asFloat32Array(this._values), offset);
+    }
+
+    bindF32(src: Float32Array, offset: number): void {
+        this._values = fromFloat32Array<4>(src.subarray(offset, offset + 4));
+    }
+
+    detachF32(): void {
+        const own = new Float32Array(4);
+        own.set(asFloat32Array(this._values));
+        this._values = fromFloat32Array<4>(own);
     }
 }
-
-// import {Component} from "../core";
-//
-// export class LocalRotation extends Component {
-//     public w: number = 0;
-//     public x: number = 0;
-//     public y: number = 0;
-//     public z: number = 0;
-// }

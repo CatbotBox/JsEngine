@@ -1,4 +1,3 @@
-import {asFloat32Array} from "../../math/types/vec";
 import {System} from "../../core";
 import {LocalToWorld} from "../../translation";
 import {RenderMesh} from "./renderMesh";
@@ -23,48 +22,57 @@ export class RenderMeshBoundsSystem extends System {
 
     onUpdate() {
         this._query.stream({
-            renderMesh: RenderMesh,
-            bounds: RenderBounds,
-            worldBounds: WorldSpaceRenderBounds,
-            localToWorld: LocalToWorld,
+            read: {renderMesh: RenderMesh, localToWorld: LocalToWorld},
+            write: {bounds: RenderBounds, worldBounds: WorldSpaceRenderBounds},
         }, {
             filterLastUpdated: this.lastUpdateTime,
+            // Derives each entity's output from its own components, so a removal
+            // leaves nothing to redo — see EntityFilterOptions.structuralFilter.
+            structuralFilter: "additions",
             filterBlackList: [RenderBounds, WorldSpaceRenderBounds],
-        }).forEach(({renderMesh, bounds, worldBounds, localToWorld}) => {
-            const mesh = renderMesh.mesh;
-            if (mesh === undefined) return;
+            // consumeSpans: raw columns for the matrix and both AABBs; the mesh
+            // reference is object-backed, fetched per row from its store.
+        }).consumeSpans(({start, end, cols, stores}) => {
+            const l2w = cols.localToWorld!;
+            const rb = cols.bounds!;
+            const wb = cols.worldBounds!;
+            const meshes = stores.renderMesh!;
 
-            const mb = mesh.bounds;
-            const m = asFloat32Array(localToWorld.matrix);
+            for (let i = start; i < end; i++) {
+                const mesh = (meshes.get(i) as RenderMesh).mesh;
+                if (mesh === undefined) continue;
 
-            // Some matrix magic
+                const mb = mesh.bounds;
+                const m = i << 4, b = i * 6;
 
-            // Center/extents of the local AABB, pushed through the 3x3 part of
-            // the matrix (center exactly, extents via absolute values).
-            const cx = (mb[0] + mb[3]) / 2, cy = (mb[1] + mb[4]) / 2, cz = (mb[2] + mb[5]) / 2;
-            const ex = (mb[3] - mb[0]) / 2, ey = (mb[4] - mb[1]) / 2, ez = (mb[5] - mb[2]) / 2;
+                // Center/extents of the local AABB, pushed through the 3x3 part of
+                // the matrix (center exactly, extents via absolute values).
+                const cx = (mb[0] + mb[3]) / 2, cy = (mb[1] + mb[4]) / 2, cz = (mb[2] + mb[5]) / 2;
+                const ex = (mb[3] - mb[0]) / 2, ey = (mb[4] - mb[1]) / 2, ez = (mb[5] - mb[2]) / 2;
 
-            const wcx = m[0] * cx + m[4] * cy + m[8] * cz;
-            const wcy = m[1] * cx + m[5] * cy + m[9] * cz;
-            const wcz = m[2] * cx + m[6] * cy + m[10] * cz;
+                const wcx = l2w[m] * cx + l2w[m + 4] * cy + l2w[m + 8] * cz;
+                const wcy = l2w[m + 1] * cx + l2w[m + 5] * cy + l2w[m + 9] * cz;
+                const wcz = l2w[m + 2] * cx + l2w[m + 6] * cy + l2w[m + 10] * cz;
 
-            const wex = Math.abs(m[0]) * ex + Math.abs(m[4]) * ey + Math.abs(m[8]) * ez;
-            const wey = Math.abs(m[1]) * ex + Math.abs(m[5]) * ey + Math.abs(m[9]) * ez;
-            const wez = Math.abs(m[2]) * ex + Math.abs(m[6]) * ey + Math.abs(m[10]) * ez;
+                const wex = Math.abs(l2w[m]) * ex + Math.abs(l2w[m + 4]) * ey + Math.abs(l2w[m + 8]) * ez;
+                const wey = Math.abs(l2w[m + 1]) * ex + Math.abs(l2w[m + 5]) * ey + Math.abs(l2w[m + 9]) * ez;
+                const wez = Math.abs(l2w[m + 2]) * ex + Math.abs(l2w[m + 6]) * ey + Math.abs(l2w[m + 10]) * ez;
 
-            bounds.xMin = wcx - wex;
-            bounds.xMax = wcx + wex;
-            bounds.yMin = wcy - wey;
-            bounds.yMax = wcy + wey;
-            bounds.zMin = wcz - wez;
-            bounds.zMax = wcz + wez;
+                // AABB layout: [xMin, yMin, zMin, xMax, yMax, zMax]
+                rb[b] = wcx - wex;
+                rb[b + 1] = wcy - wey;
+                rb[b + 2] = wcz - wez;
+                rb[b + 3] = wcx + wex;
+                rb[b + 4] = wcy + wey;
+                rb[b + 5] = wcz + wez;
 
-            worldBounds.xMin = m[12] + wcx - wex;
-            worldBounds.xMax = m[12] + wcx + wex;
-            worldBounds.yMin = m[13] + wcy - wey;
-            worldBounds.yMax = m[13] + wcy + wey;
-            worldBounds.zMin = m[14] + wcz - wez;
-            worldBounds.zMax = m[14] + wcz + wez;
+                wb[b] = l2w[m + 12] + wcx - wex;
+                wb[b + 1] = l2w[m + 13] + wcy - wey;
+                wb[b + 2] = l2w[m + 14] + wcz - wez;
+                wb[b + 3] = l2w[m + 12] + wcx + wex;
+                wb[b + 4] = l2w[m + 13] + wcy + wey;
+                wb[b + 5] = l2w[m + 14] + wcz + wez;
+            }
         });
     }
 }

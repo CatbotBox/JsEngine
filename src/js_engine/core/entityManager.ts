@@ -2,12 +2,12 @@
 import {Entity} from "./entity";
 import type {ComponentCtor} from "./component";
 import {Component, ComponentType} from "./component";
+import {persistentTrackComponent} from "./trackedComponent";
 import type {EntityArchetype} from "./entityArchetype";
 import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
 import {EntityQuery} from "./entityQuery";
-import {NAME} from "./symbols";
 import {EntityWriteOptions} from "./entityWriteOptions";
-import {getOwner, requireOwner, setOwner} from "./ownership";
+import {allocEntityHandle, freeEntityHandle, getOwner, requireOwner, setOwner} from "./ownership";
 import {EntityReadOptions} from "./entityReadOptions";
 import {getEntityTokens} from "./entityManagerUtils";
 
@@ -32,9 +32,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     public createEntity(name?: string): Entity {
         const arch = this._world.archetypes.getOrCreate([] as AnyCT[]);
-        const e = new Entity();
-        (e as any)[NAME] = name;
-        // arch.addEntity(e, map as Map<AnyCT, Component>);
+        const e = allocEntityHandle(name);
         arch.addEntity(e, EntityManager.emptyMap, true, this._world.time);
         setOwner(this._world, e, arch as EntityArchetype<AnyCT>);
         return e;
@@ -48,32 +46,32 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         return entity;
     }
 
-    /** Destroy an entity (remove from its archetype). */
+    /**
+     * Destroy an entity: remove it from its archetype and retire the handle.
+     * The generation bump makes every outstanding copy of this handle stale, so
+     * a later create that recycles the slot cannot be aliased by it.
+     */
     public destroyEntity(entity: Entity): void {
         const arch = getOwner(this._world, entity);
         if (arch) {
             arch.removeEntity(entity, this._world.time);
             setOwner(this._world, entity, undefined);
-            return;
         }
-        // Fallback scan if owner not tracked (should be rare)
-        for (const a of this._world.archetypes.values() as Iterable<EntityArchetype<AnyCT>>) {
-            try {
-                a.getDataAtEntity(entity); // throws if not there
-                a.removeEntity(entity, this._world.time);
-                break;
-            } catch {
-            }
-        }
-        setOwner(this._world, entity, undefined);
+        freeEntityHandle(entity);
     }
 
     public destroyQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>): void {
+        // Free handles BEFORE removeAll empties the archetypes — the old order
+        // iterated the query after clearing it, which visited nothing and left
+        // every destroyed entity still registered as owned.
         for (const archetype of entityQuery.archetypes) {
+            const n = archetype.entityCountUnfiltered;
+            for (let i = 0; i < n; i++) {
+                const e = archetype.getEntityAtIndex(i);
+                setOwner(this._world, e, undefined);
+                freeEntityHandle(e);
+            }
             archetype.removeAll(this._world.time);
-        }
-        for (const entity of entityQuery) {
-            setOwner(this._world, entity, undefined);
         }
     }
 
@@ -84,7 +82,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {
         this.addComponentInternal(entity, component);
-        return Component.persistentTrack(entity, component);
+        return persistentTrackComponent(entity, component);
     }
 
     public setEnabledState(entity: Entity, enabled: boolean): void {
@@ -102,8 +100,15 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
         const currentTokens = new Set<AnyCT>(getEntityTokens(this.world, entity));
         if (currentTokens.has(token)) {
-            // throw new Error(`Component ${component.constructor.name} already exists`);
-            console.info(`Component ${component.constructor.name} already exists, adding component skipped`);
+            // Keep the existing one and discard the new instance — use setComponent()
+            // to replace.
+            //
+            // Deliberately silent. This is normal operation, not a mistake:
+            // Component.setup() routinely adds companions, so duplicates are
+            // expected. Parent.setup() adds Children *to the parent*, so every
+            // child after the first lands here; RenderMesh and ConsoleImage both
+            // add RenderBounds. Logging (which fans out to fileLogger, i.e. disk)
+            // on each was pure noise, and throwing would break the engine outright.
             return;
         }
         const currentArch = requireOwner(this.world, entity);
