@@ -1,3 +1,4 @@
 ﻿export * from './averageStat';
 export * from './ringQueue';
-export * from './doubleMap';
+export * from './AABB';
+export * from './spatial';

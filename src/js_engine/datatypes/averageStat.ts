@@ -1,20 +1,21 @@
 ﻿import {RingQueue} from "./ringQueue";
 
 export class AverageStat {
-    private _arr: RingQueue<number>
+    private _samples: RingQueue<number>
     private _sum: number;
 
+    /** Samples currently held, not the window capacity: getAvg() divides by this. */
     public get sampleSize(): number {
-        return this._arr.length;
+        return this._samples.count;
     }
 
-    public constructor(length: number) {
-        this._arr = new RingQueue<number>(length);
+    public constructor(windowSize: number) {
+        this._samples = new RingQueue<number>(windowSize);
         this._sum = 0;
     }
 
     public add(item: number) {
-        this._sum -= this._arr.addAndOverride(item) || 0;
+        this._sum -= this._samples.addAndOverride(item) || 0;
         this._sum += item;
     }
 
@@ -22,8 +23,8 @@ export class AverageStat {
     public getAvg(requireFilledBuffer: false): number
     public getAvg(requireFilledBuffer: true): number | undefined
     public getAvg(requireFilledBuffer: boolean = false): number | undefined {
-        if (requireFilledBuffer && !this._arr.isFull) return undefined;
-        if (this._arr.isEmpty) return 0;
+        if (requireFilledBuffer && !this._samples.isFull) return undefined;
+        if (this._samples.isEmpty) return 0;
 
         return this._sum / this.sampleSize;
     }

@@ -135,7 +135,7 @@ export class VecArray<factor extends number, length extends number = number> {
         return test !== undefined
             && test.rawData !== undefined
             && test.factor !== undefined
-            && (factor === undefined || test.factor !== factor);
+            && (factor === undefined || test.factor === factor);
 
     }
 }

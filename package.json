@@ -1,12 +1,30 @@
 {
   "name": "jsengine",
   "version": "0.1.0",
-  "description": "",
+  "description": "Console-rendered ECS game engine, runs on node and bun",
   "type": "commonjs",
+  "main": "dist/js_engine/index.js",
+  "types": "dist/js_engine/index.d.ts",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev-node": "tsc -p tsconfig.json && node dist/index.js",
-    "clear-logs": "rm -rf logs/*"
+    "typecheck": "tsc -p tsconfig.check.json --noEmit",
+    "ts": "node -r ts-node/register/transpile-only",
+    "ts:bun": "bun",
+    "test": "node -r ts-node/register/transpile-only scripts/runTests.js",
+    "test:bun": "bun test",
+    "demo": "node -r ts-node/register/transpile-only demo/tests/1.ts",
+    "demo:3d": "node -r ts-node/register/transpile-only demo/3d/index.ts",
+    "demo:bun": "bun demo/tests/1.ts",
+    "demo:3d:bun": "bun demo/3d/index.ts",
+    "demo:3d:scriptc": "scriptc run demo/3d/index.ts",
+    "bench": "node -r ts-node/register/transpile-only bench/spatialIndex.bench.ts",
+    "bench:bun": "bun bench/spatialIndex.bench.ts",
+    "scriptc:coverage": "scriptc coverage scripts/scriptcProbe.ts",
+    "clear-logs": "node scripts/clearLogs.js",
+    "clear-logs:bun": "bun scripts/clearLogs.js"
   },
   "devDependencies": {
     "@types/bun": "^1.2.23",
