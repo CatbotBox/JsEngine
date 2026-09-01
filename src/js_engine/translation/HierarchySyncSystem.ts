@@ -8,8 +8,8 @@ import {Children} from "./children";
 export class HierarchySyncSystem extends System {
     private _parentQuery = this.createEntityQuery([Children])
     private _childQuery = this.createEntityQuery([Parent])
-    private _parentLookup = new ComponentLookup(this, Children, this._parentQuery)
-    private _childLookup = new ComponentLookup(this, Parent, this._childQuery)
+    private _parentLookup = new ComponentLookup(this, Children)
+    private _childLookup = new ComponentLookup(this, Parent)
 
     override systemGroup() {
         return TranslationSystemGroup;

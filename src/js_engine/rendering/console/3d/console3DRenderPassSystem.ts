@@ -1,4 +1,4 @@
-import {DeepReadonly} from "../../../util/tokenUtils";
+﻿import {DeepReadonly} from "../../../util/tokenUtils";
 import {System} from "../../../core";
 import {Camera} from "../../camera";
 import {ConsoleScreenBuffer, ScreenBuffer} from "../consoleScreenBuffer";
@@ -56,7 +56,6 @@ export class Console3DRenderPassSystem extends System {
 
     private _rasterizer = new MeshRasterizer();
     private _modelViewScratch = new Float32Array(16);
-    private static _benchRasterizer?: MeshRasterizer;
 
     override systemGroup() {
         return ConsoleRenderPassSystemGroup;
@@ -180,37 +179,6 @@ export class Console3DRenderPassSystem extends System {
         if (!anyInFront) return false;
         if (anyDepthUncertain) return true;
         return maxX > 0 && minX < width && maxY > 0 && minY < height;
-    }
-
-    /**
-     * Benchmark/testing entry point mirroring the old private drawMesh:
-     * renders one mesh into the buffer, including composition.
-     */
-    public static drawMeshForBenchmark(
-        screenBuffer: ScreenBuffer,
-        mesh: Mesh,
-        localToWorld: LocalToWorld,
-        invertedCameraMatrix: Vec16,
-        fieldOfView: FieldOfView | undefined,
-        screenSize: ScreenSize,
-        consoleCellRatio: ConsoleCellRatio,
-    ): void {
-        const rasterizer = (this._benchRasterizer ??= new MeshRasterizer());
-        const width = screenSize.x | 0;
-        const height = screenSize.y | 0;
-        const focalLength = fieldOfView !== undefined
-            ? height / (Math.tan(fieldOfView.radians / 2) * 2)
-            : undefined;
-
-        rasterizer.beginFrame(screenBuffer, width, height, this.currentConfig());
-        const modelView = asFloat32Array(LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix));
-        rasterizer.addMesh(mesh, modelView, focalLength, consoleCellRatio.value, 0xFFFFFF);
-        rasterizer.endFrame();
-    }
-
-    public static disposeRasterPool(): void {
-        this._benchRasterizer?.dispose();
-        this._benchRasterizer = undefined;
     }
 
     override onDestroy(): void {

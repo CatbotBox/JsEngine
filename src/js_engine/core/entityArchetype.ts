@@ -2,17 +2,15 @@
 import type {F32Backed} from "./componentType";
 import {trackComponent} from "./trackedComponent";
 import {Entity} from "./entity";
-import {EntityQuery} from "./entityQuery";
 import {AnyCT} from "../util/tokenUtils";
 import {getEntityName, getEntityRow, getOwner, setEntityRow} from "./ownership";
 import {WorldSource} from "./worldSource";
 
 export class ComponentLookup<T extends Component, CT extends ComponentType<T> = ComponentType<T>, MISC extends AnyCT[] = []> {
     private readonly _token: ComponentType<T>
-    // private _stores: Map<EntityArchetype, ComponentStore<CT>> = new Map();
     private _options?: { filterLastUpdated: number | undefined }
 
-    constructor(private _worldSource: WorldSource, componentType: ComponentCtor<T>, private _sourceQuery: EntityQuery<[...MISC, CT, ...MISC]> = new EntityQuery(this._worldSource, [componentType])) {
+    constructor(private _worldSource: WorldSource, componentType: ComponentCtor<T>) {
         this._token = ComponentType.of(componentType);
     }
 
@@ -31,7 +29,8 @@ export class ComponentLookup<T extends Component, CT extends ComponentType<T> = 
             (archetype.lastStructuralChangeTime > this._options.filterLastUpdated || componentStore.lastUpdatedTime > this._options.filterLastUpdated)) {
             return undefined;
         }
-        const id = archetype.getIndexOfEntity(entity)!;
+        const id = archetype.getIndexOfEntity(entity);
+        if (id === undefined) return undefined; // stale handle: recycled or destroyed
         const component = componentStore.get(id);
         if (readonly) return component;
         return trackComponent(component, () => componentStore.lastUpdatedTime = performance.now());

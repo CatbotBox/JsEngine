@@ -50,7 +50,6 @@ export class VecArray<factor extends number, length extends number = number> {
             return;
         }
         // arraylike + maybe vecArray
-        // if (flexArg.length % factor !== 0) throw new Error("Array cannot fit into vector array");
 
 
         endIndex = endIndex ?? flexArg.length;
@@ -140,5 +139,4 @@ export class VecArray<factor extends number, length extends number = number> {
     }
 }
 
-export type Vec2Array<length extends number = number> = VecArray<2, length>
 export type Vec3Array<length extends number = number> = VecArray<3, length>

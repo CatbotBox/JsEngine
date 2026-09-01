@@ -109,7 +109,7 @@ export class ScreenBuffer {
      * Blit ANSI-decorated image lines at a destination top-left in SCREEN space.
      * Clipped automatically to the current buffer.
      *
-     * Takes only what it reads — a pixel grid — rather than a whole ConsoleImage,
+     * Takes only what it reads â€” a pixel grid â€” rather than a whole ConsoleImage,
      * so a DeepReadonly component from a read-only query row satisfies it without
      * a cast. depth is distance from the camera.
      */

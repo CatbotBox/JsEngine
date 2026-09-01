@@ -121,17 +121,9 @@ export class Mesh {
                     meshBuilder.vertices.push(Vec.of<3>(vertexData));
                 }
 
-                // Texture coords: "vt " (parsed & ignored here unless you wire them into MeshBuilder)
+                // Texture coords are parsed by nothing yet, so "vt " is skipped outright.
             } else if (line.startsWith("vt ")) {
                 return;
-                // todo :more vt than v in CORRECT obj file
-                // const uvData = line
-                //     .substring(3)
-                //     .trim()
-                //     .split(/\s+/)
-                //     .map(v => Number.parseFloat(v));
-                // meshBuilder.uvs.push([uvData[0], uvData[1]] as Vec2);
-                // return;
 
                 // Normals: "vn " (same idea as vt)
             } else if (line.startsWith("vn ")) {
@@ -212,14 +204,14 @@ export class MeshBuilder {
     }
 
     public generateNormals(): void {
-        // for now just set to 0
+        // TODO: real normals/UVs; zero-fill until a generator exists
         for (let i = 0; i < this.vertices.length; i++) {
             this.normals[i] = Vec.alloc3()
         }
     }
 
     public generateUvs(): void {
-        // for now just set to 0
+        // TODO: real normals/UVs; zero-fill until a generator exists
         for (let i = 0; i < this.vertices.length; i++) {
             this.uvs[i] = Vec.alloc2()
         }

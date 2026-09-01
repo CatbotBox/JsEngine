@@ -9,7 +9,7 @@ import {ConsoleImage} from "./consoleImage";
 import {ConsoleRenderPassSystemGroup} from "./consoleRenderPassSystemGroup";
 
 // Shared defaults for HUD entities that omit an anchor or offset. Allocated once
-// rather than per row — they are never written.
+// rather than per row â€” they are never written.
 const DEFAULT_ANCHOR = new ConsoleImageAnchor();
 const DEFAULT_OFFSET = new RenderBoundsOffset();
 
@@ -72,9 +72,6 @@ export class ConsoleHudRenderPassSystem extends System {
             // anchor "point" on the screen
             const sx = Math.floor(ax * (screenW - img.sizeX)) + ((offset?.x ?? 0) | 0);
             const sy = Math.floor(ay * (screenH - img.sizeY)) + ((offset?.y ?? 0) | 0);
-
-
-            // console.log("HUD", anchor.anchorPosition, "->", sx, sy, " screen:", screenW, screenH, " img:", imgSize.x, imgSize.y)
             // Blit directly in screen space (cur = current ScreenBuffer)
             screenBuffer.blit(img, sx, sy, Number.NEGATIVE_INFINITY);
         });

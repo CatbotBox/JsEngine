@@ -5,12 +5,6 @@ declare const AABBTag: unique symbol;
 /** Runtime representation: Float32Array(6), [xMin,yMin,zMin,xMax,yMax,zMax]. */
 export type AABB = { readonly [AABBTag]: true };
 
-// const AABB_X_MIN = 0;
-// const AABB_Y_MIN = 1;
-// const AABB_Z_MIN = 2;
-// const AABB_X_MAX = 3;
-// const AABB_Y_MAX = 4;
-// const AABB_Z_MAX = 5;
 export const AABB_STRIDE = 6;
 
 const castAsFloat32Array = (b: AABB): Float32Array => b as unknown as Float32Array;

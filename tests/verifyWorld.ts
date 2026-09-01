@@ -103,7 +103,6 @@ log(`rotating frame delta: ${captured.length - lenRot} bytes`);
 
 world.stop();
 (process.stdout as any).write = realWrite;
-Console3DRenderPassSystem.disposeRasterPool();
 
 if (failures > 0) {
     console.error(`${failures} smoke-test failures`);
