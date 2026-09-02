@@ -3,7 +3,7 @@ import {Camera} from "../camera";
 import {ConsoleScreenBuffer} from "./consoleScreenBuffer";
 import {HudElement} from "../hudElement";
 import {ScreenSize} from "../screenSize";
-import {ConsoleImageAnchor} from "./consoleImageAnchor";
+import {anchorFractionX, anchorFractionY, ConsoleImageAnchor} from "./consoleImageAnchor";
 import {RenderBoundsOffset} from "../renderBoundsOffset";
 import {ConsoleImage} from "./consoleImage";
 import {ConsoleRenderPassSystemGroup} from "./consoleRenderPassSystemGroup";
@@ -53,12 +53,8 @@ export class ConsoleHudRenderPassSystem extends System {
         hudEntities.consume(({img, anchor: rawAnchor, offset: rawOffset}) => {
             const anchor = rawAnchor ?? DEFAULT_ANCHOR;
             const offset = rawOffset ?? DEFAULT_OFFSET;
-            // Parse anchor into fractions (0 = left/top, 0.5 = center/middle, 1 = right/bottom)
-            const [v, h] = (anchor.anchorPosition).split('-') as
-                ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right'];
-
-            const ax = h === 'left' ? 0 : h === 'center' ? 0.5 : 1;   // horizontal anchor
-            const ay = v === 'top' ? 0 : v === 'middle' ? 0.5 : 1;   // vertical anchor
+            const ax = anchorFractionX(anchor.anchorPosition);
+            const ay = anchorFractionY(anchor.anchorPosition);
 
             // Screen size & image size
             const screenW = cameraEntity.screenSize.x | 0;

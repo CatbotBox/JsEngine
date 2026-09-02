@@ -229,6 +229,20 @@ describe("EntityQuery", () => {
         em.addComponent(b, new Position(2, 2));
         expect(q.tryGetSingleton({p: Position})).toBeUndefined();
     });
+
+    test("getSingleton throws where tryGetSingleton returns undefined", () => {
+        // Both share one finder; only the none/ambiguous handling differs.
+        const q = new EntityQuery(world, [Position]);
+        expect(() => q.getSingleton({p: Position})).toThrow();
+
+        const a = em.createEntity();
+        em.addComponent(a, new Position(1, 1));
+        expect(q.getSingleton({p: Position}).p.x).toBe(1);
+
+        const b = em.createEntity();
+        em.addComponent(b, new Position(2, 2));
+        expect(() => q.getSingleton({p: Position})).toThrow();
+    });
 });
 
 describe("EntityQueryStream", () => {
