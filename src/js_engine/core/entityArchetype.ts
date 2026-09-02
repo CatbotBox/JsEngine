@@ -1,6 +1,6 @@
 ﻿import {ComponentType, ComponentOf, Component, ComponentCtor} from "./component";
 import type {F32Backed} from "./componentType";
-import {trackComponent} from "./trackedComponent";
+import {persistentTrackComponent} from "./trackedComponent";
 import {Entity} from "./entity";
 import {AnyCT} from "../util/tokenUtils";
 import {getEntityName, getEntityRow, getOwner, setEntityRow} from "./ownership";
@@ -33,7 +33,10 @@ export class ComponentLookup<T extends Component, CT extends ComponentType<T> = 
         if (id === undefined) return undefined; // stale handle: recycled or destroyed
         const component = componentStore.get(id);
         if (readonly) return component;
-        return trackComponent(component, () => componentStore.lastUpdatedTime = performance.now());
+        // Resolved through the entity at write time, for the same reason as
+        // getDataAtIndex: `componentStore` is this archetype's column, and the
+        // caller may hold the handle across a structural move.
+        return persistentTrackComponent(entity, component);
     }
 }
 
@@ -163,7 +166,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
         }
     }
 
-    public add(component: ComponentOf<CT>, time: { elapsedTime: number }) {
+    public add(component: ComponentOf<CT>, time: number) {
         const index = this._componentData.length;
         if (this._f32Width > 0) {
             // grow BEFORE pushing: ensureF32Capacity rebinds every instance in
@@ -180,7 +183,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
         }
         // Appends land at the tail, so only the last block is dirtied -- this is what
         // lets a few hundred arrivals stop waking an archetype of tens of thousands.
-        this.markBlockAt(index, time.elapsedTime);
+        this.markBlockAt(index, time);
     }
 
     /**
@@ -196,7 +199,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
      * `structuralFilter: "additions"` could never take effect and every
      * derived-data system rebuilt its whole archetype whenever one entity retired.
      */
-    public removeLast(_time: { elapsedTime: number }) {
+    public removeLast() {
         const removed = this._componentData.pop();
         if (this._f32Width > 0 && removed !== undefined) {
             // the instance leaves the column: give it its own buffer (values
@@ -206,21 +209,21 @@ export class ComponentStore<CT extends ComponentType<any>> {
         }
     }
 
-    public removeAll(time: { elapsedTime: number }) {
+    public removeAll(time: number) {
         if (this._f32Width > 0) {
             const data = this._componentData;
             for (let i = 0; i < data.length; i++) (data[i] as unknown as F32Backed).detachF32();
         }
         this._componentData.length = 0;
         this._blockTimes.fill(0);
-        this._lastUpdatedTime = time.elapsedTime;
+        this._lastUpdatedTime = time;
     }
 
     public get(index: number): ComponentOf<CT> {
         return this._componentData[index];
     }
 
-    public set(index: number, value: ComponentOf<CT>, time: { elapsedTime: number }) {
+    public set(index: number, value: ComponentOf<CT>, time: number) {
         const old = this._componentData[index];
         this._componentData[index] = value;
         if (this._f32Width > 0) {
@@ -231,7 +234,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
             backed.writeF32(this._f32!, off);
             backed.bindF32(this._f32!, off);
         }
-        this.markBlockAt(index, time.elapsedTime);
+        this.markBlockAt(index, time);
     }
 }
 
@@ -312,21 +315,27 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     public addEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined, time: {
         elapsedTime: number
     }) {
+        // One clock read for the whole operation. `elapsedTime` is a
+        // performance.now() getter, and the old form read it once per column
+        // (plus twice more per column for the enable swap) -- 69 reads to spawn
+        // one 6-component entity, ~19% of a bulk spawn. Every stamp made in a
+        // single structural change is meant to be the same instant anyway.
+        const now = time.elapsedTime;
         const nextIndex = this._entities.length;
         this._entities.push(entity);
         setEntityRow(entity, nextIndex);
         this._uniqueTypes.forEach((type, idx) => {
             const component = components.get(type);
             if (!component) throw new Error("component of required type is missing");
-            this._componentData[idx].add(component, time);
+            this._componentData[idx].add(component, now);
         });
 
         if (enabled !== undefined) {
-            this.setEnabledStateAtIndex(nextIndex, enabled, time);
+            this.setEnabledStateAtIndex(nextIndex, enabled, now);
         }
 
-        this._lastStructuralChange = time.elapsedTime;
-        this._lastEntityAdded = time.elapsedTime;
+        this._lastStructuralChange = now;
+        this._lastEntityAdded = now;
     }
 
     public setEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined, time: {
@@ -335,26 +344,28 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         const index = this.getIndexOfEntity(entity);
         if (index === undefined) throw new Error("Entity does not exist");
 
+        const now = time.elapsedTime;
         if (enabled !== undefined) {
-            this.setEnabledStateAtIndex(index, enabled, time);
+            this.setEnabledStateAtIndex(index, enabled, now);
         }
 
         this._uniqueTypes.forEach((type, idx) => {
             const component = components.get(type);
             if (!component) throw new Error("component of required type is missing");
-            this._componentData[idx].set(index, component, time);
+            this._componentData[idx].set(index, component, now);
         });
 
-        this._lastStructuralChange = time.elapsedTime;
-        this._lastEntityAdded = time.elapsedTime;
+        this._lastStructuralChange = now;
+        this._lastEntityAdded = now;
     }
 
     public removeAll(time: { elapsedTime: number }) {
+        const now = time.elapsedTime;
         for (let i = 0; i < this._entities.length; i++) setEntityRow(this._entities[i], -1);
         this._entities.length = 0;
         this._enabledCount = 0;
-        this._componentData.forEach((component) => component.removeAll(time));
-        this._lastStructuralChange = time.elapsedTime;
+        this._componentData.forEach((component) => component.removeAll(now));
+        this._lastStructuralChange = now;
     }
 
     public removeEntity(entity: Entity, time: { elapsedTime: number }) {
@@ -369,7 +380,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         // remove last (the swap moved `entity` to the tail)
         this._entities.length = lastIndex;
         setEntityRow(entity, -1);
-        this._componentData.forEach((component) => component.removeLast(time))
+        this._componentData.forEach((component) => component.removeLast())
         this._lastStructuralChange = time.elapsedTime;
         if (wasEnabled) this._enabledCount--;
     }
@@ -394,25 +405,27 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     }
 
     setEnabledStateForAll(enabled: boolean, time: { elapsedTime: number }) {
+        const now = time.elapsedTime;
         if (enabled) this._enabledCount = this._entities.length;
         else this._enabledCount = 0;
-        this._lastStructuralChange = time.elapsedTime;
+        this._lastStructuralChange = now;
         if (enabled) {
-            this._lastEntityAdded = time.elapsedTime;   // entities entered the live range
+            this._lastEntityAdded = now;   // entities entered the live range
             // No data moved, but every block just gained visible entities, so block
             // timestamps alone would not wake an "additions" system. Bulk operation,
             // so a whole-column stamp is the cheap correct answer.
-            for (const col of this._componentData) col.lastUpdatedTime = time.elapsedTime;
+            for (const col of this._componentData) col.lastUpdatedTime = now;
         }
     }
 
     public setEnabledState(entity: Entity, enabled: boolean, time: { elapsedTime: number }): boolean {
         const entityIndex = this.getIndexOfEntity(entity);
         if (entityIndex === undefined) throw new Error("invalid entity");
-        return this.setEnabledStateAtIndex(entityIndex, enabled, time);
+        return this.setEnabledStateAtIndex(entityIndex, enabled, time.elapsedTime);
     }
 
-    public setEnabledStateAtIndex(index: number, enabled: boolean, time: { elapsedTime: number }): boolean {
+    /** `time` is a timestamp, not a clock: callers stamp a whole operation at one instant. */
+    public setEnabledStateAtIndex(index: number, enabled: boolean, time: number): boolean {
         if (index < 0 || index >= this._entities.length) throw new Error("Index out of bounds");
         // merge the two functions
         let boundary: number;
@@ -427,11 +440,11 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
             this.swapDataAtIndices(index, boundary);
             this._enabledCount--;
         }
-        this._lastStructuralChange = time.elapsedTime;
+        this._lastStructuralChange = time;
         // The swap moved two entities' data, so both blocks are stale.
-        this.markAllColumnsAt(index, time.elapsedTime);
-        this.markAllColumnsAt(boundary, time.elapsedTime);
-        if (enabled) this._lastEntityAdded = time.elapsedTime;   // entered the live range
+        this.markAllColumnsAt(index, time);
+        this.markAllColumnsAt(boundary, time);
+        if (enabled) this._lastEntityAdded = time;   // entered the live range
         return true;
     }
 
@@ -476,11 +489,23 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         return map;
     }
 
+    /**
+     * Tracked handles for one row. The proxies resolve their column through the
+     * entity at *write* time (persistentTrackComponent), not at fetch time.
+     *
+     * Binding the column here instead — `trackComponent(comp, () => this._componentData[idx]...)`
+     * — meant a handle fetched before any structural change kept stamping the
+     * archetype the entity had left, so the change was never seen: a parent's
+     * LocalPosition handle taken before its first child was added stopped moving
+     * the children entirely. Component.setup() adds companions routinely, so
+     * "fetch a handle, then move" is the normal case, not an edge one.
+     */
     public getDataAtIndex(index: number): Map<CT, ComponentOf<CT>> {
         const map = new Map<CT, ComponentOf<CT>>();
+        const entity = this._entities[index];
         this._uniqueTypes.forEach((type, idx) => {
             const comp = this._componentData[idx].get(index);
-            if (comp !== undefined) map.set(type, trackComponent(comp, () => this._componentData[idx].lastUpdatedTime = performance.now()));
+            if (comp !== undefined) map.set(type, persistentTrackComponent(entity, comp));
         });
         return map;
     }

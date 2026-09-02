@@ -114,19 +114,27 @@ export class ScreenBuffer {
      * a cast. depth is distance from the camera.
      */
     public blit(image: BlittableImage, dstX: number, dstY: number, depth: number) {
+        const width = this.width, height = this.height;
+        if (width === 0 || height === 0) return;
         const pixels = image.pixels;
-        if (this.width === 0 || this.height === 0) return;
 
-        for (let row = 0; row < pixels.length; row++) {
-            const y = dstY + row;
-            if (y < 0 || y >= this.height) continue;
+        const rowStart = dstY < 0 ? -dstY : 0;
+        const rowEnd = Math.min(pixels.length, height - dstY);
+        const depths = this.depth, kinds = this.kind, texts = this.text;
+
+        for (let row = rowStart; row < rowEnd; row++) {
             const rowPixels = pixels[row];
-            for (let col = 0; col < rowPixels.length; col++) {
-                const x = dstX + col;
-                if (x < 0 || x >= this.width) continue;
+            const colStart = dstX < 0 ? -dstX : 0;
+            const colEnd = Math.min(rowPixels.length, width - dstX);
+            const lineIndex = (dstY + row) * width + dstX;
+            for (let col = colStart; col < colEnd; col++) {
                 const pixel = rowPixels[col];
                 if (pixel === undefined) continue;
-                this.setPixel(pixel, x, y, depth);
+                const idx = lineIndex + col;
+                if (depths[idx] < depth) continue;
+                depths[idx] = depth;
+                kinds[idx] = KIND_TEXT;
+                texts[idx] = pixel;
             }
         }
     }

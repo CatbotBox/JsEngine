@@ -31,6 +31,7 @@ import {
 } from "../src/js_engine/rendering/console/2d/renderBounds2DApplyModifierSystem";
 import {WorldSpaceRenderBoundsComputeSystem} from "../src/js_engine/rendering/worldSpaceRenderBoundsComputeSystem";
 import {Console2DRenderPassSystem} from "../src/js_engine/rendering/console/2d/console2DRenderPassSystem";
+import {ConsoleScreenBuffer} from "../src/js_engine/rendering/console/consoleScreenBuffer";
 import {fmt, median} from "./_harness";
 
 const N = 40_000;
@@ -93,8 +94,10 @@ function cascade2(mode: "arrivals" | "quiet" | "moving") {
 
     const l2w = world.getOrCreateSystem(LocalToWorldSystem);
     const wsb = world.getOrCreateSystem(WorldSpaceRenderBoundsComputeSystem);
-    // no ConsoleScreenBuffer resource: onUpdate does updateIndex() and then returns
-    // before blitting, which isolates the index maintenance we care about
+    // A real screen buffer, because the pass now culls straight off the
+    // WorldSpaceRenderBounds column and blits -- there is no index left to
+    // maintain, so withholding the buffer would just measure an early return.
+    const screen = world.resources.getOrCreate(ConsoleScreenBuffer);
     const pass = world.getOrCreateSystem(Console2DRenderPassSystem);
 
     spawn(world, N);
@@ -118,6 +121,7 @@ function cascade2(mode: "arrivals" | "quiet" | "moving") {
         wsb.update();
         if (f >= WARMUP) wsbS.push(performance.now() - t);
 
+        screen.screenBuffer.beginFrame({screenSize: {x: 200, y: 50} as ScreenSize}, " ");
         t = performance.now();
         pass.update();
         if (f >= WARMUP) passS.push(performance.now() - t);
@@ -155,7 +159,7 @@ const out = [
     `                                     quiet      arrivals     moving (control)`,
     `LocalToWorldSystem               ${fmt(c2Quiet.l2w)} ms  ${fmt(c2Arrivals.l2w)} ms  ${fmt(c2Moving.l2w)} ms`,
     `WorldSpaceRenderBoundsCompute    ${fmt(c2Quiet.wsb)} ms  ${fmt(c2Arrivals.wsb)} ms  ${fmt(c2Moving.wsb)} ms`,
-    `Console2DRenderPass (index)      ${fmt(c2Quiet.pass)} ms  ${fmt(c2Arrivals.pass)} ms  ${fmt(c2Moving.pass)} ms`,
+    `Console2DRenderPass (cull+blit)  ${fmt(c2Quiet.pass)} ms  ${fmt(c2Arrivals.pass)} ms  ${fmt(c2Moving.pass)} ms`,
     `                                 --------------------------------------------`,
     `total                            ${fmt(tot(c2Quiet))} ms  ${fmt(tot(c2Arrivals))} ms  ${fmt(tot(c2Moving))} ms`,
     ``,

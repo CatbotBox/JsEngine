@@ -12,5 +12,5 @@ export function getEntityTokens(world: World, entity: Entity): readonly AnyCT[] 
 /** Snapshot of the entity's components as a Map. */
 export function getEntityComponents(world: World, entity: Entity): Map<AnyCT, Component> {
     const arch = requireOwner(world, entity);
-    return arch.getDataAtEntity(entity) as Map<AnyCT, Component>;
+    return arch.getDataAtEntityUntracked(entity) as Map<AnyCT, Component>; // untracked on purpose
 }

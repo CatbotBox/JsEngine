@@ -221,6 +221,19 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
     }
 
     /**
+     * Whether any entity survives the filter -- `count() > 0` without the sum.
+     * For callers that only need "is there work left", such as the transform
+     * cascade's stability check.
+     */
+    public hasAny(): boolean {
+        const includeDisabled = this.options?.includeDisabled;
+        for (const {arch} of this.plans()) {
+            if ((includeDisabled ? arch.entityCountUnfiltered : arch.entityCount) > 0) return true;
+        }
+        return false;
+    }
+
+    /**
      * A fresh row object per entity. Rows may be kept beyond the callback.
      *
      * Return `Unchanged` to declare that this entity was not written; see the class

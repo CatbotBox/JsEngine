@@ -1,10 +1,16 @@
 ﻿/**
  * bench/spatialIndex.bench.ts — run with `bun bench/spatialIndex.bench.ts`.
  *
- * Picks between LinearIndex and ObjectOctree for the 2D render
- * path. Structured around what the render pass actually does: a handful of
- * batches (one per archetype), replaceBatch on the ones that changed, and one
- * camera query per frame.
+ * Picks between LinearIndex and ObjectOctree. Structured around the workload the
+ * 2D render pass used to run: a handful of batches (one per archetype),
+ * replaceBatch on the ones that changed, and one camera query per frame.
+ *
+ * HISTORICAL, as of the pass switching to a direct scan of the
+ * WorldSpaceRenderBounds column: maintaining the index cost 1.3-1.7 ms/frame at
+ * 40k entities against 0.09 ms for scanning the column that already holds the
+ * same six floats, so no engine system uses either structure now. Kept because
+ * datatypes/spatial is still a supported surface and this is what would decide
+ * the choice if something needs one again.
  *
  * WHY THE AXES ARE WHAT THEY ARE
  * - N sweeps to 100k because demo/2d/index.ts spawns 1,000 entities per keypress

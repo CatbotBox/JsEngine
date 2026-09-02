@@ -9,6 +9,11 @@ import {EntityQuery} from "./entityQuery";
 import {EntityArchetype} from "./entityArchetype";
 import {Unchanged} from "./entityQueryStream";
 import {BLOCK_SIZE} from "./entityArchetype";
+import {ComponentType} from "./componentType";
+import {getOwner} from "./ownership";
+import {types} from "util";
+
+const isProxy = types.isProxy;
 
 /**
  * CHARACTERIZATION TESTS for the ECS core.
@@ -586,6 +591,53 @@ describe("trackComponent", () => {
         const c = trackComponent(new HardPrivate(), () => void 0);
         expect(() => c.bump()).toThrow(/private field/);
         expect(() => c.n).toThrow(/private field/);
+    });
+});
+
+describe("tracked handles survive structural changes", () => {
+    test("a handle taken before an archetype move still marks its column", () => {
+        // Regression: the proxy used to capture the archetype and column index it
+        // was fetched from, so the first structural change left it stamping the
+        // archetype the entity had already left — silently, for the life of the
+        // handle. Component.setup() adds companions routinely, so "fetch a handle,
+        // then move" is the normal case.
+        const e = em.createEntity();
+        em.addComponent(e, new Position(1, 2));
+        const handle = em.getComponent<Position>(e, Position)!;
+
+        em.addComponent(e, new Velocity(3, 4));   // moves the entity to a new archetype
+
+        const arch = getOwner(world, e)!;
+        const column = arch.getColumn(ComponentType.of(Position))!;
+        const before = column.lastUpdatedTime;
+
+        handle.x = 99;
+
+        expect(column.lastUpdatedTime > before).toBe(true);
+        expect(em.getComponent<Position>(e, Position)!.x).toBe(99);
+    });
+
+    test("components carried through a command-buffer move are not left wrapped", async () => {
+        // The buffer used to carry a *tracked* snapshot across the move, which put
+        // the Proxy itself into the destination column — and wrapped it again on
+        // every subsequent move, so reads got steadily slower and the stamp went to
+        // the wrong archetype.
+        const {EntityCommandBufferSystem} = await import("./entityCommandBufferSystem");
+        const cbSystem = world.getOrCreateSystem(EntityCommandBufferSystem);
+
+        const e = em.createEntity();
+        em.addComponent(e, new Position(1, 2));
+
+        cbSystem.getEntityCommandBuffer().addComponent(e, new Velocity(3, 4));
+        cbSystem.update();
+        cbSystem.getEntityCommandBuffer().addComponent(e, new Tag());
+        cbSystem.update();
+
+        const arch = getOwner(world, e)!;
+        const stored = arch.getColumn(ComponentType.of(Position))!.get(0) as Position;
+        expect(isProxy(stored)).toBe(false);
+        expect(stored.x).toBe(1);
+        expect(stored.y).toBe(2);
     });
 });
 

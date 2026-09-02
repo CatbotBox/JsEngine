@@ -14,6 +14,7 @@ export class EntityCommandBufferSystem extends System {
   }
 
   public onUpdate(): void {
+    if (this._buffer.isEmpty) return;
     this._buffer.playback(this.entityManager);
   }
 }
