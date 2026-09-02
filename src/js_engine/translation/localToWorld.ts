@@ -60,7 +60,7 @@ export class LocalToWorld extends Component implements F32Backed {
         Vec.copy(this._matrix, value);
     }
 
-    // ---------- Position ----------
+    // Position
     /** Live view over the translation column — writes land in the matrix. */
     public get position(): Vec3 {
         return fromFloat32Array<3>(asFloat32Array(this._matrix).subarray(M4.tx, M4.tz + 1));
@@ -70,7 +70,7 @@ export class LocalToWorld extends Component implements F32Backed {
         asFloat32Array(this._matrix).set(raw(p), M4.tx);
     }
 
-    // ---------- Scale ----------
+    // Scale
     /** Allocates. Use scaleInto() on any path that runs per frame. */
     public get scale(): Vec3 {
         return this.scaleInto(Vec.alloc3());
@@ -94,7 +94,6 @@ export class LocalToWorld extends Component implements F32Backed {
         const cz = nx0 * ny1 - ny0 * nx1;
         const handedDot = cx * nx2 + cy * ny2 + cz * nz2; // ~det sign
 
-
         return Vec.set3(out, handedDot < 0 ? -sx : sx, sy, sz);
     }
 
@@ -105,7 +104,7 @@ export class LocalToWorld extends Component implements F32Backed {
         LocalToWorld.fromTRS(this.matrix, p, r, s);
     }
 
-    // ---------- Rotation (as quaternion [x,y,z,w]) ----------
+    // Rotation (as quaternion [x,y,z,w])
     /** Allocates. Use rotationInto() on any path that runs per frame. */
     public get rotation(): Vec4 {
         return this.rotationInto(Vec.alloc4());
@@ -182,20 +181,20 @@ export class LocalToWorld extends Component implements F32Backed {
         LocalToWorld.fromTRS(this.matrix, p, q, s);
     }
 
-    // ---------- Set full TRS ----------
+    // Set full TRS
     public setTRS(position: ReadonlyVec3, rotation: ReadonlyVec4, scale: ReadonlyVec3): void {
         LocalToWorld.fromTRS(this.matrix, position, rotation, scale);
-        this.setDirty();
+        this.notifyChanged();
     }
 
-    // ---------- ctor ----------
+    // ctor
     public constructor() {
         super();
         this._matrix = Vec16.alloc();
         LocalToWorld.identity(this.matrix);
     }
 
-    // ---- F32Backed (store-driven; see core/componentType.ts) ----
+    // F32Backed (store-driven; see core/componentType.ts)
 
     writeF32(dst: Float32Array, offset: number): void {
         dst.set(asFloat32Array(this._matrix), offset);
@@ -211,14 +210,10 @@ export class LocalToWorld extends Component implements F32Backed {
         this._matrix = fromFloat32Array<16>(own);
     }
 
-    // ======================================================
     // ============== Static utility functions ==============
-    // ======================================================
 
     /** out = Identity */
     public static identity(out: Vec16 = Vec.alloc<16>(16)): Vec16 {
-        // A Vec is always Float32Array-backed now, so the old plain-array branch
-        // is gone along with the union type that made it necessary.
         raw(out).set(identity);
         return out;
     }
@@ -258,7 +253,7 @@ export class LocalToWorld extends Component implements F32Backed {
 
     public mul(other: ReadonlyVec16) {
         LocalToWorld.mul(other, this.matrix, this.matrix);
-        this.setDirty();
+        this.notifyChanged();
     }
 
     /**

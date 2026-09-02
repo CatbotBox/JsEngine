@@ -1,4 +1,4 @@
-import type {Entity} from "./entity";
+﻿import type {Entity} from "./entity";
 import type {EntityWriteOptions} from "./entityWriteOptions";
 import {ComponentType} from "./componentType";
 
@@ -20,20 +20,24 @@ export type {ComponentCtor, ComponentOf} from "./componentType";
 export abstract class Component {
 
     /**
-     * this must be used as only setters are tracked to minimise complexity
+     * Exists only to be assigned to: the change-tracking Proxy traps property *sets*, so
+     * writing this no-op setter is what trips the trap. Never read.
      */
     // noinspection JSUnusedLocalSymbols
-    private set dirty(value: void) {
+    private set changeSignal(value: void) {
     }
 
     /**
-     * call this to force last update
-     * this is useful as only setter trigger it, function calls do not
-     * hence if a function performs write operations, call this setter to prevent undetected changes
-     * @protected
+     * Announce a mutation the tracking Proxy cannot see.
+     *
+     * Assigning a field is already tracked, and so is a method that assigns one, because
+     * calling it through the Proxy makes `this` the Proxy. What is *not* tracked is mutating
+     * something the component merely holds: pushing into an array field, or writing through a
+     * Float32Array view. Both leave the component's own properties untouched, so the set trap
+     * never fires. `Children.addChild` and `LocalToWorld.setTRS` are the two cases in-tree.
      */
-    protected setDirty() {
-        this.dirty = undefined;
+    protected notifyChanged() {
+        this.changeSignal = undefined;
     }
 
     /**

@@ -11,9 +11,7 @@ import {allocEntityHandle, freeEntityHandle, getOwner, requireOwner, setOwner} f
 import {EntityReadOptions} from "./entityReadOptions";
 import {getEntityTokens} from "./entityManagerUtils";
 
-
 export class EntityManager implements EntityWriteOptions, EntityReadOptions {
-
 
     constructor(
         private _world: World,
@@ -24,7 +22,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         return this._world;
     }
 
-    // ---------- creation / destruction ----------
+    // creation / destruction
 
     private static emptyMap: Map<AnyCT, Component> = new Map();
 
@@ -152,8 +150,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         this.moveEntityInternal(entity, currentArch, targetArch, currentData);
     }
 
-
-    // ---------- simple queries (immediate) ----------
+    // simple queries (immediate)
 
     public hasComponent<T extends Component>(entity: Entity, key: TokenOrCtor): boolean {
         const data = new Set<AnyCT>(getEntityTokens(this.world, entity));
@@ -180,7 +177,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     }
 
-    // ---------- internals ----------
+    // internals
 
     private moveEntityInternal(
         entity: Entity,

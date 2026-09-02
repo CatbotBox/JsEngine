@@ -110,7 +110,6 @@ export abstract class System extends WorldSource {
         this._requiredAllForUpdate.push(query);
     }
 
-
     public create(): void {
         if (this._isCreated) return;
         const updateGroup = this.resolveUpdateGroup(true);
@@ -181,13 +180,9 @@ export abstract class System extends WorldSource {
 
     }
 
-    // ----------------------------
     // Simple, immediate iteration
-    // ----------------------------
 
-    //scrapped in favor of caching
 
-    // inside class System
     /** Build an EntityQuery from an array of tokens *or* constructors (no labels). */
     protected createEntityQuery<
         IncSpec extends readonly TokenOrCtor[],

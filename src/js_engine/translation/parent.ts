@@ -37,7 +37,7 @@ export class ParentTransform extends Component implements F32Backed {
         super();
     }
 
-    // ---- F32Backed (store-driven; see core/componentType.ts) ----
+    // F32Backed (store-driven; see core/componentType.ts)
 
     writeF32(dst: Float32Array, offset: number): void {
         this._transform.writeF32(dst, offset);

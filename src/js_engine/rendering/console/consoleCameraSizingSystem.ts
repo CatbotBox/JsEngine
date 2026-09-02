@@ -47,7 +47,6 @@ export class ConsoleCameraSizingSystem extends System {
                     const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
                     cameraEntity.screenSize.x = process.stdout.columns;
                     cameraEntity.screenSize.y = process.stdout.rows - 1; // leave one row for the prompt
-                    console.log("Resize: " + JSON.stringify(cameraEntity.screenSize, null, 2));
                 });
             }
         }

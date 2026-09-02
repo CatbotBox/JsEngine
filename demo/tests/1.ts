@@ -1,4 +1,4 @@
-import {Vec} from "../../src/js_engine/math/types/vec";
+﻿import {Vec} from "../../src/js_engine/math/types/vec";
 import {
     Component,
     Entity,
@@ -27,7 +27,6 @@ import {AverageStat} from "../../src/js_engine/datatypes";
 const world = new DebugWorld();
 
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
-// const buffer = world.entityManager
 
 
 const cameraEntity = buffer.createEntity("cameraEntity");
@@ -178,22 +177,16 @@ consoleInput.whenKey(Key.Space, () => {
         // at 100k+ entities roughly a dozen are stacked on every terminal cell and this
         // happens constantly. Must stay inside the pass's [-1000, 1000] camera z range.
         newPos.z = Math.random()
-        // if (Math.random() < 0.5) {
         const fadeToColor = new FadeToColor();
         fadeToColor.color = [255, 183, 206]
         fadeToColor.fadeTime = Math.random() * 5000 + 5000;
         createPixel(newPos, undefined, undefined, fadeToColor);
-        // } else {
-        //     createPixel(newPos);
-        // }
     }
 })
 consoleInput.whenKey(Key.Enter, () => {
     const renderer = world.tryGetSystem(RenderingSystemGroup);
-    console.log('Rendering system group', renderer);
     if (!renderer) return;
     renderer.enabled = !renderer.enabled;
-    world.getOrCreateSystem(DebugSystem).logEntities();
 })
 consoleInput.whenKey(Key.Backspace, () => {
     const renderer = world.tryGetSystem(Console2DRenderPassSystem);
@@ -207,13 +200,9 @@ consoleInput.whenKey(Key.G, () => {
 consoleInput.onKeyMatch({name: 'c', ctrl: true}, () => {
     world.stop()
     process.exit(0);
-    // if (toggle) keyboardInput.disable();
-    // else keyboardInput.enable();
-    // toggle = !toggle;
 })
 
 
-console.log(cameraEntity)
 
 class FadeSystem extends System {
 
@@ -290,17 +279,12 @@ class DebugSystem extends System {
         consoleInput.whenKeyDown(Key.Tab, () => {
             this._toggle = !this._toggle;
             buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
-            console.log("toggle hud", this._hudQuery.entityCount() + " | " + this._hudQuery.entityCountUnfiltered());
-            console.log(this._hudQuery.archetypes)
         })
     }
 
     onUpdate() {
         if (!this._toggle) return;
         this._query.entityCount();
-        // const entities = this._query
-        //   .stream({}, {includeEntity: true})
-        //   .collect()
         this._fpsCounter.add(1000 / this.world.time.deltaTime)
         fpsCounterImage.image = [
             Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
@@ -319,47 +303,11 @@ class DebugSystem extends System {
             ]
         }
 
-        // .map(e => ((e.entity as any)));
-        // console.log(entities)
-        // console.log("ALL");
-        // console.log(this._query.entityCount());
-        // console.log(this.world.entityCount)
-        // this._query.stream({},{includeEntity : true}).forEach(({entity}) => {
-        //   console.log((entity as any)[NAME])
-        // });
 
-        // console.log(this.world.time.deltaTime);
-        // console.log(this.world.time.elapsedTime);
-        // console.log(this.world.targetDeltaTime)
 
-        // console.log(world.archetypes.totalEmpty + "/" + world.archetypes.totalCount + " empty archtypes");
     }
 
-    public logEntities() {
-        // const entities = this._query
-        //     .stream({}, {includeEntity: true})
-        //     .collect()
-        //     // .toString()
-        //     // .map(e => ((e.entity as any)[OWNER].arch as EntityArchetype).getDataAtEntity(e.entity));
-        //     .forEach((e: {} & { entity: Entity }) => {
-        //         console.group("DEBUG")
-        //         console.log(entity);
-        //         const archetype = getOwner(this.world, e.entity)!;
-        //         console.log("archetype");
-        //         console.log(archetype.componentTypes.map(t => t.ctor));
-        //         const data = archetype.getDataAtEntity(e.entity);
-        //         console.log(Array.from(data).map(([ct, value]) => value));
-        //         console.groupEnd()
-        //     });
 
-        // for (const archetype of this.world.archetypes.values()) {
-        //     console.log(archetype.componentTypes);
-        //     console.log(archetype.entityCount + "|" + archetype.entityCountUnfiltered);
-        // }
-
-        // console.log("Entities:");
-        // console.log(entities)
-    }
 }
 
 

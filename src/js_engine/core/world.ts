@@ -10,7 +10,6 @@ import {performance} from "node:perf_hooks";
 import {clearInterval} from "node:timers";
 import {ResourceManager} from "./resourceManager";
 
-
 class Time {
     /**
      * time from last tick (in milliseconds)
@@ -68,8 +67,6 @@ export class World extends WorldSource {
         return this._rootSystemGroup;
     }
 
-
-    //update loop settings
     private _timeout: unknown | null = null;
     protected _targetDeltaTime: number = 1000 / 60; // default to 60 FPS
 
@@ -80,7 +77,6 @@ export class World extends WorldSource {
         this.ensureSystemExists(GcSystem)
     }
 
-    // alias for getOrCreateSystem as it can be used another way
     public ensureSystemExists<T extends System>(constructor: SystemCtor<T>): void {
         this.getOrCreateSystem<T>(constructor)
     }
@@ -116,7 +112,6 @@ export class World extends WorldSource {
         const existing = this._systems.get(systemClass);
         return existing as T | undefined;
     }
-
 
     public hasSystem<T extends System>(systemClass: SystemCtor<T>): boolean {
         return this._systems.has(systemClass);
@@ -183,7 +178,6 @@ export class World extends WorldSource {
         if (value <= 0) throw new Error("Framerate must be positive and non-zero");
         this.targetDeltaTime = 1000 / value;
     }
-
 
     private update(): void {
         this._rootSystemGroup.update();

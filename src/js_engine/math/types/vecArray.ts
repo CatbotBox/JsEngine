@@ -51,7 +51,6 @@ export class VecArray<factor extends number, length extends number = number> {
         }
         // arraylike + maybe vecArray
 
-
         endIndex = endIndex ?? flexArg.length;
         const absoluteStartIndex = startIndex * factor;
         const absoluteEndIndex = endIndex * factor;
@@ -91,7 +90,6 @@ export class VecArray<factor extends number, length extends number = number> {
     public subarray(startIndex: number, endIndex: number): VecArray<factor> {
         return new VecArray<factor>(this, this.factor, startIndex, endIndex);
     }
-
 
     public set(array: Vec<factor>, offset?: number): void
     public set(array: ArrayLike<Vec<factor>>, offset?: number): void

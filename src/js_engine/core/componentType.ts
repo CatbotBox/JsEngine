@@ -1,4 +1,4 @@
-import type {Component} from "./component";
+﻿import type {Component} from "./component";
 
 export type ComponentCtor<T extends Component> = new (...args: any[]) => T;
 
@@ -52,8 +52,7 @@ export class ComponentType<C extends Component = Component> {
  *    move, which re-attaches it to the destination column).
  *
  * A detached instance behaves exactly like a plain component — `new Foo()` starts
- * detached and mutating a handle to a destroyed entity mutates an orphan, which
- * is the pre-SoA behaviour too.
+ * detached and mutating a handle to a destroyed entity mutates an orphan.
  */
 export interface F32Backed {
     writeF32(dst: Float32Array, offset: number): void;

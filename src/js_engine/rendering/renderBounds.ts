@@ -1,6 +1,4 @@
-import {Component, Entity} from "../core";
-
-
+﻿import {Component, Entity} from "../core";
 
 import {AABB} from "../datatypes/AABB";
 import type {F32Backed} from "../core/componentType";
@@ -11,16 +9,11 @@ import {WorldSpaceRenderBounds} from "./worldSpaceRenderBounds";
 
 import {Vec, Vec3} from "../math/types/vec";
 
-
-
 export class RenderBounds extends Component implements F32Backed {
     /** SoA column width: the AABB's 6 floats live in the archetype's column. */
     static readonly f32Width = 6;
 
-
     private _values: AABB = AABB.alloc();
-
-
 
     /** Live AABB view over this component's storage — same buffer, no copy. */
 
@@ -30,15 +23,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     setup(entity: Entity, entityManager: EntityWriteOptions) {
 
         entityManager.addComponent(entity, new WorldSpaceRenderBounds())
 
     }
-
-
 
     get xMin(): number {
 
@@ -46,15 +35,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set xMin(value: number) {
 
         AABB.asFloat32Array(this._values)[0] = value;
 
     }
-
-
 
     get yMin(): number {
 
@@ -62,15 +47,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set yMin(value: number) {
 
         AABB.asFloat32Array(this._values)[1] = value;
 
     }
-
-
 
     get zMin(): number {
 
@@ -78,15 +59,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set zMin(value: number) {
 
         AABB.asFloat32Array(this._values)[2] = value;
 
     }
-
-
 
     get min(): Vec3 {
 
@@ -94,17 +71,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set min(value: Vec3) {
 
         Vec.copy(AABB.min(this._values), value)
 
     }
-
-
-
-
 
     get xMax(): number {
 
@@ -112,15 +83,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set xMax(value: number) {
 
         AABB.asFloat32Array(this._values)[3] = value;
 
     }
-
-
 
     get yMax(): number {
 
@@ -128,15 +95,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set yMax(value: number) {
 
         AABB.asFloat32Array(this._values)[4] = value;
 
     }
-
-
 
     get zMax(): number {
 
@@ -144,15 +107,11 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set zMax(value: number) {
 
         AABB.asFloat32Array(this._values)[5] = value;
 
     }
-
-
 
     get max(): Vec3 {
 
@@ -160,16 +119,13 @@ export class RenderBounds extends Component implements F32Backed {
 
     }
 
-
-
     set max(value: Vec3) {
 
         Vec.copy(AABB.max(this._values), value)
 
     }
 
-
-    // ---- F32Backed (store-driven; see core/componentType.ts) ----
+    // F32Backed (store-driven; see core/componentType.ts)
 
     writeF32(dst: Float32Array, offset: number): void {
         dst.set(AABB.asFloat32Array(this._values), offset);

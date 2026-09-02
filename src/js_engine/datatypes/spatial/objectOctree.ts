@@ -1,4 +1,4 @@
-import {AABB} from "../AABB";
+﻿import {AABB} from "../AABB";
 import {ItemStore} from "./itemStore";
 import {hitAt, QueryHit, SpatialIndex} from "./spatialIndex";
 
@@ -143,7 +143,7 @@ export class ObjectOctree<P> implements SpatialIndex<P> {
         this.batchIndex.clear();
     }
 
-    // ------------------------------------------------------------- internals
+    // internals
 
     private queryNode(
         node: OctNode,

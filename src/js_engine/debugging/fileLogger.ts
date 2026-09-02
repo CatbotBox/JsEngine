@@ -75,11 +75,9 @@ class FileConsole implements Console {
     public Console: typeof import("node:console").Console =
         undefined as unknown as typeof import("node:console").Console;
 
-
     // ── organization ──────────────────────────────────────────────────────────────
     private _rootGroup: GroupNode = {kind: "group", label: "<root>", ts: Date.now(), children: []};
     private _groupStack: GroupNode[] = [this._rootGroup];
-
 
     private _append(node: Node): void {
         const parent = this._groupStack[this._groupStack.length - 1];
@@ -104,7 +102,6 @@ class FileConsole implements Console {
         }
     }
 
-
 // ── rendering helpers ──────────────────────────────────────────────────────────
 // Longest of the levels, plus the two brackets
     private _tagWidth: number = (() => {
@@ -122,7 +119,6 @@ class FileConsole implements Console {
 // existing ts formatter from your timestamped version
     private _stamp = (ts: number, level: LogLevel | undefined, line: string): string =>
         `[${this._formatTimestamp(ts)}] ${this._formatTag(level)} ${line}`;
-
 
     private _formatTimestamp = (ts: number): string => {
         const d = new Date(ts);
@@ -168,7 +164,6 @@ class FileConsole implements Console {
         return lines;
     }
 
-
     // ── main ─────────────────────────────────────────────────────────────────────
     assert(condition?: boolean, ...data: unknown[]): void {
         throw new Error("Method not implemented.");
@@ -211,7 +206,6 @@ class FileConsole implements Console {
         const ts = Date.now();
         text.split("\n").forEach((line) => this.writeLineHelper("LOG", ts, line));
     }
-
 
     trace(...data: unknown[]): void {
         //todo: implement
@@ -259,7 +253,6 @@ class FileConsole implements Console {
     dirxml(...data: unknown[]): void {
         throw new Error("Method not implemented.");
     }
-
 
 // Implementation (must be the single definition with a body)
     table(...args: Parameters<typeof tableFormatFunction>): void {

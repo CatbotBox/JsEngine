@@ -1,4 +1,4 @@
-import {Component, Entity} from "../core";
+﻿import {Component, Entity} from "../core";
 
 /**
  * The child entities of a parent, added automatically by `Parent.setup()`.
@@ -35,7 +35,7 @@ export class Children extends Component {
     public addChild(entity: Entity): void {
         if (this._children.indexOf(entity) >= 0) return; // Set semantics: no duplicates
         this._children.push(entity);
-        this.setDirty();
+        this.notifyChanged();
     }
 
     public removeChild(entity: Entity): void {
@@ -45,6 +45,6 @@ export class Children extends Component {
         const last = this._children.length - 1;
         this._children[index] = this._children[last];
         this._children.length = last;
-        this.setDirty();
+        this.notifyChanged();
     }
 }

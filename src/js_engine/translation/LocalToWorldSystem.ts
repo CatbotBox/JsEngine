@@ -44,9 +44,7 @@ export class LocalToWorldSystem extends System {
             structuralFilter: "additions",
             filterBlackList: [LocalToWorld],
             // consumeSpans, not consume: raw Float32Array columns and a row
-            // range, no per-entity objects at all. The Phase 0 gate measured
-            // this shape 4-20x faster on exactly this workload; see
-            // docs/soa-migration-plan.md.
+            // range, no per-entity objects at all. Measured at 4-20x the row path.
         }).consumeSpans(({start, end, cols}) => {
             const pos = cols.position!;         // width 3
             const out = cols.localToWorld!;     // width 16

@@ -1,4 +1,4 @@
-import {Component} from "../core";
+﻿import {Component} from "../core";
 import {asFloat32Array, fromFloat32Array, Vec, Vec4} from "../math/types/vec";
 import type {F32Backed} from "../core/componentType";
 
@@ -56,7 +56,7 @@ export class LocalRotation extends Component implements F32Backed {
         Vec.copy(this._values, value);
     }
 
-    // ---- F32Backed (store-driven; see core/componentType.ts) ----
+    // F32Backed (store-driven; see core/componentType.ts)
 
     writeF32(dst: Float32Array, offset: number): void {
         dst.set(asFloat32Array(this._values), offset);

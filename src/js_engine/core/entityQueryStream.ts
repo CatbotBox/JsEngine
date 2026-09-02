@@ -1,4 +1,4 @@
-import {AnyCT, CompMap, RWRow, toTokens, toTokenSpec} from "../util/tokenUtils";
+﻿import {AnyCT, CompMap, RWRow, toTokens, toTokenSpec} from "../util/tokenUtils";
 import {BLOCK_SHIFT, BLOCK_SIZE, ComponentStore, EntityArchetype} from "./entityArchetype";
 import {EntityStreamOptions} from "./entityStream";
 import type {Entity} from "./entity";
@@ -242,7 +242,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
     }
 
     /**
-     * The SoA delivery mode (Phase 3 of docs/soa-migration-plan.md): instead of a
+     * The column delivery mode: instead of a
      * row per entity, the callback receives ONE reused {@link ColumnSpan} per
      * dirty block — raw Float32Array columns plus a [start, end) row range — and
      * loops over rows itself, e.g.
@@ -252,7 +252,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
      *         for (let i = start; i < end; i++) pos[i * 3] += 1;
      *     });
      *
-     * This is the shape the Phase 0 gate measured at 4-20x the row path: columns
+     * This shape measured 4-20x the row path: columns
      * hoisted into locals, sequential access, no per-entity object anywhere.
      * Block filtering, the write stamp, and `Unchanged` all behave as in
      * consume(), except Unchanged is judged per span, not per entity: return it

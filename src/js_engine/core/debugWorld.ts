@@ -17,7 +17,6 @@ export class DebugWorld extends World {
         this.ensureSystemExists(GcSystem)
     }
 
-
     public override getOrCreateSystem<T extends System>(systemClass: SystemCtor<T>): T {
         const existing = this.tryGetSystem(systemClass)
         if (existing !== undefined) return existing as T;

@@ -1,4 +1,4 @@
-import {asFloat32Array, ReadonlyVec3, ReadonlyVec4, Vec, Vec3, Vec4} from "./types/vec";
+﻿import {asFloat32Array, ReadonlyVec3, ReadonlyVec4, Vec, Vec3, Vec4} from "./types/vec";
 
 export namespace Quaternions {
     // x,y,z,w convention
@@ -15,7 +15,6 @@ export namespace Quaternions {
         | "XYZ" | "XZY"
         | "YXZ" | "YZX"
         | "ZXY" | "ZYX"; // default (yaw Z, pitch Y, roll X)
-
 
     export function qMulInto(out: Quaternion, a: ReadonlyQuaternion, b: ReadonlyQuaternion): Quaternion {
         const av = raw(a), bv = raw(b);

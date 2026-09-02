@@ -41,8 +41,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     /**
      * Queue entity creation. The handle is allocated immediately (so it can be
      * referenced by other queued commands); the entity joins an archetype at
-     * playback. (The old object-entity version allocated two entities and named
-     * the one it threw away — handles fixed that by construction.)
+     * playback.
      */
     public createEntity(name?: string): Entity {
         const entity = allocEntityHandle(name);
@@ -94,7 +93,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         this.enabledQueries.push({query: entityQuery, enabled});
     }
 
-
     /** Remove a component (token or ctor). */
     public removeComponent(entity: Entity, key: TokenOrCtor): void {
         const p = this.ensure(entity);
@@ -109,19 +107,16 @@ export class EntityCommandBuffer implements EntityWriteOptions {
      * tokens = (current - removes) ∪ addOrSet and move once via EntityManager.
      */
     public playback(em: EntityManager): void {
-        // 1) creations
         for (const entity of this.createOps) {
             // em.realizeEntity(this.normalizeMap(comps));
             em.realizeEntity(entity);
         }
 
         const world = em.world;
-        // 2) modifications (skip ones that are also destroyed)
         for (const [entity, pending] of this.perEntity) {
             if (this.destroyOps.has(entity)) continue;
 
             const currentTokens = new Set<AnyCT>(getEntityTokens(world, entity));
-            // remove first
             for (const t of pending.remove) currentTokens.delete(t);
 
             for (const t of pending.add.keys()) {
@@ -130,10 +125,8 @@ export class EntityCommandBuffer implements EntityWriteOptions {
                 } else currentTokens.add(t);
             }
 
-            // add/replace
             for (const t of pending.set.keys()) currentTokens.add(t);
 
-            // build final components map
             const provided = this.normalizeMap(pending.set as Map<TokenOrCtor, Component>, pending.add as Map<TokenOrCtor, Component>);
             const finalTokens = [...currentTokens] as AnyCT[];
             const carry = getEntityComponents(world, entity); // existing comps map
@@ -157,15 +150,12 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             em.setEnabledStateForQuery(query, enabled);
         }
 
-        // 3) destruction
         this.playbackDestroy(em)
 
-        // 4) clear
         this.reset()
     }
 
-
-    // ---------- internals ----------
+    // internals
     private playbackDestroy(entityManager: EntityManager) {
         for (const e of this.destroyOps) {
             entityManager.destroyEntity(e);
@@ -230,7 +220,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             if (!map.has(token)) types.push(token);
             map.set(token, comp);
         }
-        // unique tokens, preserve order
         const seen = new Set<AnyCT>();
         const uniqTypes = types.filter(t => (seen.has(t) ? false : (seen.add(t) || true)));
         return {types: uniqTypes, map};
