@@ -1,13 +1,13 @@
 ﻿import {Component} from "../core";
 
 export class ConsoleCellRatio extends Component {
-    private _vec: number = 2;
+    private _ratio: number = 2;
 
     get value(): number {
-        return this._vec;
+        return this._ratio;
     }
 
     set value(value: number) {
-        this._vec = value;
+        this._ratio = value;
     }
 }

@@ -593,7 +593,7 @@ describe("EntityCommandBuffer", () => {
     test("structural changes are deferred until playback", async () => {
         const {EntityCommandBufferSystem} = await import("./entityCommandBufferSystem");
         const cbSystem = world.getOrCreateSystem(EntityCommandBufferSystem);
-        const cb = cbSystem.createEntityCommandBuffer();
+        const cb = cbSystem.getEntityCommandBuffer();
 
         const e = cb.createEntity("deferred");
         cb.addComponent(e, new Position(1, 2));

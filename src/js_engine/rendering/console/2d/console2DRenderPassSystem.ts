@@ -25,7 +25,7 @@ export class Console2DRenderPassSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
     private _objectQuery = this.createEntityQuery([ConsoleImage, WorldSpaceRenderBounds], [HudElement])
 
-    private _index = new LinearIndex<SpritePayload>();
+    private _spatialIndex = new LinearIndex<SpritePayload>();
 
     /** Archetypes currently represented in the index, mapped to their batch id. */
     private _batchIds = new Map<EntityArchetype, number>();
@@ -86,14 +86,14 @@ export class Console2DRenderPassSystem extends System {
         cameraBounds.zMin = -1000;
         cameraBounds.zMax = 1000;
 
-        this.updateIndex();
+        this.rebuildSpatialBatches();
 
         const dualScreenBuffer = this.world.resources.tryGet(ConsoleScreenBuffer);
         if (!dualScreenBuffer) return;
         const screenBuffer = dualScreenBuffer.screenBuffer;
 
         const hits = this._hits;
-        const found = this._index.query(cameraBounds.bounds, hits);
+        const found = this._spatialIndex.query(cameraBounds.bounds, hits);
 
         // Indexed loop over the reused buffer: forEach with a destructuring
         // callback ran a closure per item per frame.
@@ -114,7 +114,7 @@ export class Console2DRenderPassSystem extends System {
 
 
 
-    private updateIndex(): void {
+    private rebuildSpatialBatches(): void {
         const archetypes = this._objectQuery.archetypes;
         const lastUpdatedTimeRequirement = this.lastUpdateTime;
 
@@ -162,28 +162,30 @@ export class Console2DRenderPassSystem extends System {
             // Raw SoA column for the matrix: the old `.position` getter minted a
             // subarray view per entity per frame just to read one float (tz).
             const l2wF32 = localToWorldCol?.f32Data;
-            for (let id = 0; id < entityCount; id++) {
+            for (let row = 0; row < entityCount; row++) {
                 // Pooled payload records: this loop runs over every entity of a
                 // changed archetype, every frame it changes.
-                let payload = pool[id];
+                const consoleImage = consoleImageCol.get(row);
+                const zHeight = l2wF32 !== undefined ? l2wF32[(row << 4) + 14] : 0;
+                let payload = pool[row];
                 if (payload === undefined) {
-                    payload = {consoleImage: undefined as unknown as ConsoleImage, zHeight: 0};
-                    pool[id] = payload;
+                    pool[row] = payload = {consoleImage, zHeight};
+                } else {
+                    payload.consoleImage = consoleImage;
+                    payload.zHeight = zHeight;
                 }
-                payload.consoleImage = consoleImageCol.get(id);
-                payload.zHeight = l2wF32 !== undefined ? l2wF32[(id << 4) + 14] : 0;
 
-                bounds.push((renderBoundsCol.get(id) as WorldSpaceRenderBounds).bounds);
+                bounds.push((renderBoundsCol.get(row) as WorldSpaceRenderBounds).bounds);
                 payloads.push(payload);
             }
 
-            this._index.replaceBatch(batchId, bounds, payloads);
+            this._spatialIndex.replaceBatch(batchId, bounds, payloads);
         }
 
         for (const arch of stale) {
             const id = this._batchIds.get(arch);
             if (id !== undefined) {
-                this._index.removeBatch(id);
+                this._spatialIndex.removeBatch(id);
                 this._payloadPools.delete(id);   // archetype is gone; drop its pool
             }
             this._batchIds.delete(arch);

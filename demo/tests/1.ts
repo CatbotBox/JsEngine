@@ -26,7 +26,7 @@ import {AverageStat} from "../../src/js_engine/datatypes";
 
 const world = new DebugWorld();
 
-const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
+const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
 
 const cameraEntity = buffer.createEntity("cameraEntity");
@@ -170,7 +170,7 @@ consoleInput.whenKey(Key.Space, () => {
         newPos.x = x + Vec.x(localToWorld.position)
         newPos.y = y + Vec.y(localToWorld.position)
         // Distinct depth per pixel. Left at 0, every pixel shares a depth, and
-        // ConsoleScreenBuffer.setPixels breaks ties by blit order -- which is index
+        // ConsoleScreenBuffer.setPixel breaks ties by blit order -- which is index
         // batch order, which changes the moment an entity changes archetype. A fade
         // completing removes two components, so the winner of a shared cell flips and
         // the pink pixel appears to hop one tile. Pixels spawn into a 100x100 area, so

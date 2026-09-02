@@ -23,14 +23,6 @@ class Time {
 }
 
 export class World extends WorldSource {
-    get timeout(): unknown | null {
-        return this._timeout;
-    }
-
-    set timeout(value: unknown | null) {
-        this._timeout = value;
-    }
-
     private _archetypes: EntityArchetypeMap = new EntityArchetypeMap();
     private _resources: ResourceManager = new ResourceManager();
     protected _systems: Map<SystemCtor<System>, System> = new Map();
@@ -67,7 +59,7 @@ export class World extends WorldSource {
         return this._rootSystemGroup;
     }
 
-    private _timeout: unknown | null = null;
+    private _loopHandle: ReturnType<typeof setInterval> | null = null;
     protected _targetDeltaTime: number = 1000 / 60; // default to 60 FPS
 
     constructor() {
@@ -118,14 +110,14 @@ export class World extends WorldSource {
     }
 
     public startLoop(): void {
-        if (this._timeout !== null) {
+        if (this._loopHandle !== null) {
             console.warn("World loop already started");
             return;
         }
         const time = this.time
         let updateInProgress = false;
         let prevCycle = performance.now();
-        this._timeout = setInterval(() => {
+        this._loopHandle = setInterval(() => {
             if (updateInProgress) {
                 console.warn("Update in progress, skipping current update cycle");
                 return;
@@ -146,9 +138,9 @@ export class World extends WorldSource {
     }
 
     public pause(): void {
-        if (this._timeout !== null) {
-            clearInterval(this._timeout as any);
-            this._timeout = null;
+        if (this._loopHandle !== null) {
+            clearInterval(this._loopHandle);
+            this._loopHandle = null;
         }
     }
 
@@ -164,7 +156,7 @@ export class World extends WorldSource {
     public set targetDeltaTime(value: number) {
         if (value === this._targetDeltaTime) return;
         this._targetDeltaTime = value;
-        if (this._timeout !== null) {
+        if (this._loopHandle !== null) {
             this.pause();
             this.startLoop();
         }

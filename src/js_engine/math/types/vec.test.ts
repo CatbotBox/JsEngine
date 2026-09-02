@@ -1,4 +1,4 @@
-import {describe, expect, test} from "../../testing/harness";
+﻿import {describe, expect, test} from "../../testing/harness";
 import {asFloat32Array, fromFloat32Array, Vec, Vec3} from "./vec";
 import {AABB, AABB_STRIDE} from "../../datatypes/AABB";
 import {LocalToWorld} from "../../translation/localToWorld";
@@ -196,7 +196,7 @@ describe("LocalToWorld after the Vec rework", () => {
         l2w.setTRS(Vec.alloc3(1, 2, 3), Vec.alloc4(0, 0, 0, 1), Vec.alloc3(1, 2, 3));
 
         const s = Vec.alloc3();
-        expect(l2w.scaleInto(s)).toBe(s);
+        expect(l2w.decomposeScaleInto(s)).toBe(s);
         expect(Vec.toArray(s)).toEqual(Vec.toArray(l2w.scale));
 
         const r = Vec.alloc4();

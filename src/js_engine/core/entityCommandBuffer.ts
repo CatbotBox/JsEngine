@@ -59,34 +59,34 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     }
 
     public addComponent<T extends Component>(entity: Entity, component: T): Readonly<T> {
-        const p = this.ensure(entity);
+        const pending = this.pendingFor(entity);
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
-        p.remove.delete(token);
-        p.add.set(token, component);
+        pending.remove.delete(token);
+        pending.add.set(token, component);
         component.setup(entity, this);
         return component
     }
 
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {
-        const p = this.ensure(entity);
+        const pending = this.pendingFor(entity);
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
-        p.remove.delete(token);
-        p.add.set(token, component);
+        pending.remove.delete(token);
+        pending.add.set(token, component);
         component.setup(entity, this);
         return persistentTrackComponent(entity, component);
     }
 
     public setComponent<T extends Component>(entity: Entity, component: Component): void {
-        const p = this.ensure(entity);
+        const pending = this.pendingFor(entity);
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
-        p.remove.delete(token);
-        p.set.set(token, component);
+        pending.remove.delete(token);
+        pending.set.set(token, component);
         component.setup(entity, this);
     }
 
     public setEnabledState(entity: Entity, enabled: boolean): void {
-        const p = this.ensure(entity);
-        p.enabled = enabled;
+        const pending = this.pendingFor(entity);
+        pending.enabled = enabled;
     }
 
     public setEnabledStateForQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>, enabled: boolean): void {
@@ -95,11 +95,11 @@ export class EntityCommandBuffer implements EntityWriteOptions {
 
     /** Remove a component (token or ctor). */
     public removeComponent(entity: Entity, key: TokenOrCtor): void {
-        const p = this.ensure(entity);
+        const pending = this.pendingFor(entity);
         const token = this.toToken(key);
-        p.set.delete(token);
-        p.add.delete(token);
-        p.remove.add(token);
+        pending.set.delete(token);
+        pending.add.delete(token);
+        pending.remove.add(token);
     }
 
     /**
@@ -108,8 +108,8 @@ export class EntityCommandBuffer implements EntityWriteOptions {
      */
     public playback(em: EntityManager): void {
         for (const entity of this.createOps) {
-            // em.realizeEntity(this.normalizeMap(comps));
-            em.realizeEntity(entity);
+            // em.attachEntity(this.normalizeMap(comps));
+            em.attachEntity(entity);
         }
 
         const world = em.world;
@@ -161,8 +161,8 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             entityManager.destroyEntity(e);
         }
 
-        for (const q of this.destroyQueries) {
-            entityManager.destroyQuery(q);
+        for (const query of this.destroyQueries) {
+            entityManager.destroyQuery(query);
         }
     }
 
@@ -225,7 +225,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         return {types: uniqTypes, map};
     }
 
-    private ensure(entity: Entity): Pending {
+    private pendingFor(entity: Entity): Pending {
         let p = this.perEntity.get(entity);
         if (!p) {
             p = {add: new Map(), remove: new Set(), set: new Map()};

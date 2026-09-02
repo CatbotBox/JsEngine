@@ -1,6 +1,6 @@
-import {AABB} from "../AABB";
+﻿import {AABB} from "../AABB";
 import {ItemStore} from "./itemStore";
-import {hitAt, QueryHit, SpatialIndex} from "./spatialIndex";
+import {ensureHit, QueryHit, SpatialIndex} from "./spatialIndex";
 
 /**
  * No tree at all: every item in six flat columns, queried by a linear scan.
@@ -79,7 +79,7 @@ export class LinearIndex<P> implements SpatialIndex<P> {
             if (yMax[s] < qy0 || yMin[s] > qy1) continue;
             if (zMax[s] < qz0 || zMin[s] > qz1) continue;
 
-            const hit = hitAt(out, found++);
+            const hit = ensureHit(out, found++);
             hit.xMin = xMin[s];
             hit.yMin = yMin[s];
             hit.zMin = zMin[s];

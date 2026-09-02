@@ -43,7 +43,7 @@ function expect(condition: boolean, label: string) {
 }
 
 const world = new DebugWorld();
-const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer();
+const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
 
 const cameraEntity = buffer.createEntity("camera");
 buffer.addComponent(cameraEntity, new Camera());

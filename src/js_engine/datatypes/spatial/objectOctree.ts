@@ -1,6 +1,6 @@
 ﻿import {AABB} from "../AABB";
 import {ItemStore} from "./itemStore";
-import {hitAt, QueryHit, SpatialIndex} from "./spatialIndex";
+import {ensureHit, QueryHit, SpatialIndex} from "./spatialIndex";
 
 export interface OctreeOptions {
     /** Items in a node before it subdivides. Default 16. */
@@ -165,7 +165,7 @@ export class ObjectOctree<P> implements SpatialIndex<P> {
             if (yMax[s] < qy0 || yMin[s] > qy1) continue;
             if (zMax[s] < qz0 || zMin[s] > qz1) continue;
 
-            const hit = hitAt(out, found++);
+            const hit = ensureHit(out, found++);
             hit.xMin = xMin[s];
             hit.yMin = yMin[s];
             hit.zMin = zMin[s];
@@ -223,7 +223,7 @@ export class ObjectOctree<P> implements SpatialIndex<P> {
         const mz = (node.z0 + node.z1) * 0.5;
         const lf = this.looseFactor;
 
-        const mk = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): OctNode => {
+        const makeChild = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): OctNode => {
             const n = new OctNode();
             // Inflate about the child's own centre, with a half-extent floor so a
             // degenerate axis still occupies space.
@@ -243,14 +243,14 @@ export class ObjectOctree<P> implements SpatialIndex<P> {
         };
 
         node.children = [
-            mk(node.x0, node.y0, node.z0, mx, my, mz),
-            mk(mx, node.y0, node.z0, node.x1, my, mz),
-            mk(node.x0, my, node.z0, mx, node.y1, mz),
-            mk(mx, my, node.z0, node.x1, node.y1, mz),
-            mk(node.x0, node.y0, mz, mx, my, node.z1),
-            mk(mx, node.y0, mz, node.x1, my, node.z1),
-            mk(node.x0, my, mz, mx, node.y1, node.z1),
-            mk(mx, my, mz, node.x1, node.y1, node.z1),
+            makeChild(node.x0, node.y0, node.z0, mx, my, mz),
+            makeChild(mx, node.y0, node.z0, node.x1, my, mz),
+            makeChild(node.x0, my, node.z0, mx, node.y1, mz),
+            makeChild(mx, my, node.z0, node.x1, node.y1, mz),
+            makeChild(node.x0, node.y0, mz, mx, my, node.z1),
+            makeChild(mx, node.y0, mz, node.x1, my, node.z1),
+            makeChild(node.x0, my, mz, mx, node.y1, node.z1),
+            makeChild(mx, my, mz, node.x1, node.y1, node.z1),
         ];
 
         // Push down whatever now fits a child. Items straddling a split stay here.

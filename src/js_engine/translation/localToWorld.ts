@@ -71,13 +71,13 @@ export class LocalToWorld extends Component implements F32Backed {
     }
 
     // Scale
-    /** Allocates. Use scaleInto() on any path that runs per frame. */
+    /** Allocates. Use decomposeScaleInto() on any path that runs per frame. */
     public get scale(): Vec3 {
-        return this.scaleInto(Vec.alloc3());
+        return this.decomposeScaleInto(Vec.alloc3());
     }
 
     /** Decompose scale from the basis columns into `out`, allocating nothing. */
-    public scaleInto(out: Vec3): Vec3 {
+    public decomposeScaleInto(out: Vec3): Vec3 {
         const m = raw(this._matrix);
         // column lengths (|basis|)
         const sx = Math.hypot(...m.subarray(0, 3));

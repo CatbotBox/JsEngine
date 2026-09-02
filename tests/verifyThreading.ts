@@ -47,7 +47,7 @@ function renderAll(config: { workerCount: number, threadTriangleThreshold: numbe
         const modelView = LocalToWorld.mul(invCam, transform.matrix) as Float32Array;
 
         const buffer = new ScreenBuffer();
-        buffer.render({screenSize} as any, backgroundChar);
+        buffer.beginFrame({screenSize} as any, backgroundChar);
         rasterizer.beginFrame(buffer, WIDTH, HEIGHT, {
             maxDepthFade: 15,
             colorQuantMask: 0xFFFFFF,

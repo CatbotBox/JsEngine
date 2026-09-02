@@ -56,7 +56,7 @@ export class EntityQuery<
         this._exclude = toTokens(exclude ?? []) as TokensOfList<ExcSpec>;
     }
 
-    private ensureWorldAdded() {
+    private bindToWorld() {
         if (!this._source.world) throw new Error("World not set")
         this._lazyLoaded.world = this._source.world;
         this.getWorld = () => this._lazyLoaded.world;
@@ -66,12 +66,12 @@ export class EntityQuery<
     }
 
     private getWorld() {
-        this.ensureWorldAdded()
+        this.bindToWorld()
         return this._lazyLoaded.world
     }
 
     private getCachedArchetypes(): WeakRef<EntityArchetype<AnyCT>>[] {
-        this.ensureWorldAdded()
+        this.bindToWorld()
         return this._lazyLoaded.cachedArchetypes
     }
 

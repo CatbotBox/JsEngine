@@ -49,7 +49,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
             // Prepare current buffer
 
-            screenBuffer.render(cameraEntity, this._backgroundChar);
+            screenBuffer.beginFrame(cameraEntity, this._backgroundChar);
         } catch (error) {
             const camCount = this._cameraQuery.entityCount();
             process.stdout.write("\x1b[H");   // cursor to 1,1 (home)

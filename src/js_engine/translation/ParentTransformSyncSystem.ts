@@ -44,16 +44,21 @@ export class ParentTransformSyncSystem extends System {
                 for (let i = start; i < end; i++) {
                     // Indexed loop, not forEach: Children is a dense array and the
                     // indexed form measured 7-15x faster than the old Set.forEach.
-                    const kids = (childrenStore.get(i) as Children).children;
+                    const children = (childrenStore.get(i) as Children).children;
                     const pOff = i << 4;
-                    for (let c = 0; c < kids.length; c++) {
-                        const arch = getOwnerInferred(kids[c]);
+                    for (let c = 0; c < children.length; c++) {
+                        const arch = getOwnerInferred(children[c]);
                         if (arch === undefined) continue;
                         const ptStore = arch.getColumn(token);
                         if (ptStore === undefined) continue;
-                        const row = arch.getIndexOfEntity(kids[c]);
+                        const row = arch.getIndexOfEntity(children[c]);
                         if (row === undefined) continue;
-                        const pt = ptStore.f32Data!;
+                        // Not an assertion: this column belongs to an arbitrary child's
+                        // archetype, not to the stream's plan, so f32Data is undefined for
+                        // any object-backed token. Safe today only because ParentTransform
+                        // happens to declare f32Width.
+                        const pt = ptStore.f32Data;
+                        if (pt === undefined) continue;
                         const cOff = row << 4;
                         let same = true;
                         for (let k = 0; k < 16; k++) {
