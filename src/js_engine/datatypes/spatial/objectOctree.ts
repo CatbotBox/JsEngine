@@ -2,6 +2,12 @@
 import {ItemStore} from "./itemStore";
 import {ensureHit, QueryHit, SpatialIndex} from "./spatialIndex";
 
+/**
+ * NOT USED BY THE ENGINE. LinearIndex won the bake-off and is what
+ * Console2DRenderPassSystem runs; this is kept as the re-runnable losing arm of
+ * `bench/spatialIndex.bench.ts`, and is the reason SpatialIndex is an interface
+ * rather than just LinearIndex. Delete both together if the bench ever goes.
+ */
 export interface OctreeOptions {
     /** Items in a node before it subdivides. Default 16. */
     capacity?: number;

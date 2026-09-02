@@ -53,9 +53,6 @@ export class ItemStore<P> {
         return this._count;
     }
 
-    get highWater(): number {
-        return this._highWater;
-    }
 
     get capacity(): number {
         return this._capacity;

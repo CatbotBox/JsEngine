@@ -22,6 +22,7 @@ import {Console3DRenderPassSystem} from "../../src/js_engine/rendering/console/3
 import {FieldOfView, Mesh, RenderMesh} from "../../src/js_engine/rendering/3d";
 import {Vec, Vec3, Vec4} from "../../src/js_engine/math/types/vec";
 import {Quaternions} from "../../src/js_engine/math/quaternions";
+import {createHudLabel} from "../_shared/hud";
 
 const world = new DebugWorld();
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
@@ -417,30 +418,8 @@ class DebugSystem extends System {
         const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
 
-        //hud element
-// entityCounter
-        const entityCounterEntity = buffer.createEntity("entityCounter");
-        this._entityCounterImage = buffer.addTrackedComponent(entityCounterEntity, new ConsoleImage());
-        this._entityCounterImage.image = [
-            Ansi.colors.fg.green + 'HUD element',
-        ]
-        this._entityCounterImage.transparentChar = undefined; // no transparency for HUD
-        buffer.addComponent(entityCounterEntity, new HudElement());
-        const anchor = new ConsoleImageAnchor()
-        anchor.anchorPosition = 'bottom-left';
-        buffer.addComponent(entityCounterEntity, anchor);
-
-// fps counter
-        const fpsCounterEntity = buffer.createEntity("fpsCounter");
-        this._fpsCounterImage = buffer.addTrackedComponent(fpsCounterEntity, new ConsoleImage());
-        this._fpsCounterImage.image = [
-            Ansi.colors.fg.green + 'FPS: 0',
-        ]
-        this._fpsCounterImage.transparentChar = undefined; // no transparency for HUD
-        buffer.addComponent(fpsCounterEntity, new HudElement());
-        const fpsAnchor = new ConsoleImageAnchor()
-        fpsAnchor.anchorPosition = 'top-right';
-        buffer.addComponent(fpsCounterEntity, fpsAnchor);
+        this._entityCounterImage = createHudLabel(buffer, "entityCounter", Ansi.colors.fg.green + 'HUD element', 'bottom-left');
+        this._fpsCounterImage = createHudLabel(buffer, "fpsCounter", Ansi.colors.fg.green + 'FPS: 0', 'top-right');
     }
 
     onUpdate() {
