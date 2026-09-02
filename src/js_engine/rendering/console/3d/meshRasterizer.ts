@@ -1,4 +1,4 @@
-import {DeepReadonly} from "../../../util/tokenUtils";
+﻿import {DeepReadonly} from "../../../util/tokenUtils";
 import {Mesh} from "../../3d/mesh";
 import {ScreenBuffer} from "../consoleScreenBuffer";
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
@@ -61,10 +61,10 @@ export class MeshRasterizer {
     private height = 0;
     private halfWidth = 0;
     private halfHeight = 0;
-    // Supersampling: raster* dimensions are the subsample grid (cell dims × ss)
+    // Supersampling: raster* dimensions are the subsample grid (cell dims x supersampleFactor)
     // that the kernel, layers and band binning all operate in.
-    private ss = 1;
-    private ssArea = 1;
+    private supersampleFactor = 1;
+    private subsamplesPerCell = 1;
     private rasterWidth = 0;
     private rasterHeight = 0;
     private triCount = 0;
@@ -80,8 +80,8 @@ export class MeshRasterizer {
         this.halfWidth = width / 2;
         this.halfHeight = height / 2;
         const ss = Math.max(1, Math.min(4, Math.floor(config.supersample) || 1));
-        this.ss = ss;
-        this.ssArea = ss * ss;
+        this.supersampleFactor = ss;
+        this.subsamplesPerCell = ss * ss;
         this.rasterWidth = width * ss;
         this.rasterHeight = height * ss;
         this.triCount = 0;
@@ -263,7 +263,7 @@ export class MeshRasterizer {
         }
 
         // Scale into the subsample grid (×1 when AA is off — bit-identical).
-        const ss = this.ss;
+        const ss = this.supersampleFactor;
         sax *= ss; say *= ss;
         sbx *= ss; sby *= ss;
         scx *= ss; scy *= ss;
@@ -333,14 +333,14 @@ export class MeshRasterizer {
 
     private flushBatch(prepareForMore: boolean): void {
         if (this.triCount === 0) return;
-        const {rasterWidth, rasterHeight, config, ss} = this;
+        const {rasterWidth, rasterHeight, config, supersampleFactor: ss} = this;
         // When supersampling, quantize after the resolve average instead of per
         // subsample, otherwise the average un-quantizes the colors again.
         const quantMask = ss === 1 ? config.colorQuantMask & 0xFFFFFF : 0xFFFFFF;
 
         const pool = this.usingPool ? this.pool : undefined;
         const threaded = pool !== undefined
-            && (this.triCount >= config.threadTriangleThreshold || this.bboxAreaAccum >= config.threadAreaThreshold * this.ssArea);
+            && (this.triCount >= config.threadTriangleThreshold || this.bboxAreaAccum >= config.threadAreaThreshold * this.subsamplesPerCell);
 
         if (threaded) {
             if (!pool!.dispatch(this.triCount, rasterWidth, rasterHeight, config.maxDepthFade, quantMask)) {
@@ -374,7 +374,7 @@ export class MeshRasterizer {
      * so mergeRgbLayer skips them.
      */
     private resolveSupersampled(): void {
-        const {width, height, ss, ssArea, rasterWidth} = this;
+        const {width, height, supersampleFactor: ss, subsamplesPerCell: ssArea, rasterWidth} = this;
         const srcDepth = this.depthLayer;
         const srcColor = this.colorLayer;
         const outDepth = this.resolveDepth;

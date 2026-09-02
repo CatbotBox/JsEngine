@@ -26,7 +26,7 @@ import {Quaternions} from "../../src/js_engine/math/quaternions";
 import {FieldOfView} from "../../src/js_engine/rendering/3d/fieldOfView";
 
 const world = new DebugWorld();
-const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
+const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
 
 // Setup
@@ -416,7 +416,7 @@ class DebugSystem extends System {
     private _fpsCounterImage!: ConsoleImage;
 
     protected onCreate() {
-        const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).createEntityCommandBuffer()
+        const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
 
         //hud element

@@ -1,4 +1,4 @@
-import {TokenOrCtor, toTokens} from "../util/tokenUtils";
+﻿import {TokenOrCtor, toTokens} from "../util/tokenUtils";
 import type {ComponentType} from "./component";
 import {Event} from "../util/event";
 import {EntityArchetype} from "./entityArchetype";
@@ -23,7 +23,7 @@ class TypeIDProvider<CT extends ComponentType<any> = ComponentType<any>> {
 
 export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<any>> {
   private _byKey: Map<string, WeakRef<EntityArchetype<CT>>> = new Map();
-  private _keepInRefList: EntityArchetype<CT>[] = []; //todo temp fix
+  private _strongRefs: EntityArchetype<CT>[] = []; //todo temp fix
   private _typeIdProvider: TypeIDProvider<CT> = new TypeIDProvider<CT>();
 
   public get loadedArchetypes(): number {
@@ -49,19 +49,19 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
     const archetype = new EntityArchetype<CT>(uniqTypes);
     this._byKey.set(key, new WeakRef(archetype));
     this.onCreateArchetype.invoke(archetype);
-    this._keepInRefList.push(archetype);
+    this._strongRefs.push(archetype);
     return archetype;
   }
 
   public prune(): number {
-    const newList = this._keepInRefList
+    const newList = this._strongRefs
       .sort((a, b) => a.entityCount - b.entityCount)
       .reverse();
     const pruneAtIndex = newList.findIndex(a => a.entityCount == 0);
     if (pruneAtIndex == -1) return 0;
     const pruneCount = newList.length - pruneAtIndex;
     newList.length = pruneAtIndex;
-    this._keepInRefList = newList;
+    this._strongRefs = newList;
     return pruneCount;
   }
 

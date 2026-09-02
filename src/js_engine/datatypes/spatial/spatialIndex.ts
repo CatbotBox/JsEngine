@@ -1,4 +1,4 @@
-import {AABB} from "../AABB";
+﻿import {AABB} from "../AABB";
 
 /**
  * A single query result. These are pooled and reused inside the caller's output
@@ -41,7 +41,7 @@ export interface SpatialIndex<P> {
     clear(): void;
 }
 
-export function hitAt<P>(out: QueryHit<P>[], i: number): QueryHit<P> {
+export function ensureHit<P>(out: QueryHit<P>[], i: number): QueryHit<P> {
     let hit = out[i];
     if (hit === undefined) {
         hit = {xMin: 0, yMin: 0, zMin: 0, xMax: 0, yMax: 0, zMax: 0, payload: undefined as unknown as P};

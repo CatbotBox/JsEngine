@@ -7,11 +7,11 @@ export class TranslationSystemGroup extends SystemGroup {
      *
      * this value can be adjusted
      */
-    public maxHierarchyLimit: number = 1000;
+    public maxCascadeIterationsPerUpdate: number = 1000;
     private _parentQuery = this.createEntityQuery([ParentTransform])
 
     onUpdate() {
-        let cyclesLeft = this.maxHierarchyLimit;
+        let cyclesLeft = this.maxCascadeIterationsPerUpdate;
         // keep rerunning until stable to ensure transforms are properly cascaded down
         do {
             super.onUpdate();

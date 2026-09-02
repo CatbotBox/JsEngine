@@ -60,7 +60,7 @@ export class ScreenBuffer {
      * (Re)initialize the cell grid with the given background char. Buffers are
      * only reallocated when the screen size actually changes.
      */
-    public render({screenSize}: { screenSize: ScreenSize }, backgroundChar: string) {
+    public beginFrame({screenSize}: { screenSize: ScreenSize }, backgroundChar: string) {
         this.resize(Math.max(0, screenSize.x | 0), Math.max(0, screenSize.y | 0));
 
         if (backgroundChar !== this.backgroundFull) {
@@ -126,13 +126,13 @@ export class ScreenBuffer {
                 if (x < 0 || x >= this.width) continue;
                 const pixel = rowPixels[col];
                 if (pixel === undefined) continue;
-                this.setPixels(pixel, x, y, depth);
+                this.setPixel(pixel, x, y, depth);
             }
         }
     }
 
     //depth refers to distance from camera
-    public setPixels(pixel: string, x: number, y: number, depth: number) {
+    public setPixel(pixel: string, x: number, y: number, depth: number) {
         const idx = y * this.width + x;
         if (this.depth[idx] < depth) return;
         this.depth[idx] = depth;

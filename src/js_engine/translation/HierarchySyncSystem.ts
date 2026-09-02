@@ -29,10 +29,10 @@ export class HierarchySyncSystem extends System {
         let buffer: EntityCommandBuffer | undefined = undefined;
         const world = this.world;
 
-        function getBuffer() {
+        function requireCommandBuffer() {
             if (buffer === undefined) {
                 const commandBufferSystem = world.getOrCreateSystem(EntityCommandBufferSystem)
-                buffer = commandBufferSystem.createEntityCommandBuffer()
+                buffer = commandBufferSystem.getEntityCommandBuffer()
             }
             return buffer;
         }
@@ -47,9 +47,9 @@ export class HierarchySyncSystem extends System {
             // read during the callback, never the row itself.
             .consume(({children, entity}) => {
                 // Indexed loop, not forEach: see Children's class comment.
-                const kids = children.children;
-                for (let i = 0; i < kids.length; i++) {
-                    const child = kids[i];
+                const childEntities = children.children;
+                for (let i = 0; i < childEntities.length; i++) {
+                    const child = childEntities[i];
                     const component = this._childLookup.tryGetComponent(child)
                     if (component) {
                         if (component.entity !== entity) {
@@ -57,7 +57,7 @@ export class HierarchySyncSystem extends System {
                         }
                         continue;
                     }
-                    getBuffer().addComponent(child, new Parent(entity));
+                    requireCommandBuffer().addComponent(child, new Parent(entity));
                 }
             })
 
@@ -75,7 +75,7 @@ export class HierarchySyncSystem extends System {
                     }
                     return;
                 }
-                getBuffer().addComponent(parent.entity, new Children(entity));
+                requireCommandBuffer().addComponent(parent.entity, new Children(entity));
             })
     }
 }

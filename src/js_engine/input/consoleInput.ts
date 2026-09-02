@@ -121,7 +121,7 @@ interface KeyRaw {
 
 // InputSystem
 
-export class ConsoleInputSystem {
+export class ConsoleInput {
     // events
     readonly onKey       = new Signal<KeyEvent>();   // every key event, incl. repeats
     readonly onKeyDown   = new Signal<KeyEvent>();   // transition to pressed only
@@ -146,7 +146,7 @@ export class ConsoleInputSystem {
     private _wheelDeltaFrame = 0;
 
     // internals
-    private opts!: Required<InputOptions>;
+    private options!: Required<InputOptions>;
     private enabled = false;
     private kbStream: PassThrough | null = null;
     private readonly releaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -168,7 +168,7 @@ export class ConsoleInputSystem {
     enable(options: InputOptions = {}): this {
         if (this.enabled) return this;
 
-        this.opts = {
+        this.options = {
             mouse: options.mouse ?? true,
             hideCursor: options.hideCursor ?? false,
             keyReleaseDelayMs: options.keyReleaseDelayMs ?? 120,
@@ -177,8 +177,8 @@ export class ConsoleInputSystem {
 
         if (!process.stdin.isTTY) {
             const msg = '[input] stdin is not a TTY — keyboard/mouse input unavailable.';
-            if (this.opts.noTTY === 'throw') throw new Error(msg);
-            if (this.opts.noTTY === 'warn') console.error(msg);
+            if (this.options.noTTY === 'throw') throw new Error(msg);
+            if (this.options.noTTY === 'warn') console.error(msg);
             return this; // stay disabled rather than crash (safe in CI / piped runs)
         }
 
@@ -194,8 +194,8 @@ export class ConsoleInputSystem {
         process.stdin.setEncoding('utf8');
         process.stdin.on('data', this.onStdinData);
 
-        if (this.opts.mouse)      process.stdout.write(ENABLE_MOUSE);
-        if (this.opts.hideCursor) process.stdout.write(HIDE_CURSOR);
+        if (this.options.mouse)      process.stdout.write(ENABLE_MOUSE);
+        if (this.options.hideCursor) process.stdout.write(HIDE_CURSOR);
 
         // best-effort terminal restore on process teardown
         process.once('exit', this.onExit);
@@ -216,8 +216,8 @@ export class ConsoleInputSystem {
         if (process.stdin.isTTY) process.stdin.setRawMode(false);
         process.stdin.pause();
 
-        if (this.opts.mouse)      process.stdout.write(DISABLE_MOUSE);
-        if (this.opts.hideCursor) process.stdout.write(SHOW_CURSOR);
+        if (this.options.mouse)      process.stdout.write(DISABLE_MOUSE);
+        if (this.options.hideCursor) process.stdout.write(SHOW_CURSOR);
 
         this.kbStream?.removeListener('keypress', this.onKeypress);
         this.kbStream?.destroy();
@@ -325,7 +325,7 @@ export class ConsoleInputSystem {
     private handleData(chunk: string | Buffer): void {
         const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
 
-        const re = ConsoleInputSystem.MOUSE;
+        const re = ConsoleInput.MOUSE;
         re.lastIndex = 0;
         let last = 0;
         let m: RegExpExecArray | null;
@@ -376,7 +376,7 @@ export class ConsoleInputSystem {
         if (prev) clearTimeout(prev);
         this.releaseTimers.set(
             id,
-            setTimeout(() => this.releaseKey(id), this.opts.keyReleaseDelayMs),
+            setTimeout(() => this.releaseKey(id), this.options.keyReleaseDelayMs),
         );
     }
 
@@ -393,16 +393,16 @@ export class ConsoleInputSystem {
     // mouse (SGR 1006)
 
     private handleMouse(m: RegExpExecArray): void {
-        const cb = parseInt(m[1], 10);
+        const sgrButton = parseInt(m[1], 10);
         const x  = parseInt(m[2], 10);
         const y  = parseInt(m[3], 10);
         const released = m[4] === 'm';
 
-        const shift  = !!(cb & 4);
-        const meta   = !!(cb & 8);
-        const ctrl   = !!(cb & 16);
-        const motion = !!(cb & 32);
-        const wheel  = !!(cb & 64);
+        const shift  = !!(sgrButton & 4);
+        const meta   = !!(sgrButton & 8);
+        const ctrl   = !!(sgrButton & 16);
+        const motion = !!(sgrButton & 32);
+        const wheel  = !!(sgrButton & 64);
 
         this._mouseX = x;
         this._mouseY = y;
@@ -411,10 +411,10 @@ export class ConsoleInputSystem {
         let type: MouseEventType;
 
         if (wheel) {
-            button = (cb & 1) ? 'wheelDown' : 'wheelUp';
+            button = (sgrButton & 1) ? 'wheelDown' : 'wheelUp';
             type = 'wheel';
         } else {
-            const low = cb & 3;
+            const low = sgrButton & 3;
             button =
                 low === 0 ? 'left' :
                     low === 1 ? 'middle' :
@@ -423,7 +423,7 @@ export class ConsoleInputSystem {
             else        type = released ? 'release' : 'press';
         }
 
-        const ev: MouseEvent = { type, button, x, y, ctrl, meta, shift, raw: cb };
+        const ev: MouseEvent = { type, button, x, y, ctrl, meta, shift, raw: sgrButton };
 
         switch (type) {
             case 'press':
@@ -452,4 +452,4 @@ export class ConsoleInputSystem {
 
 // Singleton — import { input } from './input'
 
-export const input = new ConsoleInputSystem();
+export const input = new ConsoleInput();

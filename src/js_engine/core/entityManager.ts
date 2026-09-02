@@ -34,7 +34,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         return e;
     }
 
-    public realizeEntity(entity: Entity) {
+    public attachEntity(entity: Entity) {
         const arch = this._world.archetypes.getOrCreate([] as AnyCT[]);
         arch.addEntity(entity, EntityManager.emptyMap, true, this._world.time);
         setOwner(this._world, entity, arch as EntityArchetype<AnyCT>);
