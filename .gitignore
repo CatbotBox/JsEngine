@@ -130,3 +130,12 @@ dist
 .pnp.*
 /graphify-out
 *.exe
+
+# Crash logs (logs/ is covered above; clearLogs.js treats these as a pair)
+crash-logs
+
+# Benchmark output, rewritten on every run
+bench/*.out.txt
+
+# Worktrees created by tooling
+.claude/worktrees/

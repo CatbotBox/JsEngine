@@ -12,6 +12,7 @@ import {Mesh} from "../src/js_engine/rendering/3d/mesh";
 import {LocalToWorld} from "../src/js_engine/translation";
 import {ScreenSize} from "../src/js_engine/rendering/screenSize";
 import {Quaternions} from "../src/js_engine/math/quaternions";
+import {Vec3} from "../src/js_engine/math/types/vec";
 import {Ansi} from "../src/js_engine/rendering/console/ansi";
 
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
@@ -42,15 +43,16 @@ function renderAll(config: { workerCount: number, threadTriangleThreshold: numbe
     const start = performance.now();
     for (let f = 0; f < FRAMES; f++) {
         const transform = new LocalToWorld();
-        const quat = Quaternions.eulerToQuat([f * 0.05, f * 0.03, 0]);
-        LocalToWorld.fromTRS(transform.matrix, [0, 0, 8], quat as any, [3, 3, 3]);
-        const modelView = LocalToWorld.mul(invCam, transform.matrix) as Float32Array;
+        const quat = Quaternions.eulerToQuat(Vec3.alloc(f * 0.05, f * 0.03, 0));
+        LocalToWorld.fromTRS(transform.matrix, Vec3.alloc(0, 0, 8), quat, Vec3.alloc(3, 3, 3));
+        const modelView = LocalToWorld.mul(invCam, transform.matrix) as unknown as Float32Array;
 
         const buffer = new ScreenBuffer();
         buffer.beginFrame({screenSize} as any, backgroundChar);
         rasterizer.beginFrame(buffer, WIDTH, HEIGHT, {
             maxDepthFade: 15,
             colorQuantMask: 0xFFFFFF,
+            supersample: 1, // AA off: this test compares threaded vs single-threaded output bit for bit
             workerCount: config.workerCount,
             threadTriangleThreshold: config.threadTriangleThreshold,
             threadAreaThreshold: Number.POSITIVE_INFINITY,

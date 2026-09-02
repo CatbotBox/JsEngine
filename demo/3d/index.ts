@@ -19,11 +19,9 @@ import {
 
 import {AverageStat} from "../../src/js_engine/datatypes";
 import {Console3DRenderPassSystem} from "../../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
-import {RenderMesh} from "../../src/js_engine/rendering/3d/renderMesh";
-import {Mesh} from "../../src/js_engine/rendering/3d/mesh";
+import {FieldOfView, Mesh, RenderMesh} from "../../src/js_engine/rendering/3d";
 import {Vec, Vec3, Vec4} from "../../src/js_engine/math/types/vec";
 import {Quaternions} from "../../src/js_engine/math/quaternions";
-import {FieldOfView} from "../../src/js_engine/rendering/3d/fieldOfView";
 
 const world = new DebugWorld();
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
