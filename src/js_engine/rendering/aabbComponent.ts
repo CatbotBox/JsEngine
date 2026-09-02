@@ -1,5 +1,5 @@
-import {Component} from "../core";
-import {AABB} from "../datatypes/AABB";
+﻿import {Component} from "../core";
+import {AABB} from "../datatypes/aabb";
 import type {F32Backed} from "../core/componentType";
 import {Vec, Vec3} from "../math/types/vec";
 

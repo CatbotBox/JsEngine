@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "jsengine",
   "version": "0.1.0",
   "description": "Console-rendered ECS game engine, runs on node and bun",
@@ -15,9 +15,9 @@
     "ts:bun": "bun",
     "test": "node -r ts-node/register/transpile-only scripts/runTests.js",
     "test:bun": "bun test",
-    "demo": "node -r ts-node/register/transpile-only demo/tests/1.ts",
+    "demo": "node -r ts-node/register/transpile-only demo/2d/index.ts",
     "demo:3d": "node -r ts-node/register/transpile-only demo/3d/index.ts",
-    "demo:bun": "bun demo/tests/1.ts",
+    "demo:bun": "bun demo/2d/index.ts",
     "demo:3d:bun": "bun demo/3d/index.ts",
     "demo:3d:scriptc": "scriptc run demo/3d/index.ts",
     "bench": "node -r ts-node/register/transpile-only bench/spatialIndex.bench.ts",

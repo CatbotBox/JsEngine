@@ -1,4 +1,4 @@
-/**
+﻿/**
  * bench/spatialIndex.bench.ts — run with `bun bench/spatialIndex.bench.ts`.
  *
  * Picks between LinearIndex and ObjectOctree for the 2D render
@@ -7,7 +7,7 @@
  * camera query per frame.
  *
  * WHY THE AXES ARE WHAT THEY ARE
- * - N sweeps to 100k because demo/tests/1.ts spawns 1,000 entities per keypress
+ * - N sweeps to 100k because demo/2d/index.ts spawns 1,000 entities per keypress
  *   without bound. The engine's live demos are the stress test and the 3D test;
  *   pong/starCollectors are dead code and their ~25 entities are not the target.
  * - Selectivity matters because a camera query typically matches *most* on-screen
@@ -21,7 +21,7 @@
  * Results are cross-checked against a brute-force scan before timing, so a fast
  * wrong answer cannot win.
  */
-import {AABB} from "../src/js_engine/datatypes/AABB";
+import {AABB} from "../src/js_engine/datatypes/aabb";
 import {LinearIndex} from "../src/js_engine/datatypes/spatial/linearIndex";
 import {ObjectOctree} from "../src/js_engine/datatypes/spatial/objectOctree";
 import {QueryHit, SpatialIndex} from "../src/js_engine/datatypes/spatial/spatialIndex";
@@ -302,7 +302,7 @@ function benchTuning(): void {
 // is the friendliest possible workload for a flat scan and the least friendly for
 // a tree, because uniform density means there are no empty regions to prune.
 //
-// demo/tests/1.ts does none of that. It spawns 1,000 entities at a time around
+// demo/2d/index.ts does none of that. It spawns 1,000 entities at a time around
 // wherever the camera currently is, so items arrive in dense clumps separated by
 // empty space, and the camera pans. This section reproduces that.
 // ===========================================================================

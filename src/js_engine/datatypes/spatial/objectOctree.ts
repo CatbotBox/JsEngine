@@ -1,4 +1,4 @@
-﻿import {AABB} from "../AABB";
+﻿import {AABB} from "../aabb";
 import {ItemStore} from "./itemStore";
 import {ensureHit, QueryHit, SpatialIndex} from "./spatialIndex";
 

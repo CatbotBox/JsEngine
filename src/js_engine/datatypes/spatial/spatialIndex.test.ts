@@ -1,5 +1,5 @@
-import {describe, expect, test} from "../../testing/harness";
-import {AABB} from "../AABB";
+﻿import {describe, expect, test} from "../../testing/harness";
+import {AABB} from "../aabb";
 import {QueryHit, SpatialIndex} from "./spatialIndex";
 import {LinearIndex} from "./linearIndex";
 import {ObjectOctree} from "./objectOctree";

@@ -1,4 +1,4 @@
-import {describe, expect, test} from "../testing/harness";
+﻿import {describe, expect, test} from "../testing/harness";
 import {World} from "../core/world";
 import {RootSystemGroup} from "../core/rootSystemGroup";
 import {Vec} from "../math/types/vec";
@@ -6,8 +6,8 @@ import {LocalPosition} from "./localPosition";
 import {LocalToWorld} from "./localToWorld";
 import {Parent} from "./parent";
 import {Children} from "./children";
-import {TranslationSystemGroup} from "./TranslationSystemGroup";
-import {LocalToWorldSystem} from "./LocalToWorldSystem";
+import {TranslationSystemGroup} from "./translationSystemGroup";
+import {LocalToWorldSystem} from "./localToWorldSystem";
 import type {Entity} from "../core/entity";
 
 /**
