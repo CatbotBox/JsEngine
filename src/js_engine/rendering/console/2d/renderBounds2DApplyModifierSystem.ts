@@ -2,7 +2,7 @@
 import {RenderBounds} from "../../renderBounds";
 import {RenderingSystemGroup} from "../../renderingSystemGroup";
 import {LocalToWorld} from "../../../translation";
-import {ConsoleImageAnchor} from "../index";
+import {anchorFractionX, anchorFractionY, ConsoleImageAnchor} from "../index";
 import {ConsoleImage} from "../index";
 import {WorldSpaceRenderBoundsComputeSystem} from "../../worldSpaceRenderBoundsComputeSystem";
 
@@ -45,19 +45,11 @@ export class RenderBounds2DApplyModifierSystem extends System {
             for (let i = start; i < end; i++) {
                 const image = images.get(i) as ConsoleImage;
 
-                // Fractional anchor (0=left/top, 0.5=center/middle, 1=right/bottom).
-                //
-                // Almost no entity has an anchor. The previous version still ran
-                // `anchor?.anchorPosition.split('-') || ["middle","center"]` for every one
-                // of them, which allocated a two-element array and destructured it through
-                // the iterator protocol, per entity per frame, to arrive at two constants.
-                // startsWith/endsWith avoids both the split and the destructure.
                 let ax = 0.5, ay = 0.5;
                 const anchor = anchors?.get(i) as ConsoleImageAnchor | undefined;
                 if (anchor !== undefined) {
-                    const p = anchor.anchorPosition;
-                    ax = p.endsWith('left') ? 0 : p.endsWith('center') ? 0.5 : 1;
-                    ay = p.startsWith('top') ? 0 : p.startsWith('middle') ? 0.5 : 1;
+                    ax = anchorFractionX(anchor.anchorPosition);
+                    ay = anchorFractionY(anchor.anchorPosition);
                 }
 
                 // compute top-left corner from anchor; handle negative sizes robustly

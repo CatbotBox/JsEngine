@@ -31,6 +31,9 @@ function hasNone<CT extends AnyCT>(arch: EntityArchetype<CT>, excluded: readonly
     return true;
 }
 
+/** Sentinel for "more than one entity matched", which the two callers treat differently. */
+const AMBIGUOUS = Symbol("ambiguous singleton");
+
 export class EntityQuery<
     IncSpec extends readonly TokenOrCtor[] = readonly[],
     ExcSpec extends readonly TokenOrCtor[] = readonly[],
@@ -119,33 +122,41 @@ export class EntityQuery<
         this._lazyLoaded.cachedArchetypes = next;
     }
 
+    /**
+     * Shared body of getSingleton/tryGetSingleton, which differ only in whether "none" and
+     * "more than one" return or throw. Cold path -- once per frame per camera at most.
+     * Returns AMBIGUOUS if more than one entity matched, undefined if none did.
+     */
+    private findSingletonRow(
+        specOrConstructors: Record<string, TokenOrCtor>,
+        options?: EntityStreamOptions<boolean>,
+    ): any {
+        const spec = toTokenSpec(specOrConstructors);
+        const keys = Object.keys(spec);
+        let rowData: any = undefined;
+        for (const arch of this.archetypes) {
+            const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+            if (entityCount == 0) continue;
+            if (entityCount > 1) return AMBIGUOUS;
+            if (rowData != undefined) return AMBIGUOUS;
+
+            const data = arch.getDataAtIndexUntracked(0) as Map<AnyCT, Component>;
+            rowData = {};
+            if (options?.includeEntity) rowData.entity = arch.getEntityAtIndex(0);
+            for (const k of keys) rowData[k] = data.get(spec[k] as AnyCT);
+        }
+        return rowData;
+    }
+
     public tryGetSingleton<
         S extends Record<string, TokenOrCtor>,
         IncludeEntity extends boolean = false
     >(specOrConstructors: S,
       options?: EntityStreamOptions<IncludeEntity>): (RowFromSpec<TokensFrom<S>, IncU<Inc>> &
         (IncludeEntity extends true ? { entity: Entity } : {})) | undefined {
-        const spec = toTokenSpec(specOrConstructors);
-        const keys = Object.keys(spec) as (keyof S)[];
-        let rowData: any = undefined;
-        for (const arch of this.archetypes) {
-            const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
-            if (entityCount == 0) continue;
-            if (entityCount > 1) return undefined;
-            if (entityCount == 1) {
-                if (rowData != undefined) return undefined;
-                const data = arch.getDataAtIndexUntracked(0) as Map<AnyCT, Component>;
-                rowData = {};
-                if (options?.includeEntity) rowData.entity = arch.getEntityAtIndex(0);
-
-                for (const k of keys) {
-                    const token = spec[k] as AnyCT;
-                    rowData[k as string] = data.get(token);
-                }
-            }
-        }
-        if (rowData) return rowData;
-        return undefined;
+        const row = this.findSingletonRow(specOrConstructors, options);
+        if (row === AMBIGUOUS || row === undefined) return undefined;
+        return row;
     }
 
     public getSingleton<
@@ -154,27 +165,10 @@ export class EntityQuery<
     >(specOrConstructors: S,
       options?: EntityStreamOptions<IncludeEntity>): RowFromSpec<TokensFrom<S>, IncU<Inc>> &
         (IncludeEntity extends true ? { entity: Entity } : {}) {
-        const spec = toTokenSpec(specOrConstructors);
-        const keys = Object.keys(spec) as (keyof S)[];
-        let rowData: any = undefined;
-        for (const arch of this.archetypes) {
-            const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
-            if (entityCount == 0) continue;
-            if (entityCount > 1) throw new Error("More than 1 singleton entity found");
-            if (entityCount == 1) {
-                if (rowData != undefined) throw new Error("More than 1 singleton entity found");
-                const data = arch.getDataAtIndexUntracked(0) as Map<AnyCT, Component>;
-                rowData = {};
-                if (options?.includeEntity) rowData.entity = arch.getEntityAtIndex(0);
-
-                for (const k of keys) {
-                    const token = spec[k] as AnyCT;
-                    rowData[k as string] = data.get(token);
-                }
-            }
-        }
-        if (rowData) return rowData;
-        throw new Error("No entity found");
+        const row = this.findSingletonRow(specOrConstructors, options);
+        if (row === AMBIGUOUS) throw new Error("More than 1 singleton entity found");
+        if (row === undefined) throw new Error("No entity found");
+        return row;
     }
 
     public hasEntity(): boolean {
