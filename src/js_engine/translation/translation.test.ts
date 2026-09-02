@@ -82,6 +82,31 @@ describe("transform hierarchy", () => {
         expect(kids.map(worldX)).toEqual([101, 102, 103]);
     });
 
+    test("a parent handle taken before its first child still moves the children", () => {
+        // Regression: getComponent's tracked handle used to bind to the archetype
+        // it was fetched from. Adding the first child gives the parent a Children
+        // component -- a structural move -- after which writes through that handle
+        // stamped the archetype the parent had left, and the cascade never ran.
+        const {root, em} = makeWorld();
+        const parent = em.createEntity("parent");
+        em.addComponent(parent, new LocalPosition(10, 0, 0));
+        em.addComponent(parent, new LocalToWorld());
+        const parentPos = em.getComponent<LocalPosition>(parent, LocalPosition)!;
+
+        const kid = em.createEntity("child");
+        em.addComponent(kid, new LocalPosition(1, 0, 0));
+        em.addComponent(kid, new LocalToWorld());
+        em.addComponent(kid, new Parent(parent));   // parent gains Children here
+        tick(root);
+
+        const worldX = (e: Entity) => Vec.x(em.getComponent<LocalToWorld>(e, LocalToWorld)!.position);
+        expect(worldX(kid)).toBe(11);
+
+        parentPos.x = 100;
+        tick(root);
+        expect(worldX(kid)).toBe(101);
+    });
+
     test("Children swap-remove keeps the other entries, and adds stay unique", () => {
         const {em} = makeWorld();
         const a = em.createEntity("a"), b = em.createEntity("b"), c = em.createEntity("c");

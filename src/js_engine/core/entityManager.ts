@@ -129,7 +129,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         }
         const index = currentArch.getIndexOfEntity(entity)!;
 
-        componentStore.set(index, component, this._world.time);
+        componentStore.set(index, component, this._world.time.elapsedTime);
         component.setup(entity, this);
     }
 
@@ -161,8 +161,14 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         const token = this.toToken(key);
         const arch = getOwner(this._world, entity);
         if (!arch) return undefined;
-        const data = arch.getDataAtEntity(entity) as Map<AnyCT, Component>;
-        return data.get(token) as T | undefined;
+
+        const store = arch.getColumn(token);
+        if (store === undefined) return undefined;
+        const index = arch.getIndexOfEntity(entity);
+        if (index === undefined) return undefined;
+        const component = store.get(index);
+        if (component === undefined) return undefined;
+        return persistentTrackComponent(entity, component) as T;
     }
 
     public isEnabled(entity: Entity): boolean {

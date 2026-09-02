@@ -16,6 +16,7 @@ import {DebugWorld, EntityCommandBufferSystem} from "../src/js_engine";
 import {Camera, HudElement, RenderBounds} from "../src/js_engine/rendering";
 import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../src/js_engine/translation";
 import {Ansi, ConsoleHudRenderPassSystem, ConsoleImage, ConsoleImageAnchor} from "../src/js_engine/rendering/console";
+import {Console2DRenderPassSystem} from "../src/js_engine/rendering/console/2d/console2DRenderPassSystem";
 import {Console3DRenderPassSystem} from "../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
 import {RenderMesh} from "../src/js_engine/rendering/3d/renderMesh";
 import {Mesh} from "../src/js_engine/rendering/3d/mesh";
@@ -71,7 +72,27 @@ const anchor = new ConsoleImageAnchor();
 anchor.anchorPosition = "top-right";
 buffer.addComponent(hudEntity, anchor);
 
+// World-space 2D sprites: one inside the camera rect, one far outside it. The
+// pass culls straight off the WorldSpaceRenderBounds column, so both halves of
+// that test (composited / culled) are worth pinning.
+const spriteEntity = buffer.createEntity("sprite");
+const spriteImage = new ConsoleImage();
+spriteImage.image = [Ansi.colors.fg.green + "SPRITEMARK"];
+spriteImage.transparentChar = undefined;
+buffer.addComponent(spriteEntity, spriteImage);
+buffer.addComponent(spriteEntity, new LocalToWorld());
+buffer.addComponent(spriteEntity, new LocalPosition(0, 0, 0));
+
+const offscreenEntity = buffer.createEntity("offscreen-sprite");
+const offscreenImage = new ConsoleImage();
+offscreenImage.image = [Ansi.colors.fg.red + "OFFSCREENMARK"];
+offscreenImage.transparentChar = undefined;
+buffer.addComponent(offscreenEntity, offscreenImage);
+buffer.addComponent(offscreenEntity, new LocalToWorld());
+buffer.addComponent(offscreenEntity, new LocalPosition(5000, 5000, 0));
+
 world.ensureSystemExists(Console3DRenderPassSystem);
+world.ensureSystemExists(Console2DRenderPassSystem);
 world.ensureSystemExists(ConsoleHudRenderPassSystem);
 
 const tick = () => (world as any).update();
@@ -83,6 +104,8 @@ expect(captured.includes("\x1b[48;2;"), "3D pass wrote truecolor cells");
 // HUD glyphs are emitted one per cell with their own escape codes around each
 // char, so strip ANSI before searching for the marker text.
 expect(Ansi.strip(captured).includes("HUDMARKER"), "HUD element composited over the frame");
+expect(Ansi.strip(captured).includes("SPRITEMARK"), "2D sprite composited into the frame");
+expect(!Ansi.strip(captured).includes("OFFSCREENMARK"), "off-screen 2D sprite culled");
 
 // Static scene -> damage tracking should emit nothing new.
 const lenBefore = captured.length;

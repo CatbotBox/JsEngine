@@ -69,14 +69,15 @@ export class ConsoleCameraSizingSystem extends System {
     }
 
     public refreshSize() {
-        if (CurrentInterpreter == "Bun") {
-            // @ts-ignore
-            process.stdout._refreshSize();
-        }
-        const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
-
         const {columns, rows} = getRawTerminalSize();
-        cameraEntity.screenSize.x = columns;
-        cameraEntity.screenSize.y = rows - 1; // leave one row for the prompt
+        const height = rows - 1; // leave one row for the prompt
+
+        const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
+        const screenSize = cameraEntity.screenSize;
+        // The terminal is the same size on almost every frame, and ScreenSize is
+        // a component other systems watch -- writing it anyway is not free.
+        if (screenSize.x === columns && screenSize.y === height) return;
+        screenSize.x = columns;
+        screenSize.y = height;
     }
 }

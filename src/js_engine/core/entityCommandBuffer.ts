@@ -186,7 +186,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     ): void {
         const targetTokens = nextTypes.map(t => this.toToken(t));
         const currentArch = requireOwner(world, entity);
-        const currentData = currentArch.getDataAtEntity(entity) as Map<AnyCT, Component>;
+        const currentData = currentArch.getDataAtEntityUntracked(entity) as Map<AnyCT, Component>;
         const targetArch = world.archetypes.getOrCreate(targetTokens as AnyCT[]);
 
         const providedMap = this.normalizeComponents(provided).map as Map<AnyCT, Component>;

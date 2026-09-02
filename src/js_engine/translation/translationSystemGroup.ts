@@ -16,12 +16,12 @@ export class TranslationSystemGroup extends SystemGroup {
         do {
             super.onUpdate();
             cyclesLeft--;
-            const count = this._parentQuery.stream({
+            const changed = this._parentQuery.stream({
                 read: {parentTransform: ParentTransform},
             }, {
                 filterLastUpdated: this.lastUpdateTime,
-            }).count();
-            if (count == 0) {
+            }).hasAny();
+            if (!changed) {
                 // nothing to update just exit;
                 return;
             }
