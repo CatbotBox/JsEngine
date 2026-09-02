@@ -21,6 +21,7 @@ import {RenderMesh} from "../src/js_engine/rendering/3d/renderMesh";
 import {Mesh} from "../src/js_engine/rendering/3d/mesh";
 import {FieldOfView} from "../src/js_engine/rendering/3d/fieldOfView";
 import {Quaternions} from "../src/js_engine/math/quaternions";
+import {Vec3} from "../src/js_engine/math/types/vec";
 
 let captured = "";
 const realWrite = process.stdout.write.bind(process.stdout);
@@ -83,20 +84,20 @@ expect(captured.includes("\x1b[48;2;"), "3D pass wrote truecolor cells");
 // char, so strip ANSI before searching for the marker text.
 expect(Ansi.strip(captured).includes("HUDMARKER"), "HUD element composited over the frame");
 
-// Static scene â†’ damage tracking should emit nothing new.
+// Static scene -> damage tracking should emit nothing new.
 const lenBefore = captured.length;
 tick();
 tick();
 expect(captured.length === lenBefore, `static frames write zero bytes (wrote ${captured.length - lenBefore})`);
 
-// Rotate the mesh â†’ new frame bytes must appear.
-rotation.xyzw = Quaternions.eulerToQuat([0.4, 0.6, 0]);
+// Rotate the mesh -> new frame bytes must appear.
+rotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.4, 0.6, 0));
 tick();
 const deltaBytes = captured.length - lenBefore;
 expect(deltaBytes > 0, `scene change produced output (${deltaBytes} bytes)`);
 
 // Full-frame estimate for comparison: rough per-changed-frame cost.
-rotation.xyzw = Quaternions.eulerToQuat([0.8, 1.2, 0]);
+rotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.8, 1.2, 0));
 const lenRot = captured.length;
 tick();
 log(`rotating frame delta: ${captured.length - lenRot} bytes`);

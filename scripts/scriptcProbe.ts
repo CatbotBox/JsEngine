@@ -1,4 +1,4 @@
-/**
+﻿/**
  * scriptc measurement probe.
  *
  * `scriptc coverage` reports how much of a program compiles to native, but it
@@ -12,8 +12,9 @@
  *
  *     npm run scriptc:coverage
  *
- * Last measured (scriptc 0.0.35): 143 statements, 124 static (86%). The
- * remaining blockers are architectural, not incidental — see CLAUDE.md.
+ * Last measured (scriptc 0.0.35, post-SoA): 90 statements, 79 static (88%). The
+ * remaining blockers are architectural, not incidental — see CLAUDE.md. Re-run
+ * before citing the number anywhere.
  *
  * It is a real program: `bun scripts/scriptcProbe.ts` runs it and prints "probe ok".
  */
@@ -30,8 +31,8 @@ class Mover extends System {
     private q = this.createEntityQuery([Pos]);
 
     public override onUpdate(): void {
-        this.q.stream({write: {pos: Pos}}).forEach(row => {
-            Vec.setX(row.pos.v, Vec.x(row.pos.v) + 1);
+        this.q.stream({write: {pos: Pos}}).consume(({pos}) => {
+            Vec.setX(pos.v, Vec.x(pos.v) + 1);
         });
     }
 }

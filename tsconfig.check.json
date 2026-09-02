@@ -15,10 +15,9 @@
   // `exclude` is restated because it is inherited from tsconfig.json, which drops
   // the unit tests from the build output — the gate must still cover them.
   //
-  // tests/ stays out: verifyParity.ts imports tests/_legacy, a frozen pre-rewrite
-  // snapshot kept for pixel-parity comparison that predates the opaque Vec/AABB
-  // types and cannot typecheck. Excluding it does not help, since it is reached
-  // through an import rather than the include list.
+  // tests/ is covered too, now that tests/_legacy (a frozen pre-rewrite renderer
+  // snapshot that could not typecheck) is gone. It had kept verifyWorld and
+  // verifyThreading outside every gate, and both had silently drifted.
   "exclude": ["node_modules", "dist"],
-  "include": ["src/**/*", "demo/**/*", "bench/**/*", "scripts/**/*.ts"]
+  "include": ["src/**/*", "demo/**/*", "bench/**/*", "scripts/**/*.ts", "tests/**/*.ts"]
 }
