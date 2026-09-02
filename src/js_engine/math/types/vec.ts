@@ -86,7 +86,7 @@ export namespace Vec16 {
 
 export namespace Vec {
 
-    // ---------------------------------------------------------------- create
+    // create
 
     export function alloc<N extends number>(size: N): Vec<N> {
         return new Float32Array(size) as unknown as Vec<N>;
@@ -110,7 +110,7 @@ export namespace Vec {
         return v as unknown as Vec<N>;
     }
 
-    // ------------------------------------------------------------------ read
+    // read
 
     export function size<N extends number>(v: ReadonlyVec<N>): number {
         return castAsFloat32Array(v).length;
@@ -141,7 +141,7 @@ export namespace Vec {
         return Array.from(castAsFloat32Array(v));
     }
 
-    // ----------------------------------------------------------------- write
+    // write
 
     export function set<N extends number>(v: Vec<N>, index: number, value: number): void {
         castAsFloat32Array(v)[index] = value;
@@ -183,7 +183,7 @@ export namespace Vec {
         return out;
     }
 
-    // ------------------------------------------------------------ arithmetic
+    // arithmetic
     // All write into `out` and return it. `out` may alias an input.
 
     export function addInto<N extends number>(out: Vec<N>, a: ReadonlyVec<N>, b: ReadonlyVec<N>): Vec<N> {
@@ -228,7 +228,7 @@ export namespace Vec {
         return out;
     }
 
-    // ---------------------------------------------------------------- reduce
+    // reduce
 
     export function dot<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): number {
         const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
@@ -262,7 +262,7 @@ export namespace Vec {
         return out;
     }
 
-    // ------------------------------------------------------------ comparison
+    // comparison
 
     export function equals<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): boolean {
         if (a === b) return true;

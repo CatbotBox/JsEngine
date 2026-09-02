@@ -1,4 +1,4 @@
-import {System} from "../../../core";
+﻿import {System} from "../../../core";
 import {Camera} from "../../camera";
 import {RenderBounds} from "../../renderBounds";
 import {ConsoleScreenBuffer} from "../consoleScreenBuffer";
@@ -112,13 +112,7 @@ export class Console2DRenderPassSystem extends System {
         }
     }
 
-    override onEnable(): void {
-        console.info("Enabled 2D render pass")
-    }
 
-    override onDisable(): void {
-        console.info("Disabled 2D render pass")
-    }
 
     private updateIndex(): void {
         const archetypes = this._objectQuery.archetypes;

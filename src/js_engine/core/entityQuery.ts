@@ -73,7 +73,7 @@ export class EntityQuery<
     }
 
     public get archetypes(): IterableIterator<EntityArchetype<AnyCT>> {
-        const arr = this.getCachedArchetypes(); // array of refs
+        const arr = this.getCachedArchetypes();
 
         //don't dedupe in iter as multiple systems could be using it
         function* iter(): IterableIterator<EntityArchetype<AnyCT>> {
@@ -90,18 +90,17 @@ export class EntityQuery<
     private onArchetypeCreated = (arch: EntityArchetype<AnyCT>) => {
         if (this.matches(arch)) {
 
-            const arr = this.getCachedArchetypes(); // array of refs
+            const arr = this.getCachedArchetypes();
 
             // In-place compaction: single pass, no per-item splicing
-            let writeIndex = 0; // write index for the next kept ref
+            let writeIndex = 0;
             for (let readIndex = 0; readIndex < arr.length; readIndex++) {
                 const ref = arr[readIndex].deref();
                 if (ref === undefined) continue;
-                // shift entire array if missing gaps
-                if (writeIndex !== readIndex) arr[writeIndex] = arr[readIndex]; // move loaded ref forward only when needed
+                if (writeIndex !== readIndex) arr[writeIndex] = arr[readIndex];
                 writeIndex++;
             }
-            if (writeIndex + 1 !== arr.length) arr.length = writeIndex; // drop all skipped refs in one truncate
+            if (writeIndex + 1 !== arr.length) arr.length = writeIndex;
             arr[writeIndex] = new WeakRef(arch);
         }
     };
@@ -210,7 +209,6 @@ export class EntityQuery<
             for (let i = 0; i < n; i++) yield arch.getEntityAtIndex(i);
         }
     }
-
 
     /**
      * Iterate matching entities, declaring which components are read and which

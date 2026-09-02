@@ -26,7 +26,6 @@ export class ParentTransformSyncSystem extends System {
         this.world.ensureSystemExists(HierarchySyncSystem);
     }
 
-
     onUpdate() {
         const token = this._parentTransformToken;
         const now = performance.now();

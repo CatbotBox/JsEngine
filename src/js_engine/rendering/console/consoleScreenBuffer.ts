@@ -1,4 +1,4 @@
-import {Ansi} from "./ansi";
+﻿import {Ansi} from "./ansi";
 import {ScreenSize} from "../screenSize";
 import {ConsoleImage} from "./consoleImage";
 
@@ -22,17 +22,17 @@ const KIND_BACKGROUND = 0; // background char (run-length encoded at flush)
 const KIND_RGB = 1;        // packed 0xRRGGBB background color + space (3D raster output)
 const KIND_TEXT = 2;       // arbitrary self-contained ANSI string (2D sprites / HUD glyphs)
 
+/** The minimum a blit source must provide: a grid of pre-rendered glyphs. */
+export interface BlittableImage {
+    readonly pixels: readonly (readonly (string | undefined)[])[];
+}
+
 /**
  * A cell grid holding depth + cell contents in flat typed arrays instead of
  * per-cell ANSI strings. 3D output lives as packed RGB ints and only becomes
  * ANSI text at flush time, where identical adjacent colors share one escape
  * sequence (run-length), shrinking both CPU time and bytes written to the TTY.
  */
-/** The minimum a blit source must provide: a grid of pre-rendered glyphs. */
-export interface BlittableImage {
-    readonly pixels: readonly (readonly (string | undefined)[])[];
-}
-
 export class ScreenBuffer {
     private width = 0;
     private height = 0;
@@ -210,7 +210,7 @@ export class ScreenBuffer {
                     }
                 } else {
                     // Text cells are self-contained (reset ... reset), see
-                    // ConsoleImage.splitIntoGlyphs — but they leave the terminal
+                    // ConsoleImage.splitIntoGlyphsInto — but they leave the terminal
                     // in a reset state, so re-assert colors afterwards.
                     row += text[idx];
                     state = STATE_UNKNOWN;

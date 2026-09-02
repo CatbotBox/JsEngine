@@ -66,7 +66,6 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
             this._forceRedraw = true;         // error text corrupted the tracked screen state
         }
 
-
         super.onUpdate()
 
         // Damage-tracked output: rows are self-contained ANSI strings, so only
@@ -102,9 +101,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
     }
 
-
     override onEnable(): void {
-        console.info("Enabled Console Rendering")
         super.onEnable();
         consoleOverride.removeConsoleEventListener(display)
         process.stdout.write(Ansi.modes.altScreenEnter); // alt buffer + save cursor
@@ -120,6 +117,5 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
         process.stdout.write(Ansi.cursor.show);
         process.stdout.write(Ansi.modes.altScreenExit); // back to main + restore cursor
         super.onDisable();
-        console.info("Disabled Console Rendering")
     }
 }

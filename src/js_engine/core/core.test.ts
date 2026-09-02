@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, test} from "../testing/harness";
+﻿import {beforeEach, describe, expect, test} from "../testing/harness";
 import {World} from "./world";
 import {Component} from "./component";
 import {trackComponent} from "./trackedComponent";
@@ -100,7 +100,8 @@ describe("EntityManager: lifecycle", () => {
     });
 
     test("QUIRK: adding a duplicate component is ignored, not an error", () => {
-        // addComponentInternal logs and returns rather than throwing or replacing.
+        // addComponentInternal returns rather than throwing or replacing, and stays silent:
+        // the log it used to emit was pure noise.
         const e = em.createEntity();
         em.addComponent(e, new Position(1, 1));
         em.addComponent(e, new Position(7, 7));
@@ -319,8 +320,8 @@ describe("EntityQueryStream", () => {
     });
 
     test("writing through a streamed row marks the column updated", () => {
-        // Rows are Proxy-wrapped so property *sets* bump the column's
-        // lastUpdatedTime — this is what filterLastUpdated keys off.
+        // Declaring a component under `write` stamps its column once per archetype, so any
+        // write through the row bumps lastUpdatedTime. This is what filterLastUpdated keys off.
         spawn(2);
         const arch = world.archetypes.getOrCreate([Position.type(), Velocity.type()]) as EntityArchetype;
         const before = arch.getColumn(Position.type())!.lastUpdatedTime;
@@ -494,16 +495,16 @@ describe("EntityQueryStream", () => {
         expect(n).toBe(299);
     });
 
-    test("QUIRK: a stream is single-use — the second pass yields nothing", () => {
-        // _rowsIterable() returns a one-shot generator, so re-iterating a stream
-        // silently produces no rows rather than repeating or throwing.
+    test("a stream may be iterated more than once; each pass re-preps", () => {
+        // Worth pinning because the name suggests otherwise: forEach re-prepares the
+        // plan on entry, so a second pass yields the same rows rather than nothing.
         spawn(2);
         const s = new EntityQuery(world, [Position]).stream({read: {p: Position}});
         let first = 0, second = 0;
         s.forEach(() => first++);
         s.forEach(() => second++);
         expect(first).toBe(2);
-        expect(second).toBe(2);   // forEach re-preps; documents the actual behaviour
+        expect(second).toBe(2);
     });
 });
 
@@ -529,7 +530,7 @@ describe("trackComponent", () => {
 
     test("mutation via a method IS tracked when the field is a normal property", () => {
         // CLAUDE.md states "only property setters are tracked, any component that
-        // mutates internal state via a method must call setDirty() itself". That is
+        // mutates internal state via a method must call notifyChanged() itself". That is
         // wrong for ordinary (TS-`private`) fields: calling the method through the
         // proxy makes `this` the proxy, so the internal assignment hits the set trap.
         class Counter extends Component {

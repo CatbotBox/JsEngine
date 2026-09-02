@@ -185,11 +185,5 @@ export class Console3DRenderPassSystem extends System {
         this._rasterizer.dispose();
     }
 
-    override onEnable(): void {
-        console.info("Enabled 3D render pass");
-    }
 
-    override onDisable(): void {
-        console.info("Disabled 3D render pass");
-    }
 }

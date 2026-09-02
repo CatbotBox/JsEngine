@@ -2,9 +2,7 @@
 import {PassThrough} from 'node:stream';
 import {Key} from "./key";
 
-/* ============================================================ *
- *  Signal — tiny typed event emitter (replaces ./util/event)
- * ============================================================ */
+// Signal — tiny typed event emitter (replaces ./util/event)
 
 export type Listener<T> = (payload: T) => void;
 
@@ -37,9 +35,7 @@ export class Signal<T = void> {
     get size(): number { return this.listeners.size; }
 }
 
-/* ============================================================ *
- *  Terminal control sequences
- * ============================================================ */
+// Terminal control sequences
 
 // 1003 = report ALL motion, 1006 = SGR extended coordinates (needed for x/y > 223)
 const ENABLE_MOUSE  = '\x1b[?1003h\x1b[?1006h';
@@ -47,9 +43,7 @@ const DISABLE_MOUSE = '\x1b[?1003l\x1b[?1006l'; // disable the SAME modes we ena
 const HIDE_CURSOR   = '\x1b[?25l';
 const SHOW_CURSOR   = '\x1b[?25h';
 
-/* ============================================================ *
- *  Public types
- * ============================================================ */
+// Public types
 
 export interface KeyEvent {
     /** canonical id used by keyDown()/keyPressed(): key.name, else raw sequence */
@@ -125,12 +119,10 @@ interface KeyRaw {
     shift?: boolean;
 }
 
-/* ============================================================ *
- *  InputSystem
- * ============================================================ */
+// InputSystem
 
 export class ConsoleInputSystem {
-    // ---- events ----
+    // events
     readonly onKey       = new Signal<KeyEvent>();   // every key event, incl. repeats
     readonly onKeyDown   = new Signal<KeyEvent>();   // transition to pressed only
     readonly onKeyUp     = new Signal<KeyEvent>();   // synthetic; see class docstring
@@ -140,20 +132,20 @@ export class ConsoleInputSystem {
     readonly onMouseMove = new Signal<MouseEvent>(); // move + drag
     readonly onWheel     = new Signal<MouseEvent>();
 
-    // ---- persistent state ----
+    // persistent state
     private readonly keysDown    = new Set<string>();
     private readonly buttonsDown = new Set<MouseButton>();
     private _mouseX = 0;
     private _mouseY = 0;
 
-    // ---- per-frame edge state ----
+    // per-frame edge state
     private readonly keyPressedFrame    = new Set<string>();
     private readonly keyReleasedFrame   = new Set<string>();
     private readonly mousePressedFrame  = new Set<MouseButton>();
     private readonly mouseReleasedFrame = new Set<MouseButton>();
     private _wheelDeltaFrame = 0;
 
-    // ---- internals ----
+    // internals
     private opts!: Required<InputOptions>;
     private enabled = false;
     private kbStream: PassThrough | null = null;
@@ -171,7 +163,7 @@ export class ConsoleInputSystem {
     get mouseY(): number { return this._mouseY; }
     get isEnabled(): boolean { return this.enabled; }
 
-    /* -------------------- lifecycle -------------------- */
+    // lifecycle
 
     enable(options: InputOptions = {}): this {
         if (this.enabled) return this;
@@ -240,7 +232,7 @@ export class ConsoleInputSystem {
         return this;
     }
 
-    /* -------------------- frame polling API -------------------- */
+    // frame polling API
 
     /** Held down right now (best-effort for keys — see docstring). */
     keyDown(id: string): boolean { return this.keysDown.has(id); }
@@ -266,7 +258,7 @@ export class ConsoleInputSystem {
         this._wheelDeltaFrame = 0;
     }
 
-    /* -------------------- filtered subscription (from file 2's `when`) -------------------- */
+    // filtered subscription
 
     /** Subscribe to key events matching every provided field. Returns unsubscribe. */
     onKeyMatch(
@@ -281,7 +273,7 @@ export class ConsoleInputSystem {
         });
     }
 
-    /* -------------------- named key subscription -------------------- */
+    // named key subscription
 
     /**
      * Fire `cb` when `key` transitions to pressed.
@@ -328,7 +320,7 @@ export class ConsoleInputSystem {
         }
     }
 
-    /* -------------------- raw stream handling -------------------- */
+    // raw stream handling
 
     private handleData(chunk: string | Buffer): void {
         const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
@@ -348,7 +340,7 @@ export class ConsoleInputSystem {
         if (last < data.length) this.kbStream?.write(data.slice(last));
     }
 
-    /* -------------------- keyboard -------------------- */
+    // keyboard
 
     private handleKeypress(_str: string | undefined, key: KeyRaw | undefined): void {
         if (!key) return;
@@ -398,7 +390,7 @@ export class ConsoleInputSystem {
         });
     }
 
-    /* -------------------- mouse (SGR 1006) -------------------- */
+    // mouse (SGR 1006)
 
     private handleMouse(m: RegExpExecArray): void {
         const cb = parseInt(m[1], 10);
@@ -458,41 +450,6 @@ export class ConsoleInputSystem {
     }
 }
 
-/* ============================================================ *
- *  Singleton — import { input } from './input'
- * ============================================================ */
+// Singleton — import { input } from './input'
 
 export const input = new ConsoleInputSystem();
-
-/* ------------------------------------------------------------------
- * USAGE
- *
- *   import { input, Key } from './input';
- *
- *   input.enable({ mouse: true, hideCursor: true });
- *
- *   // Named keys (the API you asked for):
- *   input.whenKeyDown(Key.Space, () => jump());
- *   input.whenKeyDown('w', () => moveUp());          // strings work too
- *   input.whenKeyDown(Key.Up, () => moveUp());
- *   input.whenKeyDown('ctrl', (e) => console.log('ctrl + ' + e.id));
- *   input.whenKey(Key.Left, () => stepLeft());       // repeats while held
- *   const off = input.whenKeyDown('q', () => quit()); // off() to unsubscribe
- *
- *   // Lower-level events still available:
- *   input.onMouseDown.add((m) => shootAt(m.x, m.y));
- *   input.onKeyMatch({ name: 'q', ctrl: true }, () => quit());
- *
- *   // Frame polling (Unity-style) inside your game loop:
- *   function loop() {
- *     if (input.keyDown('right')) player.x += 1;      // held (best-effort)
- *     if (input.keyPressed('space')) jump();          // edge, this frame
- *     if (input.mousePressed('left')) shootAt(input.mouseX, input.mouseY);
- *     camera.zoom += input.wheelDelta * 0.1;
- *
- *     render();
- *     input.endFrame();                               // <-- reset edges each tick
- *     setTimeout(loop, 1000 / 60);
- *   }
- *   loop();
- * ------------------------------------------------------------------ */

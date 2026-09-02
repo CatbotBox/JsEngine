@@ -44,18 +44,15 @@
         return this.count >= this.capacity;
     }
 
-
     constructor(capacity: number) {
         this._queue = new Array(capacity);
     }
-
 
     public add(item: T): void {
         if (this.isFull) this.capacity = Math.max(this.capacity * 2, 2);
         this._queue[this.calculateIndex(this.headIndex + this._count)] = item;
         this._count++;
     }
-
 
     public addAndOverride(item: T): T | undefined {
         if (this.isFull) {
@@ -92,7 +89,6 @@
         if (item) this.headIndex++
         return item;
     }
-
 
     public getItemAt(index: number) {
         return this._queue[this.calculateIndex(index)];

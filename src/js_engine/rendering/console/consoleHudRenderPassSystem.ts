@@ -18,7 +18,6 @@ export class ConsoleHudRenderPassSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _hudObjectQuery = this.createEntityQuery([ConsoleImage, HudElement])
 
-
     override systemGroup() {
         return ConsoleRenderPassSystemGroup;
     }
@@ -29,7 +28,7 @@ export class ConsoleHudRenderPassSystem extends System {
 
     protected onCreate() {
         this.requireAllForUpdate(this._cameraQuery) // always require a camera
-        this.requireAnyForUpdate(this._hudObjectQuery) // or one hud object
+        this.requireAnyForUpdate(this._hudObjectQuery) // and at least one HUD element
     }
 
     onUpdate() {
@@ -37,21 +36,18 @@ export class ConsoleHudRenderPassSystem extends System {
             screenSize: ScreenSize,
         });
 
-
         // Prepare current buffer
         const dualScreenBuffer = this.world.resources.tryGet(ConsoleScreenBuffer);
         if (!dualScreenBuffer) return;
         const screenBuffer = dualScreenBuffer.screenBuffer;
 
-        // Only consider on-screen objects
         const hudEntities = this._hudObjectQuery
             .stream({
                 read: {img: ConsoleImage},
                 optional: {offset: RenderBoundsOffset, anchor: ConsoleImageAnchor},
             });
 
-        // HUD elements (screen-space, not world-space)
-        // HUD elements (screen-space, not world-space)
+        // HUD elements are screen-space, not world-space, so no camera transform applies.
         // consume: the components are passed onward (blit reads img during the
         // call), but the row object itself never escapes.
         hudEntities.consume(({img, anchor: rawAnchor, offset: rawOffset}) => {
@@ -78,11 +74,4 @@ export class ConsoleHudRenderPassSystem extends System {
     }
 
 
-    override onEnable(): void {
-        console.info("Enabled Hud render pass")
-    }
-
-    override onDisable(): void {
-        console.info("Disabled Hud render pass")
-    }
 }

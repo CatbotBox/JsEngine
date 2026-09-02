@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, test} from "../testing/harness";
+﻿import {beforeEach, describe, expect, test} from "../testing/harness";
 import {World} from "./world";
 import {Component} from "./component";
 import {ComponentType} from "./componentType";
@@ -10,7 +10,7 @@ import {LocalToWorld} from "../translation/localToWorld";
 import {Vec} from "../math/types/vec";
 
 /**
- * Pins the SoA column storage invariants (Phase 2 of docs/soa-migration-plan.md).
+ * Pins the SoA column storage invariants.
  *
  * The dangerous behaviours here are the rebinding ones: an instance's typed-array
  * fields are views into the archetype column, and every operation that moves a

@@ -10,7 +10,6 @@ export class GcSystem extends System {
         if (this.time > 0) return;
         const pruneCount = this.world.archetypes.prune();
         if (pruneCount > 0) {
-            console.info("GC cleared " + pruneCount + " unused archetypes");
             this.time = TIME_BEFORE_PRUNE;
         } else {
             this.time = TIME_BEFORE_PRUNE_OPTIMISTIC;

@@ -22,7 +22,6 @@ export interface EntityWriteOptions {
   /** Remove a component (token or ctor). */
   removeComponent(entity: Entity, key: TokenOrCtor): void;
 
-
   // Mass operations
 
   setEnabledStateForQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>, enabled: boolean): void;

@@ -297,9 +297,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         return this._componentData[index];
     }
 
-
     public constructor(types: CT[]) {
-        // dedupe, preserve first-appearance order
         const seen = new Set<CT>();
         const uniqueTypes = types.filter(t => (seen.has(t) ? false : (seen.add(t) || true)));
         const map = new Map<CT, number>();
@@ -387,7 +385,6 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         this._componentData.forEach(col => {
             col.swapValues(a, b);
         });
-        // swap entity ids + their registry rows
         const ents = this._entities;
         const ea = ents[a], eb = ents[b];
         ents[a] = eb;
@@ -437,7 +434,6 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         if (enabled) this._lastEntityAdded = time.elapsedTime;   // entered the live range
         return true;
     }
-
 
     public isEntityEnabled(entity: Entity): boolean {
         const entityIndex = this.getIndexOfEntity(entity);

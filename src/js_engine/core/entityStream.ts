@@ -1,6 +1,5 @@
 ﻿import {AnyCT, TokenOrCtor} from "../util/tokenUtils";
 
-
 export interface EntityInclusionOptions<Include extends boolean = false> {
     includeEntity?: Include; // default: false
 }

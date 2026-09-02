@@ -1,19 +1,16 @@
-﻿// Helper types (put near your System/EntityManager helpers)
-import {Component, type ComponentCtor, ComponentType} from "../core/component";
+﻿import {Component, type ComponentCtor, ComponentType} from "../core/component";
 import {Entity} from "../core/entity";
 import {ReadonlyVec, Vec} from "../math/types/vec";
 
 export type AnyCT = ComponentType<any>;
 export type AnyCtor = abstract new (...args: any[]) => any;   // <- broad ctor
 type CtorOfToken<T> = T extends ComponentType<infer C> ? (abstract new (...a: any[]) => C) : never;
-// Token spec vs ctor spec
 export type TokenSpec = Record<string, AnyCT>;
 export type CtorSpec = Record<string, AnyCtor>;
 type Tokenize<V> =
   V extends ComponentType<infer _C> ? V :
     V extends AnyCtor ? ComponentType<InstanceType<V>> :
       never;
-// Map ctors -> tokens (labels preserved)
 export type TokensFrom<S> =
   S extends TokenSpec ? S :
     S extends CtorSpec ? {
@@ -36,7 +33,6 @@ export type RowFromSpec<M, Sel> = {
     [K in keyof M as M[K] extends Sel ? never : K]?: InstanceType<CtorOfToken<M[K]>>;
 };
 
-// Runtime helpers
 const isCtor = (v: unknown): v is AnyCtor => typeof v === "function";
 export function toTokenSpec<S extends Record<string, TokenOrCtor>>(specOrCtors: S): TokensFrom<S> {
   const out: any = {};
@@ -51,12 +47,9 @@ export function toTokens(list: readonly TokenOrCtor[] = []): readonly AnyCT[] {
   return list.map(v => isCtor(v) ? ComponentType.of(v) : v);
 }
 
-
 export type TokenOrCtor = AnyCT | ComponentCtor<Component>;
 
-// ---------------------------------------------------------------------------
 // Read/write query specs
-// ---------------------------------------------------------------------------
 
 /** The instance type a token-or-constructor refers to. */
 export type InstanceOfEntry<V> =

@@ -72,7 +72,7 @@ export namespace AABB {
         return b as unknown as AABB;
     }
 
-    // ---------------------------------------------------------------- access
+    // access
 
     export function xMin(b: AABB): number {
         return castAsFloat32Array(b)[0];

@@ -59,7 +59,6 @@ export class Mesh {
         return this.uvsIndexStart + this.vertCount;
     }
 
-
     public get vertices(): Vec3Array {
         return this.data.subarray(this.verticesIndexStart, this.verticesIndexStart + this.vertCount)
     }
@@ -75,7 +74,6 @@ export class Mesh {
     public get triangles(): Vec3Array {
         return this.data.subarray(this.triangleIndexStart, this.triangleIndexStart + this.triangleCount);
     }
-
 
     public constructor(builder: MeshBuilder) {
         builder.verify();
