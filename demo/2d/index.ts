@@ -22,6 +22,7 @@ import {
 
 import {Console2DRenderPassSystem} from "../../src/js_engine/rendering/console/2d";
 import {AverageStat} from "../../src/js_engine/datatypes";
+import {createHudLabel} from "../_shared/hud";
 
 
 const world = new DebugWorld();
@@ -110,29 +111,8 @@ createCross(new LocalPosition(-5, +5), entity, "cross3")
 createCross(new LocalPosition(+5, -5), entity, "cross4")
 createCross(new LocalPosition(+5, +5), entity, "cross5")
 
-//hud element
-// entityCounter
-const entityCounterEntity = buffer.createEntity("entityCounter");
-const entityCounterImage = buffer.addTrackedComponent(entityCounterEntity, new ConsoleImage());
-entityCounterImage.image = [
-    Ansi.colors.fg.green + 'HUD element',
-]
-entityCounterImage.transparentChar = undefined; // no transparency for HUD
-buffer.addComponent(entityCounterEntity, new HudElement());
-const anchor = new ConsoleImageAnchor()
-anchor.anchorPosition = 'bottom-left';
-buffer.addComponent(entityCounterEntity, anchor);
-// fps counter
-const fpsCounterEntity = buffer.createEntity("fpsCounter");
-const fpsCounterImage = buffer.addTrackedComponent(fpsCounterEntity, new ConsoleImage());
-fpsCounterImage.image = [
-    Ansi.colors.fg.green + 'FPS: 0',
-]
-fpsCounterImage.transparentChar = undefined; // no transparency for HUD
-buffer.addComponent(fpsCounterEntity, new HudElement());
-const fpsAnchor = new ConsoleImageAnchor()
-fpsAnchor.anchorPosition = 'top-right';
-buffer.addComponent(fpsCounterEntity, fpsAnchor);
+const entityCounterImage = createHudLabel(buffer, "entityCounter", Ansi.colors.fg.green + 'HUD element', 'bottom-left');
+const fpsCounterImage = createHudLabel(buffer, "fpsCounter", Ansi.colors.fg.green + 'FPS: 0', 'top-right');
 
 consoleInput.enable()
 consoleInput.whenKey(Key.Up, () => {
@@ -204,6 +184,10 @@ consoleInput.onKeyMatch({name: 'c', ctrl: true}, () => {
 
 
 
+
+/** Reused by FadeSystem.interpolate; never escapes the caller that reads it. */
+const FADE_SCRATCH: [number, number, number] = [0, 0, 0];
+
 class FadeSystem extends System {
 
     private _query = this.createEntityQuery([OriginalColor, FadeToColor, ConsoleImage])
@@ -216,24 +200,28 @@ class FadeSystem extends System {
         return this._query.entityCount()
     }
 
+    /**
+     * Writes into a module-scope scratch tuple rather than returning a fresh array: this runs
+     * per fading entity per frame inside a consume(), and the demo spawns 1,000 at a time.
+     */
     private interpolate(color1: readonly [number, number, number], color2: readonly [number, number, number], scale: number): [number, number, number] {
-        if (scale >= 1) return [color2[0], color2[1], color2[2]];
-        if (scale <= 0) return [color1[0], color1[1], color1[2]];
-        const diff: [number, number, number] = [
-            color2[0] - color1[0],
-            color2[1] - color1[1],
-            color2[2] - color1[2]
-        ]
-        diff[0] *= scale;
-        diff[1] *= scale;
-        diff[2] *= scale;
-        diff[0] += color1[0];
-        diff[1] += color1[1];
-        diff[2] += color1[2];
-        diff[0] = Math.round(diff[0]);
-        diff[1] = Math.round(diff[1]);
-        diff[2] = Math.round(diff[2]);
-        return diff;
+        const out = FADE_SCRATCH;
+        if (scale >= 1) {
+            out[0] = color2[0];
+            out[1] = color2[1];
+            out[2] = color2[2];
+            return out;
+        }
+        if (scale <= 0) {
+            out[0] = color1[0];
+            out[1] = color1[1];
+            out[2] = color1[2];
+            return out;
+        }
+        out[0] = Math.round(color1[0] + (color2[0] - color1[0]) * scale);
+        out[1] = Math.round(color1[1] + (color2[1] - color1[1]) * scale);
+        out[2] = Math.round(color1[2] + (color2[2] - color1[2]) * scale);
+        return out;
 
     }
 
