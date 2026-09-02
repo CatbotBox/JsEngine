@@ -3,9 +3,9 @@ import {ParentTransform} from "./parent";
 import {LocalToWorld} from "./localToWorld";
 import {getOwnerInferred} from "../core/ownership";
 
-import {HierarchySyncSystem} from "./HierarchySyncSystem";
-import {LocalToWorldSystem} from "./LocalToWorldSystem";
-import {TranslationSystemGroup} from "./TranslationSystemGroup";
+import {HierarchySyncSystem} from "./hierarchySyncSystem";
+import {LocalToWorldSystem} from "./localToWorldSystem";
+import {TranslationSystemGroup} from "./translationSystemGroup";
 import {Children} from "./children";
 
 export class ParentTransformSyncSystem extends System {

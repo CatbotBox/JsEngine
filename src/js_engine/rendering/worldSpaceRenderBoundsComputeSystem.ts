@@ -1,9 +1,9 @@
-import {System, Unchanged} from "../core";
+﻿import {System, Unchanged} from "../core";
 import {LocalToWorld} from "../translation";
 import {WorldSpaceRenderBounds} from "./worldSpaceRenderBounds";
 import {RenderBounds} from "./renderBounds";
 import {RenderingSystemGroup} from "./renderingSystemGroup";
-import {LocalToWorldSystem} from "../translation/LocalToWorldSystem";
+import {LocalToWorldSystem} from "../translation/localToWorldSystem";
 import {RenderBoundsOffset} from "./renderBoundsOffset";
 
 export class WorldSpaceRenderBoundsComputeSystem extends System {

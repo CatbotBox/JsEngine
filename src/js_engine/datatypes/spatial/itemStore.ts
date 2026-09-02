@@ -1,4 +1,4 @@
-import {AABB} from "../AABB";
+﻿import {AABB} from "../aabb";
 
 /**
  * Bound storage shared by every SpatialIndex implementation: six parallel f32

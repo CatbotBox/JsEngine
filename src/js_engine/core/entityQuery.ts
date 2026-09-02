@@ -2,7 +2,7 @@
 import {EntityArchetype} from "./entityArchetype";
 import {World} from "./world";
 import {Entity} from "./entity";
-import {EntityStreamOptions} from "./entityStream";
+import {EntityStreamOptions} from "./entityStreamOptions";
 import {
     AnyCT,
     CompMap,

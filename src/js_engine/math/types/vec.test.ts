@@ -1,6 +1,6 @@
 ﻿import {describe, expect, test} from "../../testing/harness";
 import {asFloat32Array, fromFloat32Array, Vec, Vec3} from "./vec";
-import {AABB, AABB_STRIDE} from "../../datatypes/AABB";
+import {AABB, AABB_STRIDE} from "../../datatypes/aabb";
 import {LocalToWorld} from "../../translation/localToWorld";
 import {Quaternions} from "../quaternions";
 import {RenderBounds} from "../../rendering/renderBounds";
@@ -89,7 +89,7 @@ describe("Vec", () => {
     });
 });
 
-describe("AABB", () => {
+describe("aabb", () => {
     test("layout matches RenderBounds field order", () => {
         // This is what lets RenderBounds hand out its backing array directly
         // instead of reimplementing the interface.

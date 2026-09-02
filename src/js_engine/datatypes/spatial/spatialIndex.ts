@@ -1,4 +1,4 @@
-﻿import {AABB} from "../AABB";
+﻿import {AABB} from "../aabb";
 
 /**
  * A single query result. These are pooled and reused inside the caller's output

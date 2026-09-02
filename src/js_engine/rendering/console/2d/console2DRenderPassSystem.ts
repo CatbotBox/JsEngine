@@ -10,7 +10,7 @@ import {ConsoleRenderPassSystemGroup} from "../consoleRenderPassSystemGroup";
 import {RenderBounds2DApplyModifierSystem} from "./renderBounds2DApplyModifierSystem";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {EntityArchetype} from "../../../core/entityArchetype";
-import {AABB} from "../../../datatypes/AABB";
+import {AABB} from "../../../datatypes/aabb";
 import {Vec} from "../../../math/types/vec";
 import {LinearIndex} from "../../../datatypes/spatial";
 import {QueryHit} from "../../../datatypes/spatial";

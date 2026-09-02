@@ -2,7 +2,7 @@
 import {Parent} from "./parent";
 import {ComponentLookup} from "../core/entityArchetype";
 import {EntityCommandBufferSystem} from "../core";
-import {TranslationSystemGroup} from "./TranslationSystemGroup";
+import {TranslationSystemGroup} from "./translationSystemGroup";
 import {Children} from "./children";
 
 export class HierarchySyncSystem extends System {

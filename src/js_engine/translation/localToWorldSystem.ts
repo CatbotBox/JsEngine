@@ -4,8 +4,8 @@ import {LocalToWorld} from "./localToWorld";
 import {LocalRotation} from "./localRotation";
 import {LocalScale} from "./localScale";
 import {Parent, ParentTransform} from "./parent";
-import {ParentTransformSyncSystem} from "./ParentTransformSyncSystem";
-import {TranslationSystemGroup} from "./TranslationSystemGroup";
+import {ParentTransformSyncSystem} from "./parentTransformSyncSystem";
+import {TranslationSystemGroup} from "./translationSystemGroup";
 
 export class LocalToWorldSystem extends System {
     private _baseQuery = this.createEntityQuery([LocalPosition, LocalToWorld])

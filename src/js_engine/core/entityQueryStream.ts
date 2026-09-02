@@ -1,6 +1,6 @@
 ﻿import {AnyCT, CompMap, RWRow, toTokens, toTokenSpec} from "../util/tokenUtils";
 import {BLOCK_SHIFT, BLOCK_SIZE, ComponentStore, EntityArchetype} from "./entityArchetype";
-import {EntityStreamOptions} from "./entityStream";
+import {EntityStreamOptions} from "./entityStreamOptions";
 import type {Entity} from "./entity";
 
 /**

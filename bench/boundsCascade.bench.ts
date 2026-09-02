@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reproduces the two cascades visible in logs/latest.log frame 4 (127.25 ms total)
  * and measures what the `Unchanged` write opt-out actually buys for each.
  *
@@ -23,7 +23,7 @@ import {EntityQuery} from "../src/js_engine/core/entityQuery";
 import {Ansi} from "../src/js_engine/rendering/console/ansi";
 import {ConsoleImage} from "../src/js_engine/rendering/console/consoleImage";
 import {LocalPosition, LocalToWorld} from "../src/js_engine/translation";
-import {LocalToWorldSystem} from "../src/js_engine/translation/LocalToWorldSystem";
+import {LocalToWorldSystem} from "../src/js_engine/translation/localToWorldSystem";
 import {Camera} from "../src/js_engine/rendering/camera";
 import {ScreenSize} from "../src/js_engine/rendering/screenSize";
 import {
