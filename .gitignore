@@ -139,3 +139,6 @@ bench/*.out.txt
 
 # Worktrees created by tooling
 .claude/worktrees/
+
+# Binary mesh caches written beside .obj files by Mesh.fromFile
+*.meshcache

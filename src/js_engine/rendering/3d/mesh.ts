@@ -2,6 +2,7 @@ import {Vec, Vec2, Vec3} from "../../math/types/vec";
 import {Vec3Array, VecArray} from "../../math/types/vecArray";
 import {loadMaterialTextures, Material} from "./material";
 import {MaterialLibrary, parseMtl} from "./mtlParser";
+import {readMeshCache, writeMeshCache} from "./meshCache";
 
 export class Mesh {
     public readonly data: Vec3Array;
@@ -84,35 +85,47 @@ export class Mesh {
         return this.materials[this.vertexMaterial[firstCorner]];
     }
 
-    public constructor(builder: MeshBuilder) {
-        builder.verify();
-
-        this.triangleCount = builder.triangles.length;
-        this.vertCount = builder.vertices.length;
-        const data = [...builder.vertices, ...builder.normals, ...builder.uvs.map(uv => Vec.alloc3(Vec.x(uv), Vec.y(uv), 0)), ...builder.triangles];
-        this.data = new VecArray(data, 3);
-        this.materials = builder.materials.length > 0 ? [...builder.materials] : [Material.default()];
-        this.vertexMaterial = new Uint16Array(this.vertCount);
-        this.vertexMaterial.set(builder.vertexMaterial.slice(0, this.vertCount));
+    public constructor(source: MeshBuilder | MeshParts) {
+        if (source instanceof MeshBuilder) {
+            source.verify();
+            this.triangleCount = source.triangles.length;
+            this.vertCount = source.vertices.length;
+            const data = [...source.vertices, ...source.normals, ...source.uvs.map(uv => Vec.alloc3(Vec.x(uv), Vec.y(uv), 0)), ...source.triangles];
+            this.data = new VecArray(data, 3);
+            this.materials = source.materials.length > 0 ? [...source.materials] : [Material.default()];
+            this.vertexMaterial = new Uint16Array(this.vertCount);
+            this.vertexMaterial.set(source.vertexMaterial.slice(0, this.vertCount));
+        } else {
+            this.triangleCount = source.triangleCount;
+            this.vertCount = source.vertCount;
+            this.data = new VecArray(this.vertCount * 3 + this.triangleCount, 3);
+            this.data.raw.set(source.data);
+            this.materials = source.materials.length > 0 ? [...source.materials] : [Material.default()];
+            this.vertexMaterial = new Uint16Array(source.vertexMaterial);
+        }
     }
 
-    public static fromFile(filePath: string): Mesh {
+    public static fromFile(filePath: string, options: MeshLoadOptions = {}): Mesh {
         const fs = require("fs") as typeof import("fs");
         const path = require("path") as typeof import("path");
-        const data = fs.readFileSync(filePath).toString();
         const fileType = filePath.slice(filePath.lastIndexOf("."));
         if (fileType !== '.obj') {
             throw Error(`Unable to parse file: ${filePath}. Reason ${fileType} not supported`);
         }
-        const parser = new ObjParser(data);
         const directory = path.dirname(filePath);
-        for (const libraryName of parser.materialLibraryNames) {
-            const libraryPath = path.join(directory, libraryName);
-            if (fs.existsSync(libraryPath)) {
-                parser.applyMaterialLibrary(parseMtl(fs.readFileSync(libraryPath).toString(), directory));
-            }
+        const useCache = options.cache ?? true;
+        const cached = useCache ? readMeshCache(filePath) : undefined;
+        let mesh: Mesh;
+        if (cached !== undefined) {
+            const library = loadMaterialLibraries(directory, cached.materialLibraryNames);
+            const materials = cached.materialNames.map(name => library.get(name) ?? new Material(name));
+            mesh = new Mesh({data: cached.data, vertCount: cached.vertCount, triangleCount: cached.triangleCount, materials, vertexMaterial: cached.vertexMaterial});
+        } else {
+            const parser = new ObjParser(fs.readFileSync(filePath).toString());
+            parser.applyMaterialLibrary(loadMaterialLibraries(directory, parser.materialLibraryNames));
+            mesh = parser.toMesh();
+            if (useCache) writeMeshCache(filePath, mesh, parser.materialLibraryNames);
         }
-        const mesh = parser.toMesh();
         loadMaterialTextures(mesh.materials);
         return mesh;
     }
@@ -122,6 +135,30 @@ export class Mesh {
         if (materialLibrary !== undefined) parser.applyMaterialLibrary(materialLibrary);
         return parser.toMesh();
     }
+}
+
+export interface MeshParts {
+    readonly data: Float32Array;
+    readonly vertCount: number;
+    readonly triangleCount: number;
+    readonly materials: readonly Material[];
+    readonly vertexMaterial: Uint16Array;
+}
+
+export interface MeshLoadOptions {
+    cache?: boolean;
+}
+
+function loadMaterialLibraries(directory: string, libraryNames: readonly string[]): MaterialLibrary {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    const merged: MaterialLibrary = new Map();
+    for (const libraryName of libraryNames) {
+        const libraryPath = path.join(directory, libraryName);
+        if (!fs.existsSync(libraryPath)) continue;
+        for (const [name, material] of parseMtl(fs.readFileSync(libraryPath).toString(), directory)) merged.set(name, material);
+    }
+    return merged;
 }
 
 const UNASSIGNED_INDEX = -1;
