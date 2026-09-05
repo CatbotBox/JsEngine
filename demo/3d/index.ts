@@ -18,11 +18,17 @@ import {
 } from "../../src/js_engine/rendering/console";
 
 import {AverageStat} from "../../src/js_engine/datatypes";
-import {Console3DRenderPassSystem} from "../../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
-import {Console3DRenderSettings} from "../../src/js_engine/rendering/console/3d/console3DRenderSettings";
-import {ConsoleRenderSettings} from "../../src/js_engine/rendering/console/consoleRenderSettings";
-import {AmbientLight, DirectionalLight, FieldOfView, Mesh, PointLight, RenderMesh} from "../../src/js_engine/rendering/3d";
-import {Vec, Vec3, Vec4} from "../../src/js_engine/math/types/vec";
+import {Console3DRenderPassSystem, Console3DRenderSettings} from "../../src/js_engine/rendering/console/3d";
+import {ConsoleRenderSettings} from "../../src/js_engine/rendering/console";
+import {
+    AmbientLight,
+    DirectionalLight,
+    FieldOfView,
+    Mesh,
+    PointLight,
+    RenderMesh
+} from "../../src/js_engine/rendering/3d";
+import {ReadonlyVec3, ReadonlyVec4, Vec, Vec3} from "../../src/js_engine/math/types/vec";
 import {Quaternions} from "../../src/js_engine/math/quaternions";
 import {createHudLabel} from "../_shared/hud";
 
@@ -288,11 +294,11 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
     // Rotate a vector by a quaternion [x,y,z,w] (standard v + 2w(q×v) + 2q×(q×v)).
     // Convention-agnostic: uses the exact quat the engine built, so movement always
     // lines up with the view regardless of eulerToQuat's internal axis order.
-    const DIR_FWD: Vec3 = Vec.alloc3(0, 0, 1);
-    const DIR_RIGHT: Vec3 = Vec.alloc3(1, 0, 0);
+    const DIR_FWD: ReadonlyVec3 = Vec.alloc3(0, 0, 1);
+    const DIR_RIGHT: ReadonlyVec3 = Vec.alloc3(1, 0, 0);
     const rotateScratch: Vec3 = Vec.alloc3();
 
-    const rotateByQuat = (q: Vec4, v: Vec3): Vec3 => {
+    const rotateByQuat = (q: ReadonlyVec4, v: ReadonlyVec3): Vec3 => {
         const x = Vec.x(q), y = Vec.y(q), z = Vec.z(q), w = Vec.w(q);
         const vx = Vec.x(v), vy = Vec.y(v), vz = Vec.z(v);
         const tx = 2 * (y * vz - z * vy);
@@ -307,7 +313,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
 
     // Move the camera along a look-relative axis (forward = +Z, right = +X at rest).
     const moveSpeed = 0.05;
-    const moveLocal = (localDir: Vec3, amount: number) => {
+    const moveLocal = (localDir: ReadonlyVec3, amount: number) => {
         const d = rotateByQuat(camQuat, localDir);
         const dx = Vec.x(d), dy = Vec.y(d), dz = Vec.z(d);
         camPos.x += dx * amount;
