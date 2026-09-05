@@ -22,8 +22,12 @@ function defaultWorkerCount(): number {
  * a tracked handle from addTrackedComponent, or any handle) to retune live.
  */
 export class Console3DRenderSettings extends Component {
-    /** Depth at which objects fade to black. */
-    public maxDepthFade: number = 15;
+    /**
+     * Depth at which objects have faded fully to black (linearly from the camera).
+     * Infinity, the default, disables the fade; set it near the far distance to
+     * fade objects out before they leave the view.
+     */
+    public maxDepthFade: number = Number.POSITIVE_INFINITY;
     /**
      * Mask ANDed onto every packed color. Dropping the low 2 bits per channel
      * is visually indistinguishable in a terminal but makes adjacent cells

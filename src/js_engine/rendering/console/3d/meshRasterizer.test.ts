@@ -199,3 +199,16 @@ describe("TextureStore", () => {
         expect(store.idOf(big)).toBe(TextureStore.NO_TEXTURE);
     });
 });
+
+describe("depth fade", () => {
+    const red = new Material("red", 0xFF0000);
+    test("Infinity disables the fade so distant surfaces keep their color", () => {
+        const screen = render(screenQuad(red), {maxDepthFade: Number.POSITIVE_INFINITY});
+        expect(screen.rgbAt(1, 1)).toBe(0xFF0000);
+    });
+
+    test("a finite fade distance darkens linearly with depth", () => {
+        const screen = render(screenQuad(red), {maxDepthFade: 2});
+        expect(screen.rgbAt(1, 1)).toBe(0x800000);
+    });
+});
