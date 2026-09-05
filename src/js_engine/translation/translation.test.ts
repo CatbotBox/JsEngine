@@ -1,7 +1,8 @@
 ﻿import {describe, expect, test} from "../testing/harness";
 import {World} from "../core/world";
 import {RootSystemGroup} from "../core/rootSystemGroup";
-import {Vec} from "../math/types/vec";
+import {Vec, Vec4} from "../math/types/vec";
+import {Quaternions} from "../math/quaternions";
 import {LocalPosition} from "./localPosition";
 import {LocalToWorld} from "./localToWorld";
 import {Parent} from "./parent";
@@ -128,5 +129,42 @@ describe("transform hierarchy", () => {
         children.removeChild(c);
         expect(children.children.length).toBe(0);
         expect(children.has(c)).toBe(false);
+    });
+});
+
+describe("LocalToWorld direction helpers", () => {
+    const rounded = (values: ArrayLike<number>) => Array.from(values).map(v => Math.round(v * 1e6) / 1e6 + 0);
+
+    test("transformDirection ignores translation", () => {
+        const m = LocalToWorld.identity();
+        Vec.set(m, 12, 100);
+        Vec.set(m, 13, 200);
+        Vec.set(m, 14, 300);
+        const out = LocalToWorld.transformDirection(m, Vec.alloc3(0, 0, 1));
+        expect(rounded(Vec.toArray(out))).toEqual([0, 0, 1]);
+    });
+
+    test("normalMatrix3 of a pure rotation is that rotation", () => {
+        const quarterTurnAboutZ = Quaternions.qFromAxisAngle(Vec.alloc3(0, 0, 1), Math.PI / 2);
+        const m = LocalToWorld.fromTRS(LocalToWorld.identity(), Vec.alloc3(5, 5, 5), quarterTurnAboutZ, Vec.alloc3(1, 1, 1));
+        const n = LocalToWorld.normalMatrix3(m, new Float32Array(9));
+        const raw = Vec.toArray(m);
+        expect(rounded(n)).toEqual(rounded([raw[0], raw[1], raw[2], raw[4], raw[5], raw[6], raw[8], raw[9], raw[10]]));
+    });
+
+    test("normalMatrix3 counter-scales normals so a stretched surface keeps its facing", () => {
+        const m = LocalToWorld.fromTRS(LocalToWorld.identity(), Vec.alloc3(0, 0, 0), Vec4.alloc(0, 0, 0, 1), Vec.alloc3(2, 1, 1));
+        const n = LocalToWorld.normalMatrix3(m, new Float32Array(9));
+        const transform = (x: number, y: number, z: number) => {
+            const ox = n[0] * x + n[3] * y + n[6] * z;
+            const oy = n[1] * x + n[4] * y + n[7] * z;
+            const oz = n[2] * x + n[5] * y + n[8] * z;
+            const len = Math.hypot(ox, oy, oz);
+            return rounded([ox / len, oy / len, oz / len]);
+        };
+        expect(transform(1, 0, 0)).toEqual([1, 0, 0]);
+        const diagonal = transform(1, 1, 0);
+        expect(diagonal[1]).toBeGreaterThan(diagonal[0]);
+        expect(diagonal[0] * 2).toBeCloseTo(diagonal[1], 5);
     });
 });

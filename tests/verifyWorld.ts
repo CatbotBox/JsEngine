@@ -22,7 +22,8 @@ import {RenderMesh} from "../src/js_engine/rendering/3d/renderMesh";
 import {Mesh} from "../src/js_engine/rendering/3d/mesh";
 import {FieldOfView} from "../src/js_engine/rendering/3d/fieldOfView";
 import {Quaternions} from "../src/js_engine/math/quaternions";
-import {Vec3} from "../src/js_engine/math/types/vec";
+import {Vec, Vec3} from "../src/js_engine/math/types/vec";
+import {AmbientLight, DirectionalLight, PointLight} from "../src/js_engine/rendering/3d/lighting";
 
 let captured = "";
 const realWrite = process.stdout.write.bind(process.stdout);
@@ -124,6 +125,37 @@ rotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.8, 1.2, 0));
 const lenRot = captured.length;
 tick();
 log(`rotating frame delta: ${captured.length - lenRot} bytes`);
+
+// Lights arrive after the unlit frames above, so the same scene is rendered both
+// ways: adding them must change the frame, and a static lit scene must still be
+// fully suppressed by damage tracking.
+tick();
+const lenUnlit = captured.length;
+const sun = buffer.createEntity("sun");
+buffer.addComponent(sun, new DirectionalLight(0xFFFFFF, 0.8));
+buffer.addComponent(sun, new LocalToWorld());
+buffer.addComponent(sun, new LocalPosition());
+buffer.addComponent(sun, new LocalRotation(...Vec.toArray(Quaternions.eulerToQuat(Vec3.alloc(0.6, -0.5, 0))) as [number, number, number, number]));
+const lamp = buffer.createEntity("lamp");
+buffer.addComponent(lamp, new PointLight(12, 0xFF8040, 1));
+buffer.addComponent(lamp, new LocalToWorld());
+buffer.addComponent(lamp, new LocalPosition(3, 2, 4));
+buffer.addComponent(buffer.createEntity("ambient"), new AmbientLight(0xFFFFFF, 0.15));
+for (let i = 0; i < 3; i++) tick();
+const litDelta = captured.length - lenUnlit;
+expect(litDelta > 0, `adding lights changed the frame (${litDelta} bytes)`);
+expect(captured.includes("\x1b[48;2;"), "lit 3D pass wrote truecolor cells");
+
+const lenLit = captured.length;
+tick();
+tick();
+expect(captured.length === lenLit, `static lit frames write zero bytes (wrote ${captured.length - lenLit})`);
+
+rotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(1.0, 1.4, 0.2));
+const lenLitRot = captured.length;
+tick();
+const litRotDelta = captured.length - lenLitRot;
+expect(litRotDelta > 0, `rotating a lit mesh produced output (${litRotDelta} bytes)`);
 
 world.stop();
 (process.stdout as any).write = realWrite;

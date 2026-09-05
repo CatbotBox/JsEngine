@@ -12,7 +12,9 @@ import {Mesh} from "../src/js_engine/rendering/3d/mesh";
 import {LocalToWorld} from "../src/js_engine/translation";
 import {ScreenSize} from "../src/js_engine/rendering/screenSize";
 import {Quaternions} from "../src/js_engine/math/quaternions";
-import {Vec3} from "../src/js_engine/math/types/vec";
+import {fromFloat32Array, Vec3} from "../src/js_engine/math/types/vec";
+import {ViewSpaceMesh} from "../src/js_engine/rendering/3d/viewSpaceMesh";
+import {SceneLights, VertexLighting} from "../src/js_engine/rendering/3d/lighting";
 import {Ansi} from "../src/js_engine/rendering/console/ansi";
 
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
@@ -37,7 +39,17 @@ const mesh = require("fs").existsSync("./demo/3d/indoor plant_02.obj")
 const invCam = LocalToWorld.invertAffine(new LocalToWorld().matrix);
 const focal = HEIGHT / (Math.tan(Math.PI / 6) * 2);
 
-function renderAll(config: { workerCount: number, threadTriangleThreshold: number }): { ms: number, frames: string[], poolUsable: boolean } {
+const sceneLights = new SceneLights();
+sceneLights.beginGather();
+sceneLights.addAmbient(0.1, 0.1, 0.12);
+sceneLights.addDirectional(0.3, -1, 0.5, 0.9, 0.9, 0.85);
+sceneLights.addPoint(2, 2, 4, 1, 0.5, 0.2, 8);
+const vertexLighting = new VertexLighting();
+vertexLighting.beginFrame(sceneLights, invCam);
+const viewSpaceMesh = new ViewSpaceMesh();
+const normalMatrix = new Float32Array(9);
+
+function renderAll(config: { workerCount: number, threadTriangleThreshold: number, lit: boolean }): { ms: number, frames: string[], poolUsable: boolean } {
     const rasterizer = new MeshRasterizer();
     const frames: string[] = [];
     const start = performance.now();
@@ -57,7 +69,12 @@ function renderAll(config: { workerCount: number, threadTriangleThreshold: numbe
             threadTriangleThreshold: config.threadTriangleThreshold,
             threadAreaThreshold: Number.POSITIVE_INFINITY,
         });
-        rasterizer.addMesh(mesh, modelView, focal, 2, 0xFFFFFF);
+        if (config.lit) {
+            const viewMesh = viewSpaceMesh.transformFrom(mesh, modelView, LocalToWorld.normalMatrix3(fromFloat32Array<16>(modelView), normalMatrix));
+            rasterizer.addViewSpaceMesh(mesh, viewMesh, focal, 2, 0xFFFFFF, vertexLighting.shade(viewMesh, 0xF7A44F));
+        } else {
+            rasterizer.addMesh(mesh, modelView, focal, 2, 0xFFFFFF);
+        }
         rasterizer.endFrame();
         frames.push(buffer.flush());
     }
@@ -67,25 +84,32 @@ function renderAll(config: { workerCount: number, threadTriangleThreshold: numbe
     return {ms, frames, poolUsable};
 }
 
-const threaded = renderAll({workerCount: 3, threadTriangleThreshold: 1});
-const sync = renderAll({workerCount: 0, threadTriangleThreshold: Number.MAX_SAFE_INTEGER});
+let failed = false;
+for (const [label, lit] of [["unlit", false], ["lit", true]] as const) {
+    const threaded = renderAll({workerCount: 3, threadTriangleThreshold: 1, lit});
+    const sync = renderAll({workerCount: 0, threadTriangleThreshold: Number.MAX_SAFE_INTEGER, lit});
 
-let identical = 0;
-for (let f = 0; f < FRAMES; f++) {
-    if (threaded.frames[f] === sync.frames[f]) identical++;
+    let identical = 0;
+    let bytes = 0;
+    for (let f = 0; f < FRAMES; f++) {
+        if (threaded.frames[f] === sync.frames[f]) identical++;
+        bytes += sync.frames[f].length;
+    }
+
+    console.log(`[${label}] threaded: ${(threaded.ms / FRAMES).toFixed(3)} ms/frame | sync: ${(sync.ms / FRAMES).toFixed(3)} ms/frame | ${(bytes / FRAMES).toFixed(0)} bytes/frame`);
+    console.log(`[${label}] identical frames: ${identical}/${FRAMES} | pool survived threaded run: ${threaded.poolUsable}`);
+
+    if (identical !== FRAMES) {
+        console.error(`THREADING MISMATCH [${label}]: threaded output differs from single-threaded output`);
+        failed = true;
+    }
+    if (!threaded.poolUsable) {
+        console.error(`THREADING FAILURE [${label}]: pool broke during the threaded run (fell back to sync)`);
+        failed = true;
+    }
 }
-
-console.log(`threaded: ${(threaded.ms / FRAMES).toFixed(3)} ms/frame | sync: ${(sync.ms / FRAMES).toFixed(3)} ms/frame`);
-console.log(`identical frames: ${identical}/${FRAMES} | pool survived threaded run: ${threaded.poolUsable}`);
 
 pool?.dispose();
-if (identical !== FRAMES) {
-    console.error("THREADING MISMATCH: threaded output differs from single-threaded output");
-    process.exit(1);
-}
-if (!threaded.poolUsable) {
-    console.error("THREADING FAILURE: pool broke during the threaded run (fell back to sync)");
-    process.exit(1);
-}
+if (failed) process.exit(1);
 console.log("threading OK");
 
