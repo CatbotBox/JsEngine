@@ -20,6 +20,10 @@ progressive or CMYK) and binary PPM are decoded in-engine with no dependencies. 
 and Windows backslashes. `bun scripts/makeCheckerTexture.ts` regenerates the checkerboard used by
 `demo/3d/cube.obj`. Textured models render with a white tint in the demo so the texture colors show unmodified.
 
+Parsed meshes are cached in a binary `<file>.obj.meshcache` beside the obj (gitignored), so the second launch
+loads the 83 MB bugatti in ~20 ms instead of ~2.6 s; delete the file or pass `{cache: false}` to `Mesh.fromFile`
+to force a re-parse.
+
 Run the demo in a real terminal: `bun demo/3d/index.ts` (keys are listed in its top-left legend; `t` textures,
 `b` half-block, `1`-`4` anti-aliasing presets, `h`/`p` lights).
 

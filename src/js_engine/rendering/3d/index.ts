@@ -1,4 +1,9 @@
 export {Mesh, MeshBuilder} from './mesh';
+export type {MeshParts, MeshLoadOptions} from './mesh';
+export {readMeshCache, writeMeshCache, meshCachePathFor} from './meshCache';
+export type {CachedMesh} from './meshCache';
+export {decodeJpeg, encodeJpeg} from './image/jpeg';
+export type {JpegEncodeOptions} from './image/jpeg';
 export {Material, packRgb, multiplyPackedRgb, loadMaterialTextures} from './material';
 export {Texture} from './texture';
 export type {TextureLevel} from './texture';
