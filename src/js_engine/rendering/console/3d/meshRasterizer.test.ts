@@ -212,3 +212,56 @@ describe("depth fade", () => {
         expect(screen.rgbAt(1, 1)).toBe(0x800000);
     });
 });
+
+describe("near-plane clipping", () => {
+    const FOCAL = 10, CELL_RATIO = 2, BEHIND = -1, AHEAD = 5;
+    const material = new Material("m", 0xFF0000);
+
+    function spanningTriangle(zA: number, zB: number, zC: number, backFacing = false): Mesh {
+        const builder = new MeshBuilder();
+        builder.vertices.push(Vec.alloc3(-3, -2, zA), Vec.alloc3(3, -2, zB), Vec.alloc3(0, 3, zC));
+        builder.uvs.push(Vec.alloc2(0, 0), Vec.alloc2(1, 0), Vec.alloc2(0, 1));
+        builder.triangles.push(backFacing ? Vec.alloc3(0, 1, 2) : Vec.alloc3(0, 2, 1));
+        builder.materials.push(material);
+        builder.vertexMaterial.push(0, 0, 0);
+        builder.generateNormals();
+        return new Mesh(builder);
+    }
+
+    function coveredCells(mesh: Mesh): number {
+        const screenSize = new ScreenSize();
+        screenSize.x = WIDTH;
+        screenSize.y = HEIGHT;
+        const buffer = new ScreenBuffer();
+        buffer.beginFrame({screenSize}, " ");
+        const rasterizer = new MeshRasterizer();
+        rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config({textures: false}));
+        rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF);
+        rasterizer.endFrame();
+        rasterizer.dispose();
+        let count = 0;
+        for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) if (buffer.rgbAt(x, y) !== undefined) count++;
+        return count;
+    }
+
+    const depthCases: [string, number, number, number][] = [
+        ["first corner behind", BEHIND, AHEAD, AHEAD],
+        ["second corner behind", AHEAD, BEHIND, AHEAD],
+        ["third corner behind", AHEAD, AHEAD, BEHIND],
+        ["only the first corner ahead", AHEAD, BEHIND, BEHIND],
+        ["only the second corner ahead", BEHIND, AHEAD, BEHIND],
+        ["only the third corner ahead", BEHIND, BEHIND, AHEAD],
+    ];
+
+    test("a fully visible spanning triangle covers the screen and its back face is culled", () => {
+        expect(coveredCells(spanningTriangle(AHEAD, AHEAD, AHEAD))).toBeGreaterThan(0);
+        expect(coveredCells(spanningTriangle(AHEAD, AHEAD, AHEAD, true))).toBe(0);
+    });
+
+    for (const [name, zA, zB, zC] of depthCases) {
+        test(`${name}: the clipped piece keeps its winding and still renders`, () => {
+            expect(coveredCells(spanningTriangle(zA, zB, zC))).toBeGreaterThan(0);
+            expect(coveredCells(spanningTriangle(zA, zB, zC, true))).toBe(0);
+        });
+    }
+});
