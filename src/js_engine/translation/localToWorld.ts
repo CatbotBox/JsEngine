@@ -32,6 +32,8 @@ identity[13] = 0;
 identity[14] = 0;
 identity[15] = 1;
 
+const normalMatrixScratch = Vec16.alloc();
+
 export class LocalToWorld extends Component implements F32Backed {
     /** SoA column width: the matrix lives in the archetype's Float32Array column. */
     static readonly f32Width = 16;
@@ -399,6 +401,31 @@ export class LocalToWorld extends Component implements F32Backed {
         o[0] = ox;  // via locals, so out may alias point
         o[1] = oy;
         o[2] = oz;
+        return out;
+    }
+
+    public static transformDirection(m: ReadonlyVec16, direction: ReadonlyVec3, out: Vec3 = Vec3.alloc()): Vec3 {
+        const mm = raw(m), d = raw(direction), o = raw(out);
+        const ox = mm[0] * d[0] + mm[4] * d[1] + mm[8] * d[2];
+        const oy = mm[1] * d[0] + mm[5] * d[1] + mm[9] * d[2];
+        const oz = mm[2] * d[0] + mm[6] * d[1] + mm[10] * d[2];
+        o[0] = ox;
+        o[1] = oy;
+        o[2] = oz;
+        return out;
+    }
+
+    public static normalMatrix3(m: ReadonlyVec16, out: Float32Array): Float32Array {
+        const inverse = raw(LocalToWorld.invertAffine(m, normalMatrixScratch));
+        out[0] = inverse[0];
+        out[1] = inverse[4];
+        out[2] = inverse[8];
+        out[3] = inverse[1];
+        out[4] = inverse[5];
+        out[5] = inverse[9];
+        out[6] = inverse[2];
+        out[7] = inverse[6];
+        out[8] = inverse[10];
         return out;
     }
 

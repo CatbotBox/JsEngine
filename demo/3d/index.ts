@@ -19,7 +19,7 @@ import {
 
 import {AverageStat} from "../../src/js_engine/datatypes";
 import {Console3DRenderPassSystem} from "../../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
-import {FieldOfView, Mesh, RenderMesh} from "../../src/js_engine/rendering/3d";
+import {AmbientLight, DirectionalLight, FieldOfView, Mesh, PointLight, RenderMesh} from "../../src/js_engine/rendering/3d";
 import {Vec, Vec3, Vec4} from "../../src/js_engine/math/types/vec";
 import {Quaternions} from "../../src/js_engine/math/quaternions";
 import {createHudLabel} from "../_shared/hud";
@@ -39,6 +39,25 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
     buffer.addComponent(cameraEntity, new RenderBounds());
     const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
+
+    //Lights
+    const sunEntity = buffer.createEntity("sun");
+    buffer.addComponent(sunEntity, new DirectionalLight(0xFFF4E0, 0.9));
+    buffer.addComponent(sunEntity, new LocalToWorld());
+    buffer.addComponent(sunEntity, new LocalPosition());
+    const sunRotation = buffer.addTrackedComponent(sunEntity, new LocalRotation());
+    const sunEuler: Vec3 = Vec.alloc3(0.7, -0.6, 0);
+
+    const lampEntity = buffer.createEntity("lamp");
+    buffer.addComponent(lampEntity, new PointLight(14, 0x4FA3F7, 1.2));
+    buffer.addComponent(lampEntity, new LocalToWorld());
+    buffer.addComponent(lampEntity, new LocalPosition(3, 2, -4));
+
+    const ambientEntity = buffer.createEntity("ambient");
+    buffer.addComponent(ambientEntity, new AmbientLight(0xFFFFFF, 0.12));
+
+    let lightsEnabled = true;
+    let lampEnabled = true;
 
     //Meshes
     let meshes: { name: string, mesh: Mesh, color: number }[] = [];
@@ -87,6 +106,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         Ansi.colors.fg.cyan + 'wasd/qe move  arrows rotate  i/o scale  z/x fov',
         Ansi.colors.fg.cyan + 'drag: look   scroll: zoom',
         Ansi.colors.fg.cyan + 'space spawn  bksp despawn  n next  r reload  ^C quit',
+        Ansi.colors.fg.cyan + 'j/l u/m sun   h lights   p lamp   v 3d   tab hud',
     ];
     buffer.addComponent(controlsEntity, new HudElement());
     const controlsAnchor = new ConsoleImageAnchor();
@@ -225,6 +245,17 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         }
     }
 
+    const applySunRotation = () => {
+        sunRotation.xyzw = Quaternions.eulerToQuat(sunEuler);
+    }
+    applySunRotation();
+
+    const applyLightEnabledState = () => {
+        buffer.setEnabledState(sunEntity, lightsEnabled);
+        buffer.setEnabledState(ambientEntity, lightsEnabled);
+        buffer.setEnabledState(lampEntity, lightsEnabled && lampEnabled);
+    }
+
     // i/o: scale all spawned models together
     const scaleFactor: Vec3 = Vec.alloc3(1.02, 1.02, 1.02);
 
@@ -359,6 +390,33 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
             if (renderer) renderer.enabled = !renderer.enabled;
         })
         input.whenKeyDown(Key.G, () => world.logSystemUpdateOrder())
+
+        // ---- lighting ----
+        // j/l: sun yaw | u/m: sun pitch | h: all lights on/off | p: point light on/off
+        input.whenKey(Key.J, () => {
+            Vec.setY(sunEuler, Vec.y(sunEuler) - 0.05);
+            applySunRotation();
+        })
+        input.whenKey(Key.L, () => {
+            Vec.setY(sunEuler, Vec.y(sunEuler) + 0.05);
+            applySunRotation();
+        })
+        input.whenKey(Key.U, () => {
+            Vec.setX(sunEuler, Vec.x(sunEuler) + 0.05);
+            applySunRotation();
+        })
+        input.whenKey(Key.M, () => {
+            Vec.setX(sunEuler, Vec.x(sunEuler) - 0.05);
+            applySunRotation();
+        })
+        input.whenKeyDown(Key.H, () => {
+            lightsEnabled = !lightsEnabled;
+            applyLightEnabledState();
+        })
+        input.whenKeyDown(Key.P, () => {
+            lampEnabled = !lampEnabled;
+            applyLightEnabledState();
+        })
 
         // input.whenKeyDown(Key.Enter, () => {
         //     const renderer = world.tryGetSystem(RenderingSystemGroup);

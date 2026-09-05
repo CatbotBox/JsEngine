@@ -1,5 +1,6 @@
 ﻿import {DeepReadonly} from "../../../util/tokenUtils";
 import {Mesh} from "../../3d/mesh";
+import {ViewSpaceMesh} from "../../3d/viewSpaceMesh";
 import {ScreenBuffer} from "../consoleScreenBuffer";
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
 import {RasterWorkerPool} from "./rasterWorkerPool";
@@ -24,6 +25,21 @@ export interface MeshRasterizerConfig {
 }
 
 const NEAR_PLANE_Z = 0.1;
+
+function packUnitRgb(r: number, g: number, b: number): number {
+    return (clampToByte(r * 255) << 16) | (clampToByte(g * 255) << 8) | clampToByte(b * 255);
+}
+
+function clampToByte(value: number): number {
+    return value <= 0 ? 0 : value >= 255 ? 255 : Math.round(value);
+}
+
+function lerpPackedColor(from: number, to: number, t: number): number {
+    const r = ((from >> 16) & 255) + t * (((to >> 16) & 255) - ((from >> 16) & 255));
+    const g = ((from >> 8) & 255) + t * (((to >> 8) & 255) - ((from >> 8) & 255));
+    const b = (from & 255) + t * ((to & 255) - (from & 255));
+    return (clampToByte(r) << 16) | (clampToByte(g) << 8) | clampToByte(b);
+}
 
 /**
  * Frame-scoped triangle pipeline for the console 3D pass:
@@ -52,7 +68,8 @@ export class MeshRasterizer {
     private resolveDepth = new Float32Array(0);
     private resolveColor = new Int32Array(0);
 
-    private viewVerts = new Float64Array(0);
+    private viewSpaceMesh = new ViewSpaceMesh();
+    private vertexColors = new Int32Array(0);
 
     // Frame state
     private screenBuffer!: ScreenBuffer;
@@ -141,26 +158,23 @@ export class MeshRasterizer {
      * @param cellRatio   horizontal cell aspect correction factor
      * @param baseColor   packed 0xRRGGBB shaded by depth fade
      */
-    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number): void {
+    /**
+     * @param baseColor packed 0xRRGGBB used for every vertex when vertexRgb is null
+     * @param vertexRgb optional per-vertex linear color, 3 floats in 0..1 per vertex
+     */
+    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null = null): void {
+        if (this.width === 0 || this.height === 0) return;
+        this.addViewSpaceMesh(mesh, this.viewSpaceMesh.transformFrom(mesh, modelView, null), focalLength, cellRatio, baseColor, vertexRgb);
+    }
+
+    public addViewSpaceMesh(mesh: DeepReadonly<Mesh>, viewMesh: ViewSpaceMesh, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null): void {
         if (this.width === 0 || this.height === 0) return;
 
-        const vertCount = mesh.vertCount;
-        if (this.viewVerts.length < vertCount * 3) {
-            this.viewVerts = new Float64Array(vertCount * 3);
-        }
-        const view = this.viewVerts;
-        const src = mesh.vertices.raw;
-
-        const m0 = modelView[0], m4 = modelView[4], m8 = modelView[8], m12 = modelView[12];
-        const m1 = modelView[1], m5 = modelView[5], m9 = modelView[9], m13 = modelView[13];
-        const m2 = modelView[2], m6 = modelView[6], m10 = modelView[10], m14 = modelView[14];
-
-        for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
-            const x = src[j], y = src[j + 1], z = src[j + 2];
-            view[j] = m0 * x + m4 * y + m8 * z + m12;
-            view[j + 1] = m1 * x + m5 * y + m9 * z + m13;
-            view[j + 2] = m2 * x + m6 * y + m10 * z + m14;
-        }
+        const vertCount = viewMesh.vertCount;
+        if (this.vertexColors.length < vertCount) this.vertexColors = new Int32Array(vertCount);
+        const view = viewMesh.positions;
+        const colors = this.vertexColors;
+        this.fillVertexColors(colors, vertCount, baseColor, vertexRgb);
 
         const indices = mesh.triangles.raw;
         const triangleCount = mesh.triangleCount;
@@ -173,13 +187,14 @@ export class MeshRasterizer {
             const ax = view[ia], ay = view[ia + 1], az = view[ia + 2];
             const bx = view[ib], by = view[ib + 1], bz = view[ib + 2];
             const cx = view[ic], cy = view[ic + 1], cz = view[ic + 2];
+            const colorA = colors[indices[k] | 0], colorB = colors[indices[k + 1] | 0], colorC = colors[indices[k + 2] | 0];
 
             const aIn = az >= NEAR_PLANE_Z;
             const bIn = bz >= NEAR_PLANE_Z;
             const cIn = cz >= NEAR_PLANE_Z;
 
             if (aIn && bIn && cIn) {
-                this.emitTriangle(ax, ay, az, bx, by, bz, cx, cy, cz, focalLength, cellRatio, baseColor);
+                this.emitTriangle(ax, ay, az, bx, by, bz, cx, cy, cz, colorA, colorB, colorC, focalLength, cellRatio);
                 continue;
             }
             if (!aIn && !bIn && !cIn) continue;
@@ -187,52 +202,66 @@ export class MeshRasterizer {
             // Near-plane clipping. Vertex order below mirrors the pre-rewrite
             // implementation (inside vertices in index order, then intersection
             // points), so winding — and thus backface culling — is unchanged.
-            let in0x = 0, in0y = 0, in0z = 0, in1x = 0, in1y = 0, in1z = 0;
-            let out0x = 0, out0y = 0, out0z = 0, out1x = 0, out1y = 0, out1z = 0;
+            let in0x = 0, in0y = 0, in0z = 0, in0Color = 0;
+            let in1x = 0, in1y = 0, in1z = 0, in1Color = 0;
+            let out0x = 0, out0y = 0, out0z = 0, out0Color = 0;
+            let out1x = 0, out1y = 0, out1z = 0, out1Color = 0;
             let insideCount = 0, outsideCount = 0;
 
-            if (aIn) { in0x = ax; in0y = ay; in0z = az; insideCount = 1; }
-            else { out0x = ax; out0y = ay; out0z = az; outsideCount = 1; }
+            if (aIn) { in0x = ax; in0y = ay; in0z = az; in0Color = colorA; insideCount = 1; }
+            else { out0x = ax; out0y = ay; out0z = az; out0Color = colorA; outsideCount = 1; }
 
             if (bIn) {
-                if (insideCount === 0) { in0x = bx; in0y = by; in0z = bz; }
-                else { in1x = bx; in1y = by; in1z = bz; }
+                if (insideCount === 0) { in0x = bx; in0y = by; in0z = bz; in0Color = colorB; }
+                else { in1x = bx; in1y = by; in1z = bz; in1Color = colorB; }
                 insideCount++;
             } else {
-                if (outsideCount === 0) { out0x = bx; out0y = by; out0z = bz; }
-                else { out1x = bx; out1y = by; out1z = bz; }
+                if (outsideCount === 0) { out0x = bx; out0y = by; out0z = bz; out0Color = colorB; }
+                else { out1x = bx; out1y = by; out1z = bz; out1Color = colorB; }
                 outsideCount++;
             }
 
             if (cIn) {
-                if (insideCount === 0) { in0x = cx; in0y = cy; in0z = cz; }
-                else { in1x = cx; in1y = cy; in1z = cz; }
+                if (insideCount === 0) { in0x = cx; in0y = cy; in0z = cz; in0Color = colorC; }
+                else { in1x = cx; in1y = cy; in1z = cz; in1Color = colorC; }
                 insideCount++;
             } else {
-                if (outsideCount === 0) { out0x = cx; out0y = cy; out0z = cz; }
-                else { out1x = cx; out1y = cy; out1z = cz; }
+                if (outsideCount === 0) { out0x = cx; out0y = cy; out0z = cz; out0Color = colorC; }
+                else { out1x = cx; out1y = cy; out1z = cz; out1Color = colorC; }
             }
 
             if (insideCount === 1) {
                 // Clipped to a single smaller triangle.
-                let t1 = (NEAR_PLANE_Z - in0z) / (out0z - in0z);
+                const t1 = (NEAR_PLANE_Z - in0z) / (out0z - in0z);
                 const i1x = in0x + t1 * (out0x - in0x);
                 const i1y = in0y + t1 * (out0y - in0y);
-                let t2 = (NEAR_PLANE_Z - in0z) / (out1z - in0z);
+                const t2 = (NEAR_PLANE_Z - in0z) / (out1z - in0z);
                 const i2x = in0x + t2 * (out1x - in0x);
                 const i2y = in0y + t2 * (out1y - in0y);
-                this.emitTriangle(in0x, in0y, in0z, i1x, i1y, NEAR_PLANE_Z, i2x, i2y, NEAR_PLANE_Z, focalLength, cellRatio, baseColor);
+                this.emitTriangle(in0x, in0y, in0z, i1x, i1y, NEAR_PLANE_Z, i2x, i2y, NEAR_PLANE_Z, in0Color, lerpPackedColor(in0Color, out0Color, t1), lerpPackedColor(in0Color, out1Color, t2), focalLength, cellRatio);
             } else {
                 // Clipped to a quad → two triangles.
-                let t1 = (NEAR_PLANE_Z - in0z) / (out0z - in0z);
+                const t1 = (NEAR_PLANE_Z - in0z) / (out0z - in0z);
                 const i1x = in0x + t1 * (out0x - in0x);
                 const i1y = in0y + t1 * (out0y - in0y);
-                let t2 = (NEAR_PLANE_Z - in1z) / (out0z - in1z);
+                const i1Color = lerpPackedColor(in0Color, out0Color, t1);
+                const t2 = (NEAR_PLANE_Z - in1z) / (out0z - in1z);
                 const i2x = in1x + t2 * (out0x - in1x);
                 const i2y = in1y + t2 * (out0y - in1y);
-                this.emitTriangle(in0x, in0y, in0z, in1x, in1y, in1z, i1x, i1y, NEAR_PLANE_Z, focalLength, cellRatio, baseColor);
-                this.emitTriangle(in1x, in1y, in1z, i2x, i2y, NEAR_PLANE_Z, i1x, i1y, NEAR_PLANE_Z, focalLength, cellRatio, baseColor);
+                const i2Color = lerpPackedColor(in1Color, out0Color, t2);
+                this.emitTriangle(in0x, in0y, in0z, in1x, in1y, in1z, i1x, i1y, NEAR_PLANE_Z, in0Color, in1Color, i1Color, focalLength, cellRatio);
+                this.emitTriangle(in1x, in1y, in1z, i2x, i2y, NEAR_PLANE_Z, i1x, i1y, NEAR_PLANE_Z, in1Color, i2Color, i1Color, focalLength, cellRatio);
             }
+        }
+    }
+
+    private fillVertexColors(colors: Int32Array, vertCount: number, baseColor: number, vertexRgb: Float64Array | null): void {
+        if (vertexRgb === null) {
+            colors.fill(baseColor & 0xFFFFFF, 0, vertCount);
+            return;
+        }
+        for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
+            colors[i] = packUnitRgb(vertexRgb[j], vertexRgb[j + 1], vertexRgb[j + 2]);
         }
     }
 
@@ -240,7 +269,8 @@ export class MeshRasterizer {
         ax: number, ay: number, az: number,
         bx: number, by: number, bz: number,
         cx: number, cy: number, cz: number,
-        focalLength: number | undefined, cellRatio: number, baseColor: number,
+        colorA: number, colorB: number, colorC: number,
+        focalLength: number | undefined, cellRatio: number,
     ): void {
         // View space is Y-up (world convention, and what .obj files store) while
         // screen rows grow downward, so the vertical axis flips during projection.
@@ -303,8 +333,8 @@ export class MeshRasterizer {
 
         const o = this.triCount * TRI_STRIDE;
         const tris = this.triData;
-        // Packed as A, C, B — the Y mirror's winding fix. Each slot's 1/z stays
-        // paired with its own vertex, so depth interpolation is unaffected.
+        // Packed as A, C, B — the Y mirror's winding fix. Each slot's 1/z and
+        // color stay paired with its own vertex, so interpolation is unaffected.
         tris[o] = sax;
         tris[o + 1] = say;
         tris[o + 2] = scx;
@@ -314,7 +344,9 @@ export class MeshRasterizer {
         tris[o + 6] = 1 / az;
         tris[o + 7] = 1 / cz;
         tris[o + 8] = 1 / bz;
-        tris[o + 9] = baseColor;
+        tris[o + 9] = colorA;
+        tris[o + 10] = colorC;
+        tris[o + 11] = colorB;
 
         // Band binning: record which row bands this triangle overlaps so each
         // rasterizing thread only visits its own triangles.

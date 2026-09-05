@@ -1,4 +1,4 @@
-﻿import {Vec, Vec2, Vec3} from "../../math/types/vec";
+import {Vec, Vec2, Vec3} from "../../math/types/vec";
 import {Vec3Array, VecArray} from "../../math/types/vecArray";
 
 export class Mesh {
@@ -94,100 +94,118 @@ export class Mesh {
         throw Error(`Unable to parse file: ${filePath}. Reason ${fileType} not supported`);
     }
 
-    private static parseObj(data: string): Mesh {
-        const lines = data.split(/\r?\n/);
-        const meshBuilder = new MeshBuilder();
-
-        lines.forEach(rawLine => {
-            const line = rawLine.trim();
-
-            // Skip empty lines and comments
-            if (!line || line.startsWith('#')) {
-                return;
-            }
-
-            // Positions: lines starting with "v " only (NOT vt / vn)
-            if (line.startsWith("v ")) {
-                const vertexData = line
-                    .substring(2)          // drop "v "
-                    .trim()
-                    .split(/\s+/)          // handle multiple spaces
-                    .map(v => Number.parseFloat(v));
-
-                // Expecting at least x, y, z
-                if (vertexData.length >= 3) {
-                    meshBuilder.vertices.push(Vec.of<3>(vertexData));
-                }
-
-                // Texture coords are parsed by nothing yet, so "vt " is skipped outright.
-            } else if (line.startsWith("vt ")) {
-                return;
-
-                // Normals: "vn " (same idea as vt)
-            } else if (line.startsWith("vn ")) {
-                const normalData = line
-                    .substring(3)          // drop "vn "
-                    .trim()
-                    .split(/\s+/)          // handle multiple spaces/tabs
-                    .map(v => Number.parseFloat(v));
-
-                // Expect nx, ny, nz
-                if (normalData.length >= 3) {
-                    meshBuilder.normals.push(Vec.of<3>(normalData));
-                }
-
-                return;
-                // Faces: "f "
-            } else if (line.startsWith("f ")) {
-                const faceData = line
-                    .substring(2)          // drop "f "
-                    .trim()
-                    .split(/\s+/)          // each token is like v, v/vt, v//vn, v/vt/vn
-                    .map(str => str.split('/')
-                        .map(v => v.length ? Number.parseInt(v, 10) : NaN)
-                    )
-                    .map(data => {
-                        // OBJ indices are 1-based, convert to 0-based.
-                        // We only care about the position index (data[0]) here.
-                        if (!Number.isNaN(data[0])) {
-                            // Positive index: 1..N -> 0..N-1
-                            if (data[0] > 0) {
-                                data[0] -= 1;
-                            } else {
-                                // Negative index: -1 = last defined vertex, etc.
-                                data[0] = meshBuilder.vertices.length + data[0];
-                            }
-                        }
-                        return data;
-                    });
-
-                if (faceData.length < 3) {
-                    return; // not enough vertices to form a face
-                }
-
-                // Triangulate polygon as fan: (0,1,2), (0,2,3), ...
-                // Using only position indices (data[0])
-                meshBuilder.triangles.push(Vec.of<3>([
-                        faceData[0][0],
-                        faceData[1][0],
-                        faceData[2][0],
-                    ]));
-
-                for (let i = 3; i < faceData.length; i++) {
-                    const p0 = faceData[0][0];
-                    const p1 = faceData[i - 1][0];
-                    const p2 = faceData[i][0];
-                    meshBuilder.triangles.push(Vec.of<3>([p0, p1, p2]));
-                }
-            }
-        });
-
-        // Still using your procedural generators
-        meshBuilder.generateUvs();
-        meshBuilder.generateNormals();
-
-        return new Mesh(meshBuilder);
+    public static parseObj(data: string): Mesh {
+        return new ObjParser(data).toMesh();
     }
+}
+
+const UNASSIGNED_INDEX = -1;
+
+class ObjParser {
+    private readonly builder = new MeshBuilder();
+    private readonly fileNormals: Vec3[] = [];
+    private readonly fileNormalIndexOfVertex: number[] = [];
+    private everyFaceCornerHasAConsistentFileNormal = true;
+
+    public constructor(data: string) {
+        for (const rawLine of data.split(/\r?\n/)) {
+            this.parseLine(rawLine.trim());
+        }
+    }
+
+    public toMesh(): Mesh {
+        const builder = this.builder;
+        builder.generateUvs();
+        if (this.canUseFileNormals()) {
+            this.applyFileNormals();
+        } else {
+            builder.generateNormals();
+        }
+        return new Mesh(builder);
+    }
+
+    private parseLine(line: string): void {
+        if (line.length === 0 || line[0] === '#') return;
+        if (line.startsWith("v ")) {
+            this.parseVertex(line);
+        } else if (line.startsWith("vn ")) {
+            this.parseNormal(line);
+        } else if (line.startsWith("f ")) {
+            this.parseFace(line);
+        }
+    }
+
+    private parseVertex(line: string): void {
+        const components = parseNumberList(line, 2);
+        if (components.length >= 3) {
+            this.builder.vertices.push(Vec.alloc3(components[0], components[1], components[2]));
+        }
+    }
+
+    private parseNormal(line: string): void {
+        const components = parseNumberList(line, 3);
+        if (components.length >= 3) {
+            this.fileNormals.push(Vec.alloc3(components[0], components[1], components[2]));
+        }
+    }
+
+    private parseFace(line: string): void {
+        const corners = line.substring(2).trim().split(/\s+/);
+        if (corners.length < 3) return;
+
+        const vertexIndices: number[] = new Array(corners.length);
+        for (let i = 0; i < corners.length; i++) {
+            const [vertexToken, , normalToken] = corners[i].split('/');
+            const vertexIndex = parseObjIndex(vertexToken, this.builder.vertices.length);
+            vertexIndices[i] = vertexIndex;
+            this.recordFileNormalOfVertex(vertexIndex, parseObjIndex(normalToken, this.fileNormals.length));
+        }
+
+        for (let i = 2; i < vertexIndices.length; i++) {
+            this.builder.triangles.push(Vec.of<3>([vertexIndices[0], vertexIndices[i - 1], vertexIndices[i]]));
+        }
+    }
+
+    private recordFileNormalOfVertex(vertexIndex: number, normalIndex: number): void {
+        if (!this.everyFaceCornerHasAConsistentFileNormal) return;
+        if (normalIndex === UNASSIGNED_INDEX || normalIndex >= this.fileNormals.length || vertexIndex < 0) {
+            this.everyFaceCornerHasAConsistentFileNormal = false;
+            return;
+        }
+        const previous = this.fileNormalIndexOfVertex[vertexIndex];
+        if (previous === undefined || previous === UNASSIGNED_INDEX) {
+            this.fileNormalIndexOfVertex[vertexIndex] = normalIndex;
+        } else if (previous !== normalIndex) {
+            this.everyFaceCornerHasAConsistentFileNormal = false;
+        }
+    }
+
+    private canUseFileNormals(): boolean {
+        return this.everyFaceCornerHasAConsistentFileNormal && this.fileNormals.length > 0 && this.builder.triangles.length > 0;
+    }
+
+    private applyFileNormals(): void {
+        const builder = this.builder;
+        for (let i = 0; i < builder.vertices.length; i++) {
+            const normalIndex = this.fileNormalIndexOfVertex[i];
+            const normal = Vec.alloc3();
+            if (normalIndex !== undefined && normalIndex !== UNASSIGNED_INDEX) {
+                Vec.normalizeInto(normal, this.fileNormals[normalIndex]);
+            }
+            builder.normals[i] = normal;
+        }
+    }
+}
+
+function parseNumberList(line: string, prefixLength: number): number[] {
+    return line.substring(prefixLength).trim().split(/\s+/).map(Number.parseFloat);
+}
+
+function parseObjIndex(token: string | undefined, definedCount: number): number {
+    if (token === undefined || token.length === 0) return UNASSIGNED_INDEX;
+    const oneBased = Number.parseInt(token, 10);
+    if (Number.isNaN(oneBased)) return UNASSIGNED_INDEX;
+    return oneBased > 0 ? oneBased - 1 : definedCount + oneBased;
 }
 
 export class MeshBuilder {
@@ -202,40 +220,57 @@ export class MeshBuilder {
     }
 
     public generateNormals(): void {
-        // TODO: real normals/UVs; zero-fill until a generator exists
-        for (let i = 0; i < this.vertices.length; i++) {
-            this.normals[i] = Vec.alloc3()
+        this.verifyTriangles();
+        const vertices = this.vertices;
+        const normals = this.normals;
+        normals.length = vertices.length;
+        for (let i = 0; i < vertices.length; i++) {
+            normals[i] = Vec.alloc3();
+        }
+
+        const edgeAB = Vec.alloc3();
+        const edgeAC = Vec.alloc3();
+        const areaWeightedFaceNormal = Vec.alloc3();
+        for (const triangle of this.triangles) {
+            const ia = Vec.x(triangle) | 0, ib = Vec.y(triangle) | 0, ic = Vec.z(triangle) | 0;
+            Vec.subInto(edgeAB, vertices[ib], vertices[ia]);
+            Vec.subInto(edgeAC, vertices[ic], vertices[ia]);
+            Vec.crossInto(areaWeightedFaceNormal, edgeAB, edgeAC);
+            Vec.addInto(normals[ia], normals[ia], areaWeightedFaceNormal);
+            Vec.addInto(normals[ib], normals[ib], areaWeightedFaceNormal);
+            Vec.addInto(normals[ic], normals[ic], areaWeightedFaceNormal);
+        }
+
+        for (const normal of normals) {
+            Vec.normalizeInto(normal, normal);
         }
     }
 
     public generateUvs(): void {
-        // TODO: real normals/UVs; zero-fill until a generator exists
+        this.uvs.length = this.vertices.length;
         for (let i = 0; i < this.vertices.length; i++) {
             this.uvs[i] = Vec.alloc2()
         }
     }
 
     private verifySize() {
-        if (this.vertices.length < 0) {
-            throw new Error("Vertices must be greater than 0");
-        }
-
         if (this.vertices.length != this.uvs.length) {
             throw new Error("All vertices must have a matching UV coordinate");
         }
 
         if (this.vertices.length != this.normals.length) {
             throw new Error("All vertices must have a matching normal");
-
         }
     }
 
     private verifyTriangles() {
-        this.triangles.forEach((tri) => {
+        const vertexCount = this.vertices.length;
+        for (const triangle of this.triangles) {
             for (let i = 0; i < 3; i++) {
-                if (Vec.get(tri, i) > this.vertices.length || Vec.get(tri, i) < 0)
-                    throw new Error("Invalid Triangle");
+                const index = Vec.get(triangle, i);
+                if (index >= vertexCount || index < 0 || index !== Math.floor(index))
+                    throw new Error(`Invalid triangle: vertex index ${index} out of range [0, ${vertexCount})`);
             }
-        })
+        }
     }
 }

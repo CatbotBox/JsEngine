@@ -13,6 +13,10 @@ import {FieldOfView} from "../../3d/fieldOfView";
 import {ConsoleCellRatio} from "../../consoleCellRatio";
 import {MeshRasterizer, MeshRasterizerConfig} from "./meshRasterizer";
 import {RenderMeshBoundsSystem} from "../../3d/renderMeshBoundsSystem";
+import {ViewSpaceMesh} from "../../3d/viewSpaceMesh";
+import {SceneLights} from "../../3d/lighting/sceneLights";
+import {SceneLightsGatherSystem} from "../../3d/lighting/sceneLightsGatherSystem";
+import {VertexLighting} from "../../3d/lighting/vertexLighting";
 
 function defaultWorkerCount(): number {
     const env = typeof process !== "undefined" ? process.env.JSENGINE_RASTER_THREADS : undefined;
@@ -56,6 +60,9 @@ export class Console3DRenderPassSystem extends System {
 
     private _rasterizer = new MeshRasterizer();
     private _modelViewScratch = new Float32Array(16);
+    private _normalMatrixScratch = new Float32Array(9);
+    private _viewSpaceMesh = new ViewSpaceMesh();
+    private _vertexLighting = new VertexLighting();
 
     override systemGroup() {
         return ConsoleRenderPassSystemGroup;
@@ -70,6 +77,7 @@ export class Console3DRenderPassSystem extends System {
         this.requireAnyForUpdate(this._alwaysRenderQuery);
         this.requireAnyForUpdate(this._selectiveRenderQuery);
         this.world.ensureSystemExists(RenderMeshBoundsSystem);
+        this.world.ensureSystemExists(SceneLightsGatherSystem);
     }
 
     private static currentConfig(): MeshRasterizerConfig {
@@ -106,12 +114,15 @@ export class Console3DRenderPassSystem extends System {
         const rasterizer = this._rasterizer;
         rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, Console3DRenderPassSystem.currentConfig());
 
+        const sceneLights = this.world.resources.tryGet(SceneLights);
+        const lit = sceneLights !== undefined && sceneLights.hasAnyLight;
+        if (lit) this._vertexLighting.beginFrame(sceneLights, invertedCameraMatrix);
+
         this._alwaysRenderQuery.stream({
             read: {renderMesh: RenderMesh, localToWorld: LocalToWorld},
         }).consume(({renderMesh, localToWorld}) => {
             if (renderMesh.mesh === undefined) return;
-            LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, fromFloat32Array<16>(this._modelViewScratch));
-            rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, renderMesh.color);
+            this.drawMesh(renderMesh.mesh, renderMesh.color, localToWorld, invertedCameraMatrix, focalLength, cellRatio, lit);
         });
 
         // Entities carrying WorldSpaceRenderBounds get a cheap conservative
@@ -121,11 +132,22 @@ export class Console3DRenderPassSystem extends System {
         }).consume(({renderMesh, localToWorld, bounds}) => {
             if (renderMesh.mesh === undefined) return;
             if (!Console3DRenderPassSystem.boundsMayBeVisible(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
-            LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, fromFloat32Array<16>(this._modelViewScratch));
-            rasterizer.addMesh(renderMesh.mesh, this._modelViewScratch, focalLength, cellRatio, renderMesh.color);
+            this.drawMesh(renderMesh.mesh, renderMesh.color, localToWorld, invertedCameraMatrix, focalLength, cellRatio, lit);
         });
 
         rasterizer.endFrame();
+    }
+
+    private drawMesh(
+        mesh: DeepReadonly<Mesh>, color: number, localToWorld: DeepReadonly<LocalToWorld>, invertedCameraMatrix: Vec16,
+        focalLength: number | undefined, cellRatio: number, lit: boolean,
+    ): void {
+        const modelView = fromFloat32Array<16>(this._modelViewScratch);
+        LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, modelView);
+        const normalMatrix = lit ? LocalToWorld.normalMatrix3(modelView, this._normalMatrixScratch) : null;
+        const viewMesh = this._viewSpaceMesh.transformFrom(mesh, this._modelViewScratch, normalMatrix);
+        const vertexRgb = lit ? this._vertexLighting.shade(viewMesh, color) : null;
+        this._rasterizer.addViewSpaceMesh(mesh, viewMesh, focalLength, cellRatio, color, vertexRgb);
     }
 
     /**
