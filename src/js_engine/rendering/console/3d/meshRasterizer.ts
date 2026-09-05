@@ -520,7 +520,7 @@ export class MeshRasterizer {
         } else if (this.halfBlock) {
             this.resolveCells(this.resolveDepth, this.resolveColor, 0);
             this.resolveCells(this.resolveDepthBottom, this.resolveColorBottom, this.supersampleY);
-            this.screenBuffer.mergeRgbSplitLayer(this.resolveDepth, this.resolveColor, this.resolveDepthBottom, this.resolveColorBottom, (config.backgroundColor ?? 0) & 0xFFFFFF);
+            this.screenBuffer.mergeRgbSplitLayer(this.resolveDepth, this.resolveColor, this.resolveDepthBottom, this.resolveColorBottom);
         } else {
             this.resolveCells(this.resolveDepth, this.resolveColor, 0);
             this.screenBuffer.mergeRgbLayer(this.resolveDepth, this.resolveColor);

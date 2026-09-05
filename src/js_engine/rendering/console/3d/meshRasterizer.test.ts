@@ -158,14 +158,14 @@ describe("MeshRasterizer half-block cells", () => {
         const screen = render(screenRectQuad(red, 0, 0, WIDTH, 4.5), {supersample: 1, halfBlock: true, backgroundColor: 0x0000FF});
         expect(screen.rgbAt(1, 3)).toBe(0xFF0000);
         expect(screen.splitRgbAt(1, 3)).toBeUndefined();
-        expect(screen.splitRgbAt(1, 4)).toEqual([0xFF0000, 0x0000FF]);
+        expect(screen.splitRgbAt(1, 4)).toEqual([0xFF0000, undefined]);
         expect(screen.rgbAt(1, 5)).toBeUndefined();
         expect(screen.splitRgbAt(1, 5)).toBeUndefined();
     });
 
     test("each half still supersamples: a quarter-cell edge blends within the half", () => {
         const screen = render(screenRectQuad(red, 0, 0, WIDTH, 4.25), {supersample: 1, supersampleY: 2, halfBlock: true});
-        expect(screen.splitRgbAt(1, 4)).toEqual([0x800000, 0x000000]);
+        expect(screen.splitRgbAt(1, 4)).toEqual([0x800000, undefined]);
     });
 
     test("half-block off reproduces whole-cell output", () => {
