@@ -23,6 +23,7 @@ import {ConsoleRenderSettings} from "../../src/js_engine/rendering/console";
 import {
     AmbientLight,
     DirectionalLight,
+    FaceCulling,
     FieldOfView,
     Mesh,
     PointLight,
@@ -73,7 +74,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
     let lampEnabled = true;
 
     //Meshes
-    let meshes: { name: string, mesh: Mesh, color: number }[] = [];
+    let meshes: { name: string, mesh: Mesh, color: number, faceCulling: FaceCulling }[] = [];
 
 
     let selectedMeshIndex = 0;
@@ -149,6 +150,8 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         };
         const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
         const untintedWhite = 0xFFFFFF;
+        // Models whose faces are not consistently wound; drawn double-sided.
+        const doubleSidedModels = new Set(["bugatti"]);
         meshes = files.map((file, index) => {
             const mesh = Mesh.fromFile(file.path);
             const textured = mesh.materials.some(material => material.diffuseTexture !== undefined);
@@ -156,6 +159,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
                 name: file.name,
                 mesh,
                 color: textured ? untintedWhite : namedColors[file.name] ?? palette[index % palette.length],
+                faceCulling: doubleSidedModels.has(file.name) ? FaceCulling.None : FaceCulling.BackFaces,
             };
         });
         // keep the selection valid if the list shrank
@@ -229,7 +233,10 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
     const spawnModel = () => {
         if (meshes.length == 0) return;
         const entity = buffer.createEntity();
-        buffer.addComponent(entity, new RenderMesh(meshes[selectedMeshIndex].mesh, meshes[selectedMeshIndex].color));
+        const model = meshes[selectedMeshIndex];
+        const renderMesh = new RenderMesh(model.mesh, model.color);
+        renderMesh.faceCulling = model.faceCulling;
+        buffer.addComponent(entity, renderMesh);
         buffer.addComponent(entity, new LocalToWorld());
         const position = buffer.addTrackedComponent(entity, new LocalPosition());
         const rotation = buffer.addTrackedComponent(entity, new LocalRotation());
