@@ -4,6 +4,11 @@ export class Material {
     public static readonly DEFAULT_NAME = "default";
 
     public diffuseTexture?: Texture;
+    public specularColor: number = 0;
+    public shininess: number = 0;
+    public emissiveColor: number = 0;
+    public specularTexturePath?: string;
+    public specularTexture?: Texture;
 
     public constructor(
         public readonly name: string = Material.DEFAULT_NAME,
@@ -17,21 +22,33 @@ export class Material {
     }
 }
 
+interface TextureSlot {
+    readonly path: "diffuseTexturePath" | "specularTexturePath";
+    readonly texture: "diffuseTexture" | "specularTexture";
+}
+
+const TEXTURE_SLOTS: readonly TextureSlot[] = [
+    {path: "diffuseTexturePath", texture: "diffuseTexture"},
+    {path: "specularTexturePath", texture: "specularTexture"},
+];
+
 export function loadMaterialTextures(materials: readonly Material[], cache: Map<string, Texture> = new Map()): void {
     const fs = require("fs") as typeof import("fs");
     for (const material of materials) {
-        const path = material.diffuseTexturePath;
-        if (path === undefined || material.diffuseTexture !== undefined) continue;
-        let texture = cache.get(path);
-        if (texture === undefined) {
-            if (!fs.existsSync(path)) {
-                console.warn(`Texture ${path} for material ${material.name} not found; rendering it untextured`);
-                continue;
+        for (const slot of TEXTURE_SLOTS) {
+            const path = material[slot.path];
+            if (path === undefined || material[slot.texture] !== undefined) continue;
+            let texture = cache.get(path);
+            if (texture === undefined) {
+                if (!fs.existsSync(path)) {
+                    console.warn(`Texture ${path} for material ${material.name} not found; rendering it untextured`);
+                    continue;
+                }
+                texture = Texture.fromFile(path);
+                cache.set(path, texture);
             }
-            texture = Texture.fromFile(path);
-            cache.set(path, texture);
+            material[slot.texture] = texture;
         }
-        material.diffuseTexture = texture;
     }
 }
 

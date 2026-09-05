@@ -72,6 +72,14 @@ describe("loadMaterialTextures", () => {
         expect(a.diffuseTexture).toBe(b.diffuseTexture);
     });
 
+    test("fills the specular slot too and shares the file with the diffuse slot", () => {
+        const material = new Material("m", 0xFFFFFF, "./demo/3d/checker.png");
+        material.specularTexturePath = "./demo/3d/checker.png";
+        loadMaterialTextures([material]);
+        expect(material.specularTexture).toBeDefined();
+        expect(material.specularTexture).toBe(material.diffuseTexture);
+    });
+
     test("a missing file leaves the material untextured instead of throwing", () => {
         const material = new Material("m", 0xFFFFFF, "./demo/3d/does-not-exist.png");
         loadMaterialTextures([material]);
