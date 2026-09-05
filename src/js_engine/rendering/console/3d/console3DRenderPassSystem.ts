@@ -1,4 +1,5 @@
 ﻿import {DeepReadonly} from "../../../util/tokenUtils";
+import {FaceCulling} from "../../3d/faceCulling";
 import {System} from "../../../core";
 import {Camera} from "../../camera";
 import {ConsoleScreenBuffer, ScreenBuffer} from "../consoleScreenBuffer";
@@ -84,7 +85,7 @@ export class Console3DRenderPassSystem extends System {
             read: {renderMesh: RenderMesh, localToWorld: LocalToWorld},
         }).consume(({renderMesh, localToWorld}) => {
             if (renderMesh.mesh === undefined) return;
-            this.drawMesh(renderMesh.mesh, renderMesh.color, localToWorld, invertedCameraMatrix, focalLength, cellRatio, lit);
+            this.drawMesh(renderMesh.mesh, renderMesh.color, renderMesh.faceCulling, localToWorld, invertedCameraMatrix, focalLength, cellRatio, lit);
         });
 
         // Entities carrying WorldSpaceRenderBounds get a cheap conservative
@@ -94,14 +95,14 @@ export class Console3DRenderPassSystem extends System {
         }).consume(({renderMesh, localToWorld, bounds}) => {
             if (renderMesh.mesh === undefined) return;
             if (!Console3DRenderPassSystem.boundsMayBeVisible(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
-            this.drawMesh(renderMesh.mesh, renderMesh.color, localToWorld, invertedCameraMatrix, focalLength, cellRatio, lit);
+            this.drawMesh(renderMesh.mesh, renderMesh.color, renderMesh.faceCulling, localToWorld, invertedCameraMatrix, focalLength, cellRatio, lit);
         });
 
         rasterizer.endFrame();
     }
 
     private drawMesh(
-        mesh: DeepReadonly<Mesh>, color: number, localToWorld: DeepReadonly<LocalToWorld>, invertedCameraMatrix: Vec16,
+        mesh: DeepReadonly<Mesh>, color: number, faceCulling: FaceCulling, localToWorld: DeepReadonly<LocalToWorld>, invertedCameraMatrix: Vec16,
         focalLength: number | undefined, cellRatio: number, lit: boolean,
     ): void {
         const modelView = fromFloat32Array<16>(this._modelViewScratch);
@@ -109,7 +110,7 @@ export class Console3DRenderPassSystem extends System {
         const normalMatrix = lit ? LocalToWorld.normalMatrix3(modelView, this._normalMatrixScratch) : null;
         const viewMesh = this._viewSpaceMesh.transformFrom(mesh, this._modelViewScratch, normalMatrix);
         const vertexRgb = lit ? this._vertexLighting.shade(viewMesh, color) : null;
-        this._rasterizer.addViewSpaceMesh(mesh, viewMesh, focalLength, cellRatio, color, vertexRgb);
+        this._rasterizer.addViewSpaceMesh(mesh, viewMesh, focalLength, cellRatio, color, vertexRgb, faceCulling);
     }
 
     /**

@@ -14,6 +14,7 @@ export {decodePpm, encodePpm} from './image/ppm';
 export {parseMtl} from './mtlParser';
 export type {MaterialLibrary} from './mtlParser';
 export {RenderMesh} from './renderMesh';
+export {FaceCulling} from './faceCulling';
 export {FieldOfView} from './fieldOfView';
 export {RenderMeshBoundsSystem} from './renderMeshBoundsSystem';
 export {ViewSpaceMesh} from './viewSpaceMesh';

@@ -1,3 +1,4 @@
+import {FaceCulling} from "../../3d/faceCulling";
 import {DeepReadonly} from "../../../util/tokenUtils";
 import {Mesh} from "../../3d/mesh";
 import {ViewSpaceMesh} from "../../3d/viewSpaceMesh";
@@ -122,6 +123,7 @@ export class MeshRasterizer {
     private bboxAreaAccum = 0;
     private bandCount = 1;
     private rowsPerBand = 0;
+    private faceCulling = FaceCulling.BackFaces;
 
     public beginFrame(screenBuffer: ScreenBuffer, width: number, height: number, config: MeshRasterizerConfig): void {
         this.screenBuffer = screenBuffer;
@@ -206,13 +208,14 @@ export class MeshRasterizer {
      * @param baseColor   packed 0xRRGGBB tint multiplied onto every material color
      * @param vertexRgb   optional per-vertex linear color, 3 floats in 0..1 per vertex (replaces material color × tint)
      */
-    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null = null): void {
+    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null = null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
         if (this.width === 0 || this.height === 0) return;
-        this.addViewSpaceMesh(mesh, this.viewSpaceMesh.transformFrom(mesh, modelView, null), focalLength, cellRatio, baseColor, vertexRgb);
+        this.addViewSpaceMesh(mesh, this.viewSpaceMesh.transformFrom(mesh, modelView, null), focalLength, cellRatio, baseColor, vertexRgb, faceCulling);
     }
 
-    public addViewSpaceMesh(mesh: DeepReadonly<Mesh>, viewMesh: ViewSpaceMesh, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null): void {
+    public addViewSpaceMesh(mesh: DeepReadonly<Mesh>, viewMesh: ViewSpaceMesh, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
         if (this.width === 0 || this.height === 0) return;
+        this.faceCulling = faceCulling;
 
         const vertCount = viewMesh.vertCount;
         if (this.vertexColors.length < vertCount) this.vertexColors = new Int32Array(vertCount);
@@ -416,8 +419,20 @@ export class MeshRasterizer {
         // emitted as A, C, B (see the pack below) and culled in that same order
         // — flipping the projection without this would cull exactly the faces
         // that should be visible and draw the ones that shouldn't.
+        // A drawn back face is re-wound (B and C swapped) so the kernel still
+        // sees the one winding it accepts.
         const area2 = (scx - sax) * (sby - say) - (scy - say) * (sbx - sax);
-        if (area2 >= 0) return;
+        if (area2 === 0) return;
+        const isBackFace = area2 > 0;
+        if (this.faceCulling === (isBackFace ? FaceCulling.BackFaces : FaceCulling.FrontFaces)) return;
+        if (isBackFace) {
+            let swap = sbx; sbx = scx; scx = swap;
+            swap = sby; sby = scy; scy = swap;
+            swap = bz; bz = cz; cz = swap;
+            swap = colorB; colorB = colorC; colorC = swap;
+            swap = ub; ub = uc; uc = swap;
+            swap = vb; vb = vc; vc = swap;
+        }
 
         // Off-screen cull + workload estimate for the threading heuristic.
         let minX = sax < sbx ? sax : sbx; if (scx < minX) minX = scx;

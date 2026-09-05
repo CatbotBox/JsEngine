@@ -2,8 +2,17 @@ import {Component, Entity} from "../../core";
 import {EntityWriteOptions} from "../../core/entityWriteOptions";
 import {Mesh} from "./mesh";
 import {RenderBounds} from "../renderBounds";
+import {FaceCulling} from "./faceCulling";
 
 export class RenderMesh extends Component {
+    /**
+     * Which faces to skip by screen-space winding. BackFaces (default) hides
+     * the far side of closed meshes; None draws both sides for meshes with
+     * inconsistent winding or open shells; FrontFaces shows only the far side.
+     * A drawn back face keeps its front-face lighting.
+     */
+    public faceCulling: FaceCulling = FaceCulling.BackFaces;
+
     public constructor(private _mesh?: Mesh, private _color: number = 0xFFFFFF) {
         super();
     }

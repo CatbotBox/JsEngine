@@ -7,6 +7,7 @@ import {ScreenBuffer} from "../consoleScreenBuffer";
 import {ScreenSize} from "../../screenSize";
 import {MeshRasterizer, MeshRasterizerConfig} from "./meshRasterizer";
 import {TextureStore} from "./textureStore";
+import {FaceCulling} from "../../3d/faceCulling";
 
 const WIDTH = 8, HEIGHT = 8;
 
@@ -228,7 +229,7 @@ describe("near-plane clipping", () => {
         return new Mesh(builder);
     }
 
-    function coveredCells(mesh: Mesh): number {
+    function coveredCells(mesh: Mesh, faceCulling = FaceCulling.BackFaces): number {
         const screenSize = new ScreenSize();
         screenSize.x = WIDTH;
         screenSize.y = HEIGHT;
@@ -236,7 +237,7 @@ describe("near-plane clipping", () => {
         buffer.beginFrame({screenSize}, " ");
         const rasterizer = new MeshRasterizer();
         rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config({textures: false}));
-        rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF);
+        rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);
         rasterizer.endFrame();
         rasterizer.dispose();
         let count = 0;
@@ -264,4 +265,102 @@ describe("near-plane clipping", () => {
             expect(coveredCells(spanningTriangle(zA, zB, zC, true))).toBe(0);
         });
     }
+});
+
+describe("face culling modes", () => {
+    const FOCAL = 10, CELL_RATIO = 2;
+    const material = new Material("m", 0xFF0000);
+
+    function spanningTriangle(zA: number, zB: number, zC: number, backFacing: boolean): Mesh {
+        const builder = new MeshBuilder();
+        builder.vertices.push(Vec.alloc3(-3, -2, zA), Vec.alloc3(3, -2, zB), Vec.alloc3(0, 3, zC));
+        builder.uvs.push(Vec.alloc2(0, 0), Vec.alloc2(1, 0), Vec.alloc2(0, 1));
+        builder.triangles.push(backFacing ? Vec.alloc3(0, 1, 2) : Vec.alloc3(0, 2, 1));
+        builder.materials.push(material);
+        builder.vertexMaterial.push(0, 0, 0);
+        builder.generateNormals();
+        return new Mesh(builder);
+    }
+
+    function render(mesh: Mesh, faceCulling?: FaceCulling): ScreenBuffer {
+        const screenSize = new ScreenSize();
+        screenSize.x = WIDTH;
+        screenSize.y = HEIGHT;
+        const buffer = new ScreenBuffer();
+        buffer.beginFrame({screenSize}, " ");
+        const rasterizer = new MeshRasterizer();
+        rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config({textures: false}));
+        if (faceCulling === undefined) rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF);
+        else rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);
+        rasterizer.endFrame();
+        rasterizer.dispose();
+        return buffer;
+    }
+
+    function cells(buffer: ScreenBuffer): (number | undefined)[] {
+        const out: (number | undefined)[] = [];
+        for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) out.push(buffer.rgbAt(x, y));
+        return out;
+    }
+
+    test("a back face renders exactly like its front face when culling is off", () => {
+        const front = cells(render(spanningTriangle(5, 5, 5, false), FaceCulling.BackFaces));
+        const back = cells(render(spanningTriangle(5, 5, 5, true), FaceCulling.None));
+        expect(front.some(c => c !== undefined)).toBe(true);
+        expect(back).toEqual(front);
+    });
+
+    test("a clipped back face renders when culling is off and stays culled when it is on", () => {
+        const clippedBack = spanningTriangle(5, -1, 5, true);
+        expect(cells(render(clippedBack, FaceCulling.BackFaces)).every(c => c === undefined)).toBe(true);
+        expect(cells(render(clippedBack, FaceCulling.None))).toEqual(cells(render(spanningTriangle(5, -1, 5, false), FaceCulling.BackFaces)));
+    });
+
+    test("the default keeps culling on", () => {
+        expect(cells(render(spanningTriangle(5, 5, 5, true))).every(c => c === undefined)).toBe(true);
+    });
+});
+
+describe("front face culling", () => {
+    const FOCAL = 10, CELL_RATIO = 2;
+    const material = new Material("m", 0xFF0000);
+
+    function triangle(backFacing: boolean): Mesh {
+        const builder = new MeshBuilder();
+        builder.vertices.push(Vec.alloc3(-3, -2, 5), Vec.alloc3(3, -2, 5), Vec.alloc3(0, 3, 5));
+        builder.uvs.push(Vec.alloc2(0, 0), Vec.alloc2(1, 0), Vec.alloc2(0, 1));
+        builder.triangles.push(backFacing ? Vec.alloc3(0, 1, 2) : Vec.alloc3(0, 2, 1));
+        builder.materials.push(material);
+        builder.vertexMaterial.push(0, 0, 0);
+        builder.generateNormals();
+        return new Mesh(builder);
+    }
+
+    function coveredCells(mesh: Mesh, faceCulling: FaceCulling): number {
+        const screenSize = new ScreenSize();
+        screenSize.x = WIDTH;
+        screenSize.y = HEIGHT;
+        const buffer = new ScreenBuffer();
+        buffer.beginFrame({screenSize}, " ");
+        const rasterizer = new MeshRasterizer();
+        rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config({textures: false}));
+        rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);
+        rasterizer.endFrame();
+        rasterizer.dispose();
+        let count = 0;
+        for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) if (buffer.rgbAt(x, y) !== undefined) count++;
+        return count;
+    }
+
+    test("FrontFaces hides the front face and shows the back face", () => {
+        expect(coveredCells(triangle(false), FaceCulling.FrontFaces)).toBe(0);
+        expect(coveredCells(triangle(true), FaceCulling.FrontFaces)).toBeGreaterThan(0);
+    });
+
+    test("BackFaces and None agree on which faces each mode shows", () => {
+        const frontCells = coveredCells(triangle(false), FaceCulling.BackFaces);
+        expect(coveredCells(triangle(true), FaceCulling.BackFaces)).toBe(0);
+        expect(coveredCells(triangle(false), FaceCulling.None)).toBe(frontCells);
+        expect(coveredCells(triangle(true), FaceCulling.None)).toBe(frontCells);
+    });
 });
