@@ -11,49 +11,20 @@ import {RenderMesh} from "../../3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {FieldOfView} from "../../3d/fieldOfView";
 import {ConsoleCellRatio} from "../../consoleCellRatio";
-import {MeshRasterizer, MeshRasterizerConfig} from "./meshRasterizer";
+import {MeshRasterizer} from "./meshRasterizer";
+import {Console3DRenderSettings} from "./console3DRenderSettings";
 import {RenderMeshBoundsSystem} from "../../3d/renderMeshBoundsSystem";
 import {ViewSpaceMesh} from "../../3d/viewSpaceMesh";
 import {SceneLights} from "../../3d/lighting/sceneLights";
 import {SceneLightsGatherSystem} from "../../3d/lighting/sceneLightsGatherSystem";
 import {VertexLighting} from "../../3d/lighting/vertexLighting";
 
-function defaultWorkerCount(): number {
-    const env = typeof process !== "undefined" ? process.env.JSENGINE_RASTER_THREADS : undefined;
-    if (env !== undefined) {
-        const parsed = Number.parseInt(env, 10);
-        if (Number.isFinite(parsed)) return Math.max(0, Math.min(15, parsed));
-    }
-    try {
-        const os = require("os") as typeof import("os");
-        const cores: number = os.availableParallelism?.() ?? os.cpus().length;
-        return Math.max(0, Math.min(7, cores - 1));
-    } catch {
-        return 0;
-    }
-}
-
+/**
+ * Draws every RenderMesh through MeshRasterizer. Runs only while a singleton
+ * Console3DRenderSettings entity exists; that entity is the configuration.
+ */
 export class Console3DRenderPassSystem extends System {
-    /** Depth at which objects fade to black. */
-    public static maxDepthFade = 15;
-    /**
-     * Mask ANDed onto every packed color. Dropping the low 2 bits per channel
-     * (default) is visually indistinguishable in a terminal but makes adjacent
-     * cells share colors far more often, which the flush encoder turns into
-     * much shorter ANSI output. Set to 0xFFFFFF for exact colors.
-     */
-    public static colorQuantMask = 0xFCFCFC;
-    /**
-     * Antialiasing: cells are rasterized as supersample² subsamples and
-     * averaged (2 is a good default; 1 disables AA entirely).
-     */
-    public static supersample = 2;
-    /** Worker threads for rasterization; 0 forces single-threaded. Overridable via JSENGINE_RASTER_THREADS. */
-    public static workerCount = defaultWorkerCount();
-    /** Batches smaller than both thresholds rasterize on the main thread (thread wake-up isn't free). */
-    public static threadTriangleThreshold = 2048;
-    public static threadAreaThreshold = 50_000;
-
+    private _settingsQuery = this.createEntityQuery([Console3DRenderSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld, FieldOfView, ConsoleCellRatio]);
     private _alwaysRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
@@ -73,6 +44,7 @@ export class Console3DRenderPassSystem extends System {
     }
 
     protected onCreate() {
+        this.requireAllForUpdate(this._settingsQuery);
         this.requireAllForUpdate(this._cameraQuery);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
         this.requireAnyForUpdate(this._selectiveRenderQuery);
@@ -80,18 +52,8 @@ export class Console3DRenderPassSystem extends System {
         this.world.ensureSystemExists(SceneLightsGatherSystem);
     }
 
-    private static currentConfig(): MeshRasterizerConfig {
-        return {
-            maxDepthFade: Console3DRenderPassSystem.maxDepthFade,
-            colorQuantMask: Console3DRenderPassSystem.colorQuantMask,
-            supersample: Console3DRenderPassSystem.supersample,
-            workerCount: Console3DRenderPassSystem.workerCount,
-            threadTriangleThreshold: Console3DRenderPassSystem.threadTriangleThreshold,
-            threadAreaThreshold: Console3DRenderPassSystem.threadAreaThreshold,
-        };
-    }
-
     onUpdate() {
+        const settings = this._settingsQuery.getSingleton({settings: Console3DRenderSettings}).settings;
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,
             screenSize: ScreenSize,
@@ -112,7 +74,7 @@ export class Console3DRenderPassSystem extends System {
             : undefined;
 
         const rasterizer = this._rasterizer;
-        rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, Console3DRenderPassSystem.currentConfig());
+        rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, settings.toRasterizerConfig());
 
         const sceneLights = this.world.resources.tryGet(SceneLights);
         const lit = sceneLights !== undefined && sceneLights.hasAnyLight;

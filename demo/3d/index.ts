@@ -19,6 +19,8 @@ import {
 
 import {AverageStat} from "../../src/js_engine/datatypes";
 import {Console3DRenderPassSystem} from "../../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
+import {Console3DRenderSettings} from "../../src/js_engine/rendering/console/3d/console3DRenderSettings";
+import {ConsoleRenderSettings} from "../../src/js_engine/rendering/console/consoleRenderSettings";
 import {AmbientLight, DirectionalLight, FieldOfView, Mesh, PointLight, RenderMesh} from "../../src/js_engine/rendering/3d";
 import {Vec, Vec3, Vec4} from "../../src/js_engine/math/types/vec";
 import {Quaternions} from "../../src/js_engine/math/quaternions";
@@ -39,6 +41,11 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
     buffer.addComponent(cameraEntity, new RenderBounds());
     const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
+
+    //Render settings (singleton entities; the 3D pass is off until this exists)
+    const settingsEntity = buffer.createEntity("renderSettings");
+    const renderSettings = buffer.addTrackedComponent(settingsEntity, new Console3DRenderSettings());
+    buffer.addComponent(settingsEntity, new ConsoleRenderSettings());
 
     //Lights
     const sunEntity = buffer.createEntity("sun");
@@ -106,7 +113,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         Ansi.colors.fg.cyan + 'wasd/qe move  arrows rotate  i/o scale  z/x fov',
         Ansi.colors.fg.cyan + 'drag: look   scroll: zoom',
         Ansi.colors.fg.cyan + 'space spawn  bksp despawn  n next  r reload  ^C quit',
-        Ansi.colors.fg.cyan + 'j/l u/m sun   h lights   p lamp   v 3d   tab hud',
+        Ansi.colors.fg.cyan + 'j/l u/m sun   h lights   p lamp   t textures   b halfblock   1-4 aa   v 3d   tab hud',
     ];
     buffer.addComponent(controlsEntity, new HudElement());
     const controlsAnchor = new ConsoleImageAnchor();
@@ -135,11 +142,16 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
             "indoor plant_02": 0x66C96A,   // green
         };
         const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
-        meshes = files.map((file, index) => ({
-            name: file.name,
-            mesh: Mesh.fromFile(file.path),
-            color: namedColors[file.name] ?? palette[index % palette.length],
-        }));
+        const untintedWhite = 0xFFFFFF;
+        meshes = files.map((file, index) => {
+            const mesh = Mesh.fromFile(file.path);
+            const textured = mesh.materials.some(material => material.diffuseTexture !== undefined);
+            return {
+                name: file.name,
+                mesh,
+                color: textured ? untintedWhite : namedColors[file.name] ?? palette[index % palette.length],
+            };
+        });
         // keep the selection valid if the list shrank
         if (selectedMeshIndex >= meshes.length) selectedMeshIndex = 0;
         updatePreview();
@@ -390,6 +402,19 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
             if (renderer) renderer.enabled = !renderer.enabled;
         })
         input.whenKeyDown(Key.G, () => world.logSystemUpdateOrder())
+        input.whenKeyDown(Key.T, () => {
+            renderSettings.textures = !renderSettings.textures;
+        })
+        input.whenKeyDown(Key.B, () => {
+            renderSettings.halfBlockCells = !renderSettings.halfBlockCells;
+        })
+        const supersamplePresets: [Key, number, number][] = [[Key.Num1, 1, 1], [Key.Num2, 2, 2], [Key.Num3, 2, 4], [Key.Num4, 4, 4]];
+        for (const [key, x, y] of supersamplePresets) {
+            input.whenKeyDown(key, () => {
+                renderSettings.supersampleX = x;
+                renderSettings.supersampleY = y;
+            })
+        }
 
         // ---- lighting ----
         // j/l: sun yaw | u/m: sun pitch | h: all lights on/off | p: point light on/off

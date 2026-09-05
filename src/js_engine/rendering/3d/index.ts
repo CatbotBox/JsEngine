@@ -1,4 +1,13 @@
 export {Mesh, MeshBuilder} from './mesh';
+export {Material, packRgb, multiplyPackedRgb, loadMaterialTextures} from './material';
+export {Texture} from './texture';
+export type {TextureLevel} from './texture';
+export {decodeImageFile, registerImageDecoder} from './image/decodedImage';
+export type {DecodedImage, ImageDecoder} from './image/decodedImage';
+export {decodePng, encodePng} from './image/png';
+export {decodePpm, encodePpm} from './image/ppm';
+export {parseMtl} from './mtlParser';
+export type {MaterialLibrary} from './mtlParser';
 export {RenderMesh} from './renderMesh';
 export {FieldOfView} from './fieldOfView';
 export {RenderMeshBoundsSystem} from './renderMeshBoundsSystem';

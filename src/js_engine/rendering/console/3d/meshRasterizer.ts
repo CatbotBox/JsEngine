@@ -1,9 +1,11 @@
-﻿import {DeepReadonly} from "../../../util/tokenUtils";
+import {DeepReadonly} from "../../../util/tokenUtils";
 import {Mesh} from "../../3d/mesh";
 import {ViewSpaceMesh} from "../../3d/viewSpaceMesh";
+import {multiplyPackedRgb} from "../../3d/material";
 import {ScreenBuffer} from "../consoleScreenBuffer";
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
 import {RasterWorkerPool} from "./rasterWorkerPool";
+import {TextureStore} from "./textureStore";
 
 export interface MeshRasterizerConfig {
     /** Depth at which shading fades to black. */
@@ -12,19 +14,38 @@ export interface MeshRasterizerConfig {
     colorQuantMask: number;
     /**
      * Antialiasing factor: each cell is rasterized as supersample×supersample
-     * subsamples whose colors are averaged (uncovered subsamples count as
-     * black). 1 disables AA and reproduces the single-sample pipeline exactly.
+     * subsamples whose colors are averaged (uncovered subsamples take
+     * backgroundColor). 1 disables AA and reproduces the single-sample pipeline exactly.
      */
     supersample: number;
+    /** Per-axis overrides for supersample; terminal cells are ~2:1, so 2x4 gives square subsamples. */
+    supersampleX?: number;
+    supersampleY?: number;
+    /** Packed 0xRRGGBB that uncovered subsamples blend toward at silhouettes (default black). */
+    backgroundColor?: number;
+    /**
+     * Render two vertical samples per cell and emit them as an upper-half-block
+     * glyph with foreground + background colors, doubling vertical resolution.
+     * Each half still gets supersampleX × supersampleY subsamples.
+     */
+    halfBlock?: boolean;
     /** Worker threads to use (0 disables threading entirely). */
     workerCount: number;
     /** Dispatch to the pool only when a batch has at least this many triangles… */
     threadTriangleThreshold: number;
     /** …or its bounding boxes cover at least this many cells (whichever hits first). */
     threadAreaThreshold: number;
+    /** Sample material textures; off renders every material by its diffuse color. */
+    textures: boolean;
 }
 
 const NEAR_PLANE_Z = 0.1;
+const LOG2 = Math.log(2);
+const MAX_SUPERSAMPLE = 4;
+
+function clampSupersample(value: number): number {
+    return Math.max(1, Math.min(MAX_SUPERSAMPLE, Math.floor(value) || 1));
+}
 
 function packUnitRgb(r: number, g: number, b: number): number {
     return (clampToByte(r * 255) << 16) | (clampToByte(g * 255) << 8) | clampToByte(b * 255);
@@ -55,21 +76,31 @@ export class MeshRasterizer {
 
     // Triangle batch + raster layers; these alias the pool's shared buffers in
     // pooled mode, or locally grown arrays in synchronous mode.
-    private triData: Float64Array<ArrayBufferLike> = new Float64Array(0);
+    private triData: Float32Array<ArrayBufferLike> = new Float32Array(0);
+    private triInts: Int32Array<ArrayBufferLike> = new Int32Array(0);
     private depthLayer: Float32Array<ArrayBufferLike> = new Float32Array(0);
     private colorLayer: Int32Array<ArrayBufferLike> = new Int32Array(0);
-    private localTriData = new Float64Array(4096 * TRI_STRIDE);
+    private textureStore: TextureStore = TextureStore.growable();
+    private localTriData = new Float32Array(4096 * TRI_STRIDE);
+    private localTriInts: Int32Array<ArrayBufferLike> = new Int32Array(this.localTriData.buffer);
     private localDepthLayer = new Float32Array(0);
     private localColorLayer = new Int32Array(0);
+    private readonly localTextureStore = TextureStore.growable();
     private usingPool = false;
 
     // Cell-resolution buffers the supersampled layers are resolved into before
     // depth-compositing (unused when supersample == 1).
     private resolveDepth = new Float32Array(0);
     private resolveColor = new Int32Array(0);
+    private resolveDepthBottom = new Float32Array(0);
+    private resolveColorBottom = new Int32Array(0);
 
     private viewSpaceMesh = new ViewSpaceMesh();
     private vertexColors = new Int32Array(0);
+    private materialColors = new Int32Array(0);
+    private materialTextureIds = new Int32Array(0);
+    private materialTexelAreas = new Float64Array(0);
+    private materialLevelCounts = new Int32Array(0);
 
     // Frame state
     private screenBuffer!: ScreenBuffer;
@@ -78,9 +109,12 @@ export class MeshRasterizer {
     private height = 0;
     private halfWidth = 0;
     private halfHeight = 0;
-    // Supersampling: raster* dimensions are the subsample grid (cell dims x supersampleFactor)
+    // Supersampling: raster* dimensions are the subsample grid (cell dims x supersample factors)
     // that the kernel, layers and band binning all operate in.
-    private supersampleFactor = 1;
+    private supersampleX = 1;
+    private supersampleY = 1;
+    private halfBlock = false;
+    private rowsPerCell = 1;
     private subsamplesPerCell = 1;
     private rasterWidth = 0;
     private rasterHeight = 0;
@@ -96,11 +130,16 @@ export class MeshRasterizer {
         this.height = height;
         this.halfWidth = width / 2;
         this.halfHeight = height / 2;
-        const ss = Math.max(1, Math.min(4, Math.floor(config.supersample) || 1));
-        this.supersampleFactor = ss;
-        this.subsamplesPerCell = ss * ss;
-        this.rasterWidth = width * ss;
-        this.rasterHeight = height * ss;
+        const sx = clampSupersample(config.supersampleX ?? config.supersample);
+        const sy = clampSupersample(config.supersampleY ?? config.supersample);
+        const halfBlock = config.halfBlock === true;
+        this.supersampleX = sx;
+        this.supersampleY = sy;
+        this.halfBlock = halfBlock;
+        this.rowsPerCell = halfBlock ? sy * 2 : sy;
+        this.subsamplesPerCell = sx * this.rowsPerCell;
+        this.rasterWidth = width * sx;
+        this.rasterHeight = height * this.rowsPerCell;
         this.triCount = 0;
         this.bboxAreaAccum = 0;
 
@@ -110,8 +149,10 @@ export class MeshRasterizer {
 
         if (this.usingPool) {
             this.triData = pool!.triData;
+            this.triInts = pool!.triInts;
             this.depthLayer = pool!.depthLayer;
             this.colorLayer = pool!.colorLayer;
+            this.textureStore = pool!.textureStore;
             this.bandCount = pool!.workerCount + 1;
             this.rowsPerBand = this.rasterHeight > 0 ? Math.ceil(this.rasterHeight / this.bandCount) : 1;
             pool!.bandCounts.fill(0);
@@ -122,12 +163,18 @@ export class MeshRasterizer {
                 this.localColorLayer = new Int32Array(rasterCells);
             }
             this.triData = this.localTriData;
+            this.triInts = this.localTriInts;
             this.depthLayer = this.localDepthLayer;
             this.colorLayer = this.localColorLayer;
+            this.textureStore = this.localTextureStore;
         }
-        if (ss > 1 && this.resolveDepth.length < width * height) {
+        if (this.subsamplesPerCell > 1 && this.resolveDepth.length < width * height) {
             this.resolveDepth = new Float32Array(width * height);
             this.resolveColor = new Int32Array(width * height);
+        }
+        if (halfBlock && this.resolveDepthBottom.length < width * height) {
+            this.resolveDepthBottom = new Float32Array(width * height);
+            this.resolveColorBottom = new Int32Array(width * height);
         }
         this.depthLayer.fill(Number.POSITIVE_INFINITY, 0, rasterCells);
     }
@@ -156,11 +203,8 @@ export class MeshRasterizer {
      * @param modelView   combined inverse-camera × local-to-world matrix (column-major 4x4)
      * @param focalLength screenHeight / (2 * tan(fov / 2)); undefined renders without perspective
      * @param cellRatio   horizontal cell aspect correction factor
-     * @param baseColor   packed 0xRRGGBB shaded by depth fade
-     */
-    /**
-     * @param baseColor packed 0xRRGGBB used for every vertex when vertexRgb is null
-     * @param vertexRgb optional per-vertex linear color, 3 floats in 0..1 per vertex
+     * @param baseColor   packed 0xRRGGBB tint multiplied onto every material color
+     * @param vertexRgb   optional per-vertex linear color, 3 floats in 0..1 per vertex (replaces material color × tint)
      */
     public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null = null): void {
         if (this.width === 0 || this.height === 0) return;
@@ -174,27 +218,46 @@ export class MeshRasterizer {
         if (this.vertexColors.length < vertCount) this.vertexColors = new Int32Array(vertCount);
         const view = viewMesh.positions;
         const colors = this.vertexColors;
-        this.fillVertexColors(colors, vertCount, baseColor, vertexRgb);
+        this.fillVertexColors(colors, mesh, baseColor, vertexRgb);
+        const anyTexture = this.prepareMaterialTextures(mesh);
+        const uvs = mesh.uvs.raw;
+        const vertexMaterial = mesh.vertexMaterial;
+        const textureIds = this.materialTextureIds;
+        const texelAreas = this.materialTexelAreas;
+        const levelCounts = this.materialLevelCounts;
 
         const indices = mesh.triangles.raw;
         const triangleCount = mesh.triangleCount;
 
         for (let t = 0, k = 0; t < triangleCount; t++, k += 3) {
-            const ia = (indices[k] | 0) * 3;
-            const ib = (indices[k + 1] | 0) * 3;
-            const ic = (indices[k + 2] | 0) * 3;
+            const cornerA = indices[k] | 0, cornerB = indices[k + 1] | 0, cornerC = indices[k + 2] | 0;
+            const ia = cornerA * 3, ib = cornerB * 3, ic = cornerC * 3;
 
             const ax = view[ia], ay = view[ia + 1], az = view[ia + 2];
             const bx = view[ib], by = view[ib + 1], bz = view[ib + 2];
             const cx = view[ic], cy = view[ic + 1], cz = view[ic + 2];
-            const colorA = colors[indices[k] | 0], colorB = colors[indices[k + 1] | 0], colorC = colors[indices[k + 2] | 0];
+            const colorA = colors[cornerA], colorB = colors[cornerB], colorC = colors[cornerC];
+
+            let textureId = TextureStore.NO_TEXTURE, texelArea = 0, levelCount = 1;
+            let ua = 0, va = 0, ub = 0, vb = 0, uc = 0, vc = 0;
+            if (anyTexture) {
+                const material = vertexMaterial[cornerA];
+                textureId = textureIds[material];
+                if (textureId !== TextureStore.NO_TEXTURE) {
+                    texelArea = texelAreas[material];
+                    levelCount = levelCounts[material];
+                    ua = uvs[ia]; va = 1 - uvs[ia + 1];
+                    ub = uvs[ib]; vb = 1 - uvs[ib + 1];
+                    uc = uvs[ic]; vc = 1 - uvs[ic + 1];
+                }
+            }
 
             const aIn = az >= NEAR_PLANE_Z;
             const bIn = bz >= NEAR_PLANE_Z;
             const cIn = cz >= NEAR_PLANE_Z;
 
             if (aIn && bIn && cIn) {
-                this.emitTriangle(ax, ay, az, bx, by, bz, cx, cy, cz, colorA, colorB, colorC, focalLength, cellRatio);
+                this.emitTriangle(ax, ay, az, bx, by, bz, cx, cy, cz, colorA, colorB, colorC, ua, va, ub, vb, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
                 continue;
             }
             if (!aIn && !bIn && !cIn) continue;
@@ -202,32 +265,32 @@ export class MeshRasterizer {
             // Near-plane clipping. Vertex order below mirrors the pre-rewrite
             // implementation (inside vertices in index order, then intersection
             // points), so winding — and thus backface culling — is unchanged.
-            let in0x = 0, in0y = 0, in0z = 0, in0Color = 0;
-            let in1x = 0, in1y = 0, in1z = 0, in1Color = 0;
-            let out0x = 0, out0y = 0, out0z = 0, out0Color = 0;
-            let out1x = 0, out1y = 0, out1z = 0, out1Color = 0;
+            let in0x = 0, in0y = 0, in0z = 0, in0Color = 0, in0u = 0, in0v = 0;
+            let in1x = 0, in1y = 0, in1z = 0, in1Color = 0, in1u = 0, in1v = 0;
+            let out0x = 0, out0y = 0, out0z = 0, out0Color = 0, out0u = 0, out0v = 0;
+            let out1x = 0, out1y = 0, out1z = 0, out1Color = 0, out1u = 0, out1v = 0;
             let insideCount = 0, outsideCount = 0;
 
-            if (aIn) { in0x = ax; in0y = ay; in0z = az; in0Color = colorA; insideCount = 1; }
-            else { out0x = ax; out0y = ay; out0z = az; out0Color = colorA; outsideCount = 1; }
+            if (aIn) { in0x = ax; in0y = ay; in0z = az; in0Color = colorA; in0u = ua; in0v = va; insideCount = 1; }
+            else { out0x = ax; out0y = ay; out0z = az; out0Color = colorA; out0u = ua; out0v = va; outsideCount = 1; }
 
             if (bIn) {
-                if (insideCount === 0) { in0x = bx; in0y = by; in0z = bz; in0Color = colorB; }
-                else { in1x = bx; in1y = by; in1z = bz; in1Color = colorB; }
+                if (insideCount === 0) { in0x = bx; in0y = by; in0z = bz; in0Color = colorB; in0u = ub; in0v = vb; }
+                else { in1x = bx; in1y = by; in1z = bz; in1Color = colorB; in1u = ub; in1v = vb; }
                 insideCount++;
             } else {
-                if (outsideCount === 0) { out0x = bx; out0y = by; out0z = bz; out0Color = colorB; }
-                else { out1x = bx; out1y = by; out1z = bz; out1Color = colorB; }
+                if (outsideCount === 0) { out0x = bx; out0y = by; out0z = bz; out0Color = colorB; out0u = ub; out0v = vb; }
+                else { out1x = bx; out1y = by; out1z = bz; out1Color = colorB; out1u = ub; out1v = vb; }
                 outsideCount++;
             }
 
             if (cIn) {
-                if (insideCount === 0) { in0x = cx; in0y = cy; in0z = cz; in0Color = colorC; }
-                else { in1x = cx; in1y = cy; in1z = cz; in1Color = colorC; }
+                if (insideCount === 0) { in0x = cx; in0y = cy; in0z = cz; in0Color = colorC; in0u = uc; in0v = vc; }
+                else { in1x = cx; in1y = cy; in1z = cz; in1Color = colorC; in1u = uc; in1v = vc; }
                 insideCount++;
             } else {
-                if (outsideCount === 0) { out0x = cx; out0y = cy; out0z = cz; out0Color = colorC; }
-                else { out1x = cx; out1y = cy; out1z = cz; out1Color = colorC; }
+                if (outsideCount === 0) { out0x = cx; out0y = cy; out0z = cz; out0Color = colorC; out0u = uc; out0v = vc; }
+                else { out1x = cx; out1y = cy; out1z = cz; out1Color = colorC; out1u = uc; out1v = vc; }
             }
 
             if (insideCount === 1) {
@@ -238,31 +301,82 @@ export class MeshRasterizer {
                 const t2 = (NEAR_PLANE_Z - in0z) / (out1z - in0z);
                 const i2x = in0x + t2 * (out1x - in0x);
                 const i2y = in0y + t2 * (out1y - in0y);
-                this.emitTriangle(in0x, in0y, in0z, i1x, i1y, NEAR_PLANE_Z, i2x, i2y, NEAR_PLANE_Z, in0Color, lerpPackedColor(in0Color, out0Color, t1), lerpPackedColor(in0Color, out1Color, t2), focalLength, cellRatio);
+                this.emitTriangle(
+                    in0x, in0y, in0z, i1x, i1y, NEAR_PLANE_Z, i2x, i2y, NEAR_PLANE_Z,
+                    in0Color, lerpPackedColor(in0Color, out0Color, t1), lerpPackedColor(in0Color, out1Color, t2),
+                    in0u, in0v, in0u + t1 * (out0u - in0u), in0v + t1 * (out0v - in0v), in0u + t2 * (out1u - in0u), in0v + t2 * (out1v - in0v),
+                    textureId, texelArea, levelCount, focalLength, cellRatio,
+                );
             } else {
                 // Clipped to a quad → two triangles.
                 const t1 = (NEAR_PLANE_Z - in0z) / (out0z - in0z);
                 const i1x = in0x + t1 * (out0x - in0x);
                 const i1y = in0y + t1 * (out0y - in0y);
                 const i1Color = lerpPackedColor(in0Color, out0Color, t1);
+                const i1u = in0u + t1 * (out0u - in0u), i1v = in0v + t1 * (out0v - in0v);
                 const t2 = (NEAR_PLANE_Z - in1z) / (out0z - in1z);
                 const i2x = in1x + t2 * (out0x - in1x);
                 const i2y = in1y + t2 * (out0y - in1y);
                 const i2Color = lerpPackedColor(in1Color, out0Color, t2);
-                this.emitTriangle(in0x, in0y, in0z, in1x, in1y, in1z, i1x, i1y, NEAR_PLANE_Z, in0Color, in1Color, i1Color, focalLength, cellRatio);
-                this.emitTriangle(in1x, in1y, in1z, i2x, i2y, NEAR_PLANE_Z, i1x, i1y, NEAR_PLANE_Z, in1Color, i2Color, i1Color, focalLength, cellRatio);
+                const i2u = in1u + t2 * (out0u - in1u), i2v = in1v + t2 * (out0v - in1v);
+                this.emitTriangle(
+                    in0x, in0y, in0z, in1x, in1y, in1z, i1x, i1y, NEAR_PLANE_Z,
+                    in0Color, in1Color, i1Color, in0u, in0v, in1u, in1v, i1u, i1v,
+                    textureId, texelArea, levelCount, focalLength, cellRatio,
+                );
+                this.emitTriangle(
+                    in1x, in1y, in1z, i2x, i2y, NEAR_PLANE_Z, i1x, i1y, NEAR_PLANE_Z,
+                    in1Color, i2Color, i1Color, in1u, in1v, i2u, i2v, i1u, i1v,
+                    textureId, texelArea, levelCount, focalLength, cellRatio,
+                );
             }
         }
     }
 
-    private fillVertexColors(colors: Int32Array, vertCount: number, baseColor: number, vertexRgb: Float64Array | null): void {
-        if (vertexRgb === null) {
-            colors.fill(baseColor & 0xFFFFFF, 0, vertCount);
+    private fillVertexColors(colors: Int32Array, mesh: DeepReadonly<Mesh>, tint: number, vertexRgb: Float64Array | null): void {
+        const vertCount = mesh.vertCount;
+        if (vertexRgb !== null) {
+            for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
+                colors[i] = packUnitRgb(vertexRgb[j], vertexRgb[j + 1], vertexRgb[j + 2]);
+            }
             return;
         }
-        for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
-            colors[i] = packUnitRgb(vertexRgb[j], vertexRgb[j + 1], vertexRgb[j + 2]);
+        const materials = mesh.materials;
+        if (materials.length === 1) {
+            colors.fill(multiplyPackedRgb(materials[0].diffuseColor, tint), 0, vertCount);
+            return;
         }
+        const materialColors = this.materialColors.length >= materials.length ? this.materialColors : (this.materialColors = new Int32Array(materials.length));
+        for (let i = 0; i < materials.length; i++) {
+            materialColors[i] = multiplyPackedRgb(materials[i].diffuseColor, tint);
+        }
+        const vertexMaterial = mesh.vertexMaterial;
+        for (let i = 0; i < vertCount; i++) {
+            colors[i] = materialColors[vertexMaterial[i]];
+        }
+    }
+
+    /** Uploads the mesh's textures (once per Texture) and caches per-material lookups; false when nothing is textured. */
+    private prepareMaterialTextures(mesh: DeepReadonly<Mesh>): boolean {
+        if (!this.config.textures) return false;
+        const materials = mesh.materials;
+        if (this.materialTextureIds.length < materials.length) {
+            this.materialTextureIds = new Int32Array(materials.length);
+            this.materialTexelAreas = new Float64Array(materials.length);
+            this.materialLevelCounts = new Int32Array(materials.length);
+        }
+        const store = this.textureStore;
+        let anyTexture = false;
+        for (let i = 0; i < materials.length; i++) {
+            const texture = materials[i].diffuseTexture;
+            const id = texture === undefined ? TextureStore.NO_TEXTURE : store.idOf(texture);
+            this.materialTextureIds[i] = id;
+            if (id === TextureStore.NO_TEXTURE) continue;
+            anyTexture = true;
+            this.materialTexelAreas[i] = store.baseTexelAreaOf(id);
+            this.materialLevelCounts[i] = store.levelCountOf(id);
+        }
+        return anyTexture;
     }
 
     private emitTriangle(
@@ -270,6 +384,8 @@ export class MeshRasterizer {
         bx: number, by: number, bz: number,
         cx: number, cy: number, cz: number,
         colorA: number, colorB: number, colorC: number,
+        ua: number, va: number, ub: number, vb: number, uc: number, vc: number,
+        textureId: number, texelArea: number, levelCount: number,
         focalLength: number | undefined, cellRatio: number,
     ): void {
         // View space is Y-up (world convention, and what .obj files store) while
@@ -293,10 +409,10 @@ export class MeshRasterizer {
         }
 
         // Scale into the subsample grid (×1 when AA is off — bit-identical).
-        const ss = this.supersampleFactor;
-        sax *= ss; say *= ss;
-        sbx *= ss; sby *= ss;
-        scx *= ss; scy *= ss;
+        const sx = this.supersampleX, sy = this.rowsPerCell;
+        sax *= sx; say *= sy;
+        sbx *= sx; sby *= sy;
+        scx *= sx; scy *= sy;
 
         // Backface / degenerate cull: only one winding can ever pass the
         // kernel's inside test, so skip the rest before they cost anything.
@@ -324,17 +440,20 @@ export class MeshRasterizer {
                 // Shared batch is full — rasterize and merge what we have, then reuse it.
                 this.flushBatch(true);
             } else {
-                const grown = new Float64Array(this.triData.length * 2);
+                const grown = new Float32Array(this.triData.length * 2);
                 grown.set(this.triData);
                 this.triData = grown;
                 this.localTriData = grown;
+                this.triInts = new Int32Array(grown.buffer);
+                this.localTriInts = this.triInts;
             }
         }
 
         const o = this.triCount * TRI_STRIDE;
         const tris = this.triData;
-        // Packed as A, C, B — the Y mirror's winding fix. Each slot's 1/z and
-        // color stay paired with its own vertex, so interpolation is unaffected.
+        const ints = this.triInts;
+        // Packed as A, C, B — the Y mirror's winding fix. Each slot's 1/z, color
+        // and uv stay paired with their own vertex, so interpolation is unaffected.
         tris[o] = sax;
         tris[o + 1] = say;
         tris[o + 2] = scx;
@@ -344,9 +463,19 @@ export class MeshRasterizer {
         tris[o + 6] = 1 / az;
         tris[o + 7] = 1 / cz;
         tris[o + 8] = 1 / bz;
-        tris[o + 9] = colorA;
-        tris[o + 10] = colorC;
-        tris[o + 11] = colorB;
+        ints[o + 9] = colorA;
+        ints[o + 10] = colorC;
+        ints[o + 11] = colorB;
+        ints[o + 18] = textureId;
+        if (textureId !== TextureStore.NO_TEXTURE) {
+            tris[o + 12] = ua;
+            tris[o + 13] = va;
+            tris[o + 14] = uc;
+            tris[o + 15] = vc;
+            tris[o + 16] = ub;
+            tris[o + 17] = vb;
+            ints[o + 19] = mipLevelFor(ua, va, ub, vb, uc, vc, texelArea, -area2, levelCount);
+        }
 
         // Band binning: record which row bands this triangle overlaps so each
         // rasterizing thread only visits its own triangles.
@@ -365,10 +494,11 @@ export class MeshRasterizer {
 
     private flushBatch(prepareForMore: boolean): void {
         if (this.triCount === 0) return;
-        const {rasterWidth, rasterHeight, config, supersampleFactor: ss} = this;
+        const {rasterWidth, rasterHeight, config, subsamplesPerCell} = this;
+        const singleSample = subsamplesPerCell === 1;
         // When supersampling, quantize after the resolve average instead of per
         // subsample, otherwise the average un-quantizes the colors again.
-        const quantMask = ss === 1 ? config.colorQuantMask & 0xFFFFFF : 0xFFFFFF;
+        const quantMask = singleSample ? config.colorQuantMask & 0xFFFFFF : 0xFFFFFF;
 
         const pool = this.usingPool ? this.pool : undefined;
         const threaded = pool !== undefined
@@ -381,13 +511,18 @@ export class MeshRasterizer {
                 this.poolBroken = true;
             }
         } else {
-            rasterizeTriangleBand(this.triData, this.triCount, null, 0, 0, this.depthLayer, this.colorLayer, rasterWidth, 0, rasterHeight, config.maxDepthFade, quantMask);
+            const store = this.textureStore;
+            rasterizeTriangleBand(this.triData, this.triInts, this.triCount, null, 0, 0, this.depthLayer, this.colorLayer, store.texels, store.table, rasterWidth, 0, rasterHeight, config.maxDepthFade, quantMask);
         }
 
-        if (ss === 1) {
+        if (singleSample) {
             this.screenBuffer.mergeRgbLayer(this.depthLayer, this.colorLayer);
+        } else if (this.halfBlock) {
+            this.resolveCells(this.resolveDepth, this.resolveColor, 0);
+            this.resolveCells(this.resolveDepthBottom, this.resolveColorBottom, this.supersampleY);
+            this.screenBuffer.mergeRgbSplitLayer(this.resolveDepth, this.resolveColor, this.resolveDepthBottom, this.resolveColorBottom, (config.backgroundColor ?? 0) & 0xFFFFFF);
         } else {
-            this.resolveSupersampled();
+            this.resolveCells(this.resolveDepth, this.resolveColor, 0);
             this.screenBuffer.mergeRgbLayer(this.resolveDepth, this.resolveColor);
         }
         this.triCount = 0;
@@ -399,30 +534,32 @@ export class MeshRasterizer {
     }
 
     /**
-     * Collapse the subsample layers down to cell resolution: a cell's color is
-     * the average of its covered subsamples (uncovered ones count as black, so
-     * silhouette edges fade toward the terminal background), its depth the
-     * closest covered subsample. Cells with no covered subsample stay +Infinity
-     * so mergeRgbLayer skips them.
+     * Collapse supersampleX × supersampleY subsamples per cell (starting at the
+     * given subsample row within each cell) down to cell resolution: a cell's
+     * color is the average of its subsamples with uncovered ones taking the
+     * background color (so silhouette edges blend toward the terminal
+     * background), its depth the closest covered subsample. Cells with no
+     * covered subsample stay +Infinity so the merge skips them.
      */
-    private resolveSupersampled(): void {
-        const {width, height, supersampleFactor: ss, subsamplesPerCell: ssArea, rasterWidth} = this;
+    private resolveCells(outDepth: Float32Array, outColor: Int32Array, firstRow: number): void {
+        const {width, height, supersampleX: sx, supersampleY: sy, rowsPerCell, rasterWidth} = this;
+        const ssArea = sx * sy;
         const srcDepth = this.depthLayer;
         const srcColor = this.colorLayer;
-        const outDepth = this.resolveDepth;
-        const outColor = this.resolveColor;
         const quantMask = this.config.colorQuantMask & 0xFFFFFF;
+        const background = (this.config.backgroundColor ?? 0) & 0xFFFFFF;
+        const bgR = (background >> 16) & 255, bgG = (background >> 8) & 255, bgB = background & 255;
 
         for (let cy = 0; cy < height; cy++) {
-            const rowBase = cy * ss * rasterWidth;
+            const rowBase = (cy * rowsPerCell + firstRow) * rasterWidth;
             const outBase = cy * width;
             for (let cx = 0; cx < width; cx++) {
                 let minDepth = Number.POSITIVE_INFINITY;
                 let r = 0, g = 0, b = 0, covered = 0;
-                const cellBase = rowBase + cx * ss;
-                for (let sy = 0; sy < ss; sy++) {
-                    let si = cellBase + sy * rasterWidth;
-                    for (let sx = 0; sx < ss; sx++, si++) {
+                const cellBase = rowBase + cx * sx;
+                for (let row = 0; row < sy; row++) {
+                    let si = cellBase + row * rasterWidth;
+                    for (let column = 0; column < sx; column++, si++) {
                         const d = srcDepth[si];
                         if (d < Number.POSITIVE_INFINITY) {
                             covered++;
@@ -438,6 +575,10 @@ export class MeshRasterizer {
                     outDepth[outBase + cx] = Number.POSITIVE_INFINITY;
                     continue;
                 }
+                const uncovered = ssArea - covered;
+                r += bgR * uncovered;
+                g += bgG * uncovered;
+                b += bgB * uncovered;
                 outDepth[outBase + cx] = minDepth;
                 outColor[outBase + cx] = ((Math.round(r / ssArea) << 16) | (Math.round(g / ssArea) << 8) | Math.round(b / ssArea)) & quantMask;
             }
@@ -453,4 +594,16 @@ export class MeshRasterizer {
         this.pool?.dispose();
         this.pool = undefined;
     }
+}
+
+/**
+ * Mip level whose texel density best matches the triangle's screen density:
+ * log2 of the ratio between texels covered and subsamples covered, rounded.
+ */
+function mipLevelFor(ua: number, va: number, ub: number, vb: number, uc: number, vc: number, texelArea: number, screenArea2: number, levelCount: number): number {
+    const uvArea2 = Math.abs((ub - ua) * (vc - va) - (uc - ua) * (vb - va));
+    if (uvArea2 === 0 || screenArea2 <= 0) return 0;
+    const ratio = uvArea2 * texelArea / screenArea2;
+    const level = Math.round(Math.log(ratio) / LOG2 / 2);
+    return level <= 0 ? 0 : level >= levelCount ? levelCount - 1 : level;
 }

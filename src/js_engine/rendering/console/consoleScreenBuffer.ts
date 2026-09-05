@@ -21,6 +21,9 @@ export class ConsoleScreenBuffer extends Resource {
 const KIND_BACKGROUND = 0; // background char (run-length encoded at flush)
 const KIND_RGB = 1;        // packed 0xRRGGBB background color + space (3D raster output)
 const KIND_TEXT = 2;       // arbitrary self-contained ANSI string (2D sprites / HUD glyphs)
+const KIND_RGB_SPLIT = 3;  // two packed colors: top half as foreground, bottom half as background, upper-half-block glyph
+
+const UPPER_HALF_BLOCK = "▀";
 
 /** The minimum a blit source must provide: a grid of pre-rendered glyphs. */
 export interface BlittableImage {
@@ -39,6 +42,7 @@ export class ScreenBuffer {
     private depth = new Float32Array(0);
     private kind = new Uint8Array(0);
     private rgb = new Int32Array(0);
+    private rgbTop = new Int32Array(0);
     private text: (string | undefined)[] = [];
 
     private backgroundFull = "";
@@ -47,6 +51,7 @@ export class ScreenBuffer {
     // Escape sequences for packed colors are memoized; depth-faded scenes reuse
     // a small palette of colors frame after frame.
     private static escapeCache = new Map<number, string>();
+    private static foregroundEscapeCache = new Map<number, string>();
 
     public get cellWidth(): number {
         return this.width;
@@ -54,6 +59,22 @@ export class ScreenBuffer {
 
     public get cellHeight(): number {
         return this.height;
+    }
+
+    /** Packed 0xRRGGBB of a solid cell drawn by the 3D pass (a half-block cell whose halves match counts), else undefined. */
+    public rgbAt(x: number, y: number): number | undefined {
+        const idx = y * this.width + x;
+        const kind = this.kind[idx];
+        if (kind === KIND_RGB) return this.rgb[idx];
+        if (kind === KIND_RGB_SPLIT && this.rgbTop[idx] === this.rgb[idx]) return this.rgb[idx];
+        return undefined;
+    }
+
+    /** [top, bottom] packed colors of a half-block cell whose halves differ, else undefined. */
+    public splitRgbAt(x: number, y: number): [number, number] | undefined {
+        const idx = y * this.width + x;
+        if (this.kind[idx] !== KIND_RGB_SPLIT || this.rgbTop[idx] === this.rgb[idx]) return undefined;
+        return [this.rgbTop[idx], this.rgb[idx]];
     }
 
     /**
@@ -97,6 +118,7 @@ export class ScreenBuffer {
         this.depth = new Float32Array(cellCount);
         this.kind = new Uint8Array(cellCount);
         this.rgb = new Int32Array(cellCount);
+        this.rgbTop = new Int32Array(cellCount);
         this.text = new Array(cellCount);
     }
 
@@ -170,12 +192,44 @@ export class ScreenBuffer {
         }
     }
 
+    /**
+     * Depth-composite two half-cell layers (top and bottom rows of each cell) into
+     * half-block cells. A half the layers never touched shows backgroundColor.
+     */
+    public mergeRgbSplitLayer(depthTop: Float32Array, colorTop: Int32Array, depthBottom: Float32Array, colorBottom: Int32Array, backgroundColor: number): void {
+        const cellCount = this.width * this.height;
+        const depth = this.depth;
+        const kind = this.kind;
+        const rgb = this.rgb;
+        const rgbTop = this.rgbTop;
+        for (let i = 0; i < cellCount; i++) {
+            const dTop = depthTop[i], dBottom = depthBottom[i];
+            const cellDepth = dTop < dBottom ? dTop : dBottom;
+            if (cellDepth < depth[i]) {
+                depth[i] = cellDepth;
+                kind[i] = KIND_RGB_SPLIT;
+                rgbTop[i] = dTop < Number.POSITIVE_INFINITY ? colorTop[i] : backgroundColor;
+                rgb[i] = dBottom < Number.POSITIVE_INFINITY ? colorBottom[i] : backgroundColor;
+            }
+        }
+    }
+
     private static escapeFor(color: number): string {
         let escape = ScreenBuffer.escapeCache.get(color);
         if (escape === undefined) {
             if (ScreenBuffer.escapeCache.size > 8192) ScreenBuffer.escapeCache.clear();
             escape = `\x1b[48;2;${(color >> 16) & 255};${(color >> 8) & 255};${color & 255}m`;
             ScreenBuffer.escapeCache.set(color, escape);
+        }
+        return escape;
+    }
+
+    private static foregroundEscapeFor(color: number): string {
+        let escape = ScreenBuffer.foregroundEscapeCache.get(color);
+        if (escape === undefined) {
+            if (ScreenBuffer.foregroundEscapeCache.size > 8192) ScreenBuffer.foregroundEscapeCache.clear();
+            escape = `\x1b[38;2;${(color >> 16) & 255};${(color >> 8) & 255};${color & 255}m`;
+            ScreenBuffer.foregroundEscapeCache.set(color, escape);
         }
         return escape;
     }
@@ -187,19 +241,24 @@ export class ScreenBuffer {
      */
     public flushRows(): string[] {
         const rows: string[] = new Array(this.height);
-        const {width, kind, rgb, text, backgroundFull, backgroundGlyph} = this;
+        const {width, kind, rgb, rgbTop, text, backgroundFull, backgroundGlyph} = this;
 
-        const STATE_UNKNOWN = 0, STATE_BACKGROUND = 1, STATE_RGB = 2;
+        const STATE_UNKNOWN = 0, STATE_BACKGROUND = 1, STATE_RGB = 2, STATE_SPLIT = 3;
 
         for (let y = 0; y < this.height; y++) {
             let row = "";
             let state = STATE_UNKNOWN;
             let currentColor = -1;
+            let currentTop = -1;
             const rowIndex = y * width;
 
             for (let x = 0; x < width; x++) {
                 const idx = rowIndex + x;
-                const cellKind = kind[idx];
+                let cellKind = kind[idx];
+                // A split cell whose halves match is just a solid cell; keeping it on
+                // the cheaper path also keeps runs of flat color unbroken.
+                if (cellKind === KIND_RGB_SPLIT && rgbTop[idx] === rgb[idx]) cellKind = KIND_RGB;
+
                 if (cellKind === KIND_BACKGROUND) {
                     if (state === STATE_BACKGROUND) {
                         row += backgroundGlyph;
@@ -209,13 +268,25 @@ export class ScreenBuffer {
                     }
                 } else if (cellKind === KIND_RGB) {
                     const color = rgb[idx];
-                    if (state === STATE_RGB && color === currentColor) {
+                    if ((state === STATE_RGB || state === STATE_SPLIT) && color === currentColor) {
                         row += " ";
                     } else {
                         row += ScreenBuffer.escapeFor(color) + " ";
-                        state = STATE_RGB;
                         currentColor = color;
                     }
+                    state = STATE_RGB;
+                } else if (cellKind === KIND_RGB_SPLIT) {
+                    const top = rgbTop[idx], bottom = rgb[idx];
+                    if (!(state === STATE_SPLIT && top === currentTop)) {
+                        row += ScreenBuffer.foregroundEscapeFor(top);
+                        currentTop = top;
+                    }
+                    if (!((state === STATE_RGB || state === STATE_SPLIT) && bottom === currentColor)) {
+                        row += ScreenBuffer.escapeFor(bottom);
+                        currentColor = bottom;
+                    }
+                    row += UPPER_HALF_BLOCK;
+                    state = STATE_SPLIT;
                 } else {
                     // Text cells are self-contained (reset ... reset), see
                     // ConsoleImage.splitIntoGlyphsInto — but they leave the terminal

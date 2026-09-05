@@ -11,6 +11,7 @@ export class VertexLighting {
     private color: Float64Array = new Float64Array(0);
     private rangeSquared: Float64Array = new Float64Array(0);
     private vertexRgb: Float64Array = new Float64Array(0);
+    private materialAlbedo: Float64Array = new Float64Array(3);
 
     public get lit(): boolean {
         return this.isLit;
@@ -53,19 +54,22 @@ export class VertexLighting {
         }
     }
 
-    public shade(viewMesh: ViewSpaceMesh, albedo: number): Float64Array {
+    public shade(viewMesh: ViewSpaceMesh, tint: number): Float64Array {
         const vertCount = viewMesh.vertCount;
         const floatCount = vertCount * 3;
         if (this.vertexRgb.length < floatCount) this.vertexRgb = new Float64Array(floatCount);
         const out = this.vertexRgb;
         const positions = viewMesh.positions;
         const normals = viewMesh.normals;
-        const albedoR = ((albedo >> 16) & 255) / 255, albedoG = ((albedo >> 8) & 255) / 255, albedoB = (albedo & 255) / 255;
+        const materialAlbedo = this.materialAlbedoFor(viewMesh, tint);
+        const vertexMaterial = viewMesh.mesh?.vertexMaterial;
         const ambientR = this.ambient[0], ambientG = this.ambient[1], ambientB = this.ambient[2];
         const lightCount = this.lightCount;
         const kind = this.kind, vector = this.vector, color = this.color, rangeSquared = this.rangeSquared;
 
-        for (let j = 0; j < floatCount; j += 3) {
+        for (let j = 0, vertex = 0; j < floatCount; j += 3, vertex++) {
+            const albedoOffset = vertexMaterial === undefined ? 0 : vertexMaterial[vertex] * 3;
+            const albedoR = materialAlbedo[albedoOffset], albedoG = materialAlbedo[albedoOffset + 1], albedoB = materialAlbedo[albedoOffset + 2];
             const nx = normals[j], ny = normals[j + 1], nz = normals[j + 2];
             let r = ambientR, g = ambientG, b = ambientB;
 
@@ -92,5 +96,20 @@ export class VertexLighting {
             out[j + 2] = b * albedoB;
         }
         return out;
+    }
+
+    private materialAlbedoFor(viewMesh: ViewSpaceMesh, tint: number): Float64Array {
+        const materials = viewMesh.mesh?.materials;
+        const materialCount = materials === undefined ? 1 : materials.length;
+        if (this.materialAlbedo.length < materialCount * 3) this.materialAlbedo = new Float64Array(materialCount * 3);
+        const albedo = this.materialAlbedo;
+        const tintR = ((tint >> 16) & 255) / 255, tintG = ((tint >> 8) & 255) / 255, tintB = (tint & 255) / 255;
+        for (let i = 0, j = 0; i < materialCount; i++, j += 3) {
+            const diffuse = materials === undefined ? 0xFFFFFF : materials[i].diffuseColor;
+            albedo[j] = (((diffuse >> 16) & 255) / 255) * tintR;
+            albedo[j + 1] = (((diffuse >> 8) & 255) / 255) * tintG;
+            albedo[j + 2] = ((diffuse & 255) / 255) * tintB;
+        }
+        return albedo;
     }
 }

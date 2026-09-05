@@ -15,6 +15,7 @@ import {Quaternions} from "../src/js_engine/math/quaternions";
 import {fromFloat32Array, Vec3} from "../src/js_engine/math/types/vec";
 import {ViewSpaceMesh} from "../src/js_engine/rendering/3d/viewSpaceMesh";
 import {SceneLights, VertexLighting} from "../src/js_engine/rendering/3d/lighting";
+import {Texture} from "../src/js_engine/rendering/3d/texture";
 import {Ansi} from "../src/js_engine/rendering/console/ansi";
 
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
@@ -49,7 +50,10 @@ vertexLighting.beginFrame(sceneLights, invCam);
 const viewSpaceMesh = new ViewSpaceMesh();
 const normalMatrix = new Float32Array(9);
 
-function renderAll(config: { workerCount: number, threadTriangleThreshold: number, lit: boolean }): { ms: number, frames: string[], poolUsable: boolean } {
+const checker = Texture.fromFile("./demo/3d/checker.png");
+for (const material of mesh.materials) material.diffuseTexture = checker;
+
+function renderAll(config: { workerCount: number, threadTriangleThreshold: number, lit: boolean, textured: boolean, halfBlock: boolean }): { ms: number, frames: string[], poolUsable: boolean } {
     const rasterizer = new MeshRasterizer();
     const frames: string[] = [];
     const start = performance.now();
@@ -68,6 +72,8 @@ function renderAll(config: { workerCount: number, threadTriangleThreshold: numbe
             workerCount: config.workerCount,
             threadTriangleThreshold: config.threadTriangleThreshold,
             threadAreaThreshold: Number.POSITIVE_INFINITY,
+            textures: config.textured,
+            halfBlock: config.halfBlock,
         });
         if (config.lit) {
             const viewMesh = viewSpaceMesh.transformFrom(mesh, modelView, LocalToWorld.normalMatrix3(fromFloat32Array<16>(modelView), normalMatrix));
@@ -85,9 +91,15 @@ function renderAll(config: { workerCount: number, threadTriangleThreshold: numbe
 }
 
 let failed = false;
-for (const [label, lit] of [["unlit", false], ["lit", true]] as const) {
-    const threaded = renderAll({workerCount: 3, threadTriangleThreshold: 1, lit});
-    const sync = renderAll({workerCount: 0, threadTriangleThreshold: Number.MAX_SAFE_INTEGER, lit});
+const passes = [
+    ["unlit", false, false, false],
+    ["lit", true, false, false],
+    ["lit+textured", true, true, false],
+    ["lit+textured+halfblock", true, true, true],
+] as const;
+for (const [label, lit, textured, halfBlock] of passes) {
+    const threaded = renderAll({workerCount: 3, threadTriangleThreshold: 1, lit, textured, halfBlock});
+    const sync = renderAll({workerCount: 0, threadTriangleThreshold: Number.MAX_SAFE_INTEGER, lit, textured, halfBlock});
 
     let identical = 0;
     let bytes = 0;
