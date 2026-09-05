@@ -262,75 +262,71 @@ export class MeshRasterizer {
             }
             if (!aIn && !bIn && !cIn) continue;
 
-            // Near-plane clipping. Vertex order below mirrors the pre-rewrite
-            // implementation (inside vertices in index order, then intersection
-            // points), so winding — and thus backface culling — is unchanged.
-            let in0x = 0, in0y = 0, in0z = 0, in0Color = 0, in0u = 0, in0v = 0;
-            let in1x = 0, in1y = 0, in1z = 0, in1Color = 0, in1u = 0, in1v = 0;
-            let out0x = 0, out0y = 0, out0z = 0, out0Color = 0, out0u = 0, out0v = 0;
-            let out1x = 0, out1y = 0, out1z = 0, out1Color = 0, out1u = 0, out1v = 0;
-            let insideCount = 0, outsideCount = 0;
-
-            if (aIn) { in0x = ax; in0y = ay; in0z = az; in0Color = colorA; in0u = ua; in0v = va; insideCount = 1; }
-            else { out0x = ax; out0y = ay; out0z = az; out0Color = colorA; out0u = ua; out0v = va; outsideCount = 1; }
-
-            if (bIn) {
-                if (insideCount === 0) { in0x = bx; in0y = by; in0z = bz; in0Color = colorB; in0u = ub; in0v = vb; }
-                else { in1x = bx; in1y = by; in1z = bz; in1Color = colorB; in1u = ub; in1v = vb; }
-                insideCount++;
+            // Near-plane clipping. The triangle is rotated cyclically (a cyclic
+            // rotation keeps the winding) so that the clipped-away vertex comes last
+            // or the single surviving vertex comes first; the clipped pieces are then
+            // emitted in that rotated order and keep the original winding.
+            const insideMask = (aIn ? 1 : 0) | (bIn ? 2 : 0) | (cIn ? 4 : 0);
+            if (insideMask === 1) {
+                this.emitClippedCorner(ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
+            } else if (insideMask === 2) {
+                this.emitClippedCorner(bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
+            } else if (insideMask === 4) {
+                this.emitClippedCorner(cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
+            } else if (insideMask === 3) {
+                this.emitClippedQuad(ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
+            } else if (insideMask === 6) {
+                this.emitClippedQuad(bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
             } else {
-                if (outsideCount === 0) { out0x = bx; out0y = by; out0z = bz; out0Color = colorB; out0u = ub; out0v = vb; }
-                else { out1x = bx; out1y = by; out1z = bz; out1Color = colorB; out1u = ub; out1v = vb; }
-                outsideCount++;
-            }
-
-            if (cIn) {
-                if (insideCount === 0) { in0x = cx; in0y = cy; in0z = cz; in0Color = colorC; in0u = uc; in0v = vc; }
-                else { in1x = cx; in1y = cy; in1z = cz; in1Color = colorC; in1u = uc; in1v = vc; }
-                insideCount++;
-            } else {
-                if (outsideCount === 0) { out0x = cx; out0y = cy; out0z = cz; out0Color = colorC; out0u = uc; out0v = vc; }
-                else { out1x = cx; out1y = cy; out1z = cz; out1Color = colorC; out1u = uc; out1v = vc; }
-            }
-
-            if (insideCount === 1) {
-                // Clipped to a single smaller triangle.
-                const t1 = (NEAR_PLANE_Z - in0z) / (out0z - in0z);
-                const i1x = in0x + t1 * (out0x - in0x);
-                const i1y = in0y + t1 * (out0y - in0y);
-                const t2 = (NEAR_PLANE_Z - in0z) / (out1z - in0z);
-                const i2x = in0x + t2 * (out1x - in0x);
-                const i2y = in0y + t2 * (out1y - in0y);
-                this.emitTriangle(
-                    in0x, in0y, in0z, i1x, i1y, NEAR_PLANE_Z, i2x, i2y, NEAR_PLANE_Z,
-                    in0Color, lerpPackedColor(in0Color, out0Color, t1), lerpPackedColor(in0Color, out1Color, t2),
-                    in0u, in0v, in0u + t1 * (out0u - in0u), in0v + t1 * (out0v - in0v), in0u + t2 * (out1u - in0u), in0v + t2 * (out1v - in0v),
-                    textureId, texelArea, levelCount, focalLength, cellRatio,
-                );
-            } else {
-                // Clipped to a quad → two triangles.
-                const t1 = (NEAR_PLANE_Z - in0z) / (out0z - in0z);
-                const i1x = in0x + t1 * (out0x - in0x);
-                const i1y = in0y + t1 * (out0y - in0y);
-                const i1Color = lerpPackedColor(in0Color, out0Color, t1);
-                const i1u = in0u + t1 * (out0u - in0u), i1v = in0v + t1 * (out0v - in0v);
-                const t2 = (NEAR_PLANE_Z - in1z) / (out0z - in1z);
-                const i2x = in1x + t2 * (out0x - in1x);
-                const i2y = in1y + t2 * (out0y - in1y);
-                const i2Color = lerpPackedColor(in1Color, out0Color, t2);
-                const i2u = in1u + t2 * (out0u - in1u), i2v = in1v + t2 * (out0v - in1v);
-                this.emitTriangle(
-                    in0x, in0y, in0z, in1x, in1y, in1z, i1x, i1y, NEAR_PLANE_Z,
-                    in0Color, in1Color, i1Color, in0u, in0v, in1u, in1v, i1u, i1v,
-                    textureId, texelArea, levelCount, focalLength, cellRatio,
-                );
-                this.emitTriangle(
-                    in1x, in1y, in1z, i2x, i2y, NEAR_PLANE_Z, i1x, i1y, NEAR_PLANE_Z,
-                    in1Color, i2Color, i1Color, in1u, in1v, i2u, i2v, i1u, i1v,
-                    textureId, texelArea, levelCount, focalLength, cellRatio,
-                );
+                this.emitClippedQuad(cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
             }
         }
+    }
+
+    /** One vertex (p) in front of the near plane, q and r behind it: the piece is the triangle p, pq, pr. */
+    private emitClippedCorner(
+        px: number, py: number, pz: number, colorP: number, up: number, vp: number,
+        qx: number, qy: number, qz: number, colorQ: number, uq: number, vq: number,
+        rx: number, ry: number, rz: number, colorR: number, ur: number, vr: number,
+        textureId: number, texelArea: number, levelCount: number, focalLength: number | undefined, cellRatio: number,
+    ): void {
+        const tq = (NEAR_PLANE_Z - pz) / (qz - pz);
+        const tr = (NEAR_PLANE_Z - pz) / (rz - pz);
+        this.emitTriangle(
+            px, py, pz,
+            px + tq * (qx - px), py + tq * (qy - py), NEAR_PLANE_Z,
+            px + tr * (rx - px), py + tr * (ry - py), NEAR_PLANE_Z,
+            colorP, lerpPackedColor(colorP, colorQ, tq), lerpPackedColor(colorP, colorR, tr),
+            up, vp, up + tq * (uq - up), vp + tq * (vq - vp), up + tr * (ur - up), vp + tr * (vr - vp),
+            textureId, texelArea, levelCount, focalLength, cellRatio,
+        );
+    }
+
+    /** Two vertices (p, q) in front of the near plane, r behind it: the piece is the quad p, q, qr, pr as two triangles. */
+    private emitClippedQuad(
+        px: number, py: number, pz: number, colorP: number, up: number, vp: number,
+        qx: number, qy: number, qz: number, colorQ: number, uq: number, vq: number,
+        rx: number, ry: number, rz: number, colorR: number, ur: number, vr: number,
+        textureId: number, texelArea: number, levelCount: number, focalLength: number | undefined, cellRatio: number,
+    ): void {
+        const tq = (NEAR_PLANE_Z - qz) / (rz - qz);
+        const qrX = qx + tq * (rx - qx), qrY = qy + tq * (ry - qy);
+        const colorQR = lerpPackedColor(colorQ, colorR, tq);
+        const uQR = uq + tq * (ur - uq), vQR = vq + tq * (vr - vq);
+        const tp = (NEAR_PLANE_Z - pz) / (rz - pz);
+        const prX = px + tp * (rx - px), prY = py + tp * (ry - py);
+        const colorPR = lerpPackedColor(colorP, colorR, tp);
+        const uPR = up + tp * (ur - up), vPR = vp + tp * (vr - vp);
+        this.emitTriangle(
+            px, py, pz, qx, qy, qz, qrX, qrY, NEAR_PLANE_Z,
+            colorP, colorQ, colorQR, up, vp, uq, vq, uQR, vQR,
+            textureId, texelArea, levelCount, focalLength, cellRatio,
+        );
+        this.emitTriangle(
+            px, py, pz, qrX, qrY, NEAR_PLANE_Z, prX, prY, NEAR_PLANE_Z,
+            colorP, colorQR, colorPR, up, vp, uQR, vQR, uPR, vPR,
+            textureId, texelArea, levelCount, focalLength, cellRatio,
+        );
     }
 
     private fillVertexColors(colors: Int32Array, mesh: DeepReadonly<Mesh>, tint: number, vertexRgb: Float64Array | null): void {
