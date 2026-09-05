@@ -6,9 +6,11 @@ export class ViewSpaceMesh {
     public normals: Float64Array = new Float64Array(0);
     public vertCount: number = 0;
     public hasNormals: boolean = false;
+    public mesh: DeepReadonly<Mesh> | null = null;
 
     public transformFrom(mesh: DeepReadonly<Mesh>, modelView: Float32Array, normalMatrix: Float32Array | null): this {
         const vertCount = mesh.vertCount;
+        this.mesh = mesh;
         const floatCount = vertCount * 3;
         if (this.positions.length < floatCount) {
             this.positions = new Float64Array(floatCount);

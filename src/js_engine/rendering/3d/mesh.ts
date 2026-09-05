@@ -1,10 +1,14 @@
 import {Vec, Vec2, Vec3} from "../../math/types/vec";
 import {Vec3Array, VecArray} from "../../math/types/vecArray";
+import {loadMaterialTextures, Material} from "./material";
+import {MaterialLibrary, parseMtl} from "./mtlParser";
 
 export class Mesh {
     public readonly data: Vec3Array;
     public readonly vertCount: number;
     public readonly triangleCount: number;
+    public readonly materials: readonly Material[];
+    public readonly vertexMaterial: Uint16Array;
 
     private _bounds?: Float32Array;
 
@@ -75,6 +79,11 @@ export class Mesh {
         return this.data.subarray(this.triangleIndexStart, this.triangleIndexStart + this.triangleCount);
     }
 
+    public materialOfTriangle(triangleIndex: number): Material {
+        const firstCorner = this.triangles.raw[triangleIndex * 3] | 0;
+        return this.materials[this.vertexMaterial[firstCorner]];
+    }
+
     public constructor(builder: MeshBuilder) {
         builder.verify();
 
@@ -82,30 +91,52 @@ export class Mesh {
         this.vertCount = builder.vertices.length;
         const data = [...builder.vertices, ...builder.normals, ...builder.uvs.map(uv => Vec.alloc3(Vec.x(uv), Vec.y(uv), 0)), ...builder.triangles];
         this.data = new VecArray(data, 3);
+        this.materials = builder.materials.length > 0 ? [...builder.materials] : [Material.default()];
+        this.vertexMaterial = new Uint16Array(this.vertCount);
+        this.vertexMaterial.set(builder.vertexMaterial.slice(0, this.vertCount));
     }
 
     public static fromFile(filePath: string): Mesh {
-        const fs = require("fs");
+        const fs = require("fs") as typeof import("fs");
+        const path = require("path") as typeof import("path");
         const data = fs.readFileSync(filePath).toString();
         const fileType = filePath.slice(filePath.lastIndexOf("."));
-        if (fileType === '.obj') {
-            return Mesh.parseObj(data);
+        if (fileType !== '.obj') {
+            throw Error(`Unable to parse file: ${filePath}. Reason ${fileType} not supported`);
         }
-        throw Error(`Unable to parse file: ${filePath}. Reason ${fileType} not supported`);
+        const parser = new ObjParser(data);
+        const directory = path.dirname(filePath);
+        for (const libraryName of parser.materialLibraryNames) {
+            const libraryPath = path.join(directory, libraryName);
+            if (fs.existsSync(libraryPath)) {
+                parser.applyMaterialLibrary(parseMtl(fs.readFileSync(libraryPath).toString(), directory));
+            }
+        }
+        const mesh = parser.toMesh();
+        loadMaterialTextures(mesh.materials);
+        return mesh;
     }
 
-    public static parseObj(data: string): Mesh {
-        return new ObjParser(data).toMesh();
+    public static parseObj(data: string, materialLibrary?: MaterialLibrary): Mesh {
+        const parser = new ObjParser(data);
+        if (materialLibrary !== undefined) parser.applyMaterialLibrary(materialLibrary);
+        return parser.toMesh();
     }
 }
 
 const UNASSIGNED_INDEX = -1;
 
 class ObjParser {
+    public readonly materialLibraryNames: string[] = [];
+
     private readonly builder = new MeshBuilder();
+    private readonly filePositions: Vec3[] = [];
+    private readonly fileUvs: Vec2[] = [];
     private readonly fileNormals: Vec3[] = [];
-    private readonly fileNormalIndexOfVertex: number[] = [];
-    private everyFaceCornerHasAConsistentFileNormal = true;
+    private readonly cornerIndexByKey = new Map<string, number>();
+    private readonly cornerHasFileNormal: boolean[] = [];
+    private readonly materialIndexByName = new Map<string, number>();
+    private currentMaterialIndex = UNASSIGNED_INDEX;
 
     public constructor(data: string) {
         for (const rawLine of data.split(/\r?\n/)) {
@@ -113,14 +144,17 @@ class ObjParser {
         }
     }
 
+    public applyMaterialLibrary(library: MaterialLibrary): void {
+        const materials = this.builder.materials;
+        for (let i = 0; i < materials.length; i++) {
+            const resolved = library.get(materials[i].name);
+            if (resolved !== undefined) materials[i] = resolved;
+        }
+    }
+
     public toMesh(): Mesh {
         const builder = this.builder;
-        builder.generateUvs();
-        if (this.canUseFileNormals()) {
-            this.applyFileNormals();
-        } else {
-            builder.generateNormals();
-        }
+        builder.generateNormals(this.cornerHasFileNormal);
         return new Mesh(builder);
     }
 
@@ -128,17 +162,30 @@ class ObjParser {
         if (line.length === 0 || line[0] === '#') return;
         if (line.startsWith("v ")) {
             this.parseVertex(line);
+        } else if (line.startsWith("vt ")) {
+            this.parseUv(line);
         } else if (line.startsWith("vn ")) {
             this.parseNormal(line);
         } else if (line.startsWith("f ")) {
             this.parseFace(line);
+        } else if (line.startsWith("usemtl ")) {
+            this.currentMaterialIndex = this.materialIndexFor(line.substring(7).trim());
+        } else if (line.startsWith("mtllib ")) {
+            this.materialLibraryNames.push(line.substring(7).trim());
         }
     }
 
     private parseVertex(line: string): void {
         const components = parseNumberList(line, 2);
         if (components.length >= 3) {
-            this.builder.vertices.push(Vec.alloc3(components[0], components[1], components[2]));
+            this.filePositions.push(Vec.alloc3(components[0], components[1], components[2]));
+        }
+    }
+
+    private parseUv(line: string): void {
+        const components = parseNumberList(line, 3);
+        if (components.length >= 2) {
+            this.fileUvs.push(Vec.alloc2(components[0], components[1]));
         }
     }
 
@@ -152,48 +199,51 @@ class ObjParser {
     private parseFace(line: string): void {
         const corners = line.substring(2).trim().split(/\s+/);
         if (corners.length < 3) return;
+        if (this.currentMaterialIndex === UNASSIGNED_INDEX) {
+            this.currentMaterialIndex = this.materialIndexFor(Material.DEFAULT_NAME);
+        }
 
-        const vertexIndices: number[] = new Array(corners.length);
+        const cornerIndices: number[] = new Array(corners.length);
         for (let i = 0; i < corners.length; i++) {
-            const [vertexToken, , normalToken] = corners[i].split('/');
-            const vertexIndex = parseObjIndex(vertexToken, this.builder.vertices.length);
-            vertexIndices[i] = vertexIndex;
-            this.recordFileNormalOfVertex(vertexIndex, parseObjIndex(normalToken, this.fileNormals.length));
+            const [positionToken, uvToken, normalToken] = corners[i].split('/');
+            const positionIndex = parseObjIndex(positionToken, this.filePositions.length);
+            const uvIndex = parseObjIndex(uvToken, this.fileUvs.length);
+            const normalIndex = parseObjIndex(normalToken, this.fileNormals.length);
+            cornerIndices[i] = this.cornerIndexFor(positionIndex, uvIndex, normalIndex);
         }
 
-        for (let i = 2; i < vertexIndices.length; i++) {
-            this.builder.triangles.push(Vec.of<3>([vertexIndices[0], vertexIndices[i - 1], vertexIndices[i]]));
-        }
-    }
-
-    private recordFileNormalOfVertex(vertexIndex: number, normalIndex: number): void {
-        if (!this.everyFaceCornerHasAConsistentFileNormal) return;
-        if (normalIndex === UNASSIGNED_INDEX || normalIndex >= this.fileNormals.length || vertexIndex < 0) {
-            this.everyFaceCornerHasAConsistentFileNormal = false;
-            return;
-        }
-        const previous = this.fileNormalIndexOfVertex[vertexIndex];
-        if (previous === undefined || previous === UNASSIGNED_INDEX) {
-            this.fileNormalIndexOfVertex[vertexIndex] = normalIndex;
-        } else if (previous !== normalIndex) {
-            this.everyFaceCornerHasAConsistentFileNormal = false;
+        for (let i = 2; i < cornerIndices.length; i++) {
+            this.builder.triangles.push(Vec.of<3>([cornerIndices[0], cornerIndices[i - 1], cornerIndices[i]]));
         }
     }
 
-    private canUseFileNormals(): boolean {
-        return this.everyFaceCornerHasAConsistentFileNormal && this.fileNormals.length > 0 && this.builder.triangles.length > 0;
-    }
+    private cornerIndexFor(positionIndex: number, uvIndex: number, normalIndex: number): number {
+        const key = `${positionIndex}/${uvIndex}/${normalIndex}/${this.currentMaterialIndex}`;
+        const existing = this.cornerIndexByKey.get(key);
+        if (existing !== undefined) return existing;
 
-    private applyFileNormals(): void {
         const builder = this.builder;
-        for (let i = 0; i < builder.vertices.length; i++) {
-            const normalIndex = this.fileNormalIndexOfVertex[i];
-            const normal = Vec.alloc3();
-            if (normalIndex !== undefined && normalIndex !== UNASSIGNED_INDEX) {
-                Vec.normalizeInto(normal, this.fileNormals[normalIndex]);
-            }
-            builder.normals[i] = normal;
-        }
+        const index = builder.vertices.length;
+        const position = this.filePositions[positionIndex];
+        if (position === undefined) throw new Error(`Invalid face: vertex index ${positionIndex + 1} is not defined`);
+        builder.vertices.push(position);
+        const uv = this.fileUvs[uvIndex];
+        builder.uvs.push(uv === undefined ? Vec.alloc2() : uv);
+        const normal = this.fileNormals[normalIndex];
+        builder.normals.push(normal === undefined ? Vec.alloc3() : Vec.normalizeInto(Vec.alloc3(), normal));
+        this.cornerHasFileNormal.push(normal !== undefined);
+        builder.vertexMaterial.push(this.currentMaterialIndex);
+        this.cornerIndexByKey.set(key, index);
+        return index;
+    }
+
+    private materialIndexFor(name: string): number {
+        const existing = this.materialIndexByName.get(name);
+        if (existing !== undefined) return existing;
+        const index = this.builder.materials.length;
+        this.builder.materials.push(new Material(name));
+        this.materialIndexByName.set(name, index);
+        return index;
     }
 }
 
@@ -213,19 +263,21 @@ export class MeshBuilder {
     public normals: Vec3[] = []
     public uvs: Vec2[] = []
     public triangles: Vec3[] = []
+    public materials: Material[] = []
+    public vertexMaterial: number[] = []
 
     public verify() {
         this.verifySize();
         this.verifyTriangles();
     }
 
-    public generateNormals(): void {
+    public generateNormals(keepExisting?: readonly boolean[]): void {
         this.verifyTriangles();
         const vertices = this.vertices;
         const normals = this.normals;
-        normals.length = vertices.length;
+        const generated: Vec3[] = new Array(vertices.length);
         for (let i = 0; i < vertices.length; i++) {
-            normals[i] = Vec.alloc3();
+            generated[i] = Vec.alloc3();
         }
 
         const edgeAB = Vec.alloc3();
@@ -236,13 +288,15 @@ export class MeshBuilder {
             Vec.subInto(edgeAB, vertices[ib], vertices[ia]);
             Vec.subInto(edgeAC, vertices[ic], vertices[ia]);
             Vec.crossInto(areaWeightedFaceNormal, edgeAB, edgeAC);
-            Vec.addInto(normals[ia], normals[ia], areaWeightedFaceNormal);
-            Vec.addInto(normals[ib], normals[ib], areaWeightedFaceNormal);
-            Vec.addInto(normals[ic], normals[ic], areaWeightedFaceNormal);
+            Vec.addInto(generated[ia], generated[ia], areaWeightedFaceNormal);
+            Vec.addInto(generated[ib], generated[ib], areaWeightedFaceNormal);
+            Vec.addInto(generated[ic], generated[ic], areaWeightedFaceNormal);
         }
 
-        for (const normal of normals) {
-            Vec.normalizeInto(normal, normal);
+        normals.length = vertices.length;
+        for (let i = 0; i < vertices.length; i++) {
+            if (keepExisting !== undefined && keepExisting[i] === true && normals[i] !== undefined) continue;
+            normals[i] = Vec.normalizeInto(generated[i], generated[i]);
         }
     }
 
@@ -260,6 +314,16 @@ export class MeshBuilder {
 
         if (this.vertices.length != this.normals.length) {
             throw new Error("All vertices must have a matching normal");
+        }
+
+        if (this.vertexMaterial.length !== 0 && this.vertexMaterial.length !== this.vertices.length) {
+            throw new Error("All vertices must have a material index when any does");
+        }
+
+        const materialCount = Math.max(1, this.materials.length);
+        for (const materialIndex of this.vertexMaterial) {
+            if (materialIndex < 0 || materialIndex >= materialCount || materialIndex !== Math.floor(materialIndex))
+                throw new Error(`Invalid material index ${materialIndex}: expected [0, ${materialCount})`);
         }
     }
 

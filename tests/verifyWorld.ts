@@ -18,6 +18,8 @@ import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../src/js_
 import {Ansi, ConsoleHudRenderPassSystem, ConsoleImage, ConsoleImageAnchor} from "../src/js_engine/rendering/console";
 import {Console2DRenderPassSystem} from "../src/js_engine/rendering/console/2d/console2DRenderPassSystem";
 import {Console3DRenderPassSystem} from "../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
+import {Console3DRenderSettings} from "../src/js_engine/rendering/console/3d/console3DRenderSettings";
+import {ConsoleRenderSettings} from "../src/js_engine/rendering/console/consoleRenderSettings";
 import {RenderMesh} from "../src/js_engine/rendering/3d/renderMesh";
 import {Mesh} from "../src/js_engine/rendering/3d/mesh";
 import {FieldOfView} from "../src/js_engine/rendering/3d/fieldOfView";
@@ -98,10 +100,19 @@ world.ensureSystemExists(ConsoleHudRenderPassSystem);
 
 const tick = () => (world as any).update();
 
-// A few frames to let command buffers play back and systems settle.
+// Without its settings entity the 3D pass must stay silent (the singleton
+// settings convention); everything else still renders.
+for (let i = 0; i < 4; i++) tick();
+expect(!captured.includes("\x1b[48;2;"), "3D pass is off while Console3DRenderSettings is absent");
+expect(Ansi.strip(captured).includes("HUDMARKER"), "HUD still renders without 3D settings");
+
+const settingsEntity = buffer.createEntity("render-settings");
+buffer.addComponent(settingsEntity, new Console3DRenderSettings());
+buffer.addComponent(settingsEntity, new ConsoleRenderSettings());
 for (let i = 0; i < 4; i++) tick();
 
 expect(captured.includes("\x1b[48;2;"), "3D pass wrote truecolor cells");
+expect(captured.includes("▀"), "default settings render half-block cells");
 // HUD glyphs are emitted one per cell with their own escape codes around each
 // char, so strip ANSI before searching for the marker text.
 expect(Ansi.strip(captured).includes("HUDMARKER"), "HUD element composited over the frame");
@@ -156,6 +167,25 @@ const lenLitRot = captured.length;
 tick();
 const litRotDelta = captured.length - lenLitRot;
 expect(litRotDelta > 0, `rotating a lit mesh produced output (${litRotDelta} bytes)`);
+
+// A textured cube (cube.mtl -> checker.png) next to the monkey: textures must
+// show up, and a static textured scene must still be fully suppressed.
+tick();
+const lenBeforeCube = captured.length;
+const cubeEntity = buffer.createEntity("textured-cube");
+const cubeMesh = Mesh.fromFile("./demo/3d/cube.obj");
+expect(cubeMesh.materials[0].diffuseTexture !== undefined, "cube.obj loaded its checker texture");
+buffer.addComponent(cubeEntity, new RenderMesh(cubeMesh));
+buffer.addComponent(cubeEntity, new LocalToWorld());
+buffer.addComponent(cubeEntity, new LocalPosition(3, 0, 8));
+buffer.addComponent(cubeEntity, new LocalRotation(...Vec.toArray(Quaternions.eulerToQuat(Vec3.alloc(0.5, 0.7, 0))) as [number, number, number, number]));
+for (let i = 0; i < 3; i++) tick();
+const cubeDelta = captured.length - lenBeforeCube;
+expect(cubeDelta > 0, `textured cube produced output (${cubeDelta} bytes)`);
+const lenTextured = captured.length;
+tick();
+tick();
+expect(captured.length === lenTextured, `static textured frames write zero bytes (wrote ${captured.length - lenTextured})`);
 
 world.stop();
 (process.stdout as any).write = realWrite;

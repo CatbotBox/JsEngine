@@ -1,4 +1,5 @@
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
+import {TextureStore} from "./textureStore";
 
 /**
  * Fork-join rasterization pool built on worker_threads + SharedArrayBuffer + Atomics.
@@ -41,9 +42,12 @@ const {workerData} = require('worker_threads');
 const raster = ${rasterizeTriangleBand.toString()};
 const ctrl = new Int32Array(workerData.ctrl);
 const fctrl = new Float64Array(workerData.fctrl);
-const tris = new Float64Array(workerData.tris);
+const trisF = new Float32Array(workerData.tris);
+const trisI = new Int32Array(workerData.tris);
 const depthLayer = new Float32Array(workerData.depth);
 const colorLayer = new Int32Array(workerData.color);
+const texels = new Int32Array(workerData.texels);
+const textureTable = new Int32Array(workerData.textureTable);
 const bandIndexes = new Int32Array(workerData.bandIndexes);
 const bandCounts = new Int32Array(workerData.bandCounts);
 const BAND_STRIDE = ${RasterWorkerPool.MAX_TRIS};
@@ -69,7 +73,7 @@ for (;;) {
     const yEnd = Math.min(height, yStart + rowsPerBand);
     if (yStart < yEnd && triCount > 0) {
         const myCount = Atomics.load(bandCounts, bandIndex);
-        raster(tris, triCount, bandIndexes, bandIndex * BAND_STRIDE, myCount, depthLayer, colorLayer, width, yStart, yEnd, fctrl[${FCTRL_DEPTH_FADE}], quantMask);
+        raster(trisF, trisI, triCount, bandIndexes, bandIndex * BAND_STRIDE, myCount, depthLayer, colorLayer, texels, textureTable, width, yStart, yEnd, fctrl[${FCTRL_DEPTH_FADE}], quantMask);
     }
     Atomics.add(ctrl, ${CTRL_DONE}, 1);
     Atomics.notify(ctrl, ${CTRL_DONE});
@@ -82,14 +86,19 @@ export class RasterWorkerPool {
     public static readonly MAX_CELLS = 2048 * 512;
     /** Triangle batch capacity; producers flush a batch when it fills up. */
     public static readonly MAX_TRIS = 1 << 17;
+    /** Shared texel storage (all mip levels of all textures); textures past this render untextured. */
+    public static readonly MAX_TEXELS = 8 << 20;
+    public static readonly MAX_TEXTURES = 256;
     /** How long the join busy-spins before falling back to sleeping (ms). */
     private static readonly JOIN_SPIN_MS = 20;
     /** How long a join may stall before the pool is declared broken (ms). */
     private static readonly JOIN_TIMEOUT_MS = 2000;
 
-    public readonly triData: Float64Array;
+    public readonly triData: Float32Array;
+    public readonly triInts: Int32Array;
     public readonly depthLayer: Float32Array;
     public readonly colorLayer: Int32Array;
+    public readonly textureStore: TextureStore;
     /** Per-band triangle index bins, band b occupying [b * MAX_TRIS, ...). */
     public readonly bandIndexes: Int32Array;
     /** Entries used per band bin. Written by the producer, read by workers. */
@@ -108,19 +117,23 @@ export class RasterWorkerPool {
 
         const ctrlSab = new SharedArrayBuffer(CTRL_SLOTS * 4);
         const fctrlSab = new SharedArrayBuffer(FCTRL_SLOTS * 8);
-        const triSab = new SharedArrayBuffer(RasterWorkerPool.MAX_TRIS * TRI_STRIDE * 8);
+        const triSab = new SharedArrayBuffer(RasterWorkerPool.MAX_TRIS * TRI_STRIDE * 4);
         const depthSab = new SharedArrayBuffer(RasterWorkerPool.MAX_CELLS * 4);
         const colorSab = new SharedArrayBuffer(RasterWorkerPool.MAX_CELLS * 4);
         const bandIndexSab = new SharedArrayBuffer((workerCount + 1) * RasterWorkerPool.MAX_TRIS * 4);
         const bandCountSab = new SharedArrayBuffer((workerCount + 1) * 4);
+        const texelSab = new SharedArrayBuffer(RasterWorkerPool.MAX_TEXELS * 4);
+        const textureTableSab = new SharedArrayBuffer(RasterWorkerPool.MAX_TEXTURES * TextureStore.DESCRIPTOR_STRIDE * 4);
 
         this.ctrl = new Int32Array(ctrlSab);
         this.fctrl = new Float64Array(fctrlSab);
-        this.triData = new Float64Array(triSab);
+        this.triData = new Float32Array(triSab);
+        this.triInts = new Int32Array(triSab);
         this.depthLayer = new Float32Array(depthSab);
         this.colorLayer = new Int32Array(colorSab);
         this.bandIndexes = new Int32Array(bandIndexSab);
         this.bandCounts = new Int32Array(bandCountSab);
+        this.textureStore = new TextureStore(new Int32Array(texelSab), new Int32Array(textureTableSab), false);
 
         const source = buildWorkerSource();
         for (let i = 0; i < workerCount; i++) {
@@ -134,6 +147,8 @@ export class RasterWorkerPool {
                     color: colorSab,
                     bandIndexes: bandIndexSab,
                     bandCounts: bandCountSab,
+                    texels: texelSab,
+                    textureTable: textureTableSab,
                     bandIndex: i + 1,
                 },
             });
@@ -168,7 +183,7 @@ export class RasterWorkerPool {
         // runtimes)? Don't fire a job nobody is listening for — just rasterize
         // this batch synchronously; threading kicks in once they're all up.
         if (Atomics.load(ctrl, CTRL_READY) < this.workers.length) {
-            rasterizeTriangleBand(this.triData, triCount, null, 0, 0, this.depthLayer, this.colorLayer, width, 0, height, maxDepthFade, quantMask);
+            this.rasterizeSynchronously(triCount, width, 0, height, maxDepthFade, quantMask);
             return true;
         }
 
@@ -187,7 +202,8 @@ export class RasterWorkerPool {
         const rowsPerBand = Math.ceil(height / bandCount);
         const mainEnd = Math.min(height, rowsPerBand);
         if (mainEnd > 0) {
-            rasterizeTriangleBand(this.triData, triCount, this.bandIndexes, 0, this.bandCounts[0], this.depthLayer, this.colorLayer, width, 0, mainEnd, maxDepthFade, quantMask);
+            const store = this.textureStore;
+            rasterizeTriangleBand(this.triData, this.triInts, triCount, this.bandIndexes, 0, this.bandCounts[0], this.depthLayer, this.colorLayer, store.texels, store.table, width, 0, mainEnd, maxDepthFade, quantMask);
         }
 
         // Join. Band workloads are sub-millisecond while waking a sleeping
@@ -207,11 +223,16 @@ export class RasterWorkerPool {
                 // never dispatch to this pool again.
                 this.broken = true;
                 if (height > mainEnd) {
-                    rasterizeTriangleBand(this.triData, triCount, null, 0, 0, this.depthLayer, this.colorLayer, width, mainEnd, height, maxDepthFade, quantMask);
+                    this.rasterizeSynchronously(triCount, width, mainEnd, height, maxDepthFade, quantMask);
                 }
                 return false;
             }
         }
+    }
+
+    private rasterizeSynchronously(triCount: number, width: number, yStart: number, yEnd: number, maxDepthFade: number, quantMask: number): void {
+        const store = this.textureStore;
+        rasterizeTriangleBand(this.triData, this.triInts, triCount, null, 0, 0, this.depthLayer, this.colorLayer, store.texels, store.table, width, yStart, yEnd, maxDepthFade, quantMask);
     }
 
     public dispose(): void {

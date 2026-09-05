@@ -5,14 +5,15 @@ import {originalConsole as display} from "../../debugging/originalConsole";
 import {ConsoleCameraSizingSystem} from "./consoleCameraSizingSystem";
 import {Ansi} from "./ansi";
 import {ConsoleScreenBuffer} from "./consoleScreenBuffer";
+import {ConsoleRenderSettings} from "./consoleRenderSettings";
 import {RenderingSystemGroup} from "../renderingSystemGroup";
 import {ScreenSize} from "../screenSize";
 
 export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
+    private _settingsQuery = this.createEntityQuery([ConsoleRenderSettings]);
 
-    private _backgroundChar: string = Ansi.colors.bg.black + Ansi.colors.fg.black + " ";
     private _prevRows: string[] = [];
     private _prevWidth = -1;
     private _forceRedraw = true;
@@ -23,10 +24,6 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
     override priority(): number {
         return 100; // after camera sizing
-    }
-
-    set backgroundChar(value: string) {
-        this._backgroundChar = value;
     }
 
     protected onCreate() {
@@ -47,9 +44,9 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
                 screenSize: ScreenSize,
             });
 
-            // Prepare current buffer
-
-            screenBuffer.beginFrame(cameraEntity, this._backgroundChar);
+            const settings = this._settingsQuery.tryGetSingleton({settings: ConsoleRenderSettings});
+            const backgroundChar = settings?.settings.backgroundChar ?? ConsoleRenderSettings.DEFAULT_BACKGROUND_CHAR;
+            screenBuffer.beginFrame(cameraEntity, backgroundChar);
         } catch (error) {
             const camCount = this._cameraQuery.entityCount();
             process.stdout.write("\x1b[H");   // cursor to 1,1 (home)
