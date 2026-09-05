@@ -10,9 +10,10 @@ currently runs in console
 
 ## 3D
 
-Renders `.obj` meshes with their `.mtl` materials (diffuse color and `map_Kd` textures), lit by directional, point
-and ambient lights with per-vertex Gouraud shading, perspective-correct mip-mapped texturing, 2x4 supersampling
-and half-block cells (two vertical samples per terminal cell). The rasterizer is multithreaded over shared memory.
+Renders `.obj` meshes with their `.mtl` materials (`Kd`/`map_Kd` diffuse, `Ks`/`Ns`/`map_Ks` Blinn-Phong specular,
+`Ke` emissive), lit by directional, point and ambient lights with per-vertex Gouraud shading, perspective-correct
+mip-mapped texturing, 2x4 supersampling and half-block cells (two vertical samples per terminal cell). The
+rasterizer is multithreaded over shared memory.
 
 Textures: PNG (any color type, non-interlaced), baseline JPEG (any chroma subsampling, restart intervals; not
 progressive or CMYK) and binary PPM are decoded in-engine with no dependencies. `map_Kd` paths may contain spaces

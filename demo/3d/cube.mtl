@@ -1,3 +1,5 @@
 newmtl Material
 Kd 1.0 1.0 1.0
+Ks 0.6 0.6 0.6
+Ns 24
 map_Kd checker.png

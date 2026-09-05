@@ -304,6 +304,27 @@ d 1.0
         expect(parseMtl("Kd 1 0 0\n").size).toBe(0);
     });
 
+    test("reads Ks, Ns and Ke, defaulting to no specular and no emission", () => {
+        const library = parseMtl(`
+newmtl glossy
+Ks 0.5 0.25 1
+Ns 96.078431
+Ke 0.1 0.2 0.3
+newmtl matte
+Kd 1 1 1
+Ns -5
+Ks bad values here
+`);
+        const glossy = library.get("glossy")!;
+        expect(glossy.specularColor).toBe(packRgb(0.5, 0.25, 1));
+        expect(glossy.shininess).toBeCloseTo(96.078431, 5);
+        expect(glossy.emissiveColor).toBe(packRgb(0.1, 0.2, 0.3));
+        const matte = library.get("matte")!;
+        expect(matte.specularColor).toBe(0);
+        expect(matte.shininess).toBe(0);
+        expect(matte.emissiveColor).toBe(0);
+    });
+
     test("map_Kd keeps spaces in the file name and skips option flags with their arguments", () => {
         const pathOf = (line: string, baseDirectory = "models") =>
             parseMtl(`newmtl m\n${line}\n`, baseDirectory).get("m")!.diffuseTexturePath!.replace(/\\/g, "/");
@@ -313,6 +334,12 @@ d 1.0
         expect(pathOf("map_Kd -bm 0.5 leaf.png", "")).toBe("leaf.png");
         expect(pathOf("map_Kd C:\\textures\\abs.png")).toBe("C:/textures/abs.png");
         expect(pathOf("map_Kd /textures/abs.png")).toBe("/textures/abs.png");
+    });
+
+    test("map_Ks resolves like map_Kd into the specular texture slot", () => {
+        const material = parseMtl("newmtl m\nmap_Ks -bm 1 textures\\gloss map.png\n", "models").get("m")!;
+        expect(material.specularTexturePath!.replace(/\\/g, "/")).toBe("models/textures/gloss map.png");
+        expect(material.diffuseTexturePath).toBeUndefined();
     });
 });
 

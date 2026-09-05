@@ -19,13 +19,26 @@ export function parseMtl(text: string, baseDirectory: string = ""): MaterialLibr
         } else if (current === undefined) {
             continue;
         } else if (keyword === "Kd") {
-            const [r, g, b] = argument.split(/\s+/).map(Number.parseFloat);
-            if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) current.diffuseColor = packRgb(r, g, b);
+            current.diffuseColor = parsePackedRgb(argument) ?? current.diffuseColor;
+        } else if (keyword === "Ks") {
+            current.specularColor = parsePackedRgb(argument) ?? current.specularColor;
+        } else if (keyword === "Ke") {
+            current.emissiveColor = parsePackedRgb(argument) ?? current.emissiveColor;
+        } else if (keyword === "Ns") {
+            const shininess = Number.parseFloat(argument);
+            if (Number.isFinite(shininess) && shininess >= 0) current.shininess = shininess;
         } else if (keyword === "map_Kd") {
             current.diffuseTexturePath = resolveTexturePath(argument, baseDirectory);
+        } else if (keyword === "map_Ks") {
+            current.specularTexturePath = resolveTexturePath(argument, baseDirectory);
         }
     }
     return library;
+}
+
+function parsePackedRgb(argument: string): number | undefined {
+    const [r, g, b] = argument.split(/\s+/).map(Number.parseFloat);
+    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? packRgb(r, g, b) : undefined;
 }
 
 const textureMapOptionArgumentCounts: Record<string, number> = {
