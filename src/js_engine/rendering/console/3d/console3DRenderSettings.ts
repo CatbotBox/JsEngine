@@ -48,6 +48,16 @@ export class Console3DRenderSettings extends Component {
     public textures: boolean = true;
     /** Two vertical samples per cell drawn with the upper-half-block glyph (needs a font with U+2580). */
     public halfBlockCells: boolean = true;
+    /** Pick a coarser detail level for meshes that project small; off always draws level 0. */
+    public lod: boolean = true;
+    /** Whole levels added to the computed choice; positive is coarser, negative finer. */
+    public lodBias: number = 0;
+    /**
+     * Triangle budget per screen cell covered by the mesh's projected bounds; the
+     * finest level within budget is drawn. Measured in cells, not subsamples, so
+     * anti-aliasing and half-block settings never move the choice.
+     */
+    public lodTrianglesPerCell: number = 32;
 
     public toRasterizerConfig(): MeshRasterizerConfig {
         return {

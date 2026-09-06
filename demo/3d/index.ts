@@ -1,7 +1,8 @@
 ﻿import {
     EntityCommandBufferSystem,
     System,
-    DebugWorld
+    DebugWorld,
+    Resource
 } from "../../src/js_engine";
 import {consoleInput as input, Key} from "../../src/js_engine/input";
 
@@ -33,7 +34,40 @@ import {ReadonlyVec3, ReadonlyVec4, Vec, Vec3} from "../../src/js_engine/math/ty
 import {Quaternions} from "../../src/js_engine/math/quaternions";
 import {createHudLabel} from "../_shared/hud";
 
+const formatCompact = (num: number): string => {
+    const abs = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
+    const units: [number, string][] = [
+        [1e12, 'T'],
+        [1e9, 'B'],
+        [1e6, 'M'],
+        [1e3, 'k'],
+    ];
+
+    for (let i = 0; i < units.length; i++) {
+        const [value, suffix] = units[i];
+        if (abs >= value) {
+            let scaled = Number((abs / value).toPrecision(3));
+
+            // rounding can push e.g. 999.5k -> 1000k; bump to next unit up
+            if (scaled >= 1000 && i > 0) {
+                const [nextValue, nextSuffix] = units[i - 1];
+                scaled = Number((abs / nextValue).toPrecision(3));
+                return `${sign}${scaled}${nextSuffix}`;
+            }
+            return `${sign}${scaled}${suffix}`;
+        }
+    }
+    return `${sign}${abs}`;
+}
+
+/** Source geometry currently in the scene, kept by the spawn/despawn code; the HUD shows it against what the pass drew. */
+class SceneStats extends Resource {
+    public sourceTriangles = 0;
+}
+
 const world = new DebugWorld();
+const sceneStats = world.resources.getOrCreate(SceneStats);
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
 
@@ -78,7 +112,6 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
 
 
     let selectedMeshIndex = 0;
-    let totalTriCount = 0;
 
     interface SpawnedModel {
         entity: ReturnType<typeof buffer.createEntity>;
@@ -117,10 +150,10 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
     const controlsImage = buffer.addTrackedComponent(controlsEntity, new ConsoleImage());
     controlsImage.transparentChar = undefined;
     controlsImage.image = [
-        Ansi.colors.fg.cyan + 'wasd/qe move  arrows rotate  i/o scale  z/x fov',
-        Ansi.colors.fg.cyan + 'drag: look   scroll: zoom',
-        Ansi.colors.fg.cyan + 'space spawn  bksp despawn  n next  r reload  ^C quit',
-        Ansi.colors.fg.cyan + 'j/l u/m sun   h lights   p lamp   t textures   b halfblock   1-4 aa   v 3d   tab hud',
+        Ansi.colors.fg.cyan + 'camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit',
+        Ansi.colors.fg.cyan + 'models  space spawn  bksp despawn  n next  r reload  arrows rotate  [ ] scale',
+        Ansi.colors.fg.cyan + 'render  1-4 aa  b halfblock  t textures  f lod  - = detail  v 3d  tab hud  g order',
+        Ansi.colors.fg.cyan + 'lights  h all  p lamp  i/k j/l sun',
     ];
     buffer.addComponent(controlsEntity, new HudElement());
     const controlsAnchor = new ConsoleImageAnchor();
@@ -167,33 +200,6 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         updatePreview();
     }
 
-    const formatCompact = (num: number): string => {
-        const abs = Math.abs(num);
-        const sign = num < 0 ? '-' : '';
-        const units: [number, string][] = [
-            [1e12, 'T'],
-            [1e9, 'B'],
-            [1e6, 'M'],
-            [1e3, 'k'],
-        ];
-
-        for (let i = 0; i < units.length; i++) {
-            const [value, suffix] = units[i];
-            if (abs >= value) {
-                let scaled = Number((abs / value).toPrecision(3));
-
-                // rounding can push e.g. 999.5k -> 1000k; bump to next unit up
-                if (scaled >= 1000 && i > 0) {
-                    const [nextValue, nextSuffix] = units[i - 1];
-                    scaled = Number((abs / nextValue).toPrecision(3));
-                    return `${sign}${scaled}${nextSuffix}`;
-                }
-                return `${sign}${scaled}${suffix}`;
-            }
-        }
-        return `${sign}${abs}`;
-    }
-
     const updatePreview = () => {
         if (meshes.length == 0) {
             previewImage.image = [
@@ -205,7 +211,6 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         previewImage.image = [
             Ansi.colors.fg.cyan + 'Next: ' + meshes[selectedMeshIndex].name
             + '  [spawned: ' + spawned.length + '] ', //add space for padding
-            formatCompact(totalTriCount) + ' triangles'
         ];
     }
 
@@ -246,7 +251,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         scale.xyz = currentScale;
 
         spawned.push({entity, position, rotation, scale});
-        totalTriCount += meshes[selectedMeshIndex].mesh.triangleCount;
+        sceneStats.sourceTriangles += model.mesh.triangleCount;
         relayout();
         updatePreview();
     }
@@ -256,7 +261,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         if (!last) return;
         buffer.destroyEntity(last.entity);
         const renderMesh = world.entityManager.getComponent(last.entity, RenderMesh) as RenderMesh;
-        totalTriCount -= renderMesh.mesh!.triangleCount;
+        sceneStats.sourceTriangles -= renderMesh.mesh!.triangleCount;
         relayout();
         updatePreview();
     }
@@ -331,16 +336,18 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
     const registerInputs = () => {
         input.enable({mouse: true, hideCursor: true})
 
-        // Ctrl+C: the input system no longer force-quits, so we own shutdown here.
+        // Ctrl+C / Escape: the input system no longer force-quits, so we own shutdown here.
         // (Raw mode has no auto-SIGINT — without a handler like this, Ctrl+C does
         //  nothing, so keep some exit path registered.)
-        input.onKeyMatch({name: 'c', ctrl: true}, () => {
+        const quit = () => {
             const renderer = world.tryGetSystem(RenderingSystemGroup);
             if (renderer) renderer.enabled = false;
             world.stop();
             input.disable();
             process.exit(0);
-        })
+        }
+        input.onKeyMatch({name: 'c', ctrl: true}, quit)
+        input.whenKeyDown(Key.Escape, quit)
 
         // ---- spawning ----
         // space: spawn a new model | backspace: remove the last one
@@ -387,12 +394,12 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
             applyRotation();
         })
 
-        // ---- model scale (i/o) ----
-        input.whenKey(Key.I, () => {
+        // ---- model scale ([ smaller, ] larger) ----
+        input.whenKey('[', () => {
             Vec.divInto(currentScale, currentScale, scaleFactor);
             applyScale();
         })
-        input.whenKey(Key.O, () => {
+        input.whenKey(']', () => {
             Vec.mulInto(currentScale, currentScale, scaleFactor);
             applyScale();
         })
@@ -406,6 +413,9 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         })
 
         // ---- render toggles (once per press) ----
+        // 1-4: anti-aliasing presets | b: half-block cells | t: textures
+        // f: detail levels on/off | -/=: coarser/finer detail bias
+        // v: 3D pass | tab: HUD | g: log system order
         input.whenKeyDown(Key.V, () => {
             const renderer = world.tryGetSystem(Console3DRenderPassSystem);
             if (renderer) renderer.enabled = !renderer.enabled;
@@ -421,6 +431,15 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         input.whenKeyDown(Key.B, () => {
             renderSettings.halfBlockCells = !renderSettings.halfBlockCells;
         })
+        input.whenKeyDown(Key.F, () => {
+            renderSettings.lod = !renderSettings.lod;
+        })
+        input.whenKeyDown('-', () => {
+            renderSettings.lodBias += 1;
+        })
+        input.whenKeyDown('=', () => {
+            renderSettings.lodBias -= 1;
+        })
         const supersamplePresets: [Key, number, number][] = [[Key.Num1, 1, 1], [Key.Num2, 2, 2], [Key.Num3, 2, 4], [Key.Num4, 4, 4]];
         for (const [key, x, y] of supersamplePresets) {
             input.whenKeyDown(key, () => {
@@ -430,21 +449,22 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
         }
 
         // ---- lighting ----
-        // j/l: sun yaw | u/m: sun pitch | h: all lights on/off | p: point light on/off
+        // i/k: sun pitch | j/l: sun yaw (the arrow cluster, as arrows rotate the models)
+        // h: all lights on/off | p: point light on/off
+        input.whenKey(Key.I, () => {
+            Vec.setX(sunEuler, Vec.x(sunEuler) + 0.05);
+            applySunRotation();
+        })
+        input.whenKey(Key.K, () => {
+            Vec.setX(sunEuler, Vec.x(sunEuler) - 0.05);
+            applySunRotation();
+        })
         input.whenKey(Key.J, () => {
             Vec.setY(sunEuler, Vec.y(sunEuler) - 0.05);
             applySunRotation();
         })
         input.whenKey(Key.L, () => {
             Vec.setY(sunEuler, Vec.y(sunEuler) + 0.05);
-            applySunRotation();
-        })
-        input.whenKey(Key.U, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) + 0.05);
-            applySunRotation();
-        })
-        input.whenKey(Key.M, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) - 0.05);
             applySunRotation();
         })
         input.whenKeyDown(Key.H, () => {
@@ -525,8 +545,12 @@ class DebugSystem extends System {
             Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
         ]
 
+        const pass = this.world.tryGetSystem(Console3DRenderPassSystem);
+        const drawn = pass === undefined ? 0 : pass.trianglesDrawn;
+        const levels = pass === undefined ? '' : '  LOD levels: ' + Array.from(pass.lodLevelCounts.subarray(0, 5)).join('/');
         this._entityCounterImage.image = [
             Ansi.colors.fg.green + 'Entities: ' + (this.world.entityCount),
+            Ansi.colors.fg.green + 'Triangles: ' + formatCompact(drawn) + ' drawn / ' + formatCompact(this.world.resources.getOrCreate(SceneStats).sourceTriangles) + ' source' + levels,
         ]
     }
 }
