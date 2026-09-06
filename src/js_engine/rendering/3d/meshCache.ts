@@ -1,7 +1,7 @@
 import type {Mesh} from "./mesh";
 
 // increment whenever a change is made to this file
-export const MESH_CACHE_FORMAT_VERSION = 1;
+export const MESH_CACHE_FORMAT_VERSION = 3;
 export const MESH_CACHE_EXTENSION = ".meshcache";
 
 const MAGIC = "JSENGINE_MESHCACHE";
@@ -10,23 +10,33 @@ const HEADER_OFFSET = HEADER_LENGTH_OFFSET + 4;
 const BYTES_PER_FLOAT = 4;
 const BYTES_PER_MATERIAL_INDEX = 2;
 
-export interface CachedMesh {
+/** Geometry of one mesh or detail level: `data` in the Mesh layout, then one material index per vertex. */
+export interface CachedGeometry {
     readonly data: Float32Array;
     readonly vertCount: number;
     readonly triangleCount: number;
-    readonly materialNames: readonly string[];
-    readonly materialLibraryNames: readonly string[];
     readonly vertexMaterial: Uint16Array;
 }
 
-interface CacheHeader {
+export interface CachedMesh extends CachedGeometry {
+    readonly materialNames: readonly string[];
+    readonly materialLibraryNames: readonly string[];
+    /** Coarser detail levels, finest first, sharing the mesh's materials. */
+    readonly lods: readonly CachedGeometry[];
+}
+
+interface GeometryHeader {
+    vertCount: number;
+    triangleCount: number;
+}
+
+interface CacheHeader extends GeometryHeader {
     formatVersion: number;
     objByteLength: number;
     objMtimeMs: number;
-    vertCount: number;
-    triangleCount: number;
     materialNames: string[];
     materialLibraryNames: string[];
+    lods: GeometryHeader[];
 }
 
 export function meshCachePathFor(objPath: string): string {
@@ -58,6 +68,7 @@ export function writeMeshCache(objPath: string, mesh: Mesh, materialLibraryNames
 }
 
 function encodeCache(mesh: Mesh, materialLibraryNames: readonly string[], objByteLength: number, objMtimeMs: number): Uint8Array {
+    const levels = mesh.lods.slice(1);
     const header: CacheHeader = {
         formatVersion: MESH_CACHE_FORMAT_VERSION,
         objByteLength,
@@ -66,18 +77,27 @@ function encodeCache(mesh: Mesh, materialLibraryNames: readonly string[], objByt
         triangleCount: mesh.triangleCount,
         materialNames: mesh.materials.map(material => material.name),
         materialLibraryNames: [...materialLibraryNames],
+        lods: levels.map(level => ({vertCount: level.vertCount, triangleCount: level.triangleCount})),
     };
     const headerBytes = new TextEncoder().encode(JSON.stringify(header));
-    const dataOffset = alignToFloat(HEADER_OFFSET + headerBytes.length);
-    const data = mesh.data.raw;
-    const vertexMaterial = mesh.vertexMaterial;
-    const out = new Uint8Array(dataOffset + data.byteLength + vertexMaterial.byteLength);
+    const geometries = [mesh, ...levels];
+    let totalLength = HEADER_OFFSET + headerBytes.length;
+    for (const geometry of geometries) totalLength = geometryEnd(alignToFloat(totalLength), geometry);
+
+    const out = new Uint8Array(totalLength);
     const view = new DataView(out.buffer);
     for (let i = 0; i < MAGIC.length; i++) out[i] = MAGIC.charCodeAt(i);
     view.setUint32(HEADER_LENGTH_OFFSET, headerBytes.length, true);
     out.set(headerBytes, HEADER_OFFSET);
-    out.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), dataOffset);
-    out.set(new Uint8Array(vertexMaterial.buffer, vertexMaterial.byteOffset, vertexMaterial.byteLength), dataOffset + data.byteLength);
+    let offset = HEADER_OFFSET + headerBytes.length;
+    for (const geometry of geometries) {
+        offset = alignToFloat(offset);
+        const data = geometry.data.raw;
+        const vertexMaterial = geometry.vertexMaterial;
+        out.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), offset);
+        out.set(new Uint8Array(vertexMaterial.buffer, vertexMaterial.byteOffset, vertexMaterial.byteLength), offset + data.byteLength);
+        offset = geometryEnd(offset, geometry);
+    }
     return out;
 }
 
@@ -93,18 +113,39 @@ function decodeCache(bytes: Uint8Array, objByteLength: number, objMtimeMs: numbe
     if (header.formatVersion !== MESH_CACHE_FORMAT_VERSION) return undefined;
     if (header.objByteLength !== objByteLength || header.objMtimeMs !== objMtimeMs) return undefined;
 
-    const dataOffset = alignToFloat(HEADER_OFFSET + headerLength);
-    const floatCount = (header.vertCount * 3 + header.triangleCount) * 3;
-    const vertexMaterialOffset = dataOffset + floatCount * BYTES_PER_FLOAT;
-    if (bytes.length !== vertexMaterialOffset + header.vertCount * BYTES_PER_MATERIAL_INDEX) return undefined;
+    let offset = HEADER_OFFSET + headerLength;
+    const geometries: CachedGeometry[] = [];
+    for (const geometryHeader of [header as GeometryHeader, ...(header.lods ?? [])]) {
+        offset = alignToFloat(offset);
+        if (bytes.length < geometryEnd(offset, geometryHeader)) return undefined;
+        geometries.push(geometryAt(bytes, offset, geometryHeader));
+        offset = geometryEnd(offset, geometryHeader);
+    }
+    if (bytes.length !== offset) return undefined;
 
     return {
-        data: floatsAt(bytes, dataOffset, floatCount),
-        vertCount: header.vertCount,
-        triangleCount: header.triangleCount,
+        ...geometries[0],
         materialNames: header.materialNames,
         materialLibraryNames: header.materialLibraryNames,
-        vertexMaterial: materialIndicesAt(bytes, vertexMaterialOffset, header.vertCount),
+        lods: geometries.slice(1),
+    };
+}
+
+function floatCountOf(geometry: GeometryHeader): number {
+    return (geometry.vertCount * 3 + geometry.triangleCount) * 3;
+}
+
+function geometryEnd(offset: number, geometry: GeometryHeader): number {
+    return offset + floatCountOf(geometry) * BYTES_PER_FLOAT + geometry.vertCount * BYTES_PER_MATERIAL_INDEX;
+}
+
+function geometryAt(bytes: Uint8Array, offset: number, geometry: GeometryHeader): CachedGeometry {
+    const floatCount = floatCountOf(geometry);
+    return {
+        data: floatsAt(bytes, offset, floatCount),
+        vertCount: geometry.vertCount,
+        triangleCount: geometry.triangleCount,
+        vertexMaterial: materialIndicesAt(bytes, offset + floatCount * BYTES_PER_FLOAT, geometry.vertCount),
     };
 }
 

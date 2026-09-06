@@ -3,6 +3,7 @@ import {Vec3Array, VecArray} from "../../math/types/vecArray";
 import {loadMaterialTextures, Material} from "./material";
 import {MaterialLibrary, parseMtl} from "./mtlParser";
 import {readMeshCache, writeMeshCache} from "./meshCache";
+import {buildLodParts, LodBuildOptions} from "./meshLod";
 
 export class Mesh {
     public readonly data: Vec3Array;
@@ -12,6 +13,16 @@ export class Mesh {
     public readonly vertexMaterial: Uint16Array;
 
     private _bounds?: Float32Array;
+    private _lods: Mesh[] = [this];
+
+    /** Detail levels, finest first; level 0 is this mesh. A mesh without coarser levels has length 1. */
+    public get lods(): readonly Mesh[] {
+        return this._lods;
+    }
+
+    public attachLods(coarserLevels: readonly Mesh[]): void {
+        this._lods = [this, ...coarserLevels];
+    }
 
     /**
      * Mesh-local AABB as [xMin, yMin, zMin, xMax, yMax, zMax], computed from
@@ -114,20 +125,28 @@ export class Mesh {
         }
         const directory = path.dirname(filePath);
         const useCache = options.cache ?? true;
+        const lodOptions = options.lod === false ? undefined : options.lod === true || options.lod === undefined ? {} : options.lod;
         const cached = useCache ? readMeshCache(filePath) : undefined;
         let mesh: Mesh;
         if (cached !== undefined) {
             const library = loadMaterialLibraries(directory, cached.materialLibraryNames);
             const materials = cached.materialNames.map(name => library.get(name) ?? new Material(name));
             mesh = new Mesh({data: cached.data, vertCount: cached.vertCount, triangleCount: cached.triangleCount, materials, vertexMaterial: cached.vertexMaterial});
+            if (lodOptions !== undefined) mesh.attachLods(cached.lods.map(level => new Mesh({...level, materials})));
         } else {
             const parser = new ObjParser(fs.readFileSync(filePath).toString());
             parser.applyMaterialLibrary(loadMaterialLibraries(directory, parser.materialLibraryNames));
             mesh = parser.toMesh();
+            if (lodOptions !== undefined) mesh.attachLods(Mesh.buildLods(mesh, lodOptions));
             if (useCache) writeMeshCache(filePath, mesh, parser.materialLibraryNames);
         }
         loadMaterialTextures(mesh.materials);
         return mesh;
+    }
+
+    /** Coarser levels of `mesh` by vertex clustering (see meshLod.ts); empty below the triangle threshold. */
+    public static buildLods(mesh: Mesh, options: Partial<LodBuildOptions> = {}): Mesh[] {
+        return buildLodParts(mesh, options).map(parts => new Mesh(parts));
     }
 
     public static parseObj(data: string, materialLibrary?: MaterialLibrary): Mesh {
@@ -147,6 +166,13 @@ export interface MeshParts {
 
 export interface MeshLoadOptions {
     cache?: boolean;
+    /**
+     * Build (or load from the cache) coarser detail levels; on by default with
+     * DEFAULT_LOD_BUILD_OPTIONS, an object overrides them, false skips them. The
+     * cache stores whatever levels the writing load built, so a file first loaded
+     * with `lod: false` has none until its cache is regenerated.
+     */
+    lod?: boolean | Partial<LodBuildOptions>;
 }
 
 function loadMaterialLibraries(directory: string, libraryNames: readonly string[]): MaterialLibrary {

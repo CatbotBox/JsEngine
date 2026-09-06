@@ -40,7 +40,7 @@ export interface MeshRasterizerConfig {
     textures: boolean;
 }
 
-const NEAR_PLANE_Z = 0.1;
+export const NEAR_PLANE_Z = 0.1;
 const LOG2 = Math.log(2);
 const MAX_SUPERSAMPLE = 4;
 
