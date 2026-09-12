@@ -34,7 +34,12 @@ export class WorldSpaceRenderBoundsComputeSystem extends System {
             // Derives each entity's output from its own components, so a removal
             // leaves nothing to redo — see EntityFilterOptions.structuralFilter.
             structuralFilter: "additions",
-            filterBlackList: [RenderBounds]
+            // Only the system's own write column may be blacklisted. RenderBounds
+            // is a read here: blacklisting it severed the wake-up from the
+            // apply-modifier systems that derive it, so sprites kept a stale
+            // point-AABB until their LocalToWorld happened to be re-stamped —
+            // and then visibly jumped by the anchor offset.
+            filterBlackList: [WorldSpaceRenderBounds]
         }).consumeSpans(({start, end, cols, stores}) => {
             // SoA hot path: LocalToWorld (16), RenderBounds (6) and
             // WorldSpaceRenderBounds (6) as raw columns; RenderBoundsOffset is
