@@ -14,7 +14,10 @@ export class RenderBounds2DApplyModifierSystem extends System {
     }
 
     override priority(): number {
-        return -10;
+        // Before WorldSpaceRenderBoundsComputeSystem (-10), like
+        // RenderMeshBoundsSystem: a freshly spawned image must get its local
+        // bounds before the world-space AABB is derived from them.
+        return -20;
     }
 
     protected onCreate() {
