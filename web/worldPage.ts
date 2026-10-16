@@ -7,6 +7,8 @@ import {createTerminal} from "./terminal";
 /**
  * The page half of a demo: the terminal lives here, the world in the module worker at
  * `workerUrl` (relative to the page). `?threads=N` asks the world for N raster workers.
+ * Quitting closes the window: the Electron window (scripts/window.ts) closes and the app exits;
+ * a browser ignores it for a tab the user opened, leaving the stopped line.
  */
 export function startWorldPage(workerUrl: string, name: string): void {
     const terminal = createTerminal(document.getElementById("terminal")!);
@@ -14,6 +16,7 @@ export function startWorldPage(workerUrl: string, name: string): void {
     const page = connectWorldWorker(terminal, worker, {
         name,
         requestedRasterWorkers: requestedRasterWorkersFromQuery(location.search),
+        onQuit: () => window.close(),
     });
     window.addEventListener("pagehide", () => page.exit());
 }
