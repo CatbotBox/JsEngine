@@ -12,6 +12,11 @@ import {RootSystemGroup} from "../core/rootSystemGroup";
 import {Camera} from "../rendering/camera";
 import {ScreenSize} from "../rendering/screenSize";
 import {ConsoleCameraSizingSystem} from "../rendering/console/consoleCameraSizingSystem";
+import {ConsoleCellRatio} from "../rendering/consoleCellRatio";
+import {RenderingSystemGroup} from "../rendering/renderingSystemGroup";
+import {Console3DRenderSettings} from "../rendering/console/3d/console3DRenderSettings";
+import {System} from "../core/system";
+import {EntityQuery} from "../core/entityQuery";
 import {Mesh} from "../rendering/3d/mesh";
 import {decodeImageFile} from "../rendering/3d/image/decodedImage";
 import {encodePng} from "../rendering/3d/image/png";
@@ -265,6 +270,90 @@ describe("ConsoleCameraSizingSystem", () => {
 
         sizing.destroy();
         expect(platform.screen.listenerCount).toBe(0);
+    });
+
+    test("a camera gets no ConsoleCellRatio without the console sizing system", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const em = world.entityManager;
+        const camera = em.createEntity("camera");
+        em.addComponent(camera, new Camera());
+        root.update();
+        expect(em.getComponent(camera, ConsoleCellRatio)).toBeUndefined();
+    });
+
+    test("adds exactly one ConsoleCellRatio, before the render passes of the same frame", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        world.getOrCreateSystem(ConsoleCameraSizingSystem);
+        const probe = world.getOrCreateSystem(CellRatioProbeSystem);
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const em = world.entityManager;
+        const camera = em.createEntity("camera");
+        em.addComponent(camera, new Camera());
+        root.update();
+        expect(probe.sawCellRatio).toBe(true);
+        expect(em.getComponent<ConsoleCellRatio>(camera, ConsoleCellRatio)!.value).toBe(2);
+        root.update();
+        expect(new EntityQuery(world, [ConsoleCellRatio]).entityCount()).toBe(1);
+    });
+
+    test("keeps a camera's existing ConsoleCellRatio", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        world.getOrCreateSystem(ConsoleCameraSizingSystem);
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const em = world.entityManager;
+        const camera = em.createEntity("camera");
+        em.addComponent(camera, new Camera());
+        const ratio = new ConsoleCellRatio();
+        ratio.value = 3;
+        em.addComponent(camera, ratio);
+        root.update();
+        expect(em.getComponent<ConsoleCellRatio>(camera, ConsoleCellRatio)!.value).toBe(3);
+        expect(new EntityQuery(world, [ConsoleCellRatio]).entityCount()).toBe(1);
+    });
+});
+
+class CellRatioProbeSystem extends System {
+    private _cameraQuery = this.createEntityQuery([Camera, ConsoleCellRatio]);
+    public sawCellRatio = false;
+
+    override systemGroup() {
+        return RenderingSystemGroup;
+    }
+
+    override priority(): number {
+        return 100;
+    }
+
+    onUpdate() {
+        this.sawCellRatio = this._cameraQuery.hasEntity();
+    }
+}
+
+describe("Console3DRenderSettings worker count", () => {
+    const resolve = (platform: MemoryPlatform, workerCount: number | "auto" = "auto") => {
+        const settings = new Console3DRenderSettings();
+        settings.workerCount = workerCount;
+        return settings.toRasterizerConfig(platform).workerCount;
+    };
+
+    test("auto leaves one core to the main thread, up to 7 workers", () => {
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 1}))).toBe(0);
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 4}))).toBe(3);
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 32}))).toBe(7);
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 0}))).toBe(0);
+    });
+
+    test("auto takes the host's requested count, clamped to [0, 15]", () => {
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 32, requestedRasterWorkers: 2}))).toBe(2);
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 1, requestedRasterWorkers: 12}))).toBe(12);
+        expect(resolve(new MemoryPlatform({requestedRasterWorkers: 64}))).toBe(15);
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 8, requestedRasterWorkers: -3}))).toBe(0);
+    });
+
+    test("an explicit count passes through", () => {
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 32}), 0)).toBe(0);
+        expect(resolve(new MemoryPlatform({hardwareConcurrency: 1, requestedRasterWorkers: 9}), 3)).toBe(3);
     });
 });
 

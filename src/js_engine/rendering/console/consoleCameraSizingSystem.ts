@@ -1,11 +1,17 @@
-﻿import {System} from "../../core";
+﻿import {EntityCommandBuffer, System} from "../../core";
 import {Camera} from "../camera";
+import {ConsoleCellRatio} from "../consoleCellRatio";
 import {RenderingSystemGroup} from "../renderingSystemGroup";
 import {ScreenSize} from "../screenSize";
 
-/** Keeps the camera's ScreenSize equal to the platform's terminal, minus one row left for the prompt. */
+/**
+ * Fits every camera to the console: gives it a ConsoleCellRatio if it lacks one, and keeps its
+ * ScreenSize equal to the platform's terminal, minus one row left for the prompt.
+ */
 export class ConsoleCameraSizingSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize])
+    private _camerasWithoutCellRatioQuery = this.createEntityQuery([Camera], [ConsoleCellRatio])
+    private _cellRatioCommands = new EntityCommandBuffer();
     private _sizeStale: boolean = true;
     private _stopWatchingResize: (() => void) | undefined;
 
@@ -26,6 +32,7 @@ export class ConsoleCameraSizingSystem extends System {
     }
 
     onUpdate() {
+        this.addMissingCellRatios();
         if (!this._sizeStale) return;
         this._sizeStale = false;
         this.refreshSize();
@@ -33,6 +40,18 @@ export class ConsoleCameraSizingSystem extends System {
 
     onEnable(): void {
         this._sizeStale = true;
+    }
+
+    /**
+     * Played back here rather than by EntityCommandBufferSystem, which runs after rendering:
+     * a camera created this frame must already have its ratio when the render passes run.
+     */
+    private addMissingCellRatios() {
+        if (!this._camerasWithoutCellRatioQuery.hasEntity()) return;
+        for (const camera of this._camerasWithoutCellRatioQuery) {
+            this._cellRatioCommands.addComponent(camera, new ConsoleCellRatio());
+        }
+        this._cellRatioCommands.playback(this.entityManager);
     }
 
     public refreshSize() {

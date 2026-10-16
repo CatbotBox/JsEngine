@@ -93,7 +93,7 @@ export class Console3DRenderPassSystem extends System {
             : undefined;
 
         const rasterizer = this._rasterizer;
-        rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, settings.toRasterizerConfig());
+        rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, settings.toRasterizerConfig(this.world.platform));
 
         const sceneLights = this.world.resources.tryGet(SceneLights);
         const lit = sceneLights !== undefined && sceneLights.hasAnyLight;
