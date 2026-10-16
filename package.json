@@ -30,7 +30,9 @@
     "clear-logs": "node scripts/clearLogs.js",
     "clear-logs:bun": "bun scripts/clearLogs.js",
     "web:build": "bun scripts/buildWeb.ts",
-    "web": "bun scripts/serveWeb.ts"
+    "web:build:prod": "bun scripts/buildWeb.ts --prod",
+    "web": "bun scripts/serveWeb.ts",
+    "web:prod": "bun scripts/serveWeb.ts --prod"
   },
   "devDependencies": {
     "@types/bun": "^1.2.23",

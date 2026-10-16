@@ -48,7 +48,33 @@ export function isWorldToPageMessage(message: unknown): message is WorldToPageMe
 
 /** `?threads=N` from a page's query string: a whole number >= 0, else undefined. */
 export function requestedRasterWorkersFromQuery(search: string): number | undefined {
-    const value = new URLSearchParams(search).get("threads");
+    return wholeNumberFromQuery(search, "threads", 0, Number.POSITIVE_INFINITY);
+}
+
+/** Each dimension given is fixed; an absent one fits the window. */
+export interface FixedTerminalSize {
+    readonly columns?: number;
+    readonly rows?: number;
+}
+
+export const FIXED_TERMINAL_LIMITS = {minColumns: 10, minRows: 5, max: 1000} as const;
+
+/**
+ * `?cols=C&rows=R` from a page's query string, for a page embedded at a known size: each a whole
+ * number within FIXED_TERMINAL_LIMITS, anything else is left out (and so fits the window).
+ */
+export function fixedTerminalSizeFromQuery(search: string): FixedTerminalSize {
+    const columns = wholeNumberFromQuery(search, "cols", FIXED_TERMINAL_LIMITS.minColumns, FIXED_TERMINAL_LIMITS.max);
+    const rows = wholeNumberFromQuery(search, "rows", FIXED_TERMINAL_LIMITS.minRows, FIXED_TERMINAL_LIMITS.max);
+    return {
+        ...(columns === undefined ? {} : {columns}),
+        ...(rows === undefined ? {} : {rows}),
+    };
+}
+
+function wholeNumberFromQuery(search: string, name: string, min: number, max: number): number | undefined {
+    const value = new URLSearchParams(search).get(name);
     if (value === null || !/^\d+$/.test(value.trim())) return undefined;
-    return Number.parseInt(value, 10);
+    const number = Number.parseInt(value, 10);
+    return number >= min && number <= max ? number : undefined;
 }
