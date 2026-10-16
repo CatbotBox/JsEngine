@@ -140,5 +140,8 @@ bench/*.out.txt
 # Worktrees created by tooling
 .claude/worktrees/
 
+# Browser bundle, rebuilt by scripts/buildWeb.ts
+web/dist
+
 # Binary mesh caches written beside .obj files by Mesh.fromFile
 *.meshcache
