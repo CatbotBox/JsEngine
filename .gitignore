@@ -145,3 +145,6 @@ web/dist
 
 # Binary mesh caches written beside .obj files by Mesh.fromFile
 *.meshcache
+
+# Packaged desktop apps, written by scripts/packageWindow.ts
+release
