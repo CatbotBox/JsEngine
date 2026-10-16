@@ -16,15 +16,13 @@ export function createHudLabel(
     text: string,
     anchorPosition: AnchorPosition,
 ): ConsoleImage {
-    const entity = buffer.createEntity(name);
+    const anchor = new ConsoleImageAnchor();
+    anchor.anchorPosition = anchorPosition;
+    const entity = buffer.createEntity(name, [new HudElement(), anchor]);
+
     const image = buffer.addTrackedComponent(entity, new ConsoleImage());
     image.image = [text];
     image.transparentChar = undefined; // HUD labels are opaque
-    buffer.addComponent(entity, new HudElement());
-
-    const anchor = new ConsoleImageAnchor();
-    anchor.anchorPosition = anchorPosition;
-    buffer.addComponent(entity, anchor);
 
     return image;
 }

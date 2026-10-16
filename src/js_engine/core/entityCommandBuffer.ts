@@ -76,18 +76,24 @@ export class EntityCommandBuffer implements EntityWriteOptions {
 
     /**
      * Record every component, then run their setup() in array order. A type listed
-     * twice keeps its first instance; against earlier commands, the later add wins
-     * as with addComponent.
+     * twice keeps its first instance, and a listed type beats one a setup() adds
+     * (as EntityManager.addComponents does); against earlier commands, the later
+     * add wins as with addComponent.
      */
     public addComponents(entity: Entity, components: readonly Component[]): void {
         if (components.length === 0) return;
         const pending = this.pendingFor(entity);
         const tokens = components.map(c => this.tokenOf(c));
-        for (let i = 0; i < tokens.length; i++) {
-            if (tokens.indexOf(tokens[i]) === i) this.recordAdd(pending, tokens[i], components[i]);
-        }
+        this.recordFirstInstances(pending, tokens, components);
         for (let i = 0; i < tokens.length; i++) {
             if (tokens.indexOf(tokens[i]) === i) components[i].setup(entity, this);
+        }
+        this.recordFirstInstances(pending, tokens, components);
+    }
+
+    private recordFirstInstances(pending: Pending, tokens: readonly AnyCT[], components: readonly Component[]): void {
+        for (let i = 0; i < tokens.length; i++) {
+            if (tokens.indexOf(tokens[i]) === i) this.recordAdd(pending, tokens[i], components[i]);
         }
     }
 
