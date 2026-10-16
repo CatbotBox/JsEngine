@@ -3,6 +3,8 @@
  * SharedArrayBuffer (threaded raster, Increment 3.3) needs no hosting change.
  *
  * Run: bun scripts/serveWeb.ts   (PORT overrides the default 8080)
+ *      bun scripts/serveWeb.ts --no-coi   drops COOP/COEP, so pages are not cross-origin isolated
+ *      and the world runs its raster single-threaded: the fallback a plain static host gets.
  */
 import {existsSync, statSync} from "fs";
 import {extname, isAbsolute, join, relative, resolve} from "path";
@@ -10,11 +12,12 @@ import {extname, isAbsolute, join, relative, resolve} from "path";
 const ROOT = resolve(__dirname, "..");
 const DIST = join(ROOT, "web", "dist");
 const PORT = Number(process.env.PORT ?? 8080);
+const ISOLATED = !process.argv.includes("--no-coi");
 
-const ISOLATION_HEADERS = {
+const ISOLATION_HEADERS: Readonly<Record<string, string>> = ISOLATED ? {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp",
-};
+} : {};
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
     ".html": "text/html; charset=utf-8",
@@ -28,6 +31,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".ppm": "image/x-portable-pixmap",
+    ".meshcache": "application/octet-stream",
 };
 
 function build(): void {
@@ -58,4 +62,4 @@ function respond(request: Request): Response {
 
 build();
 Bun.serve({port: PORT, fetch: respond});
-console.log(`serving web/dist at http://localhost:${PORT}/`);
+console.log(`serving web/dist at http://localhost:${PORT}/ ${ISOLATED ? "(cross-origin isolated)" : "(--no-coi: not isolated, raster single-threaded)"}`);

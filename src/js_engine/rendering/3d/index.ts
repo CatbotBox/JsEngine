@@ -13,6 +13,7 @@ export {decodeImageFile, registerImageDecoder} from './image/decodedImage';
 export type {DecodedImage, ImageDecoder} from './image/decodedImage';
 export {decodePng, encodePng} from './image/png';
 export {decodePpm, encodePpm} from './image/ppm';
+export {inflate, adler32} from './image/inflate';
 export {parseMtl} from './mtlParser';
 export type {MaterialLibrary} from './mtlParser';
 export {RenderMesh} from './renderMesh';

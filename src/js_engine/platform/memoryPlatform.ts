@@ -161,6 +161,8 @@ export interface MemoryPlatformOptions {
     readonly columns?: number;
     readonly rows?: number;
     readonly files?: Readonly<Record<string, string | Uint8Array>>;
+    /** Replaces the in-memory files, e.g. with a PreloadedFileSource as a page would use; `files` is then ignored. */
+    readonly fileSource?: FileSource;
     /** Delivered as soon as input starts. */
     readonly input?: readonly string[];
     /** False makes `input.available()` report a non-interactive host. */
@@ -178,7 +180,7 @@ export class MemoryPlatform implements Platform {
     public readonly output = new MemoryOutput();
     public readonly input: MemoryInput;
     public readonly screen: MemoryScreen;
-    public readonly files: MemoryFileSource;
+    public readonly files: FileSource;
     public readonly workers?: WorkerFactory;
 
     private readonly _inflate?: Inflate;
@@ -190,7 +192,7 @@ export class MemoryPlatform implements Platform {
     public constructor(options: MemoryPlatformOptions = {}) {
         this.input = new MemoryInput(options.interactive ?? true, options.input ?? []);
         this.screen = new MemoryScreen(options.columns ?? 80, options.rows ?? 24);
-        this.files = new MemoryFileSource(options.files ?? {});
+        this.files = options.fileSource ?? new MemoryFileSource(options.files ?? {});
         this.workers = options.workers;
         this._inflate = options.inflate;
         this._hardwareConcurrency = options.hardwareConcurrency ?? 1;
