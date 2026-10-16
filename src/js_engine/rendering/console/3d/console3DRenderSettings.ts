@@ -1,20 +1,11 @@
 import {Component} from "../../../core";
 import type {MeshRasterizerConfig} from "../../3d/software";
+import type {Platform} from "../../../platform/platform";
 
-function defaultWorkerCount(): number {
-    const env = typeof process !== "undefined" ? process.env.JSENGINE_RASTER_THREADS : undefined;
-    if (env !== undefined) {
-        const parsed = Number.parseInt(env, 10);
-        if (Number.isFinite(parsed)) return Math.max(0, Math.min(15, parsed));
-    }
-    try {
-        const os = require("os") as typeof import("os");
-        const cores: number = os.availableParallelism?.() ?? os.cpus().length;
-        return Math.max(0, Math.min(7, cores - 1));
-    } catch {
-        return 0;
-    }
-}
+export type RasterWorkerHost = Pick<Platform, "hardwareConcurrency" | "requestedRasterWorkers">;
+
+const MAX_REQUESTED_WORKERS = 15;
+const MAX_AUTO_WORKERS = 7;
 
 /**
  * Singleton configuration for Console3DRenderPassSystem. The pass only runs
@@ -39,8 +30,11 @@ export class Console3DRenderSettings extends Component {
     public supersampleY: number = 4;
     /** Packed 0xRRGGBB that silhouettes blend toward; match the terminal background. */
     public backgroundColor: number = 0x000000;
-    /** Worker threads for rasterization; 0 forces single-threaded. Default honours JSENGINE_RASTER_THREADS. */
-    public workerCount: number = defaultWorkerCount();
+    /**
+     * Worker threads for rasterization; 0 forces single-threaded. "auto" takes the host's
+     * requested count (JSENGINE_RASTER_THREADS under node), else one fewer than its cores, up to 7.
+     */
+    public workerCount: number | "auto" = "auto";
     /** Batches smaller than both thresholds rasterize on the main thread (thread wake-up isn't free). */
     public threadTriangleThreshold: number = 2048;
     public threadAreaThreshold: number = 50_000;
@@ -59,14 +53,21 @@ export class Console3DRenderSettings extends Component {
      */
     public lodTrianglesPerCell: number = 32;
 
-    public toRasterizerConfig(): MeshRasterizerConfig {
+    public resolvedWorkerCount(host: RasterWorkerHost): number {
+        if (this.workerCount !== "auto") return this.workerCount;
+        const requested = host.requestedRasterWorkers?.();
+        if (requested !== undefined) return Math.max(0, Math.min(MAX_REQUESTED_WORKERS, requested));
+        return Math.max(0, Math.min(MAX_AUTO_WORKERS, host.hardwareConcurrency() - 1));
+    }
+
+    public toRasterizerConfig(host: RasterWorkerHost): MeshRasterizerConfig {
         return {
             maxDepthFade: this.maxDepthFade,
             colorQuantMask: this.colorQuantMask,
             supersample: this.supersampleX,
             supersampleX: this.supersampleX,
             supersampleY: this.supersampleY,
-            workerCount: this.workerCount,
+            workerCount: this.resolvedWorkerCount(host),
             threadTriangleThreshold: this.threadTriangleThreshold,
             threadAreaThreshold: this.threadAreaThreshold,
             textures: this.textures,

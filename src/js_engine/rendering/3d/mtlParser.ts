@@ -1,4 +1,5 @@
 import {Material, packRgb} from "./material";
+import {isAbsolutePath, joinPath} from "../../platform";
 
 export type MaterialLibrary = Map<string, Material>;
 
@@ -48,9 +49,8 @@ const textureMapOptionArgumentCounts: Record<string, number> = {
 
 function resolveTexturePath(argument: string, baseDirectory: string): string {
     const fileName = stripTextureMapOptions(argument).replace(/\\+/g, "/");
-    if (baseDirectory.length === 0 || /^([a-zA-Z]:)?\//.test(fileName)) return fileName;
-    const path = require("path") as typeof import("path");
-    return path.join(baseDirectory, fileName);
+    if (baseDirectory.length === 0 || isAbsolutePath(fileName)) return fileName;
+    return joinPath(baseDirectory, fileName);
 }
 
 function stripTextureMapOptions(argument: string): string {

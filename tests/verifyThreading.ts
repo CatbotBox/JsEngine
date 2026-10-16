@@ -17,13 +17,15 @@ import {ViewSpaceMesh} from "../src/js_engine/rendering/3d/viewSpaceMesh";
 import {SceneLights, VertexLighting} from "../src/js_engine/rendering/3d/lighting";
 import {Texture} from "../src/js_engine/rendering/3d/texture";
 import {Ansi} from "../src/js_engine/rendering/console/ansi";
+import {nodePlatform} from "../src/js_engine/platform";
 
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
+const workers = nodePlatform().workers!;
 
 // Direct pool sanity check first.
 let pool: RasterWorkerPool | undefined;
 try {
-    pool = new RasterWorkerPool(3);
+    pool = new RasterWorkerPool(3, workers);
     console.log(`pool constructed: workers=${pool.workerCount} usable=${pool.usable}`);
 } catch (error) {
     console.log("pool construction FAILED:", error);
@@ -54,7 +56,7 @@ const checker = Texture.fromFile("./demo/3d/checker.png");
 for (const material of mesh.materials) material.diffuseTexture = checker;
 
 function renderAll(config: { workerCount: number, threadTriangleThreshold: number, lit: boolean, textured: boolean, halfBlock: boolean }): { ms: number, frames: string[], poolUsable: boolean } {
-    const rasterizer = new MeshRasterizer();
+    const rasterizer = new MeshRasterizer(workers);
     const target = new ConsoleCellResolveTarget();
     const frames: string[] = [];
     const start = performance.now();
