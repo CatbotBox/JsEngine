@@ -1,8 +1,8 @@
 ﻿import {System, SystemCtor} from "./system";
 import {AverageStat} from "../datatypes";
-import {performance} from "node:perf_hooks";
 import {SystemGroup} from "./systemGroup";
 import {World} from "./world";
+import type {WorldOptions} from "./world";
 import {RootSystemGroup} from "./rootSystemGroup";
 import {GcSystem} from "./gcSystem";
 
@@ -10,8 +10,8 @@ export class DebugWorld extends World {
 
     private _systemPerfStat?: Map<System, AverageStat>;// cannot be init here :(
 
-    constructor() {
-        super();
+    constructor(options: WorldOptions = {}) {
+        super(options);
         this._rootSystemGroup.destroy(); // delete all systems and recreate them
         this._rootSystemGroup = this.createSystem(RootSystemGroup);
         this.ensureSystemExists(GcSystem)

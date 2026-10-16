@@ -1,5 +1,7 @@
 import {decodeImageFile} from "../3d/image/decodedImage";
 import "../3d/image/builtinDecoders";
+import type {AssetLoadOptions, FileSource} from "../../platform";
+import {nodePlatform} from "../../platform";
 
 /**
  * Immutable shared pixel data for Sprite — the 2D counterpart of Mesh:
@@ -15,7 +17,8 @@ import "../3d/image/builtinDecoders";
  * pixel edit would bypass it (and stale bounds/render skips would follow).
  */
 export class SpriteImage {
-    private static fileCache = new Map<string, SpriteImage>();
+    /** Per file source: one path can name different files in different sources. */
+    private static fileCaches = new WeakMap<FileSource, Map<string, SpriteImage>>();
 
     public readonly sizeX: number;
     public readonly sizeY: number;
@@ -46,13 +49,19 @@ export class SpriteImage {
      * (same set the 3D texture loader uses). Decodes once per path: repeat
      * calls return the same cached instance — safe because images are immutable.
      */
-    public static fromFile(filePath: string): SpriteImage {
-        let image = SpriteImage.fileCache.get(filePath);
+    public static fromFile(filePath: string, options: AssetLoadOptions = {}): SpriteImage {
+        const files = options.files ?? nodePlatform().files;
+        let cache = SpriteImage.fileCaches.get(files);
+        if (cache === undefined) {
+            cache = new Map();
+            SpriteImage.fileCaches.set(files, cache);
+        }
+        let image = cache.get(filePath);
         if (image === undefined) {
-            const decoded = decodeImageFile(filePath);
+            const decoded = decodeImageFile(filePath, {files, inflate: options.inflate});
             // The decoder allocates a fresh buffer nothing else holds; no copy needed.
             image = new SpriteImage(decoded.width, decoded.height, decoded.rgba);
-            SpriteImage.fileCache.set(filePath, image);
+            cache.set(filePath, image);
         }
         return image;
     }

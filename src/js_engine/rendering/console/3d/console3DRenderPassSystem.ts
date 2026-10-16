@@ -34,7 +34,7 @@ export class Console3DRenderPassSystem extends System {
     private _alwaysRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
 
-    private _rasterizer = new MeshRasterizer();
+    private _rasterizer!: MeshRasterizer;
     private _resolveTarget = new ConsoleCellResolveTarget();
     private _modelViewScratch = new Float32Array(16);
     private _normalMatrixScratch = new Float32Array(9);
@@ -57,6 +57,7 @@ export class Console3DRenderPassSystem extends System {
     }
 
     protected onCreate() {
+        this._rasterizer = new MeshRasterizer(this.world.platform.workers);
         this.requireAllForUpdate(this._settingsQuery);
         this.requireAllForUpdate(this._cameraQuery);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
@@ -95,7 +96,7 @@ export class Console3DRenderPassSystem extends System {
 
         const rasterizer = this._rasterizer;
         this._resolveTarget.begin(dualScreenBuffer.screenBuffer, settings);
-        rasterizer.beginFrame(this._resolveTarget, width, height, settings.toRasterizerConfig());
+        rasterizer.beginFrame(this._resolveTarget, width, height, settings.toRasterizerConfig(this.world.platform));
 
         const sceneLights = this.world.resources.tryGet(SceneLights);
         const lit = sceneLights !== undefined && sceneLights.hasAnyLight;

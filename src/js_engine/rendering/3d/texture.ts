@@ -1,4 +1,5 @@
 import {DecodedImage, decodeImageFile} from "./image/decodedImage";
+import type {AssetLoadOptions} from "../../platform";
 import "./image/builtinDecoders";
 
 export interface TextureLevel {
@@ -28,8 +29,8 @@ export class Texture {
         return total;
     }
 
-    public static fromFile(filePath: string, maxDimension: number = Texture.maxDimension): Texture {
-        return Texture.fromImage(decodeImageFile(filePath), maxDimension);
+    public static fromFile(filePath: string, maxDimension: number = Texture.maxDimension, options: AssetLoadOptions = {}): Texture {
+        return Texture.fromImage(decodeImageFile(filePath, options), maxDimension);
     }
 
     public static fromImage(image: DecodedImage, maxDimension: number = Texture.maxDimension): Texture {

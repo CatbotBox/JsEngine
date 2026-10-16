@@ -48,18 +48,19 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
             const backgroundChar = settings?.settings.backgroundChar ?? ConsoleRenderSettings.DEFAULT_BACKGROUND_CHAR;
             screenBuffer.beginFrame(cameraEntity, backgroundChar);
         } catch (error) {
+            const output = this.world.platform.output;
             const camCount = this._cameraQuery.entityCount();
-            process.stdout.write("\x1b[H");   // cursor to 1,1 (home)
+            output.write("\x1b[H");   // cursor to 1,1 (home)
             if (camCount == 0) {
-                process.stdout.write("ERROR: NO CAMERA ENTITIES FOUND");
+                output.write("ERROR: NO CAMERA ENTITIES FOUND");
             } else if (camCount > 1) {
-                process.stdout.write("ERROR: MULTIPLE CAMERA ENTITIES FOUND (" + camCount + ")");
+                output.write("ERROR: MULTIPLE CAMERA ENTITIES FOUND (" + camCount + ")");
             } else {
-                process.stdout.write("ERROR: UNEXPECTED ERROR HAPPENED WITH CAMERA SYSTEM");
-                process.stdout.write(String(error));
+                output.write("ERROR: UNEXPECTED ERROR HAPPENED WITH CAMERA SYSTEM");
+                output.write(String(error));
             }
 
-            process.stdout.write("\x1b[J");   // clear to end of screen (handles shorter frames)
+            output.write("\x1b[J");   // clear to end of screen (handles shorter frames)
             this._forceRedraw = true;         // error text corrupted the tracked screen state
         }
 
@@ -77,7 +78,10 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
         let out = "";
         if (fullRedraw) {
-            out = "\x1b[H" + rows.join("\n") + "\x1b[J";
+            // CR LF, not LF: only a tty's line discipline turns a bare LF into a carriage
+            // return too, and a terminal emulator fed directly (xterm.js) has none. The
+            // trailing CR LF leaves the frame before erasing, so the erase only ever clears below it.
+            out = "\x1b[H" + rows.join("\r\n") + "\r\n\x1b[J";
         } else {
             for (let y = 0; y < rows.length; y++) {
                 if (rows[y] !== prevRows[y]) {
@@ -87,7 +91,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
         }
 
         if (out.length > 0) {
-            process.stdout.write(out);
+            this.world.platform.output.write(out);
         }
 
         this._prevRows = rows;
@@ -101,18 +105,20 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
     override onEnable(): void {
         super.onEnable();
         consoleOverride.removeConsoleEventListener(display)
-        process.stdout.write(Ansi.modes.altScreenEnter); // alt buffer + save cursor
-        process.stdout.write(Ansi.cursor.hide);
-        process.stdout.write("\x1b[?7l");    // disable autowrap
+        const output = this.world.platform.output;
+        output.write(Ansi.modes.altScreenEnter); // alt buffer + save cursor
+        output.write(Ansi.cursor.hide);
+        output.write("\x1b[?7l");    // disable autowrap
         this._forceRedraw = true;            // fresh alt screen, nothing on it yet
         this.update();
     }
 
     override onDisable(): void {
         consoleOverride.addConsoleEventListener(display)
-        process.stdout.write("\x1b[?7h");    // re-enable autowrap
-        process.stdout.write(Ansi.cursor.show);
-        process.stdout.write(Ansi.modes.altScreenExit); // back to main + restore cursor
+        const output = this.world.platform.output;
+        output.write("\x1b[?7h");    // re-enable autowrap
+        output.write(Ansi.cursor.show);
+        output.write(Ansi.modes.altScreenExit); // back to main + restore cursor
         super.onDisable();
     }
 }
