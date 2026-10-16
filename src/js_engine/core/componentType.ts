@@ -46,10 +46,13 @@ export class ComponentType<C extends Component = Component> {
  * The store drives the lifecycle — user code never calls these:
  *  - `writeF32` copies the instance's current values into the column,
  *  - `bindF32` re-points the instance's fields at the column (called on add,
- *    after swaps, and after column growth, so outstanding handles stay live),
+ *    after swaps and row moves, after column growth, and on a single add/remove
+ *    archetype move, which hands it straight to the destination column), so
+ *    outstanding handles stay live,
  *  - `detachF32` gives the instance back its own private buffer, preserving
- *    values (called when the entity leaves the store: removal, or an archetype
- *    move, which re-attaches it to the destination column).
+ *    values (called when the instance leaves the store with no destination
+ *    column: entity removal, its component being removed, or a command-buffer
+ *    move, which re-attaches it afterwards).
  *
  * A detached instance behaves exactly like a plain component — `new Foo()` starts
  * detached and mutating a handle to a destroyed entity mutates an orphan.
