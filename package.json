@@ -26,6 +26,8 @@
     "bench:cascade": "node -r ts-node/register/transpile-only bench/boundsCascade.bench.ts",
     "bench:cascade:bun": "bun bench/boundsCascade.bench.ts",
     "bench:bun": "bun bench/spatialIndex.bench.ts",
+    "bench:structural": "node --expose-gc -r ts-node/register/transpile-only bench/structural.bench.ts",
+    "bench:structural:bun": "bun bench/structural.bench.ts",
     "scriptc:coverage": "scriptc coverage scripts/scriptcProbe.ts",
     "clear-logs": "node scripts/clearLogs.js",
     "clear-logs:bun": "bun scripts/clearLogs.js"
