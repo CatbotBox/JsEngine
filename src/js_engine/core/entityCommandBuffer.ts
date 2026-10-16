@@ -19,7 +19,7 @@ type Pending = {
 };
 
 export class EntityCommandBuffer implements EntityWriteOptions {
-    private createOps: Array<Entity> = [];
+    private createOps: Set<Entity> = new Set();
     private destroyOps: Set<Entity> = new Set();
     private destroyQueries: Array<EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>> = [];
     private enabledQueries: Array<{
@@ -30,7 +30,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
 
     public get isEmpty(): boolean {
         return !
-            (this.createOps.length > 0
+            (this.createOps.size > 0
                 || this.destroyOps.size > 0
                 || this.destroyQueries.length > 0
                 || this.enabledQueries.length > 0
@@ -41,11 +41,12 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     /**
      * Queue entity creation. The handle is allocated immediately (so it can be
      * referenced by other queued commands); the entity joins an archetype at
-     * playback.
+     * playback, placed once in its final archetype.
      */
-    public createEntity(name?: string): Entity {
+    public createEntity(name?: string, components?: readonly Component[]): Entity {
         const entity = allocEntityHandle(name);
-        this.createOps.push(entity);
+        this.createOps.add(entity);
+        if (components !== undefined) this.addComponents(entity, components);
         return entity;
     }
 
@@ -59,21 +60,32 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     }
 
     public addComponent<T extends Component>(entity: Entity, component: T): Readonly<T> {
-        const pending = this.pendingFor(entity);
-        const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
-        pending.remove.delete(token);
-        pending.add.set(token, component);
+        this.recordAdd(this.pendingFor(entity), this.tokenOf(component), component);
         component.setup(entity, this);
         return component
     }
 
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {
-        const pending = this.pendingFor(entity);
-        const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
-        pending.remove.delete(token);
-        pending.add.set(token, component);
+        this.recordAdd(this.pendingFor(entity), this.tokenOf(component), component);
         component.setup(entity, this);
         return persistentTrackComponent(entity, component);
+    }
+
+    /**
+     * Record every component, then run their setup() in array order. A type listed
+     * twice keeps its first instance; against earlier commands, the later add wins
+     * as with addComponent.
+     */
+    public addComponents(entity: Entity, components: readonly Component[]): void {
+        if (components.length === 0) return;
+        const pending = this.pendingFor(entity);
+        const tokens = components.map(c => this.tokenOf(c));
+        for (let i = 0; i < tokens.length; i++) {
+            if (tokens.indexOf(tokens[i]) === i) this.recordAdd(pending, tokens[i], components[i]);
+        }
+        for (let i = 0; i < tokens.length; i++) {
+            if (tokens.indexOf(tokens[i]) === i) components[i].setup(entity, this);
+        }
     }
 
     public setComponent<T extends Component>(entity: Entity, component: Component): void {
@@ -103,18 +115,23 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     }
 
     /**
-     * Apply everything in one shot. For each entity, we compute the final set of
-     * tokens = (current - removes) ∪ addOrSet and move once via EntityManager.
+     * Apply everything in one shot. An entity created by this buffer is placed once,
+     * straight into the archetype of its recorded components; an existing one gets
+     * the final set of tokens = (current - removes) ∪ addOrSet and moves once.
+     * Entities also destroyed by this buffer are never placed.
      */
     public playback(em: EntityManager): void {
         for (const entity of this.createOps) {
-            // em.attachEntity(this.normalizeMap(comps));
-            em.attachEntity(entity);
+            if (!this.perEntity.has(entity) && !this.destroyOps.has(entity)) em.attachEntity(entity);
         }
 
         const world = em.world;
         for (const [entity, pending] of this.perEntity) {
             if (this.destroyOps.has(entity)) continue;
+            if (this.createOps.has(entity)) {
+                em.attachEntity(entity, this.createdComponents(pending), pending.enabled ?? true);
+                continue;
+            }
 
             const currentTokens = new Set<AnyCT>(getEntityTokens(world, entity));
             for (const t of pending.remove) currentTokens.delete(t);
@@ -166,8 +183,31 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         }
     }
 
+    /**
+     * What a created entity holds: every add, then each set of a type not also
+     * added. An add wins over a set of the same type, as in the move path, where
+     * `provided` lets add entries override set entries.
+     */
+    private createdComponents(pending: Pending): Map<AnyCT, Component> {
+        if (pending.set.size === 0) return pending.add;
+        const components = new Map(pending.add);
+        for (const [token, component] of pending.set) {
+            if (!components.has(token)) components.set(token, component);
+        }
+        return components;
+    }
+
+    private recordAdd(pending: Pending, token: AnyCT, component: Component) {
+        pending.remove.delete(token);
+        pending.add.set(token, component);
+    }
+
+    private tokenOf(component: Component): AnyCT {
+        return ComponentType.of(component.constructor as ComponentCtor<Component>);
+    }
+
     private reset() {
-        this.createOps = [];
+        this.createOps.clear();
         this.destroyOps.clear();
         this.perEntity.clear();
         this.destroyQueries = [];
