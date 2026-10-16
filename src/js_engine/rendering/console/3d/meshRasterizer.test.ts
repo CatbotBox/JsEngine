@@ -5,18 +5,26 @@ import {Material} from "../../3d/material";
 import {Texture} from "../../3d/texture";
 import {ScreenBuffer} from "../consoleScreenBuffer";
 import {ScreenSize} from "../../screenSize";
-import {MeshRasterizer, MeshRasterizerConfig} from "./meshRasterizer";
-import {TextureStore} from "./textureStore";
+import {MeshRasterizer, MeshRasterizerConfig, TextureStore} from "../../3d/software";
+import {ConsoleCellResolveConfig, ConsoleCellResolveTarget} from "./consoleCellResolveTarget";
 import {FaceCulling} from "../../3d/faceCulling";
 
 const WIDTH = 8, HEIGHT = 8;
 
-function config(overrides: Partial<MeshRasterizerConfig> = {}): MeshRasterizerConfig {
+type RenderConfig = MeshRasterizerConfig & ConsoleCellResolveConfig;
+
+function config(overrides: Partial<RenderConfig> = {}): RenderConfig {
     return {
         maxDepthFade: 1000, colorQuantMask: 0xFFFFFF, supersample: 1, workerCount: 0,
         threadTriangleThreshold: Number.MAX_SAFE_INTEGER, threadAreaThreshold: Number.POSITIVE_INFINITY, textures: true,
         ...overrides,
     };
+}
+
+function beginFrame(rasterizer: MeshRasterizer, buffer: ScreenBuffer, frameConfig: RenderConfig): void {
+    const target = new ConsoleCellResolveTarget();
+    target.begin(buffer, frameConfig);
+    rasterizer.beginFrame(target, WIDTH, HEIGHT, frameConfig);
 }
 
 const identityModelView = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -40,14 +48,14 @@ function rgbaOf(colors: number[][]): Uint8Array {
     return out;
 }
 
-function render(mesh: Mesh, overrides: Partial<MeshRasterizerConfig> = {}): ScreenBuffer {
+function render(mesh: Mesh, overrides: Partial<RenderConfig> = {}): ScreenBuffer {
     const screenSize = new ScreenSize();
     screenSize.x = WIDTH;
     screenSize.y = HEIGHT;
     const buffer = new ScreenBuffer();
     buffer.beginFrame({screenSize}, " ");
     const rasterizer = new MeshRasterizer();
-    rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config(overrides));
+    beginFrame(rasterizer, buffer, config(overrides));
     rasterizer.addMesh(mesh, identityModelView, undefined, 1, 0xFFFFFF);
     rasterizer.endFrame();
     rasterizer.dispose();
@@ -236,7 +244,7 @@ describe("near-plane clipping", () => {
         const buffer = new ScreenBuffer();
         buffer.beginFrame({screenSize}, " ");
         const rasterizer = new MeshRasterizer();
-        rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config({textures: false}));
+        beginFrame(rasterizer, buffer, config({textures: false}));
         rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);
         rasterizer.endFrame();
         rasterizer.dispose();
@@ -289,7 +297,7 @@ describe("face culling modes", () => {
         const buffer = new ScreenBuffer();
         buffer.beginFrame({screenSize}, " ");
         const rasterizer = new MeshRasterizer();
-        rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config({textures: false}));
+        beginFrame(rasterizer, buffer, config({textures: false}));
         if (faceCulling === undefined) rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF);
         else rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);
         rasterizer.endFrame();
@@ -343,7 +351,7 @@ describe("front face culling", () => {
         const buffer = new ScreenBuffer();
         buffer.beginFrame({screenSize}, " ");
         const rasterizer = new MeshRasterizer();
-        rasterizer.beginFrame(buffer, WIDTH, HEIGHT, config({textures: false}));
+        beginFrame(rasterizer, buffer, config({textures: false}));
         rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);
         rasterizer.endFrame();
         rasterizer.dispose();

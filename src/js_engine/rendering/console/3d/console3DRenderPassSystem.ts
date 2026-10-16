@@ -12,7 +12,8 @@ import {RenderMesh} from "../../3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {FieldOfView} from "../../3d/fieldOfView";
 import {ConsoleCellRatio} from "../../consoleCellRatio";
-import {MeshRasterizer, NEAR_PLANE_Z} from "./meshRasterizer";
+import {MeshRasterizer, NEAR_PLANE_Z} from "../../3d/software";
+import {ConsoleCellResolveTarget} from "./consoleCellResolveTarget";
 import {Console3DRenderSettings} from "./console3DRenderSettings";
 import {RenderMeshBoundsSystem} from "../../3d/renderMeshBoundsSystem";
 import {ViewSpaceMesh} from "../../3d/viewSpaceMesh";
@@ -34,6 +35,7 @@ export class Console3DRenderPassSystem extends System {
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
 
     private _rasterizer = new MeshRasterizer();
+    private _resolveTarget = new ConsoleCellResolveTarget();
     private _modelViewScratch = new Float32Array(16);
     private _normalMatrixScratch = new Float32Array(9);
     private _viewSpaceMesh = new ViewSpaceMesh();
@@ -92,7 +94,8 @@ export class Console3DRenderPassSystem extends System {
             : undefined;
 
         const rasterizer = this._rasterizer;
-        rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, settings.toRasterizerConfig());
+        this._resolveTarget.begin(dualScreenBuffer.screenBuffer, settings);
+        rasterizer.beginFrame(this._resolveTarget, width, height, settings.toRasterizerConfig());
 
         const sceneLights = this.world.resources.tryGet(SceneLights);
         const lit = sceneLights !== undefined && sceneLights.hasAnyLight;

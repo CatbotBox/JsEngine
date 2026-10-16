@@ -1,4 +1,4 @@
-import {Texture} from "../../3d/texture";
+import {Texture} from "../texture";
 
 /**
  * Texel storage the raster kernel reads: one flat Int32Array holding every mip

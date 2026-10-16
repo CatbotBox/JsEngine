@@ -2,7 +2,8 @@ import {createHash} from "crypto";
 import {Mesh} from "../src/js_engine/rendering/3d/mesh";
 import {ViewSpaceMesh} from "../src/js_engine/rendering/3d/viewSpaceMesh";
 import {SceneLights, VertexLighting} from "../src/js_engine/rendering/3d/lighting";
-import {MeshRasterizer} from "../src/js_engine/rendering/console/3d/meshRasterizer";
+import {MeshRasterizer} from "../src/js_engine/rendering/3d/software";
+import {ConsoleCellResolveTarget} from "../src/js_engine/rendering/console/3d/consoleCellResolveTarget";
 import {ScreenBuffer} from "../src/js_engine/rendering/console/consoleScreenBuffer";
 import {ScreenSize} from "../src/js_engine/rendering/screenSize";
 import {LocalToWorld} from "../src/js_engine/translation/localToWorld";
@@ -37,6 +38,7 @@ const normalMatrix = new Float32Array(9);
 for (const [lit, halfBlock] of [[false, false], [true, false], [true, true]] as const) {
     for (const supersample of [1, 2]) {
         const rasterizer = new MeshRasterizer();
+        const target = new ConsoleCellResolveTarget();
         const hash = createHash("sha1");
         let bytes = 0;
         for (let f = 0; f < FRAMES; f++) {
@@ -46,7 +48,8 @@ for (const [lit, halfBlock] of [[false, false], [true, false], [true, true]] as 
             const modelView = LocalToWorld.mul(invCam, transform.matrix) as unknown as Float32Array;
             const buffer = new ScreenBuffer();
             buffer.beginFrame({screenSize} as any, " ");
-            rasterizer.beginFrame(buffer, WIDTH, HEIGHT, {
+            target.begin(buffer, {colorQuantMask: 0xFCFCFC});
+            rasterizer.beginFrame(target, WIDTH, HEIGHT, {
                 maxDepthFade: 15, colorQuantMask: 0xFCFCFC, supersample, workerCount: 0,
                 threadTriangleThreshold: Number.MAX_SAFE_INTEGER, threadAreaThreshold: Number.POSITIVE_INFINITY, textures: true, halfBlock,
             });
