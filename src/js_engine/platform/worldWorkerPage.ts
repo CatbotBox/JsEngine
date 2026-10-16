@@ -20,6 +20,8 @@ export interface WorldWorkerPageOptions {
     readonly name: string;
     /** Forwarded in `init`; see `requestedRasterWorkersFromQuery`. */
     readonly requestedRasterWorkers?: number;
+    /** Runs after the world quit and the stopped line is written, e.g. to close a native window. */
+    readonly onQuit?: () => void;
 }
 
 export interface WorldWorkerPage {
@@ -64,6 +66,7 @@ export function connectWorldWorker(terminal: PageTerminal, worker: WorldWorker, 
             case "quit":
                 close();
                 terminal.write(STOPPED_LINE);
+                options.onQuit?.();
                 break;
             case "error":
                 close();
