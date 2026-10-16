@@ -72,12 +72,8 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
 
-    const cameraEntity = buffer.createEntity("cameraEntity");
-
-    buffer.addComponent(cameraEntity, new Camera());
-    buffer.addComponent(cameraEntity, new LocalToWorld());
+    const cameraEntity = buffer.createEntity("cameraEntity", [new Camera(), new LocalToWorld(), new RenderBounds()]);
     const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
-    buffer.addComponent(cameraEntity, new RenderBounds());
 
     // The sprite pass only runs while a singleton Console2DRenderSettings exists;
     // keep a tracked handle so keybinds can retune it live.
@@ -87,41 +83,36 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     // Plus-shaped pixel sprite; sprite pixels are half a cell tall, so 3x3 pixels
     // cover 3 cells x 1.5 cells on screen.
     function createCross(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const objectEntity = buffer.createEntity(name);
         const r = Math.round(Math.random() * 255)
         const g = Math.round(Math.random() * 255)
         const b = Math.round(Math.random() * 255)
-        buffer.addComponent(objectEntity, new Sprite(CROSS_IMAGE, packRgb(r, g, b)));
-        const localToWorld = buffer.addComponent(objectEntity, new LocalToWorld());
+        const localToWorld = new LocalToWorld();
+        const components: Component[] = [new Sprite(CROSS_IMAGE, packRgb(r, g, b)), localToWorld];
         if (parent) {
-            buffer.addComponent(objectEntity, new Parent(parent));
+            components.push(new Parent(parent));
         }
-        for (const additionalComponent of additionalComponents) {
-            buffer.addComponent(objectEntity, additionalComponent);
-        }
+        components.push(...additionalComponents);
+        const objectEntity = buffer.createEntity(name, components);
         const position2 = buffer.addTrackedComponent(objectEntity, position);
         return [objectEntity, position2, localToWorld];
     }
 
     function createPixel(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const objectEntity = buffer.createEntity(name);
         const r = Math.round(Math.random() * 255)
         const g = Math.round(Math.random() * 255)
         const b = Math.round(Math.random() * 255)
         const originalColor = new OriginalColor()
         originalColor.color = [r, g, b];
-        buffer.addComponent(objectEntity, originalColor)
+        const localToWorld = new LocalToWorld();
         // A shared white pixel colored through its tint: fading it is a tint
         // write, no pixel-data rebuild (the ANSI pipeline had to re-split an
         // escape string per entity per frame here).
-        buffer.addComponent(objectEntity, new Sprite(PIXEL_IMAGE, packRgb(r, g, b)));
-        const localToWorld = buffer.addComponent(objectEntity, new LocalToWorld());
+        const components: Component[] = [originalColor, new Sprite(PIXEL_IMAGE, packRgb(r, g, b)), localToWorld];
         if (parent) {
-            buffer.addComponent(objectEntity, new Parent(parent));
+            components.push(new Parent(parent));
         }
-        for (const additionalComponent of additionalComponents) {
-            buffer.addComponent(objectEntity, additionalComponent);
-        }
+        components.push(...additionalComponents);
+        const objectEntity = buffer.createEntity(name, components);
         return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
     }
 
@@ -139,12 +130,9 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     // A pixel HUD widget: the shared cross image, teal-tinted, anchored bottom-right
     // and drawn through ConsoleSpriteHudRenderPassSystem in screen space.
     {
-        const hudSpriteEntity = buffer.createEntity("hudCross");
-        buffer.addComponent(hudSpriteEntity, new Sprite(CROSS_IMAGE, 0x00FFCC));
-        buffer.addComponent(hudSpriteEntity, new HudElement());
         const hudAnchor = new ConsoleImageAnchor();
         hudAnchor.anchorPosition = 'bottom-right';
-        buffer.addComponent(hudSpriteEntity, hudAnchor);
+        buffer.createEntity("hudCross", [new Sprite(CROSS_IMAGE, 0x00FFCC), new HudElement(), hudAnchor]);
     }
 
     consoleInput.enable({platform: world.platform})

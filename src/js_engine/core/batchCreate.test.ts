@@ -427,6 +427,20 @@ describe("EntityCommandBuffer batch playback", () => {
         expect(setupLog).toEqual(["B", "first"]);
     });
 
+    test("a setup() companion already in the batch keeps the passed instance, as EntityManager does", () => {
+        const parent = em.createEntity(undefined, [new Position()]);
+        const transform = new ParentTransform();
+        const ecb = new EntityCommandBuffer();
+        const child = ecb.createEntity(undefined, [new Parent(parent), transform]);
+
+        ecb.playback(em);
+
+        const arch = ownerOf(child);
+        expect(arch).toBe(world.archetypes.getOrCreate([Parent, ParentTransform]));
+        expect(arch.getColumn(ComponentType.of(ParentTransform))!.get(arch.getIndexOfEntity(child)!)).toBe(transform);
+        expect(em.hasComponent(parent, Children)).toBe(true);
+    });
+
     test("addComponents on an existing entity plays back as one move", () => {
         const e = em.createEntity(undefined, [new Position(1)]);
         created = [];

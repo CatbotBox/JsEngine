@@ -106,35 +106,23 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
 
 
     //Camera
-    const cameraEntity = buffer.createEntity("cameraEntity");
-
-    buffer.addComponent(cameraEntity, new Camera());
-    buffer.addComponent(cameraEntity, new LocalToWorld());
+    const cameraEntity = buffer.createEntity("cameraEntity", [new Camera(), new LocalToWorld(), new RenderBounds()]);
     const camPos = buffer.addTrackedComponent(cameraEntity, new LocalPosition(0, 0, -10));
-    buffer.addComponent(cameraEntity, new RenderBounds());
     const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
     //Render settings (singleton entities; the 3D pass is off until this exists)
-    const settingsEntity = buffer.createEntity("renderSettings");
+    const settingsEntity = buffer.createEntity("renderSettings", [new ConsoleRenderSettings()]);
     const renderSettings = buffer.addTrackedComponent(settingsEntity, new Console3DRenderSettings());
-    buffer.addComponent(settingsEntity, new ConsoleRenderSettings());
 
     //Lights
-    const sunEntity = buffer.createEntity("sun");
-    buffer.addComponent(sunEntity, new DirectionalLight(0xFFF4E0, 0.9));
-    buffer.addComponent(sunEntity, new LocalToWorld());
-    buffer.addComponent(sunEntity, new LocalPosition());
+    const sunEntity = buffer.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalToWorld(), new LocalPosition()]);
     const sunRotation = buffer.addTrackedComponent(sunEntity, new LocalRotation());
     const sunEuler: Vec3 = Vec.alloc3(0.7, -0.6, 0);
 
-    const lampEntity = buffer.createEntity("lamp");
-    buffer.addComponent(lampEntity, new PointLight(14, 0x4FA3F7, 1.2));
-    buffer.addComponent(lampEntity, new LocalToWorld());
-    buffer.addComponent(lampEntity, new LocalPosition(3, 2, -4));
+    const lampEntity = buffer.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalToWorld(), new LocalPosition(3, 2, -4)]);
 
-    const ambientEntity = buffer.createEntity("ambient");
-    buffer.addComponent(ambientEntity, new AmbientLight(0xFFFFFF, 0.12));
+    const ambientEntity = buffer.createEntity("ambient", [new AmbientLight(0xFFFFFF, 0.12)]);
 
     let lightsEnabled = true;
     let lampEnabled = true;
@@ -191,16 +179,16 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     let camQuat = Quaternions.eulerToQuat(Vec.alloc3(0, 0, 0));
 
     // Preview HUD (bottom-right corner) showing the model that will be spawned next
-    const previewEntity = buffer.createEntity("spawnPreview");
-    const previewImage = buffer.addTrackedComponent(previewEntity, new ConsoleImage());
-    previewImage.transparentChar = undefined;
-    buffer.addComponent(previewEntity, new HudElement());
     const previewAnchor = new ConsoleImageAnchor();
     previewAnchor.anchorPosition = 'bottom-right';
-    buffer.addComponent(previewEntity, previewAnchor);
+    const previewEntity = buffer.createEntity("spawnPreview", [new HudElement(), previewAnchor]);
+    const previewImage = buffer.addTrackedComponent(previewEntity, new ConsoleImage());
+    previewImage.transparentChar = undefined;
 
     // Controls legend (top-left corner)
-    const controlsEntity = buffer.createEntity("controls");
+    const controlsAnchor = new ConsoleImageAnchor();
+    controlsAnchor.anchorPosition = 'top-left';
+    const controlsEntity = buffer.createEntity("controls", [new HudElement(), controlsAnchor]);
     const controlsImage = buffer.addTrackedComponent(controlsEntity, new ConsoleImage());
     controlsImage.transparentChar = undefined;
     controlsImage.image = [
@@ -209,10 +197,6 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         Ansi.colors.fg.cyan + 'render  1-4 aa  b halfblock  t textures  f lod  - = detail  v 3d  tab hud  g order',
         Ansi.colors.fg.cyan + 'lights  h all  p lamp  i/k j/l sun',
     ];
-    buffer.addComponent(controlsEntity, new HudElement());
-    const controlsAnchor = new ConsoleImageAnchor();
-    controlsAnchor.anchorPosition = 'top-left';
-    buffer.addComponent(controlsEntity, controlsAnchor);
 
     // Functions
     // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
@@ -339,11 +323,9 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     }
 
     const spawn = (model: LoadedModel) => {
-        const entity = buffer.createEntity();
         const renderMesh = new RenderMesh(model.mesh, model.color);
         renderMesh.faceCulling = model.faceCulling;
-        buffer.addComponent(entity, renderMesh);
-        buffer.addComponent(entity, new LocalToWorld());
+        const entity = buffer.createEntity(undefined, [renderMesh, new LocalToWorld()]);
         const position = buffer.addTrackedComponent(entity, new LocalPosition());
         const rotation = buffer.addTrackedComponent(entity, new LocalRotation());
         const scale = buffer.addTrackedComponent(entity, new LocalScale());

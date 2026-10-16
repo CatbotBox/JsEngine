@@ -42,49 +42,31 @@ function expect(condition: boolean, label: string) {
 const world = new DebugWorld({platform});
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
 
-const cameraEntity = buffer.createEntity("camera");
-buffer.addComponent(cameraEntity, new Camera());
-buffer.addComponent(cameraEntity, new LocalToWorld());
-buffer.addComponent(cameraEntity, new LocalPosition());
-buffer.addComponent(cameraEntity, new RenderBounds());
-buffer.addComponent(cameraEntity, new LocalRotation());
-buffer.addComponent(cameraEntity, new FieldOfView());
+buffer.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new RenderBounds(), new LocalRotation(), new FieldOfView()]);
 
-const meshEntity = buffer.createEntity("mesh");
-buffer.addComponent(meshEntity, new RenderMesh(Mesh.fromFile("./demo/3d/blender_monkey.obj")));
-buffer.addComponent(meshEntity, new LocalToWorld());
+const meshEntity = buffer.createEntity("mesh", [new RenderMesh(Mesh.fromFile("./demo/3d/blender_monkey.obj")), new LocalToWorld(), new LocalScale()]);
 buffer.addTrackedComponent(meshEntity, new LocalPosition(0, 0, 8));
 const rotation = buffer.addTrackedComponent(meshEntity, new LocalRotation());
-buffer.addComponent(meshEntity, new LocalScale());
 
-const hudEntity = buffer.createEntity("hud");
 const hudImage = new ConsoleImage();
 hudImage.image = [Ansi.colors.fg.green + "HUDMARKER"];
 hudImage.transparentChar = undefined;
-buffer.addComponent(hudEntity, hudImage);
-buffer.addComponent(hudEntity, new HudElement());
 const anchor = new ConsoleImageAnchor();
 anchor.anchorPosition = "top-right";
-buffer.addComponent(hudEntity, anchor);
+buffer.createEntity("hud", [hudImage, new HudElement(), anchor]);
 
 // World-space 2D sprites: one inside the camera rect, one far outside it. The
 // pass culls straight off the WorldSpaceRenderBounds column, so both halves of
 // that test (composited / culled) are worth pinning.
-const spriteEntity = buffer.createEntity("sprite");
 const spriteImage = new ConsoleImage();
 spriteImage.image = [Ansi.colors.fg.green + "SPRITEMARK"];
 spriteImage.transparentChar = undefined;
-buffer.addComponent(spriteEntity, spriteImage);
-buffer.addComponent(spriteEntity, new LocalToWorld());
-buffer.addComponent(spriteEntity, new LocalPosition(0, 0, 0));
+buffer.createEntity("sprite", [spriteImage, new LocalToWorld(), new LocalPosition(0, 0, 0)]);
 
-const offscreenEntity = buffer.createEntity("offscreen-sprite");
 const offscreenImage = new ConsoleImage();
 offscreenImage.image = [Ansi.colors.fg.red + "OFFSCREENMARK"];
 offscreenImage.transparentChar = undefined;
-buffer.addComponent(offscreenEntity, offscreenImage);
-buffer.addComponent(offscreenEntity, new LocalToWorld());
-buffer.addComponent(offscreenEntity, new LocalPosition(5000, 5000, 0));
+buffer.createEntity("offscreen-sprite", [offscreenImage, new LocalToWorld(), new LocalPosition(5000, 5000, 0)]);
 
 world.ensureSystemExists(Console3DRenderPassSystem);
 world.ensureSystemExists(Console2DRenderPassSystem);
@@ -98,9 +80,7 @@ for (let i = 0; i < 4; i++) tick();
 expect(!output.text().includes("\x1b[48;2;"), "3D pass is off while Console3DRenderSettings is absent");
 expect(Ansi.strip(output.text()).includes("HUDMARKER"), "HUD still renders without 3D settings");
 
-const settingsEntity = buffer.createEntity("render-settings");
-buffer.addComponent(settingsEntity, new Console3DRenderSettings());
-buffer.addComponent(settingsEntity, new ConsoleRenderSettings());
+buffer.createEntity("render-settings", [new Console3DRenderSettings(), new ConsoleRenderSettings()]);
 for (let i = 0; i < 4; i++) tick();
 
 expect(output.text().includes("\x1b[48;2;"), "3D pass wrote truecolor cells");
@@ -134,16 +114,14 @@ log(`rotating frame delta: ${output.length - lenRot} bytes`);
 // fully suppressed by damage tracking.
 tick();
 const lenUnlit = output.length;
-const sun = buffer.createEntity("sun");
-buffer.addComponent(sun, new DirectionalLight(0xFFFFFF, 0.8));
-buffer.addComponent(sun, new LocalToWorld());
-buffer.addComponent(sun, new LocalPosition());
-buffer.addComponent(sun, new LocalRotation(...Vec.toArray(Quaternions.eulerToQuat(Vec3.alloc(0.6, -0.5, 0))) as [number, number, number, number]));
-const lamp = buffer.createEntity("lamp");
-buffer.addComponent(lamp, new PointLight(12, 0xFF8040, 1));
-buffer.addComponent(lamp, new LocalToWorld());
-buffer.addComponent(lamp, new LocalPosition(3, 2, 4));
-buffer.addComponent(buffer.createEntity("ambient"), new AmbientLight(0xFFFFFF, 0.15));
+buffer.createEntity("sun", [
+    new DirectionalLight(0xFFFFFF, 0.8),
+    new LocalToWorld(),
+    new LocalPosition(),
+    new LocalRotation(...Vec.toArray(Quaternions.eulerToQuat(Vec3.alloc(0.6, -0.5, 0))) as [number, number, number, number]),
+]);
+buffer.createEntity("lamp", [new PointLight(12, 0xFF8040, 1), new LocalToWorld(), new LocalPosition(3, 2, 4)]);
+buffer.createEntity("ambient", [new AmbientLight(0xFFFFFF, 0.15)]);
 for (let i = 0; i < 3; i++) tick();
 const litDelta = output.length - lenUnlit;
 expect(litDelta > 0, `adding lights changed the frame (${litDelta} bytes)`);
@@ -164,13 +142,14 @@ expect(litRotDelta > 0, `rotating a lit mesh produced output (${litRotDelta} byt
 // show up, and a static textured scene must still be fully suppressed.
 tick();
 const lenBeforeCube = output.length;
-const cubeEntity = buffer.createEntity("textured-cube");
 const cubeMesh = Mesh.fromFile("./demo/3d/cube.obj");
 expect(cubeMesh.materials[0].diffuseTexture !== undefined, "cube.obj loaded its checker texture");
-buffer.addComponent(cubeEntity, new RenderMesh(cubeMesh));
-buffer.addComponent(cubeEntity, new LocalToWorld());
-buffer.addComponent(cubeEntity, new LocalPosition(3, 0, 8));
-buffer.addComponent(cubeEntity, new LocalRotation(...Vec.toArray(Quaternions.eulerToQuat(Vec3.alloc(0.5, 0.7, 0))) as [number, number, number, number]));
+buffer.createEntity("textured-cube", [
+    new RenderMesh(cubeMesh),
+    new LocalToWorld(),
+    new LocalPosition(3, 0, 8),
+    new LocalRotation(...Vec.toArray(Quaternions.eulerToQuat(Vec3.alloc(0.5, 0.7, 0))) as [number, number, number, number]),
+]);
 for (let i = 0; i < 3; i++) tick();
 const cubeDelta = output.length - lenBeforeCube;
 expect(cubeDelta > 0, `textured cube produced output (${cubeDelta} bytes)`);
