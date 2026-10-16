@@ -4,6 +4,8 @@ import {loadMaterialTextures, Material} from "./material";
 import {MaterialLibrary, parseMtl} from "./mtlParser";
 import {readMeshCache, writeMeshCache} from "./meshCache";
 import {buildLodParts, LodBuildOptions} from "./meshLod";
+import type {AssetLoadOptions, FileSource} from "../../platform";
+import {dirname, joinPath, nodePlatform} from "../../platform";
 
 export class Mesh {
     public readonly data: Vec3Array;
@@ -117,30 +119,29 @@ export class Mesh {
     }
 
     public static fromFile(filePath: string, options: MeshLoadOptions = {}): Mesh {
-        const fs = require("fs") as typeof import("fs");
-        const path = require("path") as typeof import("path");
         const fileType = filePath.slice(filePath.lastIndexOf("."));
         if (fileType !== '.obj') {
             throw Error(`Unable to parse file: ${filePath}. Reason ${fileType} not supported`);
         }
-        const directory = path.dirname(filePath);
+        const files = options.files ?? nodePlatform().files;
+        const directory = dirname(filePath);
         const useCache = options.cache ?? true;
         const lodOptions = options.lod === false ? undefined : options.lod === true || options.lod === undefined ? {} : options.lod;
-        const cached = useCache ? readMeshCache(filePath) : undefined;
+        const cached = useCache ? readMeshCache(filePath, files) : undefined;
         let mesh: Mesh;
         if (cached !== undefined) {
-            const library = loadMaterialLibraries(directory, cached.materialLibraryNames);
+            const library = loadMaterialLibraries(directory, cached.materialLibraryNames, files);
             const materials = cached.materialNames.map(name => library.get(name) ?? new Material(name));
             mesh = new Mesh({data: cached.data, vertCount: cached.vertCount, triangleCount: cached.triangleCount, materials, vertexMaterial: cached.vertexMaterial});
             if (lodOptions !== undefined) mesh.attachLods(cached.lods.map(level => new Mesh({...level, materials})));
         } else {
-            const parser = new ObjParser(fs.readFileSync(filePath).toString());
-            parser.applyMaterialLibrary(loadMaterialLibraries(directory, parser.materialLibraryNames));
+            const parser = new ObjParser(files.readText(filePath));
+            parser.applyMaterialLibrary(loadMaterialLibraries(directory, parser.materialLibraryNames, files));
             mesh = parser.toMesh();
             if (lodOptions !== undefined) mesh.attachLods(Mesh.buildLods(mesh, lodOptions));
-            if (useCache) writeMeshCache(filePath, mesh, parser.materialLibraryNames);
+            if (useCache) writeMeshCache(filePath, mesh, parser.materialLibraryNames, files);
         }
-        loadMaterialTextures(mesh.materials);
+        loadMaterialTextures(mesh.materials, new Map(), {files, inflate: options.inflate});
         return mesh;
     }
 
@@ -164,7 +165,8 @@ export interface MeshParts {
     readonly vertexMaterial: Uint16Array;
 }
 
-export interface MeshLoadOptions {
+export interface MeshLoadOptions extends AssetLoadOptions {
+    /** Read and write `<file>.obj.meshcache`; only possible where `files` can `stat` (and `write`, to create one). */
     cache?: boolean;
     /**
      * Build (or load from the cache) coarser detail levels; on by default with
@@ -175,14 +177,12 @@ export interface MeshLoadOptions {
     lod?: boolean | Partial<LodBuildOptions>;
 }
 
-function loadMaterialLibraries(directory: string, libraryNames: readonly string[]): MaterialLibrary {
-    const fs = require("fs") as typeof import("fs");
-    const path = require("path") as typeof import("path");
+function loadMaterialLibraries(directory: string, libraryNames: readonly string[], files: FileSource): MaterialLibrary {
     const merged: MaterialLibrary = new Map();
     for (const libraryName of libraryNames) {
-        const libraryPath = path.join(directory, libraryName);
-        if (!fs.existsSync(libraryPath)) continue;
-        for (const [name, material] of parseMtl(fs.readFileSync(libraryPath).toString(), directory)) merged.set(name, material);
+        const libraryPath = joinPath(directory, libraryName);
+        if (!files.exists(libraryPath)) continue;
+        for (const [name, material] of parseMtl(files.readText(libraryPath), directory)) merged.set(name, material);
     }
     return merged;
 }

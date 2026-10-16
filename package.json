@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "jsengine",
   "version": "0.1.0",
   "description": "Console-rendered ECS game engine, runs on node and bun",
@@ -20,8 +20,8 @@
     "demo:bun": "bun demo/2d/index.ts",
     "demo:3d:bun": "bun demo/3d/index.ts",
     "demo:3d:scriptc": "scriptc run demo/3d/index.ts",
-    "verify": "node -r ts-node/register/transpile-only tests/verifyWorld.ts && node -r ts-node/register/transpile-only tests/verifyThreading.ts",
-    "verify:bun": "bun tests/verifyWorld.ts && bun tests/verifyThreading.ts",
+    "verify": "node -r ts-node/register/transpile-only tests/verifyWorld.ts && node -r ts-node/register/transpile-only tests/verifyThreading.ts && node -r ts-node/register/transpile-only tests/verifyDemo2d.ts && node -r ts-node/register/transpile-only tests/verifyDemo3d.ts && node -r ts-node/register/transpile-only tests/verifyWorldWorker.ts",
+    "verify:bun": "bun tests/verifyWorld.ts && bun tests/verifyThreading.ts && bun tests/verifyDemo2d.ts && bun tests/verifyDemo3d.ts && bun tests/verifyWorldWorker.ts",
     "bench": "node -r ts-node/register/transpile-only bench/spatialIndex.bench.ts",
     "bench:cascade": "node -r ts-node/register/transpile-only bench/boundsCascade.bench.ts",
     "bench:cascade:bun": "bun bench/boundsCascade.bench.ts",
@@ -30,11 +30,18 @@
     "bench:structural:bun": "bun bench/structural.bench.ts",
     "scriptc:coverage": "scriptc coverage scripts/scriptcProbe.ts",
     "clear-logs": "node scripts/clearLogs.js",
-    "clear-logs:bun": "bun scripts/clearLogs.js"
+    "clear-logs:bun": "bun scripts/clearLogs.js",
+    "web:build": "bun scripts/buildWeb.ts",
+    "web:build:prod": "bun scripts/buildWeb.ts --prod",
+    "web": "bun scripts/serveWeb.ts",
+    "web:prod": "bun scripts/serveWeb.ts --prod"
   },
   "devDependencies": {
     "@types/bun": "^1.2.23",
     "@types/node": "^24.2.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   }

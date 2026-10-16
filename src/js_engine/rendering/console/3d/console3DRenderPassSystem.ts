@@ -33,7 +33,7 @@ export class Console3DRenderPassSystem extends System {
     private _alwaysRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
 
-    private _rasterizer = new MeshRasterizer();
+    private _rasterizer!: MeshRasterizer;
     private _modelViewScratch = new Float32Array(16);
     private _normalMatrixScratch = new Float32Array(9);
     private _viewSpaceMesh = new ViewSpaceMesh();
@@ -46,6 +46,11 @@ export class Console3DRenderPassSystem extends System {
     /** Meshes drawn this frame per detail level (index = level). */
     public readonly lodLevelCounts = new Int32Array(TRACKED_LOD_LEVELS);
 
+    /** Raster worker threads in use; 0 when the raster is single-threaded. */
+    public get rasterWorkers(): number {
+        return this._rasterizer?.activeWorkerCount ?? 0;
+    }
+
     override systemGroup() {
         return ConsoleRenderPassSystemGroup;
     }
@@ -55,6 +60,7 @@ export class Console3DRenderPassSystem extends System {
     }
 
     protected onCreate() {
+        this._rasterizer = new MeshRasterizer(this.world.platform.workers);
         this.requireAllForUpdate(this._settingsQuery);
         this.requireAllForUpdate(this._cameraQuery);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
@@ -92,7 +98,7 @@ export class Console3DRenderPassSystem extends System {
             : undefined;
 
         const rasterizer = this._rasterizer;
-        rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, settings.toRasterizerConfig());
+        rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, settings.toRasterizerConfig(this.world.platform));
 
         const sceneLights = this.world.resources.tryGet(SceneLights);
         const lit = sceneLights !== undefined && sceneLights.hasAnyLight;

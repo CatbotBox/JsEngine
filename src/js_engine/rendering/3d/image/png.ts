@@ -1,4 +1,6 @@
 import {DecodedImage, registerImageDecoder} from "./decodedImage";
+import type {AssetLoadOptions} from "../../../platform";
+import {nodeDeflate, nodePlatform} from "../../../platform";
 
 export const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
@@ -22,13 +24,13 @@ const channelsByColorType: Record<number, number> = {
     [COLOR_RGBA]: 4,
 };
 
-export function decodePng(bytes: Uint8Array): DecodedImage {
+export function decodePng(bytes: Uint8Array, options: Pick<AssetLoadOptions, "inflate"> = {}): DecodedImage {
     verifySignature(bytes);
     const chunks = readChunks(bytes);
     const header = parseHeader(chunks.header);
     const compressed = concatenate(chunks.imageData);
-    const zlib = require("zlib") as typeof import("zlib");
-    const raw = new Uint8Array(zlib.inflateSync(compressed));
+    const inflate = options.inflate ?? nodePlatform().inflate;
+    const raw = new Uint8Array(inflate(compressed));
     const scanlines = unfilterScanlines(raw, header);
     return {
         width: header.width,
@@ -37,14 +39,13 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
     };
 }
 
-export function encodePng(width: number, height: number, rgba: Uint8Array): Uint8Array {
+export function encodePng(width: number, height: number, rgba: Uint8Array, deflate: (bytes: Uint8Array) => Uint8Array = nodeDeflate): Uint8Array {
     const rowStride = width * 4;
     const filtered = new Uint8Array((rowStride + 1) * height);
     for (let y = 0; y < height; y++) {
         filtered[y * (rowStride + 1)] = FILTER_NONE;
         filtered.set(rgba.subarray(y * rowStride, (y + 1) * rowStride), y * (rowStride + 1) + 1);
     }
-    const zlib = require("zlib") as typeof import("zlib");
     const header = new Uint8Array(13);
     const view = new DataView(header.buffer);
     view.setUint32(0, width);
@@ -54,7 +55,7 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Uint
     return concatenate([
         new Uint8Array(PNG_SIGNATURE),
         pngChunk("IHDR", header),
-        pngChunk("IDAT", new Uint8Array(zlib.deflateSync(filtered))),
+        pngChunk("IDAT", deflate(filtered)),
         pngChunk("IEND", new Uint8Array(0)),
     ]);
 }
