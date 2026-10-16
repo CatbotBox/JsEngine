@@ -1,8 +1,6 @@
 import {Terminal} from "@xterm/xterm";
 import {FitAddon} from "@xterm/addon-fit";
 import {WebglAddon} from "@xterm/addon-webgl";
-import {consoleOverride} from "../src/js_engine/debugging";
-import {originalConsole} from "../src/js_engine/debugging/originalConsole";
 
 /** An xterm.js terminal filling `container`, refit on window resize, focused on click. */
 export function createTerminal(container: HTMLElement): Terminal {
@@ -26,12 +24,4 @@ function loadWebglRenderer(terminal: Terminal): void {
     } catch (error) {
         console.warn("WebGL renderer unavailable, using the default renderer:", error);
     }
-}
-
-/**
- * The render pass detaches the real console while it owns the terminal. On a page the terminal
- * is not the console, so devtools keeps its own listener.
- */
-export function keepDevtoolsConsole(): void {
-    consoleOverride.addConsoleEventListener(Object.create(originalConsole));
 }

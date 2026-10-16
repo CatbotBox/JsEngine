@@ -559,9 +559,11 @@ class DebugSystem extends System {
         const pass = this.world.tryGetSystem(Console3DRenderPassSystem);
         const drawn = pass === undefined ? 0 : pass.trianglesDrawn;
         const levels = pass === undefined ? '' : '  LOD levels: ' + Array.from(pass.lodLevelCounts.subarray(0, 5)).join('/');
+        const rasterWorkers = pass === undefined ? 0 : pass.rasterWorkers;
         this._entityCounterImage.image = [
             Ansi.colors.fg.green + 'Entities: ' + (this.world.entityCount),
             Ansi.colors.fg.green + 'Triangles: ' + formatCompact(drawn) + ' drawn / ' + formatCompact(this.world.resources.getOrCreate(SceneStats).sourceTriangles) + ' source' + levels,
+            Ansi.colors.fg.green + 'Raster workers: ' + (rasterWorkers === 0 ? 'none (single-threaded)' : rasterWorkers),
         ]
     }
 }
