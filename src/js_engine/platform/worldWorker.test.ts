@@ -457,6 +457,22 @@ describe("connectWorldWorker (the page's end)", () => {
         expect(terminal.written.length).toBe(2);
     });
 
+    test("quit runs onQuit once, after the stopped line; an error does not", () => {
+        const terminal = new FakePageTerminal();
+        const worker = new FakeWorldWorker();
+        const writtenAtQuit: number[] = [];
+        connectWorldWorker(terminal, worker, {name: "the demo", onQuit: () => writtenAtQuit.push(terminal.written.length)});
+        worker.emit({type: "quit"});
+        worker.emit({type: "quit"});
+        expect(writtenAtQuit).toEqual([1]);
+
+        const failing = new FakeWorldWorker();
+        let quits = 0;
+        connectWorldWorker(new FakePageTerminal(), failing, {name: "the demo", onQuit: () => quits++});
+        failing.emit({type: "error", message: "kaboom"});
+        expect(quits).toBe(0);
+    });
+
     test("a startup failure is shown in red and ends the worker; an uncaught error is shown", () => {
         const terminal = new FakePageTerminal();
         const worker = new FakeWorldWorker();

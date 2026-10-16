@@ -1,6 +1,4 @@
 // Pixel-based sprite pipeline: packed-RGB half-block cells, shared with the 3D pass.
-export {ConsoleSprite} from "./consoleSprite";
-export {SpriteImage} from "./spriteImage";
 export {Console2DRenderSettings} from "./console2DRenderSettings";
 export {ConsoleSpriteRenderPassSystem} from "./consoleSpriteRenderPassSystem";
 export {ConsoleSpriteHudRenderPassSystem} from "./consoleSpriteHudRenderPassSystem";

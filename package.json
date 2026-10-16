@@ -34,14 +34,21 @@
     "web:build": "bun scripts/buildWeb.ts",
     "web:build:prod": "bun scripts/buildWeb.ts --prod",
     "web": "bun scripts/serveWeb.ts",
-    "web:prod": "bun scripts/serveWeb.ts --prod"
+    "web:prod": "bun scripts/serveWeb.ts --prod",
+    "window": "bun scripts/window.ts 2d",
+    "window:3d": "bun scripts/window.ts 3d",
+    "window:smoke": "bun scripts/window.ts 2d --smoke && bun scripts/window.ts 3d --smoke --no-build",
+    "window:package": "bun scripts/packageWindow.ts"
   },
   "devDependencies": {
+    "@electron/fuses": "^2.1.3",
+    "@electron/packager": "^20.3.0",
     "@types/bun": "^1.2.23",
     "@types/node": "^24.2.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
+    "electron": "^44.8.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   }
