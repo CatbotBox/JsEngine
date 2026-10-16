@@ -28,6 +28,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".ppm": "image/x-portable-pixmap",
+    ".meshcache": "application/octet-stream",
 };
 
 function build(): void {

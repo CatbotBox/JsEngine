@@ -1,5 +1,6 @@
 import {describe, expect, test} from "../testing/harness";
 import {PreloadedFileSource} from "./preloadedFileSource";
+import {MemoryFileSource} from "./memoryPlatform";
 import type {FetchedFile} from "./preloadedFileSource";
 import {Mesh} from "../rendering/3d/mesh";
 import {meshCachePathFor, readMeshCache} from "../rendering/3d/meshCache";
@@ -89,5 +90,51 @@ describe("PreloadedFileSource", () => {
         expect(readMeshCache("models/tri.obj", files)).toBeUndefined();
         const mesh = Mesh.fromFile("./models/tri.obj", {files});
         expect(mesh.triangleCount).toBe(1);
+    });
+
+    test("a stat-only entry is not fetched: it exists and stats from the manifest, reads throw", async () => {
+        const requested: string[] = [];
+        const files = new PreloadedFileSource({fetch: stubFetch({"big.obj": "never fetched"}, requested)});
+        await files.preload([{path: "big.obj", size: 86_000_000, mtimeMs: 42.5, statOnly: true}]);
+        expect(requested).toEqual([]);
+        expect(files.exists("big.obj")).toBe(true);
+        expect(files.stat("./big.obj")).toEqual({size: 86_000_000, mtimeMs: 42.5});
+        expect(() => files.readText("big.obj")).toThrow("stat-only");
+        expect(() => files.readBytes("big.obj")).toThrow("stat-only");
+        const error = await rejection(new PreloadedFileSource({fetch: stubFetch({})}).preload([{path: "x.obj", statOnly: true, size: 1}]));
+        expect(error!.message.includes("mtimeMs")).toBe(true);
+    });
+
+    test("a listed size must match the bytes fetched", async () => {
+        const files = new PreloadedFileSource({fetch: stubFetch({"a.mtl": "abc"})});
+        expect(await rejection(files.preload([{path: "a.mtl", size: 3}]))).toBeUndefined();
+        const error = await rejection(files.preload([{path: "a.mtl", size: 4}]));
+        expect(error!.message.includes("rebuild")).toBe(true);
+    });
+
+    test("progress reports every entry once, with the listed bytes", async () => {
+        const files = new PreloadedFileSource({fetch: stubFetch({"a": "abc", "b": "abcdefg"})});
+        const reports: string[] = [];
+        await files.preload([
+            {path: "a", size: 3},
+            {path: "b", size: 7},
+            {path: "c.obj", size: 1000, mtimeMs: 1, statOnly: true},
+        ], progress => reports.push(`${progress.loadedFiles}/${progress.totalFiles} ${progress.totalBytes}`));
+        expect(reports.length).toBe(3);
+        expect(reports[2]).toBe("3/3 10");
+    });
+
+    test("a mesh cache validates against a stat-only obj with the obj's real size and mtime", async () => {
+        const source = new MemoryFileSource({"m/tri.obj": TRIANGLE_OBJ});
+        const built = Mesh.fromFile("m/tri.obj", {files: source});
+        const cachePath = meshCachePathFor("m/tri.obj");
+        const objStat = source.stat("m/tri.obj");
+        const files = new PreloadedFileSource({fetch: stubFetch({[cachePath]: source.readBytes(cachePath)})});
+        await files.preload([
+            {path: "m/tri.obj", size: objStat.size, mtimeMs: objStat.mtimeMs, statOnly: true},
+            {path: cachePath, size: source.stat(cachePath).size},
+        ]);
+        expect(readMeshCache("m/tri.obj", files)).toBeDefined();
+        expect(Mesh.fromFile("m/tri.obj", {files}).triangleCount).toBe(built.triangleCount);
     });
 });
