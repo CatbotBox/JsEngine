@@ -10,4 +10,5 @@ export {RenderBoundsOffset} from './renderBoundsOffset'
 export {RenderingSystemGroup} from './renderingSystemGroup'
 
 export * as Console from './console';
+export * as TwoD from './2d';
 export * as ThreeD from './3d';

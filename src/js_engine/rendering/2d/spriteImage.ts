@@ -1,7 +1,8 @@
-import {decodeImageFile} from "../../3d/image/decodedImage";
+import {decodeImageFile} from "../3d/image/decodedImage";
+import "../3d/image/builtinDecoders";
 
 /**
- * Immutable shared pixel data for ConsoleSprite — the 2D counterpart of Mesh:
+ * Immutable shared pixel data for Sprite — the 2D counterpart of Mesh:
  * any number of entities reference one SpriteImage while per-entity looks
  * (tint, opacity) stay on the component. Sharing one image keeps entity
  * creation allocation-free, the blit loop on one hot buffer, and file decodes

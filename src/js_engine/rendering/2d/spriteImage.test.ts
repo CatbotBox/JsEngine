@@ -1,4 +1,4 @@
-import {describe, expect, test} from "../../../testing/harness";
+import {describe, expect, test} from "../../testing/harness";
 import {SpriteImage} from "./spriteImage";
 
 describe("SpriteImage", () => {

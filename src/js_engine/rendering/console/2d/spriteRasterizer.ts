@@ -70,7 +70,7 @@ export class SpriteRasterizer {
      * Blit an image with its top-left at cell `dstX`, half-row `dstY` (two
      * half-rows per cell row; even = upper half). Clipped to the frame. `depth`
      * is distance from the camera; nearer pixels win. `tint` and `opacity` are
-     * the per-sprite modifiers from the ConsoleSprite component.
+     * the per-sprite modifiers from the Sprite component.
      */
     public blitSprite(image: BlittableSpriteImage, dstX: number, dstY: number, depth: number, tint: number = 0xFFFFFF, opacity: number = 1): void {
         const {width, height, config} = this;

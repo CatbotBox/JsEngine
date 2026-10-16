@@ -5,7 +5,7 @@ import {HudElement} from "../../hudElement";
 import {LocalToWorld} from "../../../translation";
 import {ScreenSize} from "../../screenSize";
 import {ConsoleRenderPassSystemGroup} from "../consoleRenderPassSystemGroup";
-import {ConsoleSprite} from "./consoleSprite";
+import {Sprite} from "../../2d/sprite";
 import {Console2DRenderSettings} from "./console2DRenderSettings";
 import {SpriteRasterizer} from "./spriteRasterizer";
 import {RenderBoundsSpriteApplyModifierSystem} from "./renderBoundsSpriteApplyModifierSystem";
@@ -13,7 +13,7 @@ import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {Vec} from "../../../math/types/vec";
 
 /**
- * Draws every ConsoleSprite as packed-RGB half-block cells — the 2D counterpart
+ * Draws every Sprite as packed-RGB half-block cells — the 2D counterpart
  * of Console3DRenderPassSystem, sharing its ScreenBuffer color pipeline (depth
  * compositing, half-block split cells, quantization, depth fade) instead of the
  * legacy ANSI-text blit of Console2DRenderPassSystem. Runs only while a
@@ -23,10 +23,10 @@ import {Vec} from "../../../math/types/vec";
 export class ConsoleSpriteRenderPassSystem extends System {
     private _settingsQuery = this.createEntityQuery([Console2DRenderSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
-    private _objectQuery = this.createEntityQuery([ConsoleSprite, WorldSpaceRenderBounds], [HudElement]);
+    private _objectQuery = this.createEntityQuery([Sprite, WorldSpaceRenderBounds], [HudElement]);
 
     private _boundsToken = WorldSpaceRenderBounds.type();
-    private _spriteToken = ConsoleSprite.type();
+    private _spriteToken = Sprite.type();
     private _localToWorldToken = LocalToWorld.type();
 
     private _rasterizer = new SpriteRasterizer();
@@ -101,7 +101,7 @@ export class ConsoleSpriteRenderPassSystem extends System {
                 if (wb[b + 4] < camYMin || yMin > camYMax) continue;
                 if (wb[b + 5] < camZMin || wb[b + 2] > camZMax) continue;
 
-                const sprite = spriteCol.get(row) as ConsoleSprite;
+                const sprite = spriteCol.get(row) as Sprite;
                 const image = sprite.image;
                 if (image === undefined) continue;
 

@@ -20,11 +20,10 @@ import {
 
 import {
     Console2DRenderSettings,
-    ConsoleSprite,
     ConsoleSpriteHudRenderPassSystem,
     ConsoleSpriteRenderPassSystem,
-    SpriteImage,
 } from "../../src/js_engine/rendering/console/2d";
+import {Sprite, SpriteImage} from "../../src/js_engine/rendering/2d";
 import {AverageStat} from "../../src/js_engine/datatypes";
 import {createHudLabel} from "../_shared/hud";
 
@@ -67,7 +66,7 @@ function createCross(position: LocalPosition, parent?: Entity, name?: string, ..
     const r = Math.round(Math.random() * 255)
     const g = Math.round(Math.random() * 255)
     const b = Math.round(Math.random() * 255)
-    buffer.addComponent(objectEntity, new ConsoleSprite(CROSS_IMAGE, packRgb(r, g, b)));
+    buffer.addComponent(objectEntity, new Sprite(CROSS_IMAGE, packRgb(r, g, b)));
     const localToWorld = buffer.addComponent(objectEntity, new LocalToWorld());
     if (parent) {
         buffer.addComponent(objectEntity, new Parent(parent));
@@ -100,7 +99,7 @@ function createPixel(position: LocalPosition, parent?: Entity, name?: string, ..
     // A shared white pixel colored through its tint: fading it is a tint
     // write, no pixel-data rebuild (the ANSI pipeline had to re-split an
     // escape string per entity per frame here).
-    buffer.addComponent(objectEntity, new ConsoleSprite(PIXEL_IMAGE, packRgb(r, g, b)));
+    buffer.addComponent(objectEntity, new Sprite(PIXEL_IMAGE, packRgb(r, g, b)));
     const localToWorld = buffer.addComponent(objectEntity, new LocalToWorld());
     if (parent) {
         buffer.addComponent(objectEntity, new Parent(parent));
@@ -131,7 +130,7 @@ const fpsCounterImage = createHudLabel(buffer, "fpsCounter", Ansi.colors.fg.gree
 // and drawn through ConsoleSpriteHudRenderPassSystem in screen space.
 {
     const hudSpriteEntity = buffer.createEntity("hudCross");
-    buffer.addComponent(hudSpriteEntity, new ConsoleSprite(CROSS_IMAGE, 0x00FFCC));
+    buffer.addComponent(hudSpriteEntity, new Sprite(CROSS_IMAGE, 0x00FFCC));
     buffer.addComponent(hudSpriteEntity, new HudElement());
     const hudAnchor = new ConsoleImageAnchor();
     hudAnchor.anchorPosition = 'bottom-right';
@@ -220,7 +219,7 @@ const FADE_SCRATCH: [number, number, number] = [0, 0, 0];
 
 class FadeSystem extends System {
 
-    private _query = this.createEntityQuery([OriginalColor, FadeToColor, ConsoleSprite])
+    private _query = this.createEntityQuery([OriginalColor, FadeToColor, Sprite])
 
     protected onCreate() {
         this.requireAllForUpdate(this._query);
@@ -260,7 +259,7 @@ class FadeSystem extends System {
         this._query.stream({
             // All three are written: the fade advances its own timer, retints the
             // sprite, and on completion snaps originalColor to the target colour.
-            write: {originalColor: OriginalColor, fadeToColor: FadeToColor, sprite: ConsoleSprite},
+            write: {originalColor: OriginalColor, fadeToColor: FadeToColor, sprite: Sprite},
         }, {
             includeEntity: true
         }).consume(({entity, sprite, fadeToColor, originalColor}) => {
@@ -272,7 +271,7 @@ class FadeSystem extends System {
             sprite.tint = packRgb(finalColor[0], finalColor[1], finalColor[2]);
             if (fadeToColor.currentFadeTime >= fadeToColor.fadeTime) {
                 originalColor.color = fadeToColor.color;
-                // fade is done: stop touching this entity's ConsoleSprite every frame and move it
+                // fade is done: stop touching this entity's Sprite every frame and move it
                 // out of the shared "fading pixel" archetype so it no longer contributes to the
                 // per-archetype change-tracking cascade (bounds recompute + octree rebatch) that
                 // every other still-fading pixel triggers each frame.
