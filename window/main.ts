@@ -1,24 +1,44 @@
 /**
  * Electron main process: serves the browser bundle (web/dist) over the privileged `app://` scheme
  * with COOP/COEP, so the page is cross-origin isolated exactly as under scripts/serveWeb.ts, and
- * opens it in a window. Bundled to window/dist/main.js and started by scripts/window.ts as
- * `electron main.js <web/dist> <page> [--smoke]`.
+ * opens it in a window. Bundled to window/dist/main.js; scripts/window.ts starts it as
+ * `electron main.js --dist=<web/dist> --page=<file.html> [--smoke]`, and scripts/packageWindow.ts
+ * ships it with the bundle in web/ and the page in launch.json beside it, so the packaged exe
+ * needs no arguments (`--page`/`--smoke` still apply).
  *
  * `--smoke` loads the page hidden, waits SMOKE_SETTLE_MS, prints one JSON line (isolation, the
  * terminal element, how much of the window is drawn, page errors) and exits non-zero if anything
  * is missing. `--screenshot=<file.png>` additionally saves what the window showed.
  */
 import {app, BrowserWindow, Menu, protocol} from "electron";
+import {existsSync, readFileSync} from "fs";
 import {readFile, writeFile} from "fs/promises";
+import {join} from "path";
 import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "../scripts/webDistFiles";
 
 const SCHEME = "app";
 const HOST = "bundle";
 const SMOKE_SETTLE_MS = 3000;
 
-const [distDirectory, page, ...flags] = process.argv.slice(2);
-const smoke = flags.includes("--smoke");
-const screenshotPath = flags.find(flag => flag.startsWith("--screenshot="))?.slice("--screenshot=".length);
+/** What scripts/packageWindow.ts writes beside the packaged main.js. */
+export interface PackagedLaunch {
+    readonly page: string;
+}
+
+/** Electron passes its own executable and, unpackaged, the main script before the app arguments. */
+const args = process.argv.slice(process.defaultApp ? 2 : 1);
+const flagValue = (name: string): string | undefined =>
+    args.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
+
+function packagedLaunch(): PackagedLaunch | undefined {
+    const path = join(app.getAppPath(), "launch.json");
+    return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) as PackagedLaunch : undefined;
+}
+
+const distDirectory = flagValue("dist") ?? join(app.getAppPath(), "web");
+const page = flagValue("page") ?? packagedLaunch()?.page ?? "index.html";
+const smoke = args.includes("--smoke");
+const screenshotPath = flagValue("screenshot");
 /** A blank terminal is all background; a running demo draws well past this. */
 const MIN_DRAWN_FRACTION = 0.01;
 
