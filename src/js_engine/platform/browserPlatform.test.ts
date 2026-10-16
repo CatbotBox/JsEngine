@@ -5,6 +5,7 @@ import {MemoryFileSource} from "./memoryPlatform";
 import {ConsoleInput} from "../input/consoleInput";
 import type {KeyEvent} from "../input/consoleInput";
 import {Key} from "../input/key";
+import {inflate} from "../rendering/3d/image/inflate";
 
 class FakeTerminal implements BrowserTerminal {
     public cols = 80;
@@ -99,13 +100,13 @@ describe("browserPlatform", () => {
         expect(terminal.dataListeners.size).toBe(0);
     });
 
-    test("files are the page's, there are no workers and inflate waits for 3.2", () => {
+    test("files are the page's, there are no workers and inflate is the hand-written one", () => {
         const files = new MemoryFileSource({"a.txt": "x"});
         const platform = browserPlatform(new FakeTerminal(), files);
         expect(platform.files).toBe(files);
         expect(platform.workers).toBeUndefined();
         expect(platform.requestedRasterWorkers).toBeUndefined();
-        expect(() => platform.inflate(new Uint8Array(0))).toThrow("3.2");
+        expect(platform.inflate).toBe(inflate);
         expect(platform.hardwareConcurrency()).toBeGreaterThan(0);
         expect(platform.now()).toBeGreaterThan(-1);
     });

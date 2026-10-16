@@ -130,6 +130,12 @@ export class MeshRasterizer {
     public constructor(private readonly workers?: WorkerFactory) {
     }
 
+    /** Worker threads rasterizing alongside the calling thread this frame; 0 while they boot, or when single-threaded. */
+    public get activeWorkerCount(): number {
+        const pool = this.pool;
+        return this.usingPool && pool !== undefined && pool.usable && pool.ready ? pool.workerCount : 0;
+    }
+
     public beginFrame(screenBuffer: ScreenBuffer, width: number, height: number, config: MeshRasterizerConfig): void {
         this.screenBuffer = screenBuffer;
         this.config = config;

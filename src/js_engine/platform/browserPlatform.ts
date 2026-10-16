@@ -1,4 +1,5 @@
 import type {FileSource, Platform, PlatformInput, PlatformScreen} from "./platform";
+import {inflate} from "../rendering/3d/image/inflate";
 
 export interface TerminalSubscription {
     dispose(): void;
@@ -26,7 +27,7 @@ interface BrowserHost {
 
 const EXIT_EVENTS = ["pagehide", "beforeunload"] as const;
 
-/** A page with a terminal: output, input and size from `terminal`, files from what the page preloaded. No workers. */
+/** A page with a terminal: output, input and size from `terminal`, files from what the page preloaded, the hand-written inflate. No workers. */
 export function browserPlatform(terminal: BrowserTerminal, files: FileSource): Platform {
     const host = globalThis as unknown as BrowserHost;
     return {
@@ -38,9 +39,7 @@ export function browserPlatform(terminal: BrowserTerminal, files: FileSource): P
         input: createTerminalInput(terminal),
         screen: createTerminalScreen(terminal),
         files,
-        inflate: () => {
-            throw new Error("PNG inflate is not available in the browser until Increment 3.2; use PPM or JPEG textures");
-        },
+        inflate,
         hardwareConcurrency: () => host.navigator?.hardwareConcurrency ?? 1,
         now: () => performance.now(),
         onExit: callback => onPageExit(host, callback),
