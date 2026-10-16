@@ -1,5 +1,5 @@
 import {Component} from "../../../core";
-import {MeshRasterizerConfig} from "./meshRasterizer";
+import type {MeshRasterizerConfig} from "../../3d/software";
 
 function defaultWorkerCount(): number {
     const env = typeof process !== "undefined" ? process.env.JSENGINE_RASTER_THREADS : undefined;
@@ -66,7 +66,6 @@ export class Console3DRenderSettings extends Component {
             supersample: this.supersampleX,
             supersampleX: this.supersampleX,
             supersampleY: this.supersampleY,
-            backgroundColor: this.backgroundColor,
             workerCount: this.workerCount,
             threadTriangleThreshold: this.threadTriangleThreshold,
             threadAreaThreshold: this.threadAreaThreshold,

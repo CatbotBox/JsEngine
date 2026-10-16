@@ -21,3 +21,4 @@ export {FieldOfView} from './fieldOfView';
 export {RenderMeshBoundsSystem} from './renderMeshBoundsSystem';
 export {ViewSpaceMesh} from './viewSpaceMesh';
 export * from './lighting';
+export * from './software';
