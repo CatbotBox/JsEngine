@@ -384,6 +384,25 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     }
 
     /**
+     * {@link addEntity} from parallel lists instead of a Map: each column takes the
+     * component at the first index of its type in `tokens`, so a type listed twice
+     * keeps its first instance.
+     */
+    public addEntityFromList(entity: Entity, tokens: readonly CT[], components: readonly ComponentOf<CT>[], enabled: boolean | undefined, time: {
+        elapsedTime: number
+    }) {
+        const now = time.elapsedTime;
+        const row = this.pushEntity(entity);
+        const types = this._uniqueTypes, cols = this._componentData;
+        for (let i = 0; i < types.length; i++) {
+            const at = tokens.indexOf(types[i]);
+            if (at < 0) throw new Error("component of required type is missing");
+            cols[i].add(components[at], now);
+        }
+        this.commitAppendedRow(row, enabled, now);
+    }
+
+    /**
      * Move `entity` along `edge` into `target` without collecting its components:
      * each target column takes its value straight from the source column
      * `edge.columnMap` names, and `added` fills the slot mapped to -1. Column-backed

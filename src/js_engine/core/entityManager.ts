@@ -24,18 +24,34 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     // creation / destruction
 
     private static emptyMap: Map<AnyCT, Component> = new Map();
+    private static noTypes: readonly AnyCT[] = [];
 
-    public createEntity(name?: string): Entity {
-        const arch = this._world.archetypes.getOrCreate([] as AnyCT[]);
-        const e = allocEntityHandle(name);
-        arch.addEntity(e, EntityManager.emptyMap, true, this._world.time);
-        setOwner(this._world, e, arch as EntityArchetype<AnyCT>);
-        return e;
+    /**
+     * Create an entity directly in the archetype of `components`, then run their
+     * setup() in array order. A type listed twice keeps its first instance; the
+     * later ones are dropped without setup(), as a duplicate addComponent is.
+     */
+    public createEntity(name?: string, components?: readonly Component[]): Entity {
+        const entity = allocEntityHandle(name);
+        if (components === undefined || components.length === 0) return this.attachEntity(entity);
+
+        const tokens = components.map(EntityManager.tokenOf);
+        const arch = this._world.archetypes.getOrCreate(tokens);
+        arch.addEntityFromList(entity, tokens, components, true, this._world.time);
+        setOwner(this._world, entity, arch);
+        for (let i = 0; i < components.length; i++) {
+            if (tokens.indexOf(tokens[i]) === i) components[i].setup(entity, this);
+        }
+        return entity;
     }
 
-    public attachEntity(entity: Entity) {
-        const arch = this._world.archetypes.getOrCreate([] as AnyCT[]);
-        arch.addEntity(entity, EntityManager.emptyMap, true, this._world.time);
+    /**
+     * Place an allocated handle holding exactly `components`, without running
+     * setup(): the command buffer ran those when it recorded them.
+     */
+    public attachEntity(entity: Entity, components: Map<AnyCT, Component> = EntityManager.emptyMap, enabled: boolean = true): Entity {
+        const arch = this._world.archetypes.getOrCreate(components.size === 0 ? EntityManager.noTypes : [...components.keys()]);
+        arch.addEntity(entity, components, enabled, this._world.time);
         setOwner(this._world, entity, arch as EntityArchetype<AnyCT>);
         return entity;
     }
@@ -77,6 +93,35 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {
         this.addComponentInternal(entity, component);
         return persistentTrackComponent(entity, component);
+    }
+
+    /**
+     * Add every component whose type the entity lacks in one move, then run their
+     * setup() in array order. Types already present, or listed twice, keep the
+     * first instance, as with addComponent.
+     */
+    public addComponents(entity: Entity, components: readonly Component[]): void {
+        const currentArch = requireOwner(this._world, entity);
+        const tokens = components.map(EntityManager.tokenOf);
+        const added: number[] = [];
+        for (let i = 0; i < tokens.length; i++) {
+            if (currentArch.getColumn(tokens[i]) === undefined && tokens.indexOf(tokens[i]) === i) added.push(i);
+        }
+        if (added.length === 0) return;
+        if (added.length === 1) {
+            this.addComponentInternal(entity, components[added[0]]);
+            return;
+        }
+
+        const data = currentArch.getDataAtEntityUntracked(entity) as Map<AnyCT, Component>;
+        for (const i of added) data.set(tokens[i], components[i]);
+        const target = this._world.archetypes.getOrCreate([...data.keys()]);
+        const enabled = currentArch.isEntityEnabled(entity);
+        currentArch.removeEntity(entity, this._world.time);
+        target.addEntity(entity, data, enabled, this._world.time);
+        setOwner(this._world, entity, target);
+
+        for (const i of added) components[i].setup(entity, this);
     }
 
     public setEnabledState(entity: Entity, enabled: boolean): void {
@@ -172,6 +217,10 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     }
 
     // internals
+
+    private static tokenOf(component: Component): AnyCT {
+        return ComponentType.of(component.constructor as ComponentCtor<Component>);
+    }
 
     private toToken(key: TokenOrCtor): AnyCT {
         return (typeof key === "function")

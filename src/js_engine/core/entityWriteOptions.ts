@@ -5,8 +5,8 @@ import {EntityQuery} from "./entityQuery";
 
 export interface EntityWriteOptions {
 
-  /** Queue entity creation. */
-  createEntity(name?: string): Entity;
+  /** Create an entity holding `components`, placed once; a type listed twice keeps its first instance. */
+  createEntity(name?: string, components?: readonly Component[]): Entity;
 
   /** Queue entity destruction. */
   destroyEntity(entity: Entity): void;
@@ -14,6 +14,9 @@ export interface EntityWriteOptions {
   addComponent<T extends Component>(entity: Entity, component: T): Readonly<T>;
 
   addTrackedComponent<T extends Component>(entity: Entity, component: T): T;
+
+  /** Add several components in one move; setup() runs per added component, in array order. */
+  addComponents(entity: Entity, components: readonly Component[]): void;
 
   setComponent<T extends Component>(entity: Entity, component: Component): void;
 
