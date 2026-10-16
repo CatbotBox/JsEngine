@@ -19,5 +19,5 @@ export type {MemoryPlatformOptions} from "./memoryPlatform";
 export {browserPlatform} from "./browserPlatform";
 export type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
 export {PreloadedFileSource} from "./preloadedFileSource";
-export type {PreloadEntry, PreloadedFileSourceOptions, FetchFile, FetchedFile} from "./preloadedFileSource";
+export type {PreloadEntry, PreloadProgress, PreloadedFileSourceOptions, FetchFile, FetchedFile} from "./preloadedFileSource";
 export {joinPath, dirname, normalizePath, isAbsolutePath} from "./paths";
