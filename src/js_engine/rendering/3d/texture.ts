@@ -1,7 +1,5 @@
 import {DecodedImage, decodeImageFile} from "./image/decodedImage";
-import "./image/png";
-import "./image/ppm";
-import "./image/jpeg";
+import "./image/builtinDecoders";
 
 export interface TextureLevel {
     readonly width: number;

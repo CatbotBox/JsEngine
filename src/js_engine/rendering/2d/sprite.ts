@@ -1,10 +1,10 @@
-import {Component, Entity} from "../../../core";
-import {EntityWriteOptions} from "../../../core/entityWriteOptions";
-import {RenderBounds} from "../../renderBounds";
+import {Component, Entity} from "../../core";
+import {EntityWriteOptions} from "../../core/entityWriteOptions";
+import {RenderBounds} from "../renderBounds";
 import {SpriteImage} from "./spriteImage";
 
 /**
- * A pixel-based 2D sprite, drawn by ConsoleSpriteRenderPassSystem through the
+ * A pixel-based 2D sprite. The console backend draws it via ConsoleSpriteRenderPassSystem through the
  * same packed-RGB half-block cells as the 3D pass — colors all the way to
  * flush, no ANSI text per pixel (see ConsoleImage for that legacy path).
  *
@@ -15,7 +15,7 @@ import {SpriteImage} from "./spriteImage";
  * One sprite pixel is one terminal cell wide and half a cell tall (cells are
  * ~2:1), so pixels render square: an 8x8 image covers 8 cells x 4 cells.
  */
-export class ConsoleSprite extends Component {
+export class Sprite extends Component {
     /** 0..1 multiplied onto every pixel's alpha; translucent pixels blend toward the settings' backgroundColor. */
     public opacity: number = 1;
 

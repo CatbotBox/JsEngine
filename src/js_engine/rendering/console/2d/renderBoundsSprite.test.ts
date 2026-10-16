@@ -7,8 +7,8 @@ import {LocalToWorld} from "../../../translation/localToWorld";
 import {TranslationSystemGroup} from "../../../translation/translationSystemGroup";
 import {LocalToWorldSystem} from "../../../translation/localToWorldSystem";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
-import {ConsoleSprite} from "./consoleSprite";
-import {SpriteImage} from "./spriteImage";
+import {Sprite} from "../../2d/sprite";
+import {SpriteImage} from "../../2d/spriteImage";
 import {RenderBoundsSpriteApplyModifierSystem} from "./renderBoundsSpriteApplyModifierSystem";
 
 /**
@@ -45,7 +45,7 @@ describe("sprite render bounds", () => {
         const {root, em} = makeWorld();
         const e = em.createEntity("sprite");
         // 3x3 pixels: 3 cells wide, 1.5 cells tall, centered anchor.
-        em.addComponent(e, new ConsoleSprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
+        em.addComponent(e, new Sprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
         em.addComponent(e, new LocalToWorld());
         em.addComponent(e, new LocalPosition(10, 20, 0));
         tick(root);
@@ -62,7 +62,7 @@ describe("sprite render bounds", () => {
     test("moving translates the world AABB by exactly the delta", () => {
         const {root, em} = makeWorld();
         const e = em.createEntity("sprite");
-        em.addComponent(e, new ConsoleSprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
+        em.addComponent(e, new Sprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
         em.addComponent(e, new LocalToWorld());
         em.addComponent(e, new LocalPosition(10, 20, 0));
         tick(root);
@@ -82,7 +82,7 @@ describe("sprite render bounds", () => {
     test("an archetype change leaves the world AABB where it was", () => {
         const {root, em} = makeWorld();
         const e = em.createEntity("sprite");
-        em.addComponent(e, new ConsoleSprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
+        em.addComponent(e, new Sprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
         em.addComponent(e, new LocalToWorld());
         em.addComponent(e, new LocalPosition(10, 20, 0));
         tick(root);
@@ -104,14 +104,14 @@ describe("sprite render bounds", () => {
     test("swapping the image while stationary updates the world AABB", () => {
         const {root, em} = makeWorld();
         const e = em.createEntity("sprite");
-        em.addComponent(e, new ConsoleSprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
+        em.addComponent(e, new Sprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
         em.addComponent(e, new LocalToWorld());
         em.addComponent(e, new LocalPosition(10, 20, 0));
         tick(root);
 
         // A RenderBounds rewrite with no LocalToWorld change: only the
         // RenderBounds->compute wake-up can propagate this.
-        const sprite = em.getComponent<ConsoleSprite>(e, ConsoleSprite)!;
+        const sprite = em.getComponent<Sprite>(e, Sprite)!;
         sprite.image = SpriteImage.solid(5, 1, 0xFFFFFF);
         tick(root);
 

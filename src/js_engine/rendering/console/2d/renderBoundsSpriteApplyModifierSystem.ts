@@ -3,18 +3,18 @@ import {RenderBounds} from "../../renderBounds";
 import {RenderingSystemGroup} from "../../renderingSystemGroup";
 import {LocalToWorld} from "../../../translation";
 import {anchorFractionX, anchorFractionY, ConsoleImageAnchor} from "../index";
-import {ConsoleSprite} from "./consoleSprite";
+import {Sprite} from "../../2d/sprite";
 import {WorldSpaceRenderBoundsComputeSystem} from "../../worldSpaceRenderBoundsComputeSystem";
 
 /**
- * Derives a ConsoleSprite's local RenderBounds from its pixel size. One sprite
+ * Derives a Sprite's local RenderBounds from its pixel size. One sprite
  * pixel is one cell wide and half a cell tall, so world height is sizeY / 2 —
  * independent of the halfBlockCells setting, which only changes how the shared
  * cell is drawn. The sibling of RenderBounds2DApplyModifierSystem, which does
  * the same for glyph-based ConsoleImages.
  */
 export class RenderBoundsSpriteApplyModifierSystem extends System {
-    private _query = this.createEntityQuery([LocalToWorld, ConsoleSprite, RenderBounds]);
+    private _query = this.createEntityQuery([LocalToWorld, Sprite, RenderBounds]);
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -36,7 +36,7 @@ export class RenderBoundsSpriteApplyModifierSystem extends System {
         this._query.stream({
             // ConsoleImageAnchor is not in the query, so it is optional — listing it
             // under `read` would skip every archetype without an anchor.
-            read: {sprite: ConsoleSprite},
+            read: {sprite: Sprite},
             write: {bounds: RenderBounds},
             optional: {anchor: ConsoleImageAnchor},
         }, {
@@ -46,14 +46,14 @@ export class RenderBoundsSpriteApplyModifierSystem extends System {
             structuralFilter: "additions",
             filterBlackList: [RenderBounds]
         }).consumeSpans(({start, end, cols, stores}) => {
-            // RenderBounds as a raw column; ConsoleSprite/anchor are object-backed.
+            // RenderBounds as a raw column; Sprite/anchor are object-backed.
             const rb = cols.bounds!;
             const sprites = stores.sprite!;
             const anchors = stores.anchor;
 
             let wrote = false;
             for (let i = start; i < end; i++) {
-                const sprite = sprites.get(i) as ConsoleSprite;
+                const sprite = sprites.get(i) as Sprite;
 
                 let ax = 0.5, ay = 0.5;
                 const anchor = anchors?.get(i) as ConsoleImageAnchor | undefined;

@@ -6,7 +6,7 @@ import {ScreenSize} from "../../screenSize";
 import {anchorFractionX, anchorFractionY, ConsoleImageAnchor} from "../consoleImageAnchor";
 import {RenderBoundsOffset} from "../../renderBoundsOffset";
 import {ConsoleRenderPassSystemGroup} from "../consoleRenderPassSystemGroup";
-import {ConsoleSprite} from "./consoleSprite";
+import {Sprite} from "../../2d/sprite";
 import {Console2DRenderSettings} from "./console2DRenderSettings";
 import {SpriteRasterizer} from "./spriteRasterizer";
 
@@ -16,7 +16,7 @@ const DEFAULT_ANCHOR = new ConsoleImageAnchor();
 const DEFAULT_OFFSET = new RenderBoundsOffset();
 
 /**
- * Draws ConsoleSprite + HudElement entities anchored in screen space — the
+ * Draws Sprite + HudElement entities anchored in screen space — the
  * pixel/half-block counterpart of ConsoleHudRenderPassSystem, which does the
  * same for glyph-based ConsoleImages. Runs only while a singleton
  * Console2DRenderSettings exists (its halfBlockCells/quantization apply; depth
@@ -30,7 +30,7 @@ const DEFAULT_OFFSET = new RenderBoundsOffset();
 export class ConsoleSpriteHudRenderPassSystem extends System {
     private _settingsQuery = this.createEntityQuery([Console2DRenderSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
-    private _hudObjectQuery = this.createEntityQuery([ConsoleSprite, HudElement]);
+    private _hudObjectQuery = this.createEntityQuery([Sprite, HudElement]);
 
     private _rasterizer = new SpriteRasterizer();
 
@@ -66,7 +66,7 @@ export class ConsoleSpriteHudRenderPassSystem extends System {
 
         // HUD elements are screen-space, not world-space, so no camera transform applies.
         this._hudObjectQuery.stream({
-            read: {sprite: ConsoleSprite},
+            read: {sprite: Sprite},
             optional: {offset: RenderBoundsOffset, anchor: ConsoleImageAnchor},
         }).consume(({sprite, anchor: rawAnchor, offset: rawOffset}) => {
             const image = sprite.image;
