@@ -78,7 +78,10 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
         let out = "";
         if (fullRedraw) {
-            out = "\x1b[H" + rows.join("\n") + "\x1b[J";
+            // CR LF, not LF: only a tty's line discipline turns a bare LF into a carriage
+            // return too, and a terminal emulator fed directly (xterm.js) has none. The
+            // trailing CR LF leaves the frame before erasing, so the erase only ever clears below it.
+            out = "\x1b[H" + rows.join("\r\n") + "\r\n\x1b[J";
         } else {
             for (let y = 0; y < rows.length; y++) {
                 if (rows[y] !== prevRows[y]) {

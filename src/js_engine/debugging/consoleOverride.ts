@@ -1,7 +1,8 @@
 ﻿import {originalConsole} from "./originalConsole";
 
 const ConsoleEventListeners: Console[] = [originalConsole]
-const ConsoleEventSource = {} as any;
+// A member the loop below cannot enumerate on some host falls through to the real console.
+const ConsoleEventSource = Object.create(originalConsole);
 for (let key in console) {
     ConsoleEventSource[key] = (...args: unknown[]) => ConsoleEventListeners.forEach(listener => (listener as any)[key](...args));
 }
