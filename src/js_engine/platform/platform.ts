@@ -15,6 +15,8 @@ export interface Platform {
     /** Absent: the rasterizer stays single-threaded. */
     readonly workers?: WorkerFactory;
     readonly hardwareConcurrency: () => number;
+    /** Raster worker threads the host asks for, overriding the count derived from `hardwareConcurrency`; undefined: no request. */
+    readonly requestedRasterWorkers?: () => number | undefined;
     readonly now: () => number;
     /** Runs `callback` when the host shuts down; returns a function that cancels it. */
     readonly onExit: (callback: () => void) => () => void;

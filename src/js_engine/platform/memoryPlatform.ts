@@ -169,6 +169,7 @@ export interface MemoryPlatformOptions {
     readonly inflate?: Inflate;
     readonly workers?: WorkerFactory;
     readonly hardwareConcurrency?: number;
+    readonly requestedRasterWorkers?: number;
     readonly now?: number;
 }
 
@@ -182,6 +183,7 @@ export class MemoryPlatform implements Platform {
 
     private readonly _inflate?: Inflate;
     private readonly _hardwareConcurrency: number;
+    private readonly _requestedRasterWorkers: number | undefined;
     private readonly exitCallbacks = new Set<() => void>();
     private _now: number;
 
@@ -192,10 +194,13 @@ export class MemoryPlatform implements Platform {
         this.workers = options.workers;
         this._inflate = options.inflate;
         this._hardwareConcurrency = options.hardwareConcurrency ?? 1;
+        this._requestedRasterWorkers = options.requestedRasterWorkers;
         this._now = options.now ?? 0;
     }
 
     public readonly hardwareConcurrency = (): number => this._hardwareConcurrency;
+
+    public readonly requestedRasterWorkers = (): number | undefined => this._requestedRasterWorkers;
 
     public readonly inflate = (bytes: Uint8Array): Uint8Array => {
         if (this._inflate === undefined) throw new Error("MemoryPlatform has no inflate; pass one in its options");

@@ -109,6 +109,7 @@ function createNodePlatform(): Platform {
         inflate: nodeInflate,
         workers: createNodeWorkers(),
         hardwareConcurrency,
+        requestedRasterWorkers,
         now: () => performance.now(),
         onExit,
     };
@@ -256,6 +257,13 @@ function hardwareConcurrency(): number {
     } catch {
         return 1;
     }
+}
+
+function requestedRasterWorkers(): number | undefined {
+    const requested = nodeProcess().env.JSENGINE_RASTER_THREADS;
+    if (requested === undefined) return undefined;
+    const parsed = Number.parseInt(requested, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function onExit(callback: () => void): () => void {
