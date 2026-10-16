@@ -169,6 +169,11 @@ export class RasterWorkerPool {
         return !this.broken && this.workers.length > 0;
     }
 
+    /** Every worker has booted; until then `dispatch` rasterizes on the calling thread. */
+    public get ready(): boolean {
+        return Atomics.load(this.ctrl, CTRL_READY) >= this.workers.length;
+    }
+
     /**
      * Rasterize triCount triangles from triData into the shared layers using all
      * bands. Blocks (Atomics.wait) until every band is finished; the main thread

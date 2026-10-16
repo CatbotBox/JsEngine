@@ -18,6 +18,14 @@ export {MemoryPlatform, MemoryFileSource, MemoryInput, MemoryOutput, MemoryScree
 export type {MemoryPlatformOptions} from "./memoryPlatform";
 export {browserPlatform} from "./browserPlatform";
 export type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
+export {browserWorkerFactory, browserWorkersIfIsolated} from "./browserWorkers";
+export type {BrowserWorker, BrowserWorkerHost} from "./browserWorkers";
+export {PageConnection} from "./worldWorkerPlatform";
+export type {WorldWorkerScope} from "./worldWorkerPlatform";
+export {connectWorldWorker} from "./worldWorkerPage";
+export type {PageTerminal, WorldWorker, WorldWorkerPage, WorldWorkerPageOptions} from "./worldWorkerPage";
+export {isPageToWorldMessage, isWorldToPageMessage, requestedRasterWorkersFromQuery} from "./worldWorkerProtocol";
+export type {InitMessage, PageToWorldMessage, WorldToPageMessage} from "./worldWorkerProtocol";
 export {PreloadedFileSource} from "./preloadedFileSource";
 export type {PreloadEntry, PreloadProgress, PreloadedFileSourceOptions, FetchFile, FetchedFile} from "./preloadedFileSource";
 export {joinPath, dirname, normalizePath, isAbsolutePath} from "./paths";

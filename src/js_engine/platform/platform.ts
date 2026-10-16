@@ -24,6 +24,12 @@ export interface Platform {
 
 export interface PlatformOutput {
     write(chunk: string): void;
+    /**
+     * True while the host is still presenting earlier output and more would only queue up behind
+     * it; the console renderer skips its frame then and repaints in full once this clears. Absent:
+     * never (a terminal's write blocks instead).
+     */
+    backlogged?(): boolean;
 }
 
 export interface PlatformInput {
