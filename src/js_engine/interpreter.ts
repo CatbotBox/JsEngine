@@ -3,10 +3,12 @@
     "Bun" |
     "Unknown"
 
+const versions = typeof process !== "undefined" ? process.versions : undefined;
+
 let interpreter: SupportedInterpreters
-if (process.versions.bun) {
+if (versions?.bun) {
     interpreter = "Bun";
-} else if (process.versions.node) {
+} else if (versions?.node) {
     interpreter = "Node";
 } else {
     console.warn("Running in an unknown environment");

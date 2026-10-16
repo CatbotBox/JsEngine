@@ -1,7 +1,6 @@
-﻿import fileLogger from "./fileLogger";
-import {originalConsole} from "./originalConsole";
+﻿import {originalConsole} from "./originalConsole";
 
-const ConsoleEventListeners: Console[] = [originalConsole, fileLogger]
+const ConsoleEventListeners: Console[] = [originalConsole]
 const ConsoleEventSource = {} as any;
 for (let key in console) {
     ConsoleEventSource[key] = (...args: unknown[]) => ConsoleEventListeners.forEach(listener => (listener as any)[key](...args));

@@ -1,6 +1,8 @@
-﻿import * as readline from 'node:readline';
-import {PassThrough} from 'node:stream';
-import {Key} from "./key";
+﻿import {Key} from "./key";
+import {AnsiKeyDecoder} from "./ansiKeyDecoder";
+import type {DecodedKey} from "./ansiKeyDecoder";
+import type {Platform} from "../platform/platform";
+import {nodePlatform} from "../platform/nodePlatform";
 
 // Signal — tiny typed event emitter (replaces ./util/event)
 
@@ -106,17 +108,10 @@ export interface InputOptions {
     hideCursor?: boolean;
     /** ms of silence after the last key event before a key is treated as released. default 120 */
     keyReleaseDelayMs?: number;
-    /** behaviour when stdin is not a TTY. default 'warn' */
+    /** behaviour when the platform has no interactive input (stdin is not a TTY). default 'warn' */
     noTTY?: 'warn' | 'throw' | 'silent';
-}
-
-/** Minimal shape of the object readline hands to the 'keypress' listener. */
-interface KeyRaw {
-    sequence: string;
-    name?: string;
-    ctrl?: boolean;
-    meta?: boolean;
-    shift?: boolean;
+    /** host to read input from and write terminal modes to. default: the node platform */
+    platform?: Platform;
 }
 
 // InputSystem
@@ -146,14 +141,15 @@ export class ConsoleInput {
     private _wheelDeltaFrame = 0;
 
     // internals
-    private options!: Required<InputOptions>;
+    private options!: Required<Omit<InputOptions, 'platform'>>;
     private enabled = false;
-    private kbStream: PassThrough | null = null;
+    private platform: Platform | undefined;
+    private stopWatchingExit: (() => void) | undefined;
+    private readonly keyDecoder = new AnsiKeyDecoder((key) => this.handleKeypress(key));
     private readonly releaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
     // bound handlers (stable refs so we can remove them on disable)
-    private readonly onStdinData = (chunk: string | Buffer) => this.handleData(chunk);
-    private readonly onKeypress  = (s: string | undefined, k: KeyRaw | undefined) => this.handleKeypress(s, k);
+    private readonly onInputData = (data: string) => this.handleData(data);
     private readonly onExit      = () => this.disable();
 
     // SGR mouse: ESC [ < btn ; x ; y (M=press/motion | m=release)
@@ -175,33 +171,25 @@ export class ConsoleInput {
             noTTY: options.noTTY ?? 'warn',
         };
 
-        if (!process.stdin.isTTY) {
-            const msg = '[input] stdin is not a TTY — keyboard/mouse input unavailable.';
+        const platform = options.platform ?? nodePlatform();
+        if (!platform.input.available()) {
+            const msg = '[input] no interactive input (stdin is not a TTY) — keyboard/mouse input unavailable.';
             if (this.options.noTTY === 'throw') throw new Error(msg);
             if (this.options.noTTY === 'warn') console.error(msg);
             return this; // stay disabled rather than crash (safe in CI / piped runs)
         }
 
-        // Private keyboard decoder. readline reads THIS stream, never stdin directly,
-        // so it only ever sees the non-mouse bytes we forward to it.
-        const kb = new PassThrough();
-        readline.emitKeypressEvents(kb);
-        kb.on('keypress', this.onKeypress);
-        this.kbStream = kb;
-
-        process.stdin.setRawMode(true);   // char-by-char, no echo, no auto-SIGINT
-        process.stdin.resume();
-        process.stdin.setEncoding('utf8');
-        process.stdin.on('data', this.onStdinData);
-
-        if (this.options.mouse)      process.stdout.write(ENABLE_MOUSE);
-        if (this.options.hideCursor) process.stdout.write(HIDE_CURSOR);
-
-        // best-effort terminal restore on process teardown
-        process.once('exit', this.onExit);
-        process.once('SIGTERM', this.onExit);
-
+        this.platform = platform;
         this.enabled = true;
+        // best-effort terminal restore on host teardown
+        this.stopWatchingExit = platform.onExit(this.onExit);
+
+        platform.input.start(this.onInputData);
+        // A host may deliver buffered bytes inside start(), and a listener may disable input.
+        if (!this.enabled) return this;
+
+        if (this.options.mouse)      platform.output.write(ENABLE_MOUSE);
+        if (this.options.hideCursor) platform.output.write(HIDE_CURSOR);
         return this;
     }
 
@@ -212,19 +200,17 @@ export class ConsoleInput {
         for (const t of this.releaseTimers.values()) clearTimeout(t);
         this.releaseTimers.clear();
 
-        process.stdin.removeListener('data', this.onStdinData);
-        if (process.stdin.isTTY) process.stdin.setRawMode(false);
-        process.stdin.pause();
+        const platform = this.platform!;
+        platform.input.stop();
 
-        if (this.options.mouse)      process.stdout.write(DISABLE_MOUSE);
-        if (this.options.hideCursor) process.stdout.write(SHOW_CURSOR);
+        if (this.options.mouse)      platform.output.write(DISABLE_MOUSE);
+        if (this.options.hideCursor) platform.output.write(SHOW_CURSOR);
 
-        this.kbStream?.removeListener('keypress', this.onKeypress);
-        this.kbStream?.destroy();
-        this.kbStream = null;
+        this.keyDecoder.reset();
 
-        process.removeListener('exit', this.onExit);
-        process.removeListener('SIGTERM', this.onExit);
+        this.stopWatchingExit?.();
+        this.stopWatchingExit = undefined;
+        this.platform = undefined;
 
         this.clearFrame();
         this.keysDown.clear();
@@ -322,9 +308,7 @@ export class ConsoleInput {
 
     // raw stream handling
 
-    private handleData(chunk: string | Buffer): void {
-        const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-
+    private handleData(data: string): void {
         const re = ConsoleInput.MOUSE;
         re.lastIndex = 0;
         let last = 0;
@@ -333,18 +317,16 @@ export class ConsoleInput {
         // Split the chunk into [text][mouse][text][mouse]... preserving order,
         // forwarding text to the keyboard decoder and handling mouse inline.
         while ((m = re.exec(data)) !== null) {
-            if (m.index > last) this.kbStream?.write(data.slice(last, m.index));
+            if (m.index > last) this.keyDecoder.write(data.slice(last, m.index));
             this.handleMouse(m);
             last = re.lastIndex;
         }
-        if (last < data.length) this.kbStream?.write(data.slice(last));
+        if (last < data.length) this.keyDecoder.write(data.slice(last));
     }
 
     // keyboard
 
-    private handleKeypress(_str: string | undefined, key: KeyRaw | undefined): void {
-        if (!key) return;
-
+    private handleKeypress(key: DecodedKey): void {
         // NOTE: Ctrl+C arrives as an ordinary key event ({ name: 'c', ctrl: true }).
         // Raw mode disables the automatic SIGINT, and this system intentionally does
         // NOT exit on its own — subscribe to control shutdown yourself, e.g.:

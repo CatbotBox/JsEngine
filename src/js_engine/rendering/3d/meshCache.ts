@@ -1,4 +1,6 @@
 import type {Mesh} from "./mesh";
+import type {FileSource} from "../../platform";
+import {nodePlatform} from "../../platform";
 
 // increment whenever a change is made to this file
 export const MESH_CACHE_FORMAT_VERSION = 3;
@@ -43,25 +45,26 @@ export function meshCachePathFor(objPath: string): string {
     return objPath + MESH_CACHE_EXTENSION;
 }
 
-export function readMeshCache(objPath: string): CachedMesh | undefined {
-    const fs = require("fs") as typeof import("fs");
+/** Undefined when there is no valid cache, or `files` cannot `stat` the obj to validate one. */
+export function readMeshCache(objPath: string, files: FileSource = nodePlatform().files): CachedMesh | undefined {
+    if (files.stat === undefined) return undefined;
     const cachePath = meshCachePathFor(objPath);
-    if (!fs.existsSync(cachePath)) return undefined;
+    if (!files.exists(cachePath)) return undefined;
     try {
-        const objStat = fs.statSync(objPath);
-        const bytes = fs.readFileSync(cachePath);
-        return decodeCache(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), objStat.size, objStat.mtimeMs);
+        const objStat = files.stat(objPath);
+        return decodeCache(files.readBytes(cachePath), objStat.size, objStat.mtimeMs);
     } catch {
         return undefined;
     }
 }
 
-export function writeMeshCache(objPath: string, mesh: Mesh, materialLibraryNames: readonly string[]): void {
-    const fs = require("fs") as typeof import("fs");
+/** Does nothing unless `files` can both `write` the cache and `stat` the obj it is keyed on. */
+export function writeMeshCache(objPath: string, mesh: Mesh, materialLibraryNames: readonly string[], files: FileSource = nodePlatform().files): void {
+    if (files.write === undefined || files.stat === undefined) return;
     const cachePath = meshCachePathFor(objPath);
     try {
-        const objStat = fs.statSync(objPath);
-        fs.writeFileSync(cachePath, encodeCache(mesh, materialLibraryNames, objStat.size, objStat.mtimeMs));
+        const objStat = files.stat(objPath);
+        files.write(cachePath, encodeCache(mesh, materialLibraryNames, objStat.size, objStat.mtimeMs));
     } catch (error) {
         console.warn(`Could not write mesh cache ${cachePath}: ${error instanceof Error ? error.message : String(error)}`);
     }

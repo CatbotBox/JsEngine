@@ -6,9 +6,9 @@ import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
 import {GcSystem} from "./gcSystem";
 import {WorldSource} from "./worldSource";
-import {performance} from "node:perf_hooks";
-import {clearInterval} from "node:timers";
 import {ResourceManager} from "./resourceManager";
+import type {Platform} from "../platform/platform";
+import {nodePlatform} from "../platform/nodePlatform";
 
 class Time {
     /**
@@ -22,7 +22,13 @@ class Time {
 
 }
 
+export interface WorldOptions {
+    /** The host the world runs on; defaults to the node platform. */
+    readonly platform?: Platform;
+}
+
 export class World extends WorldSource {
+    public readonly platform: Platform;
     private _archetypes: EntityArchetypeMap = new EntityArchetypeMap();
     private _resources: ResourceManager = new ResourceManager();
     protected _systems: Map<SystemCtor<System>, System> = new Map();
@@ -62,9 +68,10 @@ export class World extends WorldSource {
     private _loopHandle: ReturnType<typeof setInterval> | null = null;
     protected _targetDeltaTime: number = 1000 / 60; // default to 60 FPS
 
-    constructor() {
+    constructor(options: WorldOptions = {}) {
         super(undefined!);
         this.world = this;
+        this.platform = options.platform ?? nodePlatform();
         this._rootSystemGroup = this.createSystem(RootSystemGroup)
         this.ensureSystemExists(GcSystem)
     }
