@@ -9,7 +9,6 @@ import {EntityQuery} from "./entityQuery";
 import {EntityWriteOptions} from "./entityWriteOptions";
 import {allocEntityHandle, freeEntityHandle, getOwner, requireOwner, setOwner} from "./ownership";
 import {EntityReadOptions} from "./entityReadOptions";
-import {getEntityTokens} from "./entityManagerUtils";
 
 export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
@@ -93,8 +92,8 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     private addComponentInternal<T extends Component>(entity: Entity, component: T): void {
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
-        const currentTokens = new Set<AnyCT>(getEntityTokens(this.world, entity));
-        if (currentTokens.has(token)) {
+        const currentArch = requireOwner(this.world, entity);
+        if (currentArch.getColumn(token) !== undefined) {
             // Keep the existing one and discard the new instance — use setComponent()
             // to replace.
             //
@@ -106,12 +105,8 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
             // on each was pure noise, and throwing would break the engine outright.
             return;
         }
-        const currentArch = requireOwner(this.world, entity);
         const currentData = currentArch.getDataAtEntityUntracked(entity) as Map<AnyCT, Component>;
-
-        currentTokens.add(token);
-        const targetTokens = Array.from(currentTokens.values());
-        const targetArch = this.world.archetypes.getOrCreate(targetTokens as AnyCT[]);
+        const targetArch = this.world.archetypes.withAdded(currentArch, token).target;
         currentData.set(token, component);
 
         this.moveEntityInternal(entity, currentArch, targetArch, currentData);
@@ -140,12 +135,8 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     public removeComponent(entity: Entity, key: TokenOrCtor): void {
         const token = this.toToken(key);
         const currentArch = requireOwner(this._world, entity);
-        const currentTokens = new Set<AnyCT>(getEntityTokens(this.world, entity));
-        if (!currentTokens.has(token)) return; // nothing to do
-        // next tokens = current \ {token}
-        currentTokens.delete(token);
-        const nextTokens = Array.from(currentTokens.values())
-        const targetArch = this._world.archetypes.getOrCreate(nextTokens);
+        if (currentArch.getColumn(token) === undefined) return;
+        const targetArch = this._world.archetypes.withRemoved(currentArch, token).target;
         const currentData = currentArch.getDataAtEntityUntracked(entity);
         this.moveEntityInternal(entity, currentArch, targetArch, currentData);
     }
@@ -153,8 +144,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     // simple queries (immediate)
 
     public hasComponent<T extends Component>(entity: Entity, key: TokenOrCtor): boolean {
-        const data = new Set<AnyCT>(getEntityTokens(this.world, entity));
-        return data.has(ComponentType.of(key as ComponentCtor<T>));
+        return requireOwner(this._world, entity).getColumn(this.toToken(key)) !== undefined;
     }
 
     public getComponent<T extends Component>(entity: Entity, key: TokenOrCtor): T | undefined {
