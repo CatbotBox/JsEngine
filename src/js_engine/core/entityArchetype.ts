@@ -187,7 +187,54 @@ export class ComponentStore<CT extends ComponentType<any>> {
     }
 
     /**
-     * Drop the tail element.
+     * Append `source`'s element at `row`: its floats are copied column to column and
+     * the instance is re-pointed here directly, with no private buffer in between.
+     */
+    public addFrom(source: ComponentStore<CT>, row: number, time: number) {
+        const index = this._componentData.length;
+        const component = source._componentData[row];
+        const width = this._f32Width;
+        // grown before pushing, as in add(): growth rebinds only the instances already here
+        if (width > 0) this.ensureF32Capacity(index + 1);
+        this._componentData.push(component);
+        if (width > 0) {
+            const dst = this._f32!, src = source._f32!;
+            const off = index * width, srcOff = row * width;
+            for (let k = 0; k < width; k++) dst[off + k] = src[srcOff + k];
+            (component as unknown as F32Backed).bindF32(dst, off);
+        }
+        this.markBlockAt(index, time);
+    }
+
+    /**
+     * Move the element at `from` into slot `to`, overwriting it, and re-point the
+     * instance at its new row. Slot `from` keeps a stale reference until it is
+     * overwritten or dropped.
+     */
+    public moveValue(from: number, to: number) {
+        const data = this._componentData;
+        const component = data[from];
+        data[to] = component;
+        const width = this._f32Width;
+        if (width > 0) {
+            const f = this._f32!;
+            const a = from * width, b = to * width;
+            for (let k = 0; k < width; k++) f[b + k] = f[a + k];
+            (component as unknown as F32Backed).bindF32(f, b);
+        }
+    }
+
+    /**
+     * The instance at `index` is leaving the column: give it its own buffer (values
+     * preserved) so an outstanding handle cannot scribble on the recycled slot.
+     */
+    public detachAt(index: number) {
+        if (this._f32Width > 0) (this._componentData[index] as unknown as F32Backed).detachF32();
+    }
+
+    /**
+     * Drop the tail slot, whose instance has already been moved down, detached, or
+     * re-bound into another archetype.
      *
      * Deliberately does NOT touch `lastUpdatedTime`. That timestamp means "a
      * surviving element's *value* changed"; removing the last element changes no
@@ -199,14 +246,8 @@ export class ComponentStore<CT extends ComponentType<any>> {
      * `structuralFilter: "additions"` could never take effect and every
      * derived-data system rebuilt its whole archetype whenever one entity retired.
      */
-    public removeLast() {
-        const removed = this._componentData.pop();
-        if (this._f32Width > 0 && removed !== undefined) {
-            // the instance leaves the column: give it its own buffer (values
-            // preserved) so an outstanding handle — or an archetype move about
-            // to re-add it elsewhere — cannot scribble on the recycled slot
-            (removed as unknown as F32Backed).detachF32();
-        }
+    public dropLast() {
+        this._componentData.pop();
     }
 
     public removeAll(time: number) {
@@ -333,17 +374,64 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         // one 6-component entity, ~19% of a bulk spawn. Every stamp made in a
         // single structural change is meant to be the same instant anyway.
         const now = time.elapsedTime;
-        const nextIndex = this._entities.length;
-        this._entities.push(entity);
-        setEntityRow(entity, nextIndex);
+        const row = this.pushEntity(entity);
         this._uniqueTypes.forEach((type, idx) => {
             const component = components.get(type);
             if (!component) throw new Error("component of required type is missing");
             this._componentData[idx].add(component, now);
         });
+        this.commitAppendedRow(row, enabled, now);
+    }
 
+    /**
+     * Move `entity` along `edge` into `target` without collecting its components:
+     * each target column takes its value straight from the source column
+     * `edge.columnMap` names, and `added` fills the slot mapped to -1. Column-backed
+     * instances that travel are re-pointed at the target column, never detached;
+     * those of a source column the target lacks detach, as a destroyed entity's do.
+     */
+    public moveRowTo(entity: Entity, target: EntityArchetype<CT>, edge: ArchetypeEdge<CT>, added: ComponentOf<CT> | undefined, time: {
+        elapsedTime: number
+    }) {
+        const now = time.elapsedTime;
+        const row = this.getIndexOfEntity(entity);
+        if (row === undefined) throw new Error("Entity does not exist");
+        const columnMap = edge.columnMap;
+        if (columnMap.length < this._componentData.length) this.detachDroppedAt(row, columnMap);
+        target.appendRowFrom(entity, this, row, columnMap, added, row < this._enabledCount, now);
+        this.vacateRow(row);
+        this._lastStructuralChange = now;
+    }
+
+    private appendRowFrom(entity: Entity, source: EntityArchetype<CT>, sourceRow: number, columnMap: Int32Array, added: ComponentOf<CT> | undefined, enabled: boolean, now: number) {
+        const row = this.pushEntity(entity);
+        const cols = this._componentData, sourceCols = source._componentData;
+        for (let i = 0; i < cols.length; i++) {
+            const from = columnMap[i];
+            if (from >= 0) cols[i].addFrom(sourceCols[from], sourceRow, now);
+            else if (added !== undefined) cols[i].add(added, now);
+            else throw new Error("component of required type is missing");
+        }
+        this.commitAppendedRow(row, enabled, now);
+    }
+
+    private detachDroppedAt(row: number, columnMap: Int32Array) {
+        const cols = this._componentData;
+        for (let i = 0; i < cols.length; i++) {
+            if (cols[i].f32Width > 0 && !columnMap.includes(i)) cols[i].detachAt(row);
+        }
+    }
+
+    private pushEntity(entity: Entity): number {
+        const row = this._entities.length;
+        this._entities.push(entity);
+        setEntityRow(entity, row);
+        return row;
+    }
+
+    private commitAppendedRow(row: number, enabled: boolean | undefined, now: number) {
         if (enabled !== undefined) {
-            this.setEnabledStateAtIndex(nextIndex, enabled, now);
+            this.setEnabledStateAtIndex(row, enabled, now);
         }
 
         this._lastStructuralChange = now;
@@ -384,17 +472,41 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         const index = this.getIndexOfEntity(entity);
         if (index === undefined) throw new Error("Entity does not exist");
 
-        const wasEnabled = this.isEntityIndexEnabled(index);
-        const lastIndex = this._entities.length - 1;
-
-        this.swapDataAtIndices(index, lastIndex);
-
-        // remove last (the swap moved `entity` to the tail)
-        this._entities.length = lastIndex;
+        const cols = this._componentData;
+        for (let i = 0; i < cols.length; i++) cols[i].detachAt(index);
         setEntityRow(entity, -1);
-        this._componentData.forEach((component) => component.removeLast())
+        this.vacateRow(index);
         this._lastStructuralChange = time.elapsedTime;
-        if (wasEnabled) this._enabledCount--;
+    }
+
+    /**
+     * Close the gap at `row` and drop the tail, keeping enabled rows contiguous at
+     * the front. An enabled gap is filled by the last enabled row, whose slot is
+     * then filled by the last row, so a disabled row never lands in the enabled
+     * prefix. Whatever occupied `row` is left alone: the caller has detached it or
+     * re-bound it elsewhere.
+     */
+    private vacateRow(row: number) {
+        const last = this._entities.length - 1;
+        if (row < this._enabledCount) {
+            const lastEnabled = --this._enabledCount;
+            this.moveRowWithin(lastEnabled, row);
+            this.moveRowWithin(last, lastEnabled);
+        } else {
+            this.moveRowWithin(last, row);
+        }
+        this._entities.length = last;
+        const cols = this._componentData;
+        for (let i = 0; i < cols.length; i++) cols[i].dropLast();
+    }
+
+    private moveRowWithin(from: number, to: number) {
+        if (from === to) return;
+        const cols = this._componentData;
+        for (let i = 0; i < cols.length; i++) cols[i].moveValue(from, to);
+        const moved = this._entities[from];
+        this._entities[to] = moved;
+        setEntityRow(moved, to);
     }
 
     /** Mark the block holding `index` dirty in every column. */

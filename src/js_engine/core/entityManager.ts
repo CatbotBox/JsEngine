@@ -105,11 +105,9 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
             // on each was pure noise, and throwing would break the engine outright.
             return;
         }
-        const currentData = currentArch.getDataAtEntityUntracked(entity) as Map<AnyCT, Component>;
-        const targetArch = this.world.archetypes.withAdded(currentArch, token).target;
-        currentData.set(token, component);
-
-        this.moveEntityInternal(entity, currentArch, targetArch, currentData);
+        const edge = this._world.archetypes.withAdded(currentArch, token);
+        currentArch.moveRowTo(entity, edge.target, edge, component, this._world.time);
+        setOwner(this._world, entity, edge.target);
 
         component.setup(entity, this);
     }
@@ -136,9 +134,9 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         const token = this.toToken(key);
         const currentArch = requireOwner(this._world, entity);
         if (currentArch.getColumn(token) === undefined) return;
-        const targetArch = this._world.archetypes.withRemoved(currentArch, token).target;
-        const currentData = currentArch.getDataAtEntityUntracked(entity);
-        this.moveEntityInternal(entity, currentArch, targetArch, currentData);
+        const edge = this._world.archetypes.withRemoved(currentArch, token);
+        currentArch.moveRowTo(entity, edge.target, edge, undefined, this._world.time);
+        setOwner(this._world, entity, edge.target);
     }
 
     // simple queries (immediate)
@@ -174,22 +172,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     }
 
     // internals
-
-    private moveEntityInternal(
-        entity: Entity,
-        from: EntityArchetype<AnyCT>,
-        to: EntityArchetype<AnyCT>,
-        components: Map<AnyCT, Component>
-    ): void {
-        if (from === to) {
-            to.setEntity(entity, components as Map<AnyCT, Component>, undefined, this._world.time);
-            return;
-        }
-        const isEnabled = from.isEntityEnabled(entity);
-        from.removeEntity(entity, this._world.time);
-        to.addEntity(entity, components as Map<AnyCT, Component>, isEnabled, this._world.time);
-        setOwner(this._world, entity, to);
-    }
 
     private toToken(key: TokenOrCtor): AnyCT {
         return (typeof key === "function")
