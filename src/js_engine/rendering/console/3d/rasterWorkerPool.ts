@@ -1,16 +1,19 @@
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
 import {TextureStore} from "./textureStore";
+import {WORKER_ENTRY_POINT} from "../../../platform";
+import type {WorkerFactory, WorkerHandle} from "../../../platform";
 
 /**
- * Fork-join rasterization pool built on worker_threads + SharedArrayBuffer + Atomics.
+ * Fork-join rasterization pool built on platform workers + SharedArrayBuffer + Atomics.
  *
  * The screen is split into horizontal row bands; band 0 is rasterized on the main
  * thread while each worker owns one of the remaining bands. Bands are disjoint, so
  * every thread writes to its own rows of the shared depth/color layers — no locks,
  * and the result is bit-identical to the single-threaded kernel.
  *
- * Workers run an eval'd, dependency-free script (the kernel is inlined via
- * Function.toString()), so this works under node, tsx and bun without needing a
+ * Workers run a dependency-free script (the kernel is inlined via
+ * Function.toString()) that touches no host API: the platform's WorkerFactory
+ * hands it its shared buffers, so it runs under node, tsx and bun without a
  * compiled worker entry file. All shared buffers are allocated once at maximum
  * size — no re-broadcasting on screen resize, which lets workers sit in a pure
  * Atomics.wait() loop with zero event-loop involvement per frame.
@@ -38,45 +41,46 @@ const FCTRL_SLOTS = 1;
 
 function buildWorkerSource(): string {
     return `'use strict';
-const {workerData} = require('worker_threads');
-const raster = ${rasterizeTriangleBand.toString()};
-const ctrl = new Int32Array(workerData.ctrl);
-const fctrl = new Float64Array(workerData.fctrl);
-const trisF = new Float32Array(workerData.tris);
-const trisI = new Int32Array(workerData.tris);
-const depthLayer = new Float32Array(workerData.depth);
-const colorLayer = new Int32Array(workerData.color);
-const texels = new Int32Array(workerData.texels);
-const textureTable = new Int32Array(workerData.textureTable);
-const bandIndexes = new Int32Array(workerData.bandIndexes);
-const bandCounts = new Int32Array(workerData.bandCounts);
-const BAND_STRIDE = ${RasterWorkerPool.MAX_TRIS};
-const bandIndex = workerData.bandIndex; // 1-based; band 0 belongs to the main thread
-// Record the job generation BEFORE signalling readiness: jobs dispatched from
-// here on are guaranteed to be observed (Atomics.wait on a stale value returns
-// immediately), and the pool won't send jobs until every worker is ready.
-let lastJob = Atomics.load(ctrl, ${CTRL_JOB});
-Atomics.add(ctrl, ${CTRL_READY}, 1);
-for (;;) {
-    Atomics.wait(ctrl, ${CTRL_JOB}, lastJob);
-    const job = Atomics.load(ctrl, ${CTRL_JOB});
-    if (job === lastJob) continue;
-    lastJob = job;
-    if (Atomics.load(ctrl, ${CTRL_EXIT}) !== 0) break;
-    const width = Atomics.load(ctrl, ${CTRL_WIDTH});
-    const height = Atomics.load(ctrl, ${CTRL_HEIGHT});
-    const triCount = Atomics.load(ctrl, ${CTRL_TRI_COUNT});
-    const bandCount = Atomics.load(ctrl, ${CTRL_BAND_COUNT});
-    const quantMask = Atomics.load(ctrl, ${CTRL_QUANT_MASK});
-    const rowsPerBand = Math.ceil(height / bandCount);
-    const yStart = Math.min(height, bandIndex * rowsPerBand);
-    const yEnd = Math.min(height, yStart + rowsPerBand);
-    if (yStart < yEnd && triCount > 0) {
-        const myCount = Atomics.load(bandCounts, bandIndex);
-        raster(trisF, trisI, triCount, bandIndexes, bandIndex * BAND_STRIDE, myCount, depthLayer, colorLayer, texels, textureTable, width, yStart, yEnd, fctrl[${FCTRL_DEPTH_FADE}], quantMask);
+function ${WORKER_ENTRY_POINT}(workerData) {
+    const raster = ${rasterizeTriangleBand.toString()};
+    const ctrl = new Int32Array(workerData.ctrl);
+    const fctrl = new Float64Array(workerData.fctrl);
+    const trisF = new Float32Array(workerData.tris);
+    const trisI = new Int32Array(workerData.tris);
+    const depthLayer = new Float32Array(workerData.depth);
+    const colorLayer = new Int32Array(workerData.color);
+    const texels = new Int32Array(workerData.texels);
+    const textureTable = new Int32Array(workerData.textureTable);
+    const bandIndexes = new Int32Array(workerData.bandIndexes);
+    const bandCounts = new Int32Array(workerData.bandCounts);
+    const BAND_STRIDE = ${RasterWorkerPool.MAX_TRIS};
+    const bandIndex = workerData.bandIndex; // 1-based; band 0 belongs to the main thread
+    // Record the job generation BEFORE signalling readiness: jobs dispatched from
+    // here on are guaranteed to be observed (Atomics.wait on a stale value returns
+    // immediately), and the pool won't send jobs until every worker is ready.
+    let lastJob = Atomics.load(ctrl, ${CTRL_JOB});
+    Atomics.add(ctrl, ${CTRL_READY}, 1);
+    for (;;) {
+        Atomics.wait(ctrl, ${CTRL_JOB}, lastJob);
+        const job = Atomics.load(ctrl, ${CTRL_JOB});
+        if (job === lastJob) continue;
+        lastJob = job;
+        if (Atomics.load(ctrl, ${CTRL_EXIT}) !== 0) break;
+        const width = Atomics.load(ctrl, ${CTRL_WIDTH});
+        const height = Atomics.load(ctrl, ${CTRL_HEIGHT});
+        const triCount = Atomics.load(ctrl, ${CTRL_TRI_COUNT});
+        const bandCount = Atomics.load(ctrl, ${CTRL_BAND_COUNT});
+        const quantMask = Atomics.load(ctrl, ${CTRL_QUANT_MASK});
+        const rowsPerBand = Math.ceil(height / bandCount);
+        const yStart = Math.min(height, bandIndex * rowsPerBand);
+        const yEnd = Math.min(height, yStart + rowsPerBand);
+        if (yStart < yEnd && triCount > 0) {
+            const myCount = Atomics.load(bandCounts, bandIndex);
+            raster(trisF, trisI, triCount, bandIndexes, bandIndex * BAND_STRIDE, myCount, depthLayer, colorLayer, texels, textureTable, width, yStart, yEnd, fctrl[${FCTRL_DEPTH_FADE}], quantMask);
+        }
+        Atomics.add(ctrl, ${CTRL_DONE}, 1);
+        Atomics.notify(ctrl, ${CTRL_DONE});
     }
-    Atomics.add(ctrl, ${CTRL_DONE}, 1);
-    Atomics.notify(ctrl, ${CTRL_DONE});
 }
 `;
 }
@@ -106,14 +110,13 @@ export class RasterWorkerPool {
 
     private readonly ctrl: Int32Array;
     private readonly fctrl: Float64Array;
-    private readonly workers: import("worker_threads").Worker[] = [];
+    private readonly workers: WorkerHandle[] = [];
     private broken = false;
 
-    public constructor(workerCount: number) {
+    public constructor(workerCount: number, workerFactory: WorkerFactory) {
         if (typeof SharedArrayBuffer === "undefined") {
             throw new Error("SharedArrayBuffer unavailable");
         }
-        const {Worker} = require("worker_threads") as typeof import("worker_threads");
 
         const ctrlSab = new SharedArrayBuffer(CTRL_SLOTS * 4);
         const fctrlSab = new SharedArrayBuffer(FCTRL_SLOTS * 8);
@@ -137,26 +140,23 @@ export class RasterWorkerPool {
 
         const source = buildWorkerSource();
         for (let i = 0; i < workerCount; i++) {
-            const worker = new Worker(source, {
-                eval: true,
-                workerData: {
-                    ctrl: ctrlSab,
-                    fctrl: fctrlSab,
-                    tris: triSab,
-                    depth: depthSab,
-                    color: colorSab,
-                    bandIndexes: bandIndexSab,
-                    bandCounts: bandCountSab,
-                    texels: texelSab,
-                    textureTable: textureTableSab,
-                    bandIndex: i + 1,
-                },
+            const worker = workerFactory.spawn(source, {
+                ctrl: ctrlSab,
+                fctrl: fctrlSab,
+                tris: triSab,
+                depth: depthSab,
+                color: colorSab,
+                bandIndexes: bandIndexSab,
+                bandCounts: bandCountSab,
+                texels: texelSab,
+                textureTable: textureTableSab,
+                bandIndex: i + 1,
             });
-            worker.on("error", () => {
+            worker.onError(() => {
                 this.broken = true;
             });
             // Workers block in Atomics.wait; never keep the process alive for them.
-            worker.unref();
+            worker.unref?.();
             this.workers.push(worker);
         }
     }
@@ -167,6 +167,11 @@ export class RasterWorkerPool {
 
     public get usable(): boolean {
         return !this.broken && this.workers.length > 0;
+    }
+
+    /** Every worker has booted; until then `dispatch` rasterizes on the calling thread. */
+    public get ready(): boolean {
+        return Atomics.load(this.ctrl, CTRL_READY) >= this.workers.length;
     }
 
     /**
@@ -241,7 +246,7 @@ export class RasterWorkerPool {
         Atomics.add(this.ctrl, CTRL_JOB, 1);
         Atomics.notify(this.ctrl, CTRL_JOB);
         for (const worker of this.workers) {
-            void worker.terminate();
+            worker.terminate();
         }
         this.workers.length = 0;
     }

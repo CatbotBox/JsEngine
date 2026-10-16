@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JsEngine 2D</title>
+    <link rel="stylesheet" href="xterm.css">
+    <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+<div id="terminal"></div>
+<div id="focus-hint">Click the terminal to give it the keyboard</div>
+<button id="play" type="button" autofocus>
+    <h1>JsEngine 2D</h1>
+    <p>Sprites composited into half-block terminal cells by an archetype ECS, drawn as ANSI escape codes into xterm.js.
+        Hold <kbd>space</kbd> to spawn a thousand fading pixels at a time.</p>
+    <p><kbd>arrows</kbd> move the cross &middot; <kbd>wasd</kbd> move the camera &middot; <kbd>h</kbd> half-block cells
+        &middot; <kbd>enter</kbd> rendering on/off &middot; <kbd>ctrl+c</kbd> stop</p>
+    <span class="start">Click to play</span>
+</button>
+<script type="module" src="2d.js"></script>
+</body>
+</html>

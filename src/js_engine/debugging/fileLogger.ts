@@ -1,8 +1,7 @@
-﻿import * as util from "node:util";
-import {table as tableFormatFunction} from "./table";
+﻿import {table as tableFormatFunction} from "./table";
 import {originalConsole} from "./originalConsole";
-
-import fs from "fs";
+import type {AppendStream} from "../platform/nodePlatform";
+import {nodeLogHost} from "../platform/nodePlatform";
 
 type ConsoleLabelKey = string | number | symbol;
 
@@ -13,8 +12,8 @@ type GroupNode = { kind: "group"; label: string; ts: number; children: Node[] };
 type Node = LogNode | GroupNode;
 
 const logFilePath = "./logs/";
-let logFile: NodeJS.WritableStream | null = null;
-let latestLogFile: NodeJS.WritableStream | null = null;
+let logFile: AppendStream | null = null;
+let latestLogFile: AppendStream | null = null;
 const logOptions: Intl.DateTimeFormatOptions = {hour12: false};
 
 function getDateString(): string {
@@ -23,46 +22,31 @@ function getDateString(): string {
     return date.toLocaleDateString("sv-SE", logOptions).replace(/-/g, "") + "-" + date.toLocaleTimeString("sv-SE", logOptions).replace(/:/g, "");
 }
 
-function getLogFile(): NodeJS.WritableStream {
-    if (!logFile) {
-        if (!fs.existsSync(logFilePath)) {
-            fs.mkdirSync(logFilePath, {recursive: true});
-        }
-        logFile = fs.createWriteStream(logFilePath + getDateString() + ".log", {flags: "a"});
-    }
-    return logFile!;
+function getLogFile(): AppendStream {
+    if (!logFile) logFile = nodeLogHost().openAppendStream(logFilePath + getDateString() + ".log", false);
+    return logFile;
 }
 
-function getLatestLogFile(): NodeJS.WritableStream {
-    if (!latestLogFile) {
-        if (!fs.existsSync(logFilePath)) {
-            fs.mkdirSync(logFilePath, {recursive: true});
-        }
-        const file = logFilePath + "latest" + ".log";
-        if(fs.existsSync(file)) {
-            fs.rmSync(file);
-        }
-
-        latestLogFile = fs.createWriteStream(file, {flags: "a"})
-    }
-    return latestLogFile!;
+function getLatestLogFile(): AppendStream {
+    if (!latestLogFile) latestLogFile = nodeLogHost().openAppendStream(logFilePath + "latest" + ".log", true);
+    return latestLogFile;
 }
 
 const errorFilePath = "./crash-logs/";
-let errorFile: NodeJS.WritableStream | null = null;
+let errorFile: AppendStream | null = null;
 
-function getErrorFile(): NodeJS.WritableStream {
-    if (!fs.existsSync(errorFilePath)) {
-        fs.mkdirSync(errorFilePath, {recursive: true});
-    }
-    if (!errorFile) errorFile = fs.createWriteStream(errorFilePath + getDateString() + ".log", {flags: "a"});
+function getErrorFile(): AppendStream {
+    if (!errorFile) errorFile = nodeLogHost().openAppendStream(errorFilePath + getDateString() + ".log", false);
+    return errorFile;
+}
 
-    return errorFile!;
+function format(...data: unknown[]): string {
+    return nodeLogHost().format(...data);
 }
 
 class FileConsole implements Console {
     write(...data: Array<string | ArrayBufferView | ArrayBuffer>): number {
-        const text = util.format(...data);
+        const text = format(...data);
         this.writeLine(text)
         return 0;
     }
@@ -85,7 +69,7 @@ class FileConsole implements Console {
     }
 
     group(...data: unknown[]): void {
-        const label = `[${util.format(...data)}]`;
+        const label = `[${format(...data)}]`;
         const node: GroupNode = {kind: "group", label, ts: Date.now(), children: []};
         this._append(node);
         this._groupStack.push(node);
@@ -183,26 +167,26 @@ class FileConsole implements Console {
     }
 
     debug(...data: unknown[]): void {
-        const text = util.format(...data);
+        const text = format(...data);
         const ts = Date.now();
         text.split("\n").forEach((line) => this.writeLineHelper("DEBUG", ts, line));
     }
 
     error(...data: unknown[]): void {
-        const text = util.format(...data);
+        const text = format(...data);
         const ts = Date.now();
         text.split("\n").forEach((line) => this.writeLineHelper("ERROR", ts, line));
         text.split("\n").forEach((line) => getErrorFile().write(`[ERROR] [${(new Date()).toISOString()}] ${line}\n`));
     }
 
     info(...data: unknown[]): void {
-        const text = util.format(...data);
+        const text = format(...data);
         const ts = Date.now();
         text.split("\n").forEach((line) => this.writeLineHelper("INFO", ts, line));
     }
 
     log(...data: unknown[]): void {
-        const text = util.format(...data);
+        const text = format(...data);
         const ts = Date.now();
         text.split("\n").forEach((line) => this.writeLineHelper("LOG", ts, line));
     }
@@ -213,7 +197,7 @@ class FileConsole implements Console {
     }
 
     warn(...data: unknown[]): void {
-        const text = util.format(...data);
+        const text = format(...data);
         const ts = Date.now();
         text.split("\n").forEach((line) => this.writeLineHelper("WARN", ts, line));
     }
@@ -245,9 +229,9 @@ class FileConsole implements Console {
         this._countTracker[key] = 0;
     }
 
-    dir(item?: unknown, options?: util.InspectOptions): void {
+    dir(item?: unknown, options?: object): void {
         // modern single-`options` overload; no `any`
-        this.log(util.inspect(item, options));
+        this.log(nodeLogHost().inspect(item, options));
     }
 
     dirxml(...data: unknown[]): void {

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JsEngine</title>
+    <meta name="description" content="A TypeScript ECS game engine that renders entirely to a terminal with ANSI escape codes, running in the browser on xterm.js.">
+    <script src="coi-serviceworker.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            background: #05070b;
+            color: #d8dee9;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }
+
+        main {
+            max-width: 60rem;
+            margin: 0 auto;
+            padding: 3rem 1.5rem;
+        }
+
+        h1 {
+            margin: 0 0 0.5rem;
+            font-size: 2.2rem;
+            font-weight: 600;
+        }
+
+        .intro {
+            margin: 0 0 2rem;
+            max-width: 44rem;
+            color: #aab4c3;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+            gap: 1.25rem;
+        }
+
+        .card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 1.5rem;
+            border: 1px solid #243041;
+            border-radius: 0.75rem;
+            background: #0c121b;
+            color: inherit;
+            text-decoration: none;
+            transition: border-color 0.15s, transform 0.15s;
+        }
+
+        .card:hover,
+        .card:focus-visible {
+            border-color: #4fa3f7;
+            transform: translateY(-2px);
+        }
+
+        .card h2 {
+            margin: 0;
+            font-size: 1.4rem;
+        }
+
+        .card p {
+            margin: 0;
+            color: #aab4c3;
+        }
+
+        .card dl {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.2rem 0.9rem;
+            margin: 0;
+            font-size: 0.9rem;
+        }
+
+        .card dt {
+            font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+            color: #d8dee9;
+        }
+
+        .card dd {
+            margin: 0;
+            color: #8a96a8;
+        }
+
+        .card .play {
+            margin-top: auto;
+            align-self: flex-start;
+            padding: 0.5rem 1.2rem;
+            border: 1px solid #4fa3f7;
+            border-radius: 999px;
+            color: #4fa3f7;
+            font-weight: 600;
+        }
+
+        .card:hover .play,
+        .card:focus-visible .play {
+            background: #4fa3f7;
+            color: #05070b;
+        }
+
+        footer {
+            margin-top: 2.5rem;
+            font-size: 0.85rem;
+            color: #6b7789;
+        }
+
+        code {
+            font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+            color: #aab4c3;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>JsEngine</h1>
+    <p class="intro">A TypeScript game engine built on an archetype ECS modelled on Unity DOTS, rendering entirely to a
+        terminal with ANSI escape codes. Here the terminal is xterm.js and the world runs in a Web Worker, the same
+        code that runs in a real terminal under node or bun.</p>
+    <div class="cards">
+        <a class="card" href="2d.html">
+            <h2>2D</h2>
+            <p>Sprites composited into half-block cells, with thousands of entities fading colour through ECS
+                systems.</p>
+            <dl>
+                <dt>arrows</dt><dd>move the crosses</dd>
+                <dt>wasd</dt><dd>move the camera</dd>
+                <dt>space</dt><dd>spawn 1,000 fading pixels (hold)</dd>
+                <dt>h</dt><dd>half-block cells on/off</dd>
+                <dt>ctrl+c</dt><dd>stop</dd>
+            </dl>
+            <span class="play">Play 2D</span>
+        </a>
+        <a class="card" href="3d.html">
+            <h2>3D</h2>
+            <p>A software rasterizer: OBJ meshes from binary mesh caches, textures, Blinn-Phong lighting and level of
+                detail, threaded where the page is cross-origin isolated. The bugatti downloads on demand.</p>
+            <dl>
+                <dt>wasd q e</dt><dd>move, down, up</dd>
+                <dt>drag, wheel</dt><dd>look, zoom</dd>
+                <dt>space n</dt><dd>spawn, next model</dd>
+                <dt>arrows [ ]</dt><dd>rotate, scale the models</dd>
+                <dt>1-4 b t</dt><dd>anti-aliasing, half-block, textures</dd>
+                <dt>h p</dt><dd>lights, lamp</dd>
+                <dt>esc</dt><dd>stop</dd>
+            </dl>
+            <span class="play">Play 3D</span>
+        </a>
+    </div>
+    <footer>
+        Embedding: <code>3d.html?cols=120&amp;rows=40</code> fixes the terminal size, <code>?threads=N</code> sets the
+        number of raster threads.
+    </footer>
+</main>
+</body>
+</html>
