@@ -1,0 +1,15 @@
+# bench/structural.bench.ts baseline, Increment 1.0 (pre-edges code), recorded 2026-10-17 with: bun bench/structural.bench.ts
+# node baseline missing: node is not installed on this machine. Record it with: npm run bench:structural
+
+structural bench | bun 1.4.0 | win32 x64 | AMD Ryzen 5 9600X 6-Core Processor
+rounds: 7 (+1 warm-up), interleaved | gc: forced before each sample (Bun.gc)
+
+scenario                                median ms     min     max   per op
+spawn 100k x6, one by one                  838.50  762.34  858.02   8.385 us/entity
+spawn 100k x6, batch                   n/a (batch API not present)
+spawn 100k x6, ECB record+playback         384.18  376.74  416.48   3.842 us/entity
+spawn 100k x6, ECB playback only           316.91  302.86  340.75   3.169 us/entity
+toggle tag 10k x 300 frames               7187.09 6676.17 7313.51   2.396 us/move
+enable/disable 10k x 300 frames            698.89  617.48  784.99   0.233 us/toggle
+despawn 100k x6                             48.17   45.67   57.30   0.482 us/entity  (mean of 3 runs per sample)
+spawn 10k Parent hierarchies, depth 4      166.65  157.76  181.91   4.166 us/entity
