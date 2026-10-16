@@ -36,6 +36,12 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
     }
 
     onUpdate() {
+        // The host is still presenting earlier frames: drawing this one would only queue it, and
+        // a row diff cannot be dropped later, so skip it whole and repaint everything once it can.
+        if (this.world.platform.output.backlogged?.() === true) {
+            this._forceRedraw = true;
+            return;
+        }
         const dualScreenBuffer = this.world.resources.getOrCreate(ConsoleScreenBuffer);
         const screenBuffer = dualScreenBuffer.screenBuffer;
         try {
