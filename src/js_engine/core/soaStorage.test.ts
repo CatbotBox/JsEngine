@@ -12,6 +12,7 @@ import {asFloat32Array, Vec} from "../math/types/vec";
 import {BLOCK_SIZE, EntityArchetype} from "./entityArchetype";
 import {Entity} from "./entity";
 import {getOwner} from "./ownership";
+import {EntityCommandBuffer} from "./entityCommandBuffer";
 import type {ComponentCtor} from "./componentType";
 
 /**
@@ -451,5 +452,136 @@ describe("column-mapped moves (moveRowTo)", () => {
         em.addComponent(e, pos); // a detached instance re-adds like a fresh one
         expectViewsOwnRow(e, CountedPosition, asFloat32Array(pos.xyz));
         expect(em.getComponent<CountedPosition>(e, CountedPosition)!.x).toBe(999);
+    });
+});
+
+class OtherObjectBacked extends Component {
+}
+
+describe("command-buffer moves (moveRowWith)", () => {
+    test("instances that travel in a multi-type move view the target column, never detached", () => {
+        const e = em.createEntity();
+        const pos = new CountedPosition(1, 2, 3);
+        const scale = new LocalScale(4, 5, 6);
+        em.addComponents(e, [pos, scale, new ObjectBacked(7)]);
+        const neighbour = em.createEntity(undefined, [new CountedPosition(8, 9, 10), new LocalScale(), new ObjectBacked()]);
+
+        const ecb = new EntityCommandBuffer();
+        ecb.removeComponent(e, ObjectBacked);
+        ecb.addComponent(e, new LocalToWorld());
+        ecb.addComponent(e, new OtherObjectBacked());
+        ecb.playback(em);
+
+        expect(ownerOf(e)).toBe(world.archetypes.getOrCreate([CountedPosition, LocalScale, LocalToWorld, OtherObjectBacked]));
+        expectViewsOwnRow(e, CountedPosition, asFloat32Array(pos.xyz));
+        expectViewsOwnRow(e, LocalScale, asFloat32Array(scale.xyz));
+        expect([pos.x, pos.y, pos.z, scale.x, scale.y, scale.z]).toEqual([1, 2, 3, 4, 5, 6]);
+        expect(em.getComponent<CountedPosition>(neighbour, CountedPosition)!.x).toBe(8);
+        expect(CountedPosition.detaches).toBe(0);
+    });
+
+    test("dropped and replaced instances detach with their values; orphan writes reach no row", () => {
+        const e = em.createEntity(undefined, [new CountedPosition(1, 2, 3), new LocalScale(4, 5, 6)]);
+        const pos = em.getComponent<CountedPosition>(e, CountedPosition)!;
+        const oldScale = ownerOf(e).getColumn(LocalScale.type())!.get(ownerOf(e).getIndexOfEntity(e)!) as LocalScale;
+        const neighbour = em.createEntity(undefined, [new CountedPosition(7, 8, 9), new LocalScale(1, 1, 1)]);
+
+        const ecb = new EntityCommandBuffer();
+        const newScale = new LocalScale(9, 9, 9);
+        ecb.setComponent(e, newScale);
+        ecb.removeComponent(e, CountedPosition);
+        ecb.addComponent(e, new ObjectBacked());
+        ecb.playback(em);
+
+        expect(ownerOf(e)).toBe(world.archetypes.getOrCreate([LocalScale, ObjectBacked]));
+        expect(CountedPosition.detaches).toBe(1);
+        expect([pos.x, pos.y, pos.z]).toEqual([1, 2, 3]);
+        expect([oldScale.x, oldScale.y, oldScale.z]).toEqual([4, 5, 6]);
+        pos.x = 999;
+        oldScale.x = 999;
+        expect(em.getComponent<CountedPosition>(neighbour, CountedPosition)!.x).toBe(7);
+        expect(em.getComponent<LocalScale>(neighbour, LocalScale)!.x).toBe(1);
+        expectViewsOwnRow(e, LocalScale, asFloat32Array(newScale.xyz));
+        expect(em.getComponent<LocalScale>(e, LocalScale)!.x).toBe(9);
+    });
+
+    test("in a type-changing move a set replaces an existing type, and an add beats a set of a new type", () => {
+        const kept = new LocalScale(1, 1, 1);
+        const e = em.createEntity(undefined, [kept, new ObjectBacked(1)]);
+
+        const ecb = new EntityCommandBuffer();
+        const replacement = new ObjectBacked(2);
+        ecb.setComponent(e, replacement);
+        ecb.addComponent(e, new LocalScale(5, 5, 5));
+        ecb.setComponent(e, new LocalPosition(3, 3, 3));
+        const added = new LocalPosition(4, 4, 4);
+        ecb.addComponent(e, added);
+        ecb.playback(em);
+
+        const arch = ownerOf(e), row = arch.getIndexOfEntity(e)!;
+        expect(arch).toBe(world.archetypes.getOrCreate([LocalScale, ObjectBacked, LocalPosition]));
+        expect(arch.getColumn(LocalScale.type())!.get(row)).toBe(kept);
+        expect(arch.getColumn(ObjectBacked.type())!.get(row)).toBe(replacement);
+        expect(arch.getColumn(LocalPosition.type())!.get(row)).toBe(added);
+        expectViewsOwnRow(e, LocalPosition, asFloat32Array(added.xyz));
+        expect(em.getComponent<LocalPosition>(e, LocalPosition)!.x).toBe(4);
+    });
+
+    test("enabled and disabled rows keep their state and values across buffered moves", () => {
+        const es: Entity[] = [];
+        for (let i = 0; i < 6; i++) es.push(em.createEntity(undefined, [new LocalPosition(i, 0, 0), new ObjectBacked(i)]));
+        const disabled = new Set([es[1], es[4], es[5]]);
+        for (const e of disabled) em.setEnabledState(e, false);
+        const source = ownerOf(es[0]);
+
+        const ecb = new EntityCommandBuffer();
+        for (const e of [es[0], es[4]]) {
+            ecb.removeComponent(e, ObjectBacked);
+            ecb.addComponent(e, new LocalScale());
+            ecb.addComponent(e, new OtherObjectBacked());
+        }
+        ecb.addComponent(es[2], new LocalScale());
+        ecb.addComponent(es[2], new OtherObjectBacked());
+        ecb.setEnabledState(es[2], false);
+        disabled.add(es[2]);
+        ecb.playback(em);
+
+        for (let i = 0; i < es.length; i++) {
+            expect(em.isEnabled(es[i])).toBe(!disabled.has(es[i]));
+            expect(em.getComponent<LocalPosition>(es[i], LocalPosition)!.x).toBe(i);
+        }
+        for (const arch of [source, ownerOf(es[0]), ownerOf(es[2])]) {
+            let enabled = 0;
+            for (let row = 0; row < arch.entityCountUnfiltered; row++) if (!disabled.has(arch.getEntityAtIndex(row))) enabled++;
+            expect(arch.entityCount).toBe(enabled);
+        }
+        expect(source.entityCountUnfiltered).toBe(3);
+    });
+
+    test("a buffered move wakes an additions stream in the target, not the source", () => {
+        const stayers: Entity[] = [];
+        for (let i = 0; i < 300; i++) stayers.push(em.createEntity(undefined, [new LocalPosition(i, 0, 0)]));
+        for (let i = 0; i < 300; i++) em.createEntity(undefined, [new LocalPosition(i, 0, 0), new ObjectBacked(i), new OtherObjectBacked()]);
+        const visitedSince = (mark: number, include: ComponentCtor<Component>[], exclude: ComponentCtor<Component>[] = []) => {
+            const visited: Entity[] = [];
+            new EntityQuery(world, include, exclude)
+                .stream({read: {p: LocalPosition}}, {filterLastUpdated: mark, structuralFilter: "additions"})
+                .consumeSpans(({start, end, entities}) => {
+                    for (let i = start; i < end; i++) visited.push(entities[i]);
+                });
+            return visited;
+        };
+        const moved = stayers[150];
+
+        const mark = freshMark();
+        const ecb = new EntityCommandBuffer();
+        ecb.addComponent(moved, new ObjectBacked());
+        ecb.addComponent(moved, new OtherObjectBacked());
+        ecb.playback(em);
+
+        const woken = visitedSince(mark, [LocalPosition, ObjectBacked, OtherObjectBacked]);
+        expect(woken.includes(moved)).toBe(true);
+        expect(woken.length).toBeLessThan(BLOCK_SIZE);
+        expect(visitedSince(mark, [LocalPosition], [ObjectBacked]).length).toBe(0);
     });
 });

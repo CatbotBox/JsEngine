@@ -1,9 +1,11 @@
 /**
  * Structural ECS operations: spawning (one by one, batch, through a command buffer),
- * tag toggles (archetype moves), enable/disable (boundary swaps, the control),
- * despawn, and Parent hierarchies (setup() cascades).
+ * tag toggles (archetype moves), command-buffer moves of existing entities
+ * (multi-type moves), enable/disable (boundary swaps, the control), despawn, and
+ * Parent hierarchies (setup() cascades).
  *
  * Increment 1.0 of docs/roadmap-plan.md: the baseline Phase 1 is judged against.
+ * Phase 2 added the command-buffer move scenario (the 1.0 baseline lacks it).
  * Every sample builds a fresh World, never starts its loop, and calls the
  * EntityManager directly. Scenarios are interleaved round-robin and reported as
  * medians; one untimed warm-up round runs first.
@@ -37,12 +39,14 @@ class Marker extends Component {
 const SPAWN_COUNT = 100_000;
 const TOGGLE_COUNT = 10_000;
 const TOGGLE_FRAMES = 300;
+const ECB_MOVE_FRAMES = 60;
 const HIERARCHY_COUNT = 10_000;
 const HIERARCHY_DEPTH = 4;
 const MIN_SAMPLE_MS = 50;
 
 const SPAWN_TYPES: ComponentCtor<Component>[] = [LocalPosition, LocalRotation, LocalScale, LocalToWorld, Velocity, Marker];
 const TOGGLE_BASE_TYPES: ComponentCtor<Component>[] = [LocalPosition, LocalRotation, LocalScale, LocalToWorld, Velocity];
+const ECB_MOVE_BASE_TYPES: ComponentCtor<Component>[] = [LocalPosition, LocalRotation, LocalScale, LocalToWorld];
 
 function spawnComponents(i: number): Component[] {
     return [
@@ -57,6 +61,10 @@ function spawnComponents(i: number): Component[] {
 
 function toggleBaseComponents(i: number): Component[] {
     return spawnComponents(i).slice(0, TOGGLE_BASE_TYPES.length);
+}
+
+function ecbMoveBaseComponents(i: number): Component[] {
+    return spawnComponents(i).slice(0, ECB_MOVE_BASE_TYPES.length);
 }
 
 interface Fixture {
@@ -190,6 +198,34 @@ const scenarios: Scenario[] = [
         },
     },
     {
+        name: "ECB move 10k x 60 frames, +2/-2 types",
+        ops: TOGGLE_COUNT * ECB_MOVE_FRAMES,
+        opUnit: "move",
+        setup: fixture => spawnOneByOne(fixture, TOGGLE_COUNT, ecbMoveBaseComponents),
+        run: fixture => {
+            const {world, em, entities} = fixture;
+            const ecb = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
+            for (let f = 0; f < ECB_MOVE_FRAMES; f++) {
+                if (f % 2 === 0) {
+                    for (let i = 0; i < entities.length; i++) {
+                        ecb.addComponent(entities[i], new Velocity(1, -1));
+                        ecb.addComponent(entities[i], new Marker());
+                    }
+                } else {
+                    for (let i = 0; i < entities.length; i++) {
+                        ecb.removeComponent(entities[i], Velocity);
+                        ecb.removeComponent(entities[i], Marker);
+                    }
+                }
+                ecb.playback(em);
+            }
+        },
+        verify: fixture => {
+            expectCount(fixture, ECB_MOVE_BASE_TYPES, TOGGLE_COUNT, "ECB move");
+            expectCount(fixture, SPAWN_TYPES, 0, "ECB move");
+        },
+    },
+    {
         name: "enable/disable 10k x 300 frames",
         ops: TOGGLE_COUNT * TOGGLE_FRAMES,
         opUnit: "toggle",
@@ -225,6 +261,7 @@ const scenarios: Scenario[] = [
         name: "spawn 10k Parent hierarchies, depth 4",
         ops: HIERARCHY_COUNT * HIERARCHY_DEPTH,
         opUnit: "entity",
+        repeat: 2,
         run: fixture => {
             const {em, entities} = fixture;
             for (let h = 0; h < HIERARCHY_COUNT; h++) {

@@ -279,6 +279,11 @@ export class ComponentStore<CT extends ComponentType<any>> {
     }
 }
 
+function mapsColumn(columnMap: Int32Array, mappedColumns: number, column: number): boolean {
+    for (let i = 0; i < mappedColumns; i++) if (columnMap[i] === column) return true;
+    return false;
+}
+
 export interface ArchetypeEdge<CT extends ComponentType<any> = ComponentType<any>> {
     readonly target: EntityArchetype<CT>;
     /** One slot per target column: the source column index, or -1 for the added component. */
@@ -291,6 +296,8 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     private readonly _componentData: ComponentStore<CT>[];
     private _componentTypes: Map<CT, number>;
     private readonly _uniqueTypes: CT[]
+    /** `ComponentType.id` of every column, ascending: this archetype's key in the archetype map. */
+    public readonly sortedTypeIds: Int32Array;
     /**
      * Dense array of entity handles, parallel to every component column. The
      * reverse mapping (entity -> row) lives in the global registry (ownership.ts,
@@ -363,6 +370,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         this._componentTypes = map;
         this._componentData = uniqueTypes.map(t => new ComponentStore<CT>(t));
         this._uniqueTypes = uniqueTypes;
+        this.sortedTypeIds = Int32Array.from(uniqueTypes, t => t.id).sort();
     }
 
     public addEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined, time: {
@@ -416,28 +424,53 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         const row = this.getIndexOfEntity(entity);
         if (row === undefined) throw new Error("Entity does not exist");
         const columnMap = edge.columnMap;
-        if (columnMap.length < this._componentData.length) this.detachDroppedAt(row, columnMap);
-        target.appendRowFrom(entity, this, row, columnMap, added, row < this._enabledCount, now);
+        if (columnMap.length < this._componentData.length) this.detachDroppedAt(row, columnMap, columnMap.length);
+        target.appendRowFrom(entity, this, row, columnMap, added, undefined, row < this._enabledCount, now);
         this.vacateRow(row);
         this._lastStructuralChange = now;
     }
 
-    private appendRowFrom(entity: Entity, source: EntityArchetype<CT>, sourceRow: number, columnMap: Int32Array, added: ComponentOf<CT> | undefined, enabled: boolean, now: number) {
+    /**
+     * {@link moveRowTo} for a move that adds, replaces and drops any number of
+     * components at once: target column i takes `supplied[i]` where `columnMap[i]`
+     * is -1, otherwise the source column `columnMap[i]` names. Only the first
+     * `target.componentTypes.length` slots of either array are read, so callers
+     * can pass reused scratch arrays. Source instances that do not travel, dropped
+     * or replaced by a supplied one, detach.
+     */
+    public moveRowWith(entity: Entity, target: EntityArchetype<CT>, columnMap: Int32Array, supplied: readonly (ComponentOf<CT> | undefined)[], time: {
+        elapsedTime: number
+    }) {
+        if (target === this) throw new Error("moveRowWith needs a different archetype; rewrite the row in place instead");
+        const now = time.elapsedTime;
+        const row = this.getIndexOfEntity(entity);
+        if (row === undefined) throw new Error("Entity does not exist");
+        this.detachDroppedAt(row, columnMap, target._componentData.length);
+        target.appendRowFrom(entity, this, row, columnMap, undefined, supplied, row < this._enabledCount, now);
+        this.vacateRow(row);
+        this._lastStructuralChange = now;
+    }
+
+    private appendRowFrom(entity: Entity, source: EntityArchetype<CT>, sourceRow: number, columnMap: Int32Array, added: ComponentOf<CT> | undefined, supplied: readonly (ComponentOf<CT> | undefined)[] | undefined, enabled: boolean, now: number) {
         const row = this.pushEntity(entity);
         const cols = this._componentData, sourceCols = source._componentData;
         for (let i = 0; i < cols.length; i++) {
             const from = columnMap[i];
-            if (from >= 0) cols[i].addFrom(sourceCols[from], sourceRow, now);
-            else if (added !== undefined) cols[i].add(added, now);
-            else throw new Error("component of required type is missing");
+            if (from >= 0) {
+                cols[i].addFrom(sourceCols[from], sourceRow, now);
+                continue;
+            }
+            const component = supplied !== undefined ? supplied[i] : added;
+            if (component === undefined) throw new Error("component of required type is missing");
+            cols[i].add(component, now);
         }
         this.commitAppendedRow(row, enabled, now);
     }
 
-    private detachDroppedAt(row: number, columnMap: Int32Array) {
+    private detachDroppedAt(row: number, columnMap: Int32Array, mappedColumns: number) {
         const cols = this._componentData;
         for (let i = 0; i < cols.length; i++) {
-            if (cols[i].f32Width > 0 && !columnMap.includes(i)) cols[i].detachAt(row);
+            if (cols[i].f32Width > 0 && !mapsColumn(columnMap, mappedColumns, i)) cols[i].detachAt(row);
         }
     }
 
