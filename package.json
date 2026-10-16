@@ -30,7 +30,10 @@
     "clear-logs": "node scripts/clearLogs.js",
     "clear-logs:bun": "bun scripts/clearLogs.js",
     "web:build": "bun scripts/buildWeb.ts",
-    "web": "bun scripts/serveWeb.ts"
+    "web": "bun scripts/serveWeb.ts",
+    "window": "bun scripts/window.ts 2d",
+    "window:3d": "bun scripts/window.ts 3d",
+    "window:smoke": "bun scripts/window.ts 2d --smoke && bun scripts/window.ts 3d --smoke --no-build"
   },
   "devDependencies": {
     "@types/bun": "^1.2.23",
@@ -38,6 +41,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
+    "electron": "^44.8.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   }
