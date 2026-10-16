@@ -49,12 +49,39 @@ function trackFocus(terminal: Terminal): void {
     update();
 }
 
+/**
+ * Atlas pages kept before the glyph atlas is cleared. xterm's WebGL atlas holds one glyph per
+ * (char, fg, bg) and never evicts, so truecolor half-block frames add pages every frame; at
+ * MAX_TEXTURE_IMAGE_UNITS pages (>= 8) it merges pages mid-frame and the cells already placed
+ * that frame sample stale texture coordinates (horizontal smears). Clearing well below that
+ * reuses the existing pages instead.
+ */
+const MAX_ATLAS_PAGES = 4;
+
 function loadWebglRenderer(terminal: Terminal): void {
     try {
         const webgl = new WebglAddon();
         webgl.onContextLoss(() => webgl.dispose());
         terminal.loadAddon(webgl);
+        boundGlyphAtlas(webgl);
     } catch (error) {
         console.warn("WebGL renderer unavailable, using the default renderer:", error);
     }
+}
+
+function boundGlyphAtlas(webgl: WebglAddon): void {
+    let pages = 1;
+    let clearPending = false;
+    webgl.onChangeTextureAtlas(() => pages = 1);
+    webgl.onRemoveTextureAtlasCanvas(() => pages--);
+    webgl.onAddTextureAtlasCanvas(() => {
+        pages++;
+        if (pages < MAX_ATLAS_PAGES || clearPending) return;
+        clearPending = true;
+        // Pages are added while a frame renders; clear after it, not under it.
+        setTimeout(() => {
+            clearPending = false;
+            webgl.clearTextureAtlas();
+        });
+    });
 }
