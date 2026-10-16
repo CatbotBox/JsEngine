@@ -12,6 +12,7 @@ export type {TextureLevel} from './texture';
 export {decodeImageFile, registerImageDecoder} from './image/decodedImage';
 export type {DecodedImage, ImageDecoder} from './image/decodedImage';
 export {decodePng, encodePng} from './image/png';
+export {inflate, inflateRaw} from './image/inflate';
 export {decodePpm, encodePpm} from './image/ppm';
 export {parseMtl} from './mtlParser';
 export type {MaterialLibrary} from './mtlParser';
