@@ -171,3 +171,68 @@ describe("archetype lifetime", () => {
         expect(world.archetypes.getOrCreate([])).toBe(empty);
     });
 });
+
+describe("archetype lookup", () => {
+    const pool = Array.from({length: 20}, () => class extends Component {
+    });
+
+    test("order, repeats, and constructor-vs-token spellings name one archetype", () => {
+        const arch = world.archetypes.getOrCreate([Position, Velocity, Tag]);
+        const createdBefore = created.length;
+
+        expect(world.archetypes.getOrCreate([Tag, Velocity, Position])).toBe(arch);
+        expect(world.archetypes.getOrCreate([Velocity.type(), Tag, Position.type(), Velocity])).toBe(arch);
+        expect(world.archetypes.getOrCreate([Tag, Tag, Velocity, Position, Position])).toBe(arch);
+        expect(created.length).toBe(createdBefore);
+        expect(arch.componentTypes.length).toBe(3);
+    });
+
+    test("every distinct type set gets its own archetype, found again in any order", () => {
+        const types = pool.slice(0, 9);
+        const bySubset: EntityArchetype[] = [];
+        for (let mask = 0; mask < 1 << types.length; mask++) {
+            bySubset.push(world.archetypes.getOrCreate(types.filter((_, i) => mask & (1 << i))));
+        }
+        expect(new Set(bySubset).size).toBe(bySubset.length);
+        for (let mask = 0; mask < 1 << types.length; mask++) {
+            const reversed = types.filter((_, i) => mask & (1 << i)).reverse();
+            expect(world.archetypes.getOrCreate(reversed)).toBe(bySubset[mask]);
+            expect(bySubset[mask].componentTypes.length).toBe(reversed.length);
+        }
+    });
+
+    test("type lists longer than the lookup scratch resolve like short ones", () => {
+        const arch = world.archetypes.getOrCreate(pool);
+        expect(arch.componentTypes.length).toBe(pool.length);
+        expect(world.archetypes.getOrCreate([...pool].reverse())).toBe(arch);
+        expect(world.archetypes.getOrCreate([...pool, ...pool])).toBe(arch);
+        expect(world.archetypes.getOrCreate(pool.slice(1)) === arch).toBe(false);
+    });
+
+    test("sortedTypeIds lists each column's token id once, ascending", () => {
+        const arch = world.archetypes.getOrCreate([Tag, Position, Velocity, Position]);
+        const ids = Array.from(arch.sortedTypeIds);
+        expect(ids).toEqual(arch.componentTypes.map(t => t.id).sort((a, b) => a - b));
+        expect(new Set(ids).size).toBe(3);
+    });
+
+    test("pruning one archetype leaves every other one findable", () => {
+        const kept = pool.slice(0, 6).map((_, i) => world.archetypes.getOrCreate(pool.slice(0, i + 1)));
+        const holders = kept.map(arch => {
+            const e = em.createEntity();
+            em.addComponents(e, arch.componentTypes.map(t => new t.ctor()));
+            return e;
+        });
+        const doomed = world.archetypes.getOrCreate([pool[7], pool[8]]);
+
+        world.archetypes.prune();
+
+        kept.forEach((arch, i) => {
+            expect(world.archetypes.getOrCreate(pool.slice(0, i + 1))).toBe(arch);
+            expect(ownerOf(holders[i])).toBe(arch);
+        });
+        const fresh = world.archetypes.getOrCreate([pool[8], pool[7]]);
+        expect(fresh === doomed).toBe(false);
+        expect(world.archetypes.getOrCreate([pool[7], pool[8]])).toBe(fresh);
+    });
+});

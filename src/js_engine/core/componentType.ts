@@ -13,9 +13,13 @@ export type ComponentCtor<T extends Component> = new (...args: any[]) => T;
  */
 export class ComponentType<C extends Component = Component> {
     private static _registry = new WeakMap<Function, ComponentType<any>>();
+    private static _nextId = 1;
     // 👇 brand so ComponentType<A> is NOT compatible with ComponentType<B>
     // noinspection JSUnusedLocalSymbols
     private readonly __brand!: C;
+
+    /** Process-wide and never reused; the archetype map keys type sets by these. */
+    public readonly id: number;
 
     /**
      * Floats per entity when this component is column-backed (declared via a
@@ -26,6 +30,7 @@ export class ComponentType<C extends Component = Component> {
 
     private constructor(public readonly ctor: ComponentCtor<C>) {
         this.f32Width = (ctor as unknown as { f32Width?: number }).f32Width ?? 0;
+        this.id = ComponentType._nextId++;
     }
 
     static of<T extends Component>(ctor: ComponentCtor<T>): ComponentType<T> {
@@ -46,13 +51,12 @@ export class ComponentType<C extends Component = Component> {
  * The store drives the lifecycle — user code never calls these:
  *  - `writeF32` copies the instance's current values into the column,
  *  - `bindF32` re-points the instance's fields at the column (called on add,
- *    after swaps and row moves, after column growth, and on a single add/remove
- *    archetype move, which hands it straight to the destination column), so
- *    outstanding handles stay live,
+ *    after swaps and row moves, after column growth, and on an archetype move,
+ *    which hands it straight to the destination column), so outstanding handles
+ *    stay live,
  *  - `detachF32` gives the instance back its own private buffer, preserving
  *    values (called when the instance leaves the store with no destination
- *    column: entity removal, its component being removed, or a command-buffer
- *    move, which re-attaches it afterwards).
+ *    column: entity removal, or its component being removed or replaced).
  *
  * A detached instance behaves exactly like a plain component — `new Foo()` starts
  * detached and mutating a handle to a destroyed entity mutates an orphan.
