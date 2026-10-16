@@ -11,8 +11,8 @@
  *
  * Run: bun tests/verifyThreading.ts
  */
-import {MeshRasterizer} from "../src/js_engine/rendering/console/3d/meshRasterizer";
-import {RasterWorkerPool} from "../src/js_engine/rendering/console/3d/rasterWorkerPool";
+import {MeshRasterizer, RasterWorkerPool} from "../src/js_engine/rendering/3d/software";
+import {ConsoleCellResolveTarget} from "../src/js_engine/rendering/console/3d/consoleCellResolveTarget";
 import {ScreenBuffer} from "../src/js_engine/rendering/console/consoleScreenBuffer";
 import {Mesh} from "../src/js_engine/rendering/3d/mesh";
 import {LocalToWorld} from "../src/js_engine/translation";
@@ -29,6 +29,7 @@ import type {WorkerFactory} from "../src/js_engine/platform";
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
 const WORKERS = 3;
 const BOOT_TIMEOUT_MS = 5000;
+const resolveTarget = new ConsoleCellResolveTarget();
 
 const screenSize = new ScreenSize();
 screenSize.x = WIDTH;
@@ -89,7 +90,8 @@ function renderFrame(rasterizer: MeshRasterizer, frame: number, config: PassConf
 
     const buffer = new ScreenBuffer();
     buffer.beginFrame({screenSize} as any, backgroundChar);
-    rasterizer.beginFrame(buffer, WIDTH, HEIGHT, {
+    resolveTarget.begin(buffer, {colorQuantMask: 0xFFFFFF});
+    rasterizer.beginFrame(resolveTarget, WIDTH, HEIGHT, {
         maxDepthFade: 15,
         colorQuantMask: 0xFFFFFF,
         supersample: 1, // AA off: this test compares threaded vs single-threaded output bit for bit

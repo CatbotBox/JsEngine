@@ -22,7 +22,7 @@ import {decodeImageFile} from "../rendering/3d/image/decodedImage";
 import {encodePng} from "../rendering/3d/image/png";
 import {encodePpm} from "../rendering/3d/image/ppm";
 import {meshCachePathFor} from "../rendering/3d/meshCache";
-import {SpriteImage} from "../rendering/console/2d/spriteImage";
+import {SpriteImage} from "../rendering/2d/spriteImage";
 
 describe("path helpers", () => {
     test("joinPath normalizes separators, dot segments and parent references", () => {

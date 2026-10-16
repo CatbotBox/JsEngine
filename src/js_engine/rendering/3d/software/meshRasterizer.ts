@@ -1,12 +1,12 @@
-import {FaceCulling} from "../../3d/faceCulling";
+import {FaceCulling} from "../faceCulling";
 import {DeepReadonly} from "../../../util/tokenUtils";
-import {Mesh} from "../../3d/mesh";
-import {ViewSpaceMesh} from "../../3d/viewSpaceMesh";
-import {multiplyPackedRgb} from "../../3d/material";
-import {ScreenBuffer} from "../consoleScreenBuffer";
+import {Mesh} from "../mesh";
+import {ViewSpaceMesh} from "../viewSpaceMesh";
+import {multiplyPackedRgb} from "../material";
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
 import {RasterWorkerPool} from "./rasterWorkerPool";
 import {TextureStore} from "./textureStore";
+import {RasterTarget, SubsampleLayers} from "./rasterTarget";
 import type {WorkerFactory} from "../../../platform";
 
 export interface MeshRasterizerConfig {
@@ -16,19 +16,16 @@ export interface MeshRasterizerConfig {
     colorQuantMask: number;
     /**
      * Antialiasing factor: each cell is rasterized as supersample×supersample
-     * subsamples whose colors are averaged (uncovered subsamples take
-     * backgroundColor). 1 disables AA and reproduces the single-sample pipeline exactly.
+     * subsamples for the RasterTarget to resolve. 1 disables AA and reproduces
+     * the single-sample pipeline exactly.
      */
     supersample: number;
     /** Per-axis overrides for supersample; terminal cells are ~2:1, so 2x4 gives square subsamples. */
     supersampleX?: number;
     supersampleY?: number;
-    /** Packed 0xRRGGBB that uncovered subsamples blend toward at silhouettes (default black). */
-    backgroundColor?: number;
     /**
-     * Render two vertical samples per cell and emit them as an upper-half-block
-     * glyph with foreground + background colors, doubling vertical resolution.
-     * Each half still gets supersampleX × supersampleY subsamples.
+     * Render two vertical samples per cell (top half first), doubling vertical
+     * resolution. Each half still gets supersampleX × supersampleY subsamples.
      */
     halfBlock?: boolean;
     /** Worker threads to use (0 disables threading entirely). */
@@ -40,6 +37,8 @@ export interface MeshRasterizerConfig {
     /** Sample material textures; off renders every material by its diffuse color. */
     textures: boolean;
 }
+
+type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
 export const NEAR_PLANE_Z = 0.1;
 const LOG2 = Math.log(2);
@@ -65,12 +64,12 @@ function lerpPackedColor(from: number, to: number, t: number): number {
 }
 
 /**
- * Frame-scoped triangle pipeline for the console 3D pass:
+ * Frame-scoped software triangle pipeline:
  * model→view vertex transform, near-plane clipping, backface culling and
  * screen-space projection all run scalar over flat typed arrays (zero per-frame
  * allocation in steady state). Packed triangles are rasterized either on a
- * worker pool (disjoint row bands over shared memory) or synchronously, then
- * depth-composited into the ScreenBuffer.
+ * worker pool (disjoint row bands over shared memory) or synchronously into
+ * subsample layers, which are handed to a RasterTarget on every flush.
  */
 export class MeshRasterizer {
     private pool?: RasterWorkerPool;
@@ -90,12 +89,18 @@ export class MeshRasterizer {
     private readonly localTextureStore = TextureStore.growable();
     private usingPool = false;
 
-    // Cell-resolution buffers the supersampled layers are resolved into before
-    // depth-compositing (unused when supersample == 1).
-    private resolveDepth = new Float32Array(0);
-    private resolveColor = new Int32Array(0);
-    private resolveDepthBottom = new Float32Array(0);
-    private resolveColorBottom = new Int32Array(0);
+    private readonly layers: Writable<SubsampleLayers> = {
+        depth: this.localDepthLayer,
+        color: this.localColorLayer,
+        width: 0,
+        height: 0,
+        supersampleX: 1,
+        supersampleY: 1,
+        rowsPerCell: 1,
+        rasterWidth: 0,
+        rasterHeight: 0,
+        halfBlock: false,
+    };
 
     private viewSpaceMesh = new ViewSpaceMesh();
     private vertexColors = new Int32Array(0);
@@ -105,7 +110,7 @@ export class MeshRasterizer {
     private materialLevelCounts = new Int32Array(0);
 
     // Frame state
-    private screenBuffer!: ScreenBuffer;
+    private target!: RasterTarget;
     private config!: MeshRasterizerConfig;
     private width = 0;
     private height = 0;
@@ -114,8 +119,6 @@ export class MeshRasterizer {
     // Supersampling: raster* dimensions are the subsample grid (cell dims x supersample factors)
     // that the kernel, layers and band binning all operate in.
     private supersampleX = 1;
-    private supersampleY = 1;
-    private halfBlock = false;
     private rowsPerCell = 1;
     private subsamplesPerCell = 1;
     private rasterWidth = 0;
@@ -136,8 +139,8 @@ export class MeshRasterizer {
         return this.usingPool && pool !== undefined && pool.usable && pool.ready ? pool.workerCount : 0;
     }
 
-    public beginFrame(screenBuffer: ScreenBuffer, width: number, height: number, config: MeshRasterizerConfig): void {
-        this.screenBuffer = screenBuffer;
+    public beginFrame(target: RasterTarget, width: number, height: number, config: MeshRasterizerConfig): void {
+        this.target = target;
         this.config = config;
         this.width = width;
         this.height = height;
@@ -147,8 +150,6 @@ export class MeshRasterizer {
         const sy = clampSupersample(config.supersampleY ?? config.supersample);
         const halfBlock = config.halfBlock === true;
         this.supersampleX = sx;
-        this.supersampleY = sy;
-        this.halfBlock = halfBlock;
         this.rowsPerCell = halfBlock ? sy * 2 : sy;
         this.subsamplesPerCell = sx * this.rowsPerCell;
         this.rasterWidth = width * sx;
@@ -181,14 +182,17 @@ export class MeshRasterizer {
             this.colorLayer = this.localColorLayer;
             this.textureStore = this.localTextureStore;
         }
-        if (this.subsamplesPerCell > 1 && this.resolveDepth.length < width * height) {
-            this.resolveDepth = new Float32Array(width * height);
-            this.resolveColor = new Int32Array(width * height);
-        }
-        if (halfBlock && this.resolveDepthBottom.length < width * height) {
-            this.resolveDepthBottom = new Float32Array(width * height);
-            this.resolveColorBottom = new Int32Array(width * height);
-        }
+        const layers = this.layers;
+        layers.depth = this.depthLayer;
+        layers.color = this.colorLayer;
+        layers.width = width;
+        layers.height = height;
+        layers.supersampleX = sx;
+        layers.supersampleY = sy;
+        layers.rowsPerCell = this.rowsPerCell;
+        layers.rasterWidth = this.rasterWidth;
+        layers.rasterHeight = this.rasterHeight;
+        layers.halfBlock = halfBlock;
         this.depthLayer.fill(Number.POSITIVE_INFINITY, 0, rasterCells);
     }
 
@@ -537,16 +541,7 @@ export class MeshRasterizer {
             rasterizeTriangleBand(this.triData, this.triInts, this.triCount, null, 0, 0, this.depthLayer, this.colorLayer, store.texels, store.table, rasterWidth, 0, rasterHeight, config.maxDepthFade, quantMask);
         }
 
-        if (singleSample) {
-            this.screenBuffer.mergeRgbLayer(this.depthLayer, this.colorLayer);
-        } else if (this.halfBlock) {
-            this.resolveCells(this.resolveDepth, this.resolveColor, 0);
-            this.resolveCells(this.resolveDepthBottom, this.resolveColorBottom, this.supersampleY);
-            this.screenBuffer.mergeRgbSplitLayer(this.resolveDepth, this.resolveColor, this.resolveDepthBottom, this.resolveColorBottom);
-        } else {
-            this.resolveCells(this.resolveDepth, this.resolveColor, 0);
-            this.screenBuffer.mergeRgbLayer(this.resolveDepth, this.resolveColor);
-        }
+        this.target.composite(this.layers);
         this.triCount = 0;
         this.bboxAreaAccum = 0;
         if (prepareForMore) {
@@ -555,59 +550,7 @@ export class MeshRasterizer {
         }
     }
 
-    /**
-     * Collapse supersampleX × supersampleY subsamples per cell (starting at the
-     * given subsample row within each cell) down to cell resolution: a cell's
-     * color is the average of its subsamples with uncovered ones taking the
-     * background color (so silhouette edges blend toward the terminal
-     * background), its depth the closest covered subsample. Cells with no
-     * covered subsample stay +Infinity so the merge skips them.
-     */
-    private resolveCells(outDepth: Float32Array, outColor: Int32Array, firstRow: number): void {
-        const {width, height, supersampleX: sx, supersampleY: sy, rowsPerCell, rasterWidth} = this;
-        const ssArea = sx * sy;
-        const srcDepth = this.depthLayer;
-        const srcColor = this.colorLayer;
-        const quantMask = this.config.colorQuantMask & 0xFFFFFF;
-        const background = (this.config.backgroundColor ?? 0) & 0xFFFFFF;
-        const bgR = (background >> 16) & 255, bgG = (background >> 8) & 255, bgB = background & 255;
-
-        for (let cy = 0; cy < height; cy++) {
-            const rowBase = (cy * rowsPerCell + firstRow) * rasterWidth;
-            const outBase = cy * width;
-            for (let cx = 0; cx < width; cx++) {
-                let minDepth = Number.POSITIVE_INFINITY;
-                let r = 0, g = 0, b = 0, covered = 0;
-                const cellBase = rowBase + cx * sx;
-                for (let row = 0; row < sy; row++) {
-                    let si = cellBase + row * rasterWidth;
-                    for (let column = 0; column < sx; column++, si++) {
-                        const d = srcDepth[si];
-                        if (d < Number.POSITIVE_INFINITY) {
-                            covered++;
-                            if (d < minDepth) minDepth = d;
-                            const c = srcColor[si];
-                            r += (c >> 16) & 255;
-                            g += (c >> 8) & 255;
-                            b += c & 255;
-                        }
-                    }
-                }
-                if (covered === 0) {
-                    outDepth[outBase + cx] = Number.POSITIVE_INFINITY;
-                    continue;
-                }
-                const uncovered = ssArea - covered;
-                r += bgR * uncovered;
-                g += bgG * uncovered;
-                b += bgB * uncovered;
-                outDepth[outBase + cx] = minDepth;
-                outColor[outBase + cx] = ((Math.round(r / ssArea) << 16) | (Math.round(g / ssArea) << 8) | Math.round(b / ssArea)) & quantMask;
-            }
-        }
-    }
-
-    /** Rasterize any queued triangles and composite them into the screen buffer. */
+    /** Rasterize any queued triangles and hand them to the target. */
     public endFrame(): void {
         this.flushBatch(false);
     }

@@ -10,7 +10,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "."
+    "rootDir": ".",
+    // @electron/fuses declares its types only through package.json "exports", which
+    // "moduleResolution": "Node" does not read (scripts/packageWindow.ts imports it).
+    "paths": {"@electron/fuses": ["./node_modules/@electron/fuses/dist/index.d.ts"]}
   },
   // `exclude` is restated because it is inherited from tsconfig.json, which drops
   // the unit tests from the build output — the gate must still cover them.
@@ -19,5 +22,5 @@
   // snapshot that could not typecheck) is gone. It had kept verifyWorld and
   // verifyThreading outside every gate, and both had silently drifted.
   "exclude": ["node_modules", "dist"],
-  "include": ["src/**/*", "demo/**/*", "bench/**/*", "scripts/**/*.ts", "tests/**/*.ts", "web/**/*.ts"]
+  "include": ["src/**/*", "demo/**/*", "bench/**/*", "scripts/**/*.ts", "tests/**/*.ts", "web/**/*.ts", "window/**/*.ts"]
 }

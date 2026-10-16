@@ -1,100 +1,526 @@
 /**
- * zlib (RFC 1950) over DEFLATE (RFC 1951), synchronous and self-contained: the `Platform.inflate`
- * of hosts without zlib. Stored, fixed and dynamic Huffman blocks; preset dictionaries are not
- * supported (PNG never uses them).
+ * zlib (RFC 1950) and raw DEFLATE (RFC 1951) decoder.
  *
- * Huffman codes decode through one flat table per code, indexed by the next `maxLength` stream
- * bits (codes are stored bit-reversed, so the table is indexed with the low bits of the bit
- * buffer). An entry is `symbol << 4 | codeLength`; 0 marks a bit pattern no code starts with.
+ * A Huffman table is one flat Int32Array: a primary table indexed by the next `primaryBits` bits of the stream
+ * (codes are stored bit-reversed, since DEFLATE packs them MSB-first into an LSB-first bit stream), followed by
+ * sub-tables for codes longer than `primaryBits`. Entry layout:
+ *   bits 0-3    bits to consume: the code length, or inside a sub-table the length minus the primary bits;
+ *               for a sub-table link, the primary bits
+ *   bits 4-7    extra bits after the code (length/distance), or for a link the sub-table's index width
+ *   bits 8-10   kind: literal, base (length or distance), end of block, link, invalid
+ *   bits 16-30  literal byte, length/distance base, or for a link the sub-table's offset
  */
+
+const KIND_LITERAL = 0;
+const KIND_BASE = 1 << 8;
+const KIND_END = 2 << 8;
+const KIND_LINK = 3 << 8;
+const KIND_INVALID = 4 << 8;
+const KIND_MASK = 7 << 8;
 
 const MAX_CODE_LENGTH = 15;
-const END_OF_BLOCK = 256;
+const LITERAL_PRIMARY_BITS = 10;
+const DISTANCE_PRIMARY_BITS = 8;
+const CODE_LENGTH_PRIMARY_BITS = 7;
+
+const LITERAL_LENGTH_SYMBOL_COUNT = 288;
+const DISTANCE_SYMBOL_COUNT = 32;
+const CODE_LENGTH_SYMBOL_COUNT = 19;
 const MAX_LITERAL_LENGTH_CODES = 286;
 const MAX_DISTANCE_CODES = 30;
-const ADLER_MODULUS = 65521;
-/** zlib's NMAX: bytes summed before both Adler-32 sums are reduced, so they stay below 2^32. */
-const ADLER_CHUNK = 5552;
-/** Matches shorter than this copy byte by byte; longer non-overlapping ones use `copyWithin`. */
-const BYTE_COPY_LIMIT = 32;
+const END_OF_BLOCK = 256;
 
+const LITERAL_TABLE_SIZE = (1 << LITERAL_PRIMARY_BITS) + LITERAL_LENGTH_SYMBOL_COUNT * (1 << (MAX_CODE_LENGTH - LITERAL_PRIMARY_BITS));
+const DISTANCE_TABLE_SIZE = (1 << DISTANCE_PRIMARY_BITS) + DISTANCE_SYMBOL_COUNT * (1 << (MAX_CODE_LENGTH - DISTANCE_PRIMARY_BITS));
+const CODE_LENGTH_TABLE_SIZE = 1 << CODE_LENGTH_PRIMARY_BITS;
+
+const BLOCK_STORED = 0;
+const BLOCK_FIXED = 1;
+const BLOCK_DYNAMIC = 2;
+
+const ZLIB_METHOD_DEFLATE = 8;
+const ZLIB_MAX_WINDOW_BITS_LOG = 7;
+const ZLIB_FLAG_DICTIONARY = 0x20;
+const ADLER_MODULUS = 65521;
+const ADLER_CHUNK = 3000;
+
+const MIN_OUTPUT_CAPACITY = 1 << 15;
+const BULK_COPY_MIN_LENGTH = 32;
+
+const LENGTH_BASE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+const LENGTH_EXTRA = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+const DISTANCE_BASE = [
+    1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145,
+    8193, 12289, 16385, 24577,
+];
+const DISTANCE_EXTRA = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
 const CODE_LENGTH_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
-const LENGTH_BASE = new Uint16Array([
-    3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31,
-    35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258,
-]);
-const LENGTH_EXTRA = new Uint8Array([
-    0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
-    3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
-]);
-const DISTANCE_BASE = new Uint16Array([
-    1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
-    257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
-]);
-const DISTANCE_EXTRA = new Uint8Array([
-    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
-    7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
-]);
+const LITERAL_LENGTH_SYMBOLS = literalLengthSymbols();
+const DISTANCE_SYMBOLS = distanceSymbols();
+const CODE_LENGTH_SYMBOLS = codeLengthSymbols();
 
-interface HuffmanTable {
-    readonly entries: Int32Array;
-    readonly mask: number;
+export function inflate(bytes: Uint8Array): Uint8Array {
+    if (bytes.length < 2) throw new Error("inflate: zlib stream is truncated (missing header)");
+    const cmf = bytes[0];
+    const flg = bytes[1];
+    if ((cmf * 256 + flg) % 31 !== 0) throw new Error("inflate: bad zlib header checksum");
+    if ((cmf & 15) !== ZLIB_METHOD_DEFLATE) throw new Error(`inflate: unsupported zlib compression method ${cmf & 15}`);
+    if (cmf >> 4 > ZLIB_MAX_WINDOW_BITS_LOG) throw new Error(`inflate: invalid zlib window size ${cmf >> 4}`);
+    if (flg & ZLIB_FLAG_DICTIONARY) throw new Error("inflate: zlib preset dictionaries (FDICT) are not supported");
+
+    const inflater = new Inflater(bytes, 2);
+    inflater.run();
+    const trailer = inflater.alignToByte();
+    if (trailer + 4 > bytes.length) throw new Error("inflate: zlib stream is truncated (missing Adler-32)");
+    const expected = ((bytes[trailer] << 24) | (bytes[trailer + 1] << 16) | (bytes[trailer + 2] << 8) | bytes[trailer + 3]) >>> 0;
+    const output = inflater.output();
+    if (adler32(output) !== expected) throw new Error("inflate: Adler-32 mismatch (corrupt data)");
+    return output;
 }
 
-let fixedTables: {literalLength: HuffmanTable, distance: HuffmanTable} | undefined;
-
-function fixedHuffmanTables(): {literalLength: HuffmanTable, distance: HuffmanTable} {
-    if (fixedTables !== undefined) return fixedTables;
-    const literalLengths = new Uint8Array(288);
-    literalLengths.fill(8, 0, 144);
-    literalLengths.fill(9, 144, 256);
-    literalLengths.fill(7, 256, 280);
-    literalLengths.fill(8, 280, 288);
-    const distanceLengths = new Uint8Array(32).fill(5);
-    fixedTables = {
-        literalLength: buildTable(literalLengths, 0, 288, new Int32Array(1 << 9)),
-        distance: buildTable(distanceLengths, 0, 32, new Int32Array(1 << 5)),
-    };
-    return fixedTables;
+export function inflateRaw(bytes: Uint8Array): Uint8Array {
+    const inflater = new Inflater(bytes, 0);
+    inflater.run();
+    return inflater.output();
 }
 
-/**
- * Canonical Huffman table for `lengths[offset, offset + count)`, written into `scratch` (which must
- * hold 2^maxLength entries). Over-subscribed code sets throw; incomplete ones are allowed, as zlib
- * allows a single-code distance tree, and their missing patterns stay 0 so decoding them throws.
- */
-function buildTable(lengths: Uint8Array, offset: number, count: number, scratch: Int32Array): HuffmanTable {
-    const lengthCounts = new Uint16Array(MAX_CODE_LENGTH + 1);
-    let maxLength = 0;
-    for (let i = 0; i < count; i++) {
-        const length = lengths[offset + i];
-        lengthCounts[length]++;
-        if (length > maxLength) maxLength = length;
+function adler32(data: Uint8Array): number {
+    let a = 1, b = 0, i = 0;
+    const end = data.length;
+    while (i < end) {
+        const chunkEnd = Math.min(i + ADLER_CHUNK, end);
+        const unrolledEnd = chunkEnd - 7;
+        for (; i < unrolledEnd; i += 8) {
+            a += data[i]; b += a;
+            a += data[i + 1]; b += a;
+            a += data[i + 2]; b += a;
+            a += data[i + 3]; b += a;
+            a += data[i + 4]; b += a;
+            a += data[i + 5]; b += a;
+            a += data[i + 6]; b += a;
+            a += data[i + 7]; b += a;
+        }
+        for (; i < chunkEnd; i++) {
+            a += data[i];
+            b += a;
+        }
+        a %= ADLER_MODULUS;
+        b %= ADLER_MODULUS;
     }
+    return ((b << 16) | a) >>> 0;
+}
+
+let fixedLiteralTable: Int32Array | undefined;
+let fixedDistanceTable: Int32Array | undefined;
+
+function fixedTables(): [Int32Array, Int32Array] {
+    if (fixedLiteralTable === undefined || fixedDistanceTable === undefined) {
+        const lengths = new Uint8Array(LITERAL_LENGTH_SYMBOL_COUNT + DISTANCE_SYMBOL_COUNT);
+        lengths.fill(8, 0, 144);
+        lengths.fill(9, 144, 256);
+        lengths.fill(7, 256, 280);
+        lengths.fill(8, 280, LITERAL_LENGTH_SYMBOL_COUNT);
+        lengths.fill(5, LITERAL_LENGTH_SYMBOL_COUNT);
+        const literal = new Int32Array(LITERAL_TABLE_SIZE);
+        const distance = new Int32Array(DISTANCE_TABLE_SIZE);
+        buildHuffmanTable(lengths, 0, LITERAL_LENGTH_SYMBOL_COUNT, LITERAL_LENGTH_SYMBOLS, LITERAL_PRIMARY_BITS, literal, true, "literal/length");
+        buildHuffmanTable(lengths, LITERAL_LENGTH_SYMBOL_COUNT, DISTANCE_SYMBOL_COUNT, DISTANCE_SYMBOLS, DISTANCE_PRIMARY_BITS, distance, true, "distance");
+        fixedLiteralTable = literal;
+        fixedDistanceTable = distance;
+    }
+    return [fixedLiteralTable, fixedDistanceTable];
+}
+
+class Inflater {
+    private pos: number;
+    private bitBuffer = 0;
+    private bitCount = 0;
+    private out: Uint8Array;
+    private outPos = 0;
+    private readonly inputEnd: number;
+    private dynamicLiteralTable: Int32Array | undefined;
+    private dynamicDistanceTable: Int32Array | undefined;
+
+    public constructor(private readonly input: Uint8Array, start: number) {
+        this.pos = start;
+        this.inputEnd = input.length;
+        this.out = new Uint8Array(Math.max(MIN_OUTPUT_CAPACITY, input.length * 4));
+    }
+
+    public run(): void {
+        let final = 0;
+        while (final === 0) {
+            final = this.readBits(1);
+            const type = this.readBits(2);
+            if (type === BLOCK_STORED) {
+                this.copyStoredBlock();
+            } else if (type === BLOCK_FIXED) {
+                const [literal, distance] = fixedTables();
+                this.decodeHuffmanBlock(literal, distance);
+            } else if (type === BLOCK_DYNAMIC) {
+                this.readDynamicTables();
+                this.decodeHuffmanBlock(this.dynamicLiteralTable!, this.dynamicDistanceTable!);
+            } else {
+                throw new Error("inflate: invalid block type 3");
+            }
+            this.checkOverrun();
+        }
+    }
+
+    public output(): Uint8Array {
+        return this.out.subarray(0, this.outPos);
+    }
+
+    public alignToByte(): number {
+        const partial = this.bitCount & 7;
+        this.bitBuffer >>>= partial;
+        this.bitCount -= partial;
+        this.pos -= this.bitCount >> 3;
+        this.bitBuffer = 0;
+        this.bitCount = 0;
+        return this.pos;
+    }
+
+    private readBits(count: number): number {
+        while (this.bitCount < count) {
+            if (this.pos < this.inputEnd) this.bitBuffer |= this.input[this.pos] << this.bitCount;
+            this.pos++;
+            this.bitCount += 8;
+        }
+        const value = this.bitBuffer & ((1 << count) - 1);
+        this.bitBuffer >>>= count;
+        this.bitCount -= count;
+        this.checkOverrun();
+        return value;
+    }
+
+    private checkOverrun(): void {
+        if (this.pos > this.inputEnd && (this.pos - this.inputEnd) * 8 > this.bitCount) {
+            throw new Error("inflate: DEFLATE stream is truncated");
+        }
+    }
+
+    private failAt(pos: number, bitCount: number, message: string): never {
+        this.pos = pos;
+        this.bitCount = bitCount;
+        this.checkOverrun();
+        throw new Error(`inflate: ${message}`);
+    }
+
+    private refillNearEnd(pos: number, bitBuffer: number, bitCount: number): void {
+        while (bitCount < 16) {
+            if (pos < this.inputEnd) {
+                bitBuffer |= this.input[pos] << bitCount;
+            } else if ((pos - this.inputEnd) * 8 > bitCount) {
+                throw new Error("inflate: DEFLATE stream is truncated");
+            }
+            pos++;
+            bitCount += 8;
+        }
+        this.pos = pos;
+        this.bitBuffer = bitBuffer;
+        this.bitCount = bitCount;
+    }
+
+    private ensureCapacity(minimumLength: number): void {
+        if (minimumLength <= this.out.length) return;
+        const grown = new Uint8Array(Math.max(minimumLength, this.out.length * 2));
+        grown.set(this.out.subarray(0, this.outPos));
+        this.out = grown;
+    }
+
+    private copyStoredBlock(): void {
+        const start = this.alignToByte();
+        const input = this.input;
+        if (start + 4 > this.inputEnd) throw new Error("inflate: DEFLATE stream is truncated (stored block header)");
+        const length = input[start] | (input[start + 1] << 8);
+        const complement = input[start + 2] | (input[start + 3] << 8);
+        if ((length ^ 0xFFFF) !== complement) throw new Error("inflate: stored block length does not match its complement");
+        const dataStart = start + 4;
+        if (dataStart + length > this.inputEnd) throw new Error("inflate: DEFLATE stream is truncated (stored block data)");
+        this.ensureCapacity(this.outPos + length);
+        this.out.set(input.subarray(dataStart, dataStart + length), this.outPos);
+        this.outPos += length;
+        this.pos = dataStart + length;
+    }
+
+    private readDynamicTables(): void {
+        const literalCount = this.readBits(5) + 257;
+        const distanceCount = this.readBits(5) + 1;
+        const codeLengthCount = this.readBits(4) + 4;
+        if (literalCount > MAX_LITERAL_LENGTH_CODES) throw new Error(`inflate: too many literal/length codes (${literalCount})`);
+        if (distanceCount > MAX_DISTANCE_CODES) throw new Error(`inflate: too many distance codes (${distanceCount})`);
+
+        const codeLengthLengths = new Uint8Array(CODE_LENGTH_SYMBOL_COUNT);
+        for (let i = 0; i < codeLengthCount; i++) codeLengthLengths[CODE_LENGTH_ORDER[i]] = this.readBits(3);
+        const codeLengthTable = new Int32Array(CODE_LENGTH_TABLE_SIZE);
+        buildHuffmanTable(codeLengthLengths, 0, CODE_LENGTH_SYMBOL_COUNT, CODE_LENGTH_SYMBOLS, CODE_LENGTH_PRIMARY_BITS, codeLengthTable, false, "code length");
+
+        const total = literalCount + distanceCount;
+        const lengths = new Uint8Array(total);
+        let i = 0;
+        while (i < total) {
+            while (this.bitCount < CODE_LENGTH_PRIMARY_BITS) this.pullByte();
+            const entry = codeLengthTable[this.bitBuffer & (CODE_LENGTH_TABLE_SIZE - 1)];
+            if ((entry & KIND_MASK) === KIND_INVALID) throw new Error("inflate: invalid code length code");
+            const used = entry & 15;
+            this.bitBuffer >>>= used;
+            this.bitCount -= used;
+            this.checkOverrun();
+            const symbol = entry >>> 16;
+            if (symbol < 16) {
+                lengths[i++] = symbol;
+                continue;
+            }
+            let repeat: number;
+            let value = 0;
+            if (symbol === 16) {
+                if (i === 0) throw new Error("inflate: code length repeat with no previous length");
+                value = lengths[i - 1];
+                repeat = 3 + this.readBits(2);
+            } else if (symbol === 17) {
+                repeat = 3 + this.readBits(3);
+            } else {
+                repeat = 11 + this.readBits(7);
+            }
+            if (i + repeat > total) throw new Error("inflate: code length repeat runs past the end of the code lengths");
+            lengths.fill(value, i, i + repeat);
+            i += repeat;
+        }
+        if (lengths[END_OF_BLOCK] === 0) throw new Error("inflate: dynamic block has no end-of-block code");
+
+        this.dynamicLiteralTable ??= new Int32Array(LITERAL_TABLE_SIZE);
+        this.dynamicDistanceTable ??= new Int32Array(DISTANCE_TABLE_SIZE);
+        buildHuffmanTable(lengths, 0, literalCount, LITERAL_LENGTH_SYMBOLS, LITERAL_PRIMARY_BITS, this.dynamicLiteralTable, true, "literal/length");
+        buildHuffmanTable(lengths, literalCount, distanceCount, DISTANCE_SYMBOLS, DISTANCE_PRIMARY_BITS, this.dynamicDistanceTable, true, "distance");
+    }
+
+    private pullByte(): void {
+        if (this.pos < this.inputEnd) this.bitBuffer |= this.input[this.pos] << this.bitCount;
+        this.pos++;
+        this.bitCount += 8;
+    }
+
+    private decodeHuffmanBlock(literalTable: Int32Array, distanceTable: Int32Array): void {
+        const input = this.input;
+        const inputEnd = this.inputEnd;
+        const literalMask = (1 << LITERAL_PRIMARY_BITS) - 1;
+        const distanceMask = (1 << DISTANCE_PRIMARY_BITS) - 1;
+        let pos = this.pos;
+        let bitBuffer = this.bitBuffer;
+        let bitCount = this.bitCount;
+        let out = this.out;
+        let outPos = this.outPos;
+        let capacity = out.length;
+
+        for (;;) {
+            if (bitCount < 16) {
+                if (pos + 1 < inputEnd) {
+                    bitBuffer |= (input[pos] | (input[pos + 1] << 8)) << bitCount;
+                    pos += 2;
+                    bitCount += 16;
+                } else {
+                    this.refillNearEnd(pos, bitBuffer, bitCount);
+                    pos = this.pos;
+                    bitBuffer = this.bitBuffer;
+                    bitCount = this.bitCount;
+                }
+            }
+            let entry = literalTable[bitBuffer & literalMask];
+            if ((entry & KIND_MASK) === KIND_LINK) {
+                bitBuffer >>>= LITERAL_PRIMARY_BITS;
+                bitCount -= LITERAL_PRIMARY_BITS;
+                entry = literalTable[(entry >>> 16) + (bitBuffer & ((1 << ((entry >> 4) & 15)) - 1))];
+            }
+            const literalBits = entry & 15;
+            bitBuffer >>>= literalBits;
+            bitCount -= literalBits;
+            const kind = entry & KIND_MASK;
+
+            if (kind === KIND_LITERAL) {
+                if (outPos === capacity) {
+                    this.outPos = outPos;
+                    this.ensureCapacity(outPos + 1);
+                    out = this.out;
+                    capacity = out.length;
+                }
+                out[outPos++] = entry >>> 16;
+                continue;
+            }
+            if (kind !== KIND_BASE) {
+                if (kind === KIND_END) break;
+                this.failAt(pos, bitCount, "invalid literal/length code");
+            }
+
+            let length = entry >>> 16;
+            const lengthExtra = (entry >> 4) & 15;
+            if (lengthExtra !== 0) {
+                if (bitCount < lengthExtra) {
+                    if (pos + 1 < inputEnd) {
+                        bitBuffer |= (input[pos] | (input[pos + 1] << 8)) << bitCount;
+                        pos += 2;
+                        bitCount += 16;
+                    } else {
+                        this.refillNearEnd(pos, bitBuffer, bitCount);
+                        pos = this.pos;
+                        bitBuffer = this.bitBuffer;
+                        bitCount = this.bitCount;
+                    }
+                }
+                length += bitBuffer & ((1 << lengthExtra) - 1);
+                bitBuffer >>>= lengthExtra;
+                bitCount -= lengthExtra;
+            }
+
+            if (bitCount < 16) {
+                if (pos + 1 < inputEnd) {
+                    bitBuffer |= (input[pos] | (input[pos + 1] << 8)) << bitCount;
+                    pos += 2;
+                    bitCount += 16;
+                } else {
+                    this.refillNearEnd(pos, bitBuffer, bitCount);
+                    pos = this.pos;
+                    bitBuffer = this.bitBuffer;
+                    bitCount = this.bitCount;
+                }
+            }
+            entry = distanceTable[bitBuffer & distanceMask];
+            if ((entry & KIND_MASK) === KIND_LINK) {
+                bitBuffer >>>= DISTANCE_PRIMARY_BITS;
+                bitCount -= DISTANCE_PRIMARY_BITS;
+                entry = distanceTable[(entry >>> 16) + (bitBuffer & ((1 << ((entry >> 4) & 15)) - 1))];
+            }
+            if ((entry & KIND_MASK) !== KIND_BASE) this.failAt(pos, bitCount, "invalid distance code");
+            const distanceBits = entry & 15;
+            bitBuffer >>>= distanceBits;
+            bitCount -= distanceBits;
+
+            let distance = entry >>> 16;
+            const distanceExtra = (entry >> 4) & 15;
+            if (distanceExtra !== 0) {
+                if (bitCount < distanceExtra) {
+                    if (pos + 1 < inputEnd) {
+                        bitBuffer |= (input[pos] | (input[pos + 1] << 8)) << bitCount;
+                        pos += 2;
+                        bitCount += 16;
+                    } else {
+                        this.refillNearEnd(pos, bitBuffer, bitCount);
+                        pos = this.pos;
+                        bitBuffer = this.bitBuffer;
+                        bitCount = this.bitCount;
+                    }
+                }
+                distance += bitBuffer & ((1 << distanceExtra) - 1);
+                bitBuffer >>>= distanceExtra;
+                bitCount -= distanceExtra;
+            }
+            if (distance > outPos) this.failAt(pos, bitCount, `distance ${distance} is too far back (only ${outPos} bytes written)`);
+
+            const end = outPos + length;
+            if (end > capacity) {
+                this.outPos = outPos;
+                this.ensureCapacity(end);
+                out = this.out;
+                capacity = out.length;
+            }
+            let from = outPos - distance;
+            if (length < BULK_COPY_MIN_LENGTH) {
+                while (outPos < end) out[outPos++] = out[from++];
+            } else if (distance === 1) {
+                out.fill(out[from], outPos, end);
+                outPos = end;
+            } else {
+                while (outPos < end) {
+                    const chunk = Math.min(outPos - from, end - outPos);
+                    out.copyWithin(outPos, from, from + chunk);
+                    outPos += chunk;
+                }
+            }
+        }
+
+        this.pos = pos;
+        this.bitBuffer = bitBuffer;
+        this.bitCount = bitCount;
+        this.outPos = outPos;
+    }
+}
+
+function buildHuffmanTable(
+    lengths: Uint8Array,
+    start: number,
+    count: number,
+    symbols: Int32Array,
+    primaryBits: number,
+    table: Int32Array,
+    allowSingleCode: boolean,
+    name: string,
+): void {
+    const lengthCounts = new Int32Array(MAX_CODE_LENGTH + 1);
+    for (let i = 0; i < count; i++) lengthCounts[lengths[start + i]]++;
     lengthCounts[0] = 0;
 
-    const nextCode = new Uint16Array(MAX_CODE_LENGTH + 2);
-    let code = 0;
-    let available = 1;
+    let left = 1;
+    let maxLength = 0;
     for (let length = 1; length <= MAX_CODE_LENGTH; length++) {
-        available = (available << 1) - lengthCounts[length];
-        if (available < 0) throw new Error("inflate: over-subscribed Huffman code lengths");
-        nextCode[length] = code;
-        code = (code + lengthCounts[length]) << 1;
+        left = (left << 1) - lengthCounts[length];
+        if (left < 0) throw new Error(`inflate: over-subscribed ${name} code lengths`);
+        if (lengthCounts[length] !== 0) maxLength = length;
+    }
+    if (left > 0 && !(allowSingleCode && maxLength <= 1)) throw new Error(`inflate: incomplete ${name} code lengths`);
+
+    const offsets = new Int32Array(MAX_CODE_LENGTH + 2);
+    for (let length = 1; length <= MAX_CODE_LENGTH; length++) offsets[length + 1] = offsets[length] + lengthCounts[length];
+    const sorted = new Int32Array(offsets[MAX_CODE_LENGTH + 1]);
+    for (let symbol = 0; symbol < count; symbol++) {
+        const length = lengths[start + symbol];
+        if (length !== 0) sorted[offsets[length]++] = symbol;
     }
 
-    const size = 1 << Math.max(maxLength, 1);
-    const entries = scratch.subarray(0, size);
-    entries.fill(0);
-    for (let symbol = 0; symbol < count; symbol++) {
-        const length = lengths[offset + symbol];
-        if (length === 0) continue;
-        const reversed = reverseBits(nextCode[length]++, length);
-        const entry = (symbol << 4) | length;
-        for (let index = reversed; index < size; index += 1 << length) entries[index] = entry;
+    const nextCode = new Int32Array(MAX_CODE_LENGTH + 1);
+    for (let length = 1, code = 0; length <= MAX_CODE_LENGTH; length++) {
+        code = (code + lengthCounts[length - 1]) << 1;
+        nextCode[length] = code;
     }
-    return {entries, mask: size - 1};
+
+    const primarySize = 1 << primaryBits;
+    const primaryMask = primarySize - 1;
+    table.fill(KIND_INVALID, 0, primarySize);
+    let tableEnd = primarySize;
+    let currentPrefix = -1;
+    let subOffset = 0;
+    let subSize = 0;
+
+    for (let k = 0; k < sorted.length; k++) {
+        const symbol = sorted[k];
+        const length = lengths[start + symbol];
+        const reversed = reverseBits(nextCode[length]++, length);
+        const info = symbols[symbol];
+        if (length <= primaryBits) {
+            for (let i = reversed; i < primarySize; i += 1 << length) table[i] = info | length;
+        } else {
+            const prefix = reversed & primaryMask;
+            if (prefix !== currentPrefix) {
+                let subBits = length - primaryBits;
+                let room = 1 << subBits;
+                while (subBits + primaryBits < maxLength) {
+                    room -= lengthCounts[subBits + primaryBits];
+                    if (room <= 0) break;
+                    subBits++;
+                    room <<= 1;
+                }
+                subOffset = tableEnd;
+                subSize = 1 << subBits;
+                tableEnd += subSize;
+                table.fill(KIND_INVALID, subOffset, tableEnd);
+                table[prefix] = (subOffset << 16) | KIND_LINK | (subBits << 4) | primaryBits;
+                currentPrefix = prefix;
+            }
+            const subLength = length - primaryBits;
+            for (let i = reversed >>> primaryBits; i < subSize; i += 1 << subLength) table[subOffset + i] = info | subLength;
+        }
+        lengthCounts[length]--;
+    }
 }
 
 function reverseBits(code: number, length: number): number {
@@ -106,280 +532,24 @@ function reverseBits(code: number, length: number): number {
     return reversed;
 }
 
-
-function grow(out: Uint8Array, needed: number): Uint8Array {
-    const next = new Uint8Array(Math.max(out.length * 2, needed));
-    next.set(out);
-    return next;
+function literalLengthSymbols(): Int32Array {
+    const symbols = new Int32Array(LITERAL_LENGTH_SYMBOL_COUNT);
+    for (let symbol = 0; symbol < 256; symbol++) symbols[symbol] = (symbol << 16) | KIND_LITERAL;
+    symbols[END_OF_BLOCK] = KIND_END;
+    for (let i = 0; i < LENGTH_BASE.length; i++) symbols[257 + i] = (LENGTH_BASE[i] << 16) | KIND_BASE | (LENGTH_EXTRA[i] << 4);
+    for (let symbol = 257 + LENGTH_BASE.length; symbol < LITERAL_LENGTH_SYMBOL_COUNT; symbol++) symbols[symbol] = KIND_INVALID;
+    return symbols;
 }
 
-export function adler32(bytes: Uint8Array, start: number = 0, end: number = bytes.length): number {
-    let a = 1;
-    let b = 0;
-    let i = start;
-    while (i < end) {
-        const chunkEnd = Math.min(i + ADLER_CHUNK, end);
-        for (; i < chunkEnd; i++) {
-            a += bytes[i];
-            b += a;
-        }
-        a %= ADLER_MODULUS;
-        b %= ADLER_MODULUS;
-    }
-    return ((b << 16) | a) >>> 0;
+function distanceSymbols(): Int32Array {
+    const symbols = new Int32Array(DISTANCE_SYMBOL_COUNT);
+    for (let i = 0; i < DISTANCE_BASE.length; i++) symbols[i] = (DISTANCE_BASE[i] << 16) | KIND_BASE | (DISTANCE_EXTRA[i] << 4);
+    for (let symbol = DISTANCE_BASE.length; symbol < DISTANCE_SYMBOL_COUNT; symbol++) symbols[symbol] = KIND_INVALID;
+    return symbols;
 }
 
-/** The longest match DEFLATE can emit; the decode loop keeps this much output room free. */
-const MAX_MATCH = 258;
-
-/** Table scratch reused across calls: `inflate` is synchronous, so two calls never share it. */
-let literalScratch: Int32Array | undefined;
-let distanceScratch: Int32Array | undefined;
-const codeLengthScratch = new Int32Array(1 << 7);
-const codeLengthLengths = new Uint8Array(CODE_LENGTH_ORDER.length);
-
-function overrun(): never {
-    throw new Error("inflate: unexpected end of compressed data");
-}
-
-/**
- * The stream position and output. Bits are consumed least-significant first from `bitBuffer`.
- * Reads past the end feed zero bytes; four may sit unread in the buffer (the most a refill takes
- * ahead), so needing a fifth means a bit beyond the input was consumed.
- */
-class InflateStream {
-    public pos = 2;
-    public bitBuffer = 0;
-    public bitCount = 0;
-    public out: Uint8Array;
-    public outPos = 0;
-
-    public constructor(public readonly input: Uint8Array) {
-        this.out = new Uint8Array(Math.max(1024, input.length * 4));
-    }
-
-    public bits(count: number): number {
-        while (this.bitCount < count) {
-            if (this.pos < this.input.length) this.bitBuffer |= this.input[this.pos] << this.bitCount;
-            else if (this.pos >= this.input.length + 4) overrun();
-            this.pos++;
-            this.bitCount += 8;
-        }
-        const value = this.bitBuffer & ((1 << count) - 1);
-        this.bitBuffer >>>= count;
-        this.bitCount -= count;
-        return value;
-    }
-
-    public decodeSymbol(table: HuffmanTable): number {
-        while (this.bitCount < MAX_CODE_LENGTH) {
-            if (this.pos < this.input.length) this.bitBuffer |= this.input[this.pos] << this.bitCount;
-            else if (this.pos >= this.input.length + 4) overrun();
-            this.pos++;
-            this.bitCount += 8;
-        }
-        const entry = table.entries[this.bitBuffer & table.mask];
-        const length = entry & 15;
-        if (length === 0) throw new Error("inflate: invalid Huffman code");
-        this.bitBuffer >>>= length;
-        this.bitCount -= length;
-        return entry >>> 4;
-    }
-
-    /** Drops to the byte boundary and returns whole bytes still in the bit buffer to the input. */
-    public alignToByte(): void {
-        this.pos -= this.bitCount >>> 3;
-        this.bitBuffer = 0;
-        this.bitCount = 0;
-        if (this.pos > this.input.length) overrun();
-    }
-
-    public reserve(extra: number): void {
-        if (this.outPos + extra > this.out.length) this.out = grow(this.out, this.outPos + extra);
-    }
-}
-
-function inflateStoredBlock(stream: InflateStream): void {
-    stream.alignToByte();
-    const input = stream.input;
-    const pos = stream.pos;
-    if (pos + 4 > input.length) overrun();
-    const length = input[pos] | (input[pos + 1] << 8);
-    const inverted = input[pos + 2] | (input[pos + 3] << 8);
-    if ((length ^ 0xffff) !== inverted) throw new Error("inflate: stored block length check failed");
-    if (pos + 4 + length > input.length) overrun();
-    stream.reserve(length);
-    stream.out.set(input.subarray(pos + 4, pos + 4 + length), stream.outPos);
-    stream.outPos += length;
-    stream.pos = pos + 4 + length;
-}
-
-function readDynamicTables(stream: InflateStream): {literalLength: HuffmanTable, distance: HuffmanTable} {
-    const literalCount = stream.bits(5) + 257;
-    const distanceCount = stream.bits(5) + 1;
-    const codeLengthCount = stream.bits(4) + 4;
-    if (literalCount > MAX_LITERAL_LENGTH_CODES || distanceCount > MAX_DISTANCE_CODES) {
-        throw new Error("inflate: too many length or distance codes");
-    }
-    codeLengthLengths.fill(0);
-    for (let i = 0; i < codeLengthCount; i++) codeLengthLengths[CODE_LENGTH_ORDER[i]] = stream.bits(3);
-    const codeLengthTable = buildTable(codeLengthLengths, 0, codeLengthLengths.length, codeLengthScratch);
-
-    const total = literalCount + distanceCount;
-    const codeLengths = new Uint8Array(total);
-    let i = 0;
-    while (i < total) {
-        const symbol = stream.decodeSymbol(codeLengthTable);
-        if (symbol < 16) {
-            codeLengths[i++] = symbol;
-            continue;
-        }
-        let repeat: number;
-        let value = 0;
-        if (symbol === 16) {
-            if (i === 0) throw new Error("inflate: repeated code length with no previous length");
-            value = codeLengths[i - 1];
-            repeat = 3 + stream.bits(2);
-        } else if (symbol === 17) {
-            repeat = 3 + stream.bits(3);
-        } else {
-            repeat = 11 + stream.bits(7);
-        }
-        if (i + repeat > total) throw new Error("inflate: code lengths overflow the code count");
-        codeLengths.fill(value, i, i + repeat);
-        i += repeat;
-    }
-    if (codeLengths[END_OF_BLOCK] === 0) throw new Error("inflate: block has no end-of-block code");
-    literalScratch ??= new Int32Array(1 << MAX_CODE_LENGTH);
-    distanceScratch ??= new Int32Array(1 << MAX_CODE_LENGTH);
-    return {
-        literalLength: buildTable(codeLengths, 0, literalCount, literalScratch),
-        distance: buildTable(codeLengths, literalCount, distanceCount, distanceScratch),
-    };
-}
-
-/** The hot loop: stream state lives in locals for the whole block and is written back at its end. */
-function inflateHuffmanBlock(stream: InflateStream, literalLength: HuffmanTable, distance: HuffmanTable): void {
-    const input = stream.input;
-    const inputLength = input.length;
-    const overrunAt = inputLength + 4;
-    const literalEntries = literalLength.entries;
-    const literalMask = literalLength.mask;
-    const distanceEntries = distance.entries;
-    const distanceMask = distance.mask;
-    let pos = stream.pos;
-    let bitBuffer = stream.bitBuffer;
-    let bitCount = stream.bitCount;
-    let out = stream.out;
-    let outPos = stream.outPos;
-
-    for (;;) {
-        if (outPos + MAX_MATCH > out.length) out = grow(out, outPos + MAX_MATCH);
-        // 24+ bits: a literal/length code (at most 15) plus its extra bits (at most 5).
-        while (bitCount < 24) {
-            if (pos < inputLength) bitBuffer |= input[pos] << bitCount;
-            else if (pos >= overrunAt) overrun();
-            pos++;
-            bitCount += 8;
-        }
-        let entry = literalEntries[bitBuffer & literalMask];
-        let codeLength = entry & 15;
-        if (codeLength === 0) throw new Error("inflate: invalid literal/length code");
-        bitBuffer >>>= codeLength;
-        bitCount -= codeLength;
-        const symbol = entry >>> 4;
-        if (symbol < END_OF_BLOCK) {
-            out[outPos++] = symbol;
-            continue;
-        }
-        if (symbol === END_OF_BLOCK) break;
-
-        const lengthIndex = symbol - 257;
-        if (lengthIndex >= 29) throw new Error("inflate: invalid length symbol");
-        const lengthExtra = LENGTH_EXTRA[lengthIndex];
-        const length = LENGTH_BASE[lengthIndex] + (bitBuffer & ((1 << lengthExtra) - 1));
-        bitBuffer >>>= lengthExtra;
-        bitCount -= lengthExtra;
-
-        while (bitCount < 24) {
-            if (pos < inputLength) bitBuffer |= input[pos] << bitCount;
-            else if (pos >= overrunAt) overrun();
-            pos++;
-            bitCount += 8;
-        }
-        entry = distanceEntries[bitBuffer & distanceMask];
-        codeLength = entry & 15;
-        if (codeLength === 0) throw new Error("inflate: invalid distance code");
-        bitBuffer >>>= codeLength;
-        bitCount -= codeLength;
-        const distanceSymbol = entry >>> 4;
-        if (distanceSymbol >= MAX_DISTANCE_CODES) throw new Error("inflate: invalid distance symbol");
-        const distanceExtra = DISTANCE_EXTRA[distanceSymbol];
-        while (bitCount < distanceExtra) {
-            if (pos < inputLength) bitBuffer |= input[pos] << bitCount;
-            else if (pos >= overrunAt) overrun();
-            pos++;
-            bitCount += 8;
-        }
-        const back = DISTANCE_BASE[distanceSymbol] + (bitBuffer & ((1 << distanceExtra) - 1));
-        bitBuffer >>>= distanceExtra;
-        bitCount -= distanceExtra;
-        if (back > outPos) throw new Error("inflate: distance too far back");
-
-        let from = outPos - back;
-        if (back === 1) {
-            out.fill(out[from], outPos, outPos + length);
-            outPos += length;
-        } else if (length >= BYTE_COPY_LIMIT && back >= length) {
-            out.copyWithin(outPos, from, from + length);
-            outPos += length;
-        } else {
-            const end = outPos + length;
-            while (outPos < end) out[outPos++] = out[from++];
-        }
-    }
-
-    stream.pos = pos;
-    stream.bitBuffer = bitBuffer;
-    stream.bitCount = bitCount;
-    stream.out = out;
-    stream.outPos = outPos;
-}
-
-/** Decompresses a zlib stream; throws on a malformed stream, a preset dictionary, or an Adler-32 mismatch. */
-export function inflate(bytes: Uint8Array): Uint8Array {
-    if (bytes.length < 6) throw new Error("inflate: stream too short for a zlib header and checksum");
-    const cmf = bytes[0];
-    const flg = bytes[1];
-    if ((cmf & 0x0f) !== 8) throw new Error(`inflate: unsupported compression method ${cmf & 0x0f}`);
-    if ((cmf >>> 4) > 7) throw new Error("inflate: invalid window size");
-    if (((cmf << 8) | flg) % 31 !== 0) throw new Error("inflate: corrupt zlib header check");
-    if ((flg & 0x20) !== 0) throw new Error("inflate: preset dictionaries are not supported");
-
-    const stream = new InflateStream(bytes);
-    let finalBlock = false;
-    while (!finalBlock) {
-        finalBlock = stream.bits(1) === 1;
-        const type = stream.bits(2);
-        if (type === 0) {
-            inflateStoredBlock(stream);
-        } else if (type === 1) {
-            const fixed = fixedHuffmanTables();
-            inflateHuffmanBlock(stream, fixed.literalLength, fixed.distance);
-        } else if (type === 2) {
-            const dynamic = readDynamicTables(stream);
-            inflateHuffmanBlock(stream, dynamic.literalLength, dynamic.distance);
-        } else {
-            throw new Error("inflate: invalid block type 3");
-        }
-    }
-
-    // The Adler-32 trailer starts at the next byte boundary.
-    stream.alignToByte();
-    const input = stream.input;
-    const pos = stream.pos;
-    if (pos + 4 > input.length) throw new Error("inflate: missing Adler-32 checksum");
-    const expected = ((input[pos] << 24) | (input[pos + 1] << 16) | (input[pos + 2] << 8) | input[pos + 3]) >>> 0;
-    if (adler32(stream.out, 0, stream.outPos) !== expected) throw new Error("inflate: Adler-32 checksum mismatch");
-    return stream.out.subarray(0, stream.outPos);
+function codeLengthSymbols(): Int32Array {
+    const symbols = new Int32Array(CODE_LENGTH_SYMBOL_COUNT);
+    for (let symbol = 0; symbol < CODE_LENGTH_SYMBOL_COUNT; symbol++) symbols[symbol] = (symbol << 16) | KIND_LITERAL;
+    return symbols;
 }

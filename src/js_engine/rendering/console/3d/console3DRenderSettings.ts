@@ -1,5 +1,5 @@
 import {Component} from "../../../core";
-import {MeshRasterizerConfig} from "./meshRasterizer";
+import type {MeshRasterizerConfig} from "../../3d/software";
 import type {Platform} from "../../../platform/platform";
 
 export type RasterWorkerHost = Pick<Platform, "hardwareConcurrency" | "requestedRasterWorkers">;
@@ -67,7 +67,6 @@ export class Console3DRenderSettings extends Component {
             supersample: this.supersampleX,
             supersampleX: this.supersampleX,
             supersampleY: this.supersampleY,
-            backgroundColor: this.backgroundColor,
             workerCount: this.resolvedWorkerCount(host),
             threadTriangleThreshold: this.threadTriangleThreshold,
             threadAreaThreshold: this.threadAreaThreshold,
