@@ -45,7 +45,7 @@ export class EntityQuery<
 
     private _lazyLoaded: {
         world: World;
-        cachedArchetypes: WeakRef<EntityArchetype<AnyCT>>[]
+        cachedArchetypes: EntityArchetype<AnyCT>[]
     } = {
         world: undefined!,
         cachedArchetypes: []
@@ -63,6 +63,7 @@ export class EntityQuery<
         this.getCachedArchetypes = () => this._lazyLoaded.cachedArchetypes;
         this.refreshCache();
         this._lazyLoaded.world.archetypes.onCreateArchetype.add(this.onArchetypeCreated);
+        this._lazyLoaded.world.archetypes.onPruneArchetype.add(this.onArchetypePruned);
     }
 
     private getWorld() {
@@ -70,42 +71,23 @@ export class EntityQuery<
         return this._lazyLoaded.world
     }
 
-    private getCachedArchetypes(): WeakRef<EntityArchetype<AnyCT>>[] {
+    private getCachedArchetypes(): EntityArchetype<AnyCT>[] {
         this.bindToWorld()
         return this._lazyLoaded.cachedArchetypes
     }
 
     public get archetypes(): IterableIterator<EntityArchetype<AnyCT>> {
-        const arr = this.getCachedArchetypes();
-
-        //don't dedupe in iter as multiple systems could be using it
-        function* iter(): IterableIterator<EntityArchetype<AnyCT>> {
-            for (let readIndex = 0; readIndex < arr.length; readIndex++) {
-                const ref = arr[readIndex].deref();
-                if (ref === undefined) continue;
-                yield ref;
-            }
-        }
-
-        return iter();
+        return this.getCachedArchetypes().values();
     }
 
     private onArchetypeCreated = (arch: EntityArchetype<AnyCT>) => {
-        if (this.matches(arch)) {
+        if (this.matches(arch)) this.getCachedArchetypes().push(arch);
+    };
 
-            const arr = this.getCachedArchetypes();
-
-            // In-place compaction: single pass, no per-item splicing
-            let writeIndex = 0;
-            for (let readIndex = 0; readIndex < arr.length; readIndex++) {
-                const ref = arr[readIndex].deref();
-                if (ref === undefined) continue;
-                if (writeIndex !== readIndex) arr[writeIndex] = arr[readIndex];
-                writeIndex++;
-            }
-            if (writeIndex + 1 !== arr.length) arr.length = writeIndex;
-            arr[writeIndex] = new WeakRef(arch);
-        }
+    private onArchetypePruned = (arch: EntityArchetype<AnyCT>) => {
+        const arr = this.getCachedArchetypes();
+        const index = arr.indexOf(arch);
+        if (index !== -1) arr.splice(index, 1);
     };
 
     private matches(arch: EntityArchetype<AnyCT>): boolean {
@@ -114,10 +96,9 @@ export class EntityQuery<
     }
 
     private refreshCache(): void {
-        const next: WeakRef<EntityArchetype<AnyCT>>[] = [];
+        const next: EntityArchetype<AnyCT>[] = [];
         for (const arch of this.getWorld().archetypes.values()) {
-            const a = arch as EntityArchetype<AnyCT>;
-            if (this.matches(a)) next.push(new WeakRef(a));
+            if (this.matches(arch)) next.push(arch);
         }
         this._lazyLoaded.cachedArchetypes = next;
     }

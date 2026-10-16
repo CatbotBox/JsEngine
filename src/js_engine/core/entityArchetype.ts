@@ -238,7 +238,15 @@ export class ComponentStore<CT extends ComponentType<any>> {
     }
 }
 
+export interface ArchetypeEdge<CT extends ComponentType<any> = ComponentType<any>> {
+    readonly target: EntityArchetype<CT>;
+    /** One slot per target column: the source column index, or -1 for the added component. */
+    readonly columnMap: Int32Array;
+}
+
 export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>> {
+    public readonly addEdges: Map<CT, ArchetypeEdge<CT>> = new Map();
+    public readonly removeEdges: Map<CT, ArchetypeEdge<CT>> = new Map();
     private readonly _componentData: ComponentStore<CT>[];
     private _componentTypes: Map<CT, number>;
     private readonly _uniqueTypes: CT[]
@@ -292,6 +300,10 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     /** When an entity last appeared here. Removals do not bump this. */
     public get lastEntityAddedTime(): number {
         return this._lastEntityAdded;
+    }
+
+    public columnIndexOf(token: CT): number {
+        return this._componentTypes.get(token) ?? -1;
     }
 
     public getColumn(token: CT) {
