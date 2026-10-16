@@ -10,14 +10,29 @@ export interface ManifestFile extends PreloadEntry {
     readonly mtimeMs: number;
 }
 
+export interface ManifestModel extends DemoModel {
+    /** Every manifest path loading the model reads or stats. */
+    readonly files: readonly string[];
+}
+
 /**
  * Everything a host without a file system needs to run the 3D demo: the models the terminal demo
  * would find, and every file loading them reads, at paths relative to the repository root.
  */
 export interface Demo3dManifest {
-    readonly models: readonly DemoModel[];
+    readonly models: readonly ManifestModel[];
     readonly files: readonly ManifestFile[];
 }
+
+export interface Demo3dManifestOptions {
+    /**
+     * A model whose files to fetch add up to more than this is lazy: its files (those no other
+     * model reads) are fetched only when the game first wants it. Default DEFAULT_LAZY_MODEL_BYTES.
+     */
+    readonly lazyModelBytes?: number;
+}
+
+export const DEFAULT_LAZY_MODEL_BYTES = 16 * 1024 * 1024;
 
 /** Node files under `root`, addressed by root-relative paths; records which paths are read and which only stat'ed. */
 export class RecordingFileSource implements FileSource {
@@ -59,22 +74,33 @@ export class RecordingFileSource implements FileSource {
  * Loads every model twice through node's files: once allowed to write, so each `.meshcache` is
  * (re)built if it is missing or stale, then read-only, recording what that load touches. Files it
  * reads are fetched by the browser; an obj it only stat'ed (its mesh cache was valid) is listed
- * stat-only, so the page never downloads it. The loads use the game's options, so the caches hold
- * the same detail levels the game asks for.
+ * stat-only, so the page never downloads it. A file only lazy models read is listed lazy. The
+ * loads use the game's options, so the caches hold the same detail levels the game asks for.
  */
-export function buildDemo3dManifest(root: string): Demo3dManifest {
+export function buildDemo3dManifest(root: string, options: Demo3dManifestOptions = {}): Demo3dManifest {
+    const lazyModelBytes = options.lazyModelBytes ?? DEFAULT_LAZY_MODEL_BYTES;
     const inflate = nodePlatform().inflate;
-    const models = findDemoModels(root).map(model => ({name: model.name, path: normalizePath(model.path)}));
     const writable = new RecordingFileSource(root, true);
-    const recorder = new RecordingFileSource(root);
-    for (const model of models) {
+    const stats = new RecordingFileSource(root);
+    const recorded = findDemoModels(root).map(found => {
+        const model = {name: found.name, path: normalizePath(found.path)};
         Mesh.fromFile(model.path, {files: writable, inflate});
+        const recorder = new RecordingFileSource(root);
         Mesh.fromFile(model.path, {files: recorder, inflate});
-    }
-    const paths = new Set([...recorder.read, ...recorder.statted]);
-    const files = [...paths].sort().map((path): ManifestFile => {
-        const {size, mtimeMs} = recorder.stat(path);
-        return recorder.read.has(path) ? {path, size, mtimeMs} : {path, size, mtimeMs, statOnly: true};
+        const readBytes = [...recorder.read].reduce((sum, path) => sum + stats.stat(path).size, 0);
+        return {model, recorder, lazy: readBytes > lazyModelBytes};
     });
+    const read = new Set(recorded.flatMap(({recorder}) => [...recorder.read]));
+    const eagerRead = new Set(recorded.filter(({lazy}) => !lazy).flatMap(({recorder}) => [...recorder.read]));
+    const paths = new Set(recorded.flatMap(({recorder}) => [...recorder.read, ...recorder.statted]));
+    const files = [...paths].sort().map((path): ManifestFile => {
+        const {size, mtimeMs} = stats.stat(path);
+        if (!read.has(path)) return {path, size, mtimeMs, statOnly: true};
+        return eagerRead.has(path) ? {path, size, mtimeMs} : {path, size, mtimeMs, lazy: true};
+    });
+    const models = recorded.map(({model, recorder}): ManifestModel => ({
+        ...model,
+        files: [...new Set([...recorder.read, ...recorder.statted])].sort(),
+    }));
     return {models, files};
 }

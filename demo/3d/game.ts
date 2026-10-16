@@ -40,13 +40,28 @@ export interface DemoModel {
     readonly path: string;
 }
 
+/** For a host whose model files are not all readable up front (a page fetching large models on demand). */
+export interface DemoModelFiles {
+    /** True once every file loading `model` reads can be read synchronously. */
+    ready(model: DemoModel): boolean;
+    /** Fetches `model`'s files, reporting transferred bytes as they arrive; resolves once `ready(model)`. */
+    fetch(model: DemoModel, onProgress: (loadedBytes: number, totalBytes: number) => void): Promise<void>;
+}
+
 /** What differs between the terminal and the browser. */
 export interface Demo3dHost {
     /** The models to offer; asked again on every reload (r). */
     listModels(): readonly DemoModel[];
+    /**
+     * Absent: every listed model loads straight away, as from disk. Present: a model that is not
+     * ready is fetched when it is selected or spawned, and spawns once it has arrived.
+     */
+    readonly modelFiles?: DemoModelFiles;
     /** Ctrl+C or Escape, after the world has stopped and input is disabled. */
     quit(): void;
 }
+
+const MB = 1024 * 1024;
 
 const formatCompact = (num: number): string => {
     const abs = Math.abs(num);
@@ -125,8 +140,30 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     let lampEnabled = true;
 
     //Meshes
-    let meshes: { name: string, mesh: Mesh, color: number, faceCulling: FaceCulling }[] = [];
+    interface LoadedModel {
+        mesh: Mesh;
+        color: number;
+        faceCulling: FaceCulling;
+    }
 
+    interface ModelSlot {
+        model: DemoModel;
+        index: number;
+        /** Undefined while the host is still fetching the model's files. */
+        loaded?: LoadedModel;
+    }
+
+    /** A model the host is fetching, or failed to; kept by path across reloads (r). */
+    interface ModelDownload {
+        loadedBytes: number;
+        totalBytes: number;
+        queuedSpawns: number;
+        failure?: string;
+    }
+
+    let models: ModelSlot[] = [];
+    const downloads = new Map<string, ModelDownload>();
+    let previewText = "";
 
     let selectedMeshIndex = 0;
 
@@ -178,46 +215,93 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     buffer.addComponent(controlsEntity, controlsAnchor);
 
     // Functions
-    const fetchModels = () => {
-        const files = host.listModels();
-        // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
-        const namedColors: Record<string, number> = {
-            "bugatti": 0x4FA3F7,           // blue
-            "cube": 0xF7F14F,              // yellow
-            "blender_monkey": 0xF7A44F,    // orange
-            "indoor plant_02": 0x66C96A,   // green
+    // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
+    const namedColors: Record<string, number> = {
+        "bugatti": 0x4FA3F7,           // blue
+        "cube": 0xF7F14F,              // yellow
+        "blender_monkey": 0xF7A44F,    // orange
+        "indoor plant_02": 0x66C96A,   // green
+    };
+    const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
+    const untintedWhite = 0xFFFFFF;
+    // Models whose faces are not consistently wound; drawn double-sided.
+    const doubleSidedModels = new Set(["bugatti"]);
+
+    const loadModel = (model: DemoModel, index: number): LoadedModel => {
+        const mesh = Mesh.fromFile(model.path, {files: platform.files, inflate: platform.inflate});
+        const textured = mesh.materials.some(material => material.diffuseTexture !== undefined);
+        return {
+            mesh,
+            color: textured ? untintedWhite : namedColors[model.name] ?? palette[index % palette.length],
+            faceCulling: doubleSidedModels.has(model.name) ? FaceCulling.None : FaceCulling.BackFaces,
         };
-        const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
-        const untintedWhite = 0xFFFFFF;
-        // Models whose faces are not consistently wound; drawn double-sided.
-        const doubleSidedModels = new Set(["bugatti"]);
-        meshes = files.map((file, index) => {
-            const mesh = Mesh.fromFile(file.path, {files: platform.files, inflate: platform.inflate});
-            const textured = mesh.materials.some(material => material.diffuseTexture !== undefined);
-            return {
-                name: file.name,
-                mesh,
-                color: textured ? untintedWhite : namedColors[file.name] ?? palette[index % palette.length],
-                faceCulling: doubleSidedModels.has(file.name) ? FaceCulling.None : FaceCulling.BackFaces,
-            };
-        });
+    }
+
+    const isReady = (model: DemoModel) => host.modelFiles?.ready(model) ?? true;
+
+    const fetchModels = () => {
+        models = host.listModels().map((model, index) => ({
+            model,
+            index,
+            loaded: isReady(model) ? loadModel(model, index) : undefined,
+        }));
         // keep the selection valid if the list shrank
-        if (selectedMeshIndex >= meshes.length) selectedMeshIndex = 0;
+        if (selectedMeshIndex >= models.length) selectedMeshIndex = 0;
+        if (models.length > 0) download(models[selectedMeshIndex]);
         updatePreview();
     }
 
+    /** Starts fetching a slot's model unless it is loaded or already on its way; undefined when loaded. */
+    const download = (slot: ModelSlot): ModelDownload | undefined => {
+        const modelFiles = host.modelFiles;
+        if (slot.loaded !== undefined || modelFiles === undefined) return undefined;
+        const path = slot.model.path;
+        const running = downloads.get(path);
+        if (running !== undefined && running.failure === undefined) return running;
+        const started: ModelDownload = {loadedBytes: 0, totalBytes: 0, queuedSpawns: 0};
+        downloads.set(path, started);
+        modelFiles.fetch(slot.model, (loadedBytes, totalBytes) => {
+            started.loadedBytes = loadedBytes;
+            started.totalBytes = totalBytes;
+            updatePreview();
+        }).then(() => {
+            const current = models.find(candidate => candidate.model.path === path);
+            if (current !== undefined) {
+                current.loaded ??= loadModel(current.model, current.index);
+                for (let i = 0; i < started.queuedSpawns; i++) spawn(current.loaded);
+            }
+            downloads.delete(path);
+            updatePreview();
+        }).catch(error => {
+            started.failure = error instanceof Error ? error.message : String(error);
+            console.error(`Could not load ${slot.model.name}:`, error);
+            updatePreview();
+        });
+        return started;
+    }
+
+    const megabytes = (bytes: number) => (bytes / MB).toFixed(1);
+
+    const downloadLine = (name: string, progress: ModelDownload) => {
+        if (progress.failure !== undefined) return `Could not load ${name}: ${progress.failure}`;
+        const queued = progress.queuedSpawns === 0 ? '' : `, ${progress.queuedSpawns} to spawn`;
+        return `Loading ${name}... ${megabytes(progress.loadedBytes)} / ${megabytes(progress.totalBytes)} MB${queued}`;
+    }
+
     const updatePreview = () => {
-        if (meshes.length == 0) {
-            previewImage.image = [
-                Ansi.colors.fg.cyan + 'no meshes found, add an obj file in the same folder as this file and press r'
-                + '  [spawned: ' + spawned.length + '] ', //add space for padding
-            ];
-            return;
+        const lines = [...downloads].map(([path, progress]) =>
+            downloadLine(models.find(slot => slot.model.path === path)?.model.name ?? path, progress) + ' ');
+        if (models.length == 0) {
+            lines.push('no meshes found, add an obj file in the same folder as this file and press r'
+                + '  [spawned: ' + spawned.length + '] '); //add space for padding
+        } else {
+            lines.push('Next: ' + models[selectedMeshIndex].model.name
+                + '  [spawned: ' + spawned.length + '] '); //add space for padding
         }
-        previewImage.image = [
-            Ansi.colors.fg.cyan + 'Next: ' + meshes[selectedMeshIndex].name
-            + '  [spawned: ' + spawned.length + '] ', //add space for padding
-        ];
+        const text = lines.join('\n');
+        if (text === previewText) return;
+        previewText = text;
+        previewImage.image = lines.map(line => Ansi.colors.fg.cyan + line);
     }
 
 // Re-space all spawned models in a 3D grid, centered on the group offset
@@ -241,10 +325,21 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         });
     }
 
-    const spawnModel = () => {
-        if (meshes.length == 0) return;
+    // A model still on its way spawns when it arrives.
+    const spawnSelected = () => {
+        const slot = models[selectedMeshIndex];
+        if (slot === undefined) return;
+        if (slot.loaded !== undefined) {
+            spawn(slot.loaded);
+            return;
+        }
+        const pending = download(slot);
+        if (pending !== undefined) pending.queuedSpawns++;
+        updatePreview();
+    }
+
+    const spawn = (model: LoadedModel) => {
         const entity = buffer.createEntity();
-        const model = meshes[selectedMeshIndex];
         const renderMesh = new RenderMesh(model.mesh, model.color);
         renderMesh.faceCulling = model.faceCulling;
         buffer.addComponent(entity, renderMesh);
@@ -358,11 +453,12 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         // ---- spawning ----
         // space: spawn a new model | backspace: remove the last one
         // n: cycle which model spawns next | r: reload model list
-        input.whenKeyDown(Key.Space, () => spawnModel())
+        input.whenKeyDown(Key.Space, () => spawnSelected())
         input.whenKeyDown(Key.Backspace, () => despawnLast())
         input.whenKeyDown(Key.N, () => {
-            if (meshes.length === 0) return;
-            selectedMeshIndex = (selectedMeshIndex + 1) % meshes.length;
+            if (models.length === 0) return;
+            selectedMeshIndex = (selectedMeshIndex + 1) % models.length;
+            download(models[selectedMeshIndex]);
             updatePreview();
         })
         input.whenKeyDown(Key.R, () => fetchModels())
@@ -526,7 +622,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     registerInputs();
     fetchModels();
     // start with one model on screen
-    spawnModel();
+    spawnSelected();
 
     world.ensureSystemExists(Console3DRenderPassSystem);
     world.ensureSystemExists(ConsoleHudRenderPassSystem);

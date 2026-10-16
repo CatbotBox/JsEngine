@@ -87,6 +87,11 @@ export class TerminalScreen {
         return found;
     }
 
+    /** What the screen shows now, one line per row, cells never written as spaces. */
+    public text(): string {
+        return this.cells.map(row => row.map(cell => cell ?? " ").join("")).join("\n");
+    }
+
     public count(glyph: string): number {
         let found = 0;
         for (const row of this.cells) for (const cell of row) if (cell === glyph) found++;

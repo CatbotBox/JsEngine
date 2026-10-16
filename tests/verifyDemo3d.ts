@@ -108,6 +108,8 @@ async function main(): Promise<void> {
     const manifest = buildDemo3dManifest(ROOT);
     const preloaded = new PreloadedFileSource({fetch: fetchFromDisk});
     await preloaded.preload(manifest.files);
+    // Every model is spawned from synchronous key presses below, so the lazy ones are fetched up front.
+    await preloaded.ensureLoaded(manifest.files.map(file => file.path));
     const files = new WatchedFiles(preloaded);
     let inflateCalls = 0;
     const platform = new MemoryPlatform({
@@ -122,7 +124,8 @@ async function main(): Promise<void> {
     const statOnly = manifest.files.filter(file => file.statOnly === true).map(file => file.path);
     const cached = manifest.models.filter(model => manifest.files.some(file => file.path === meshCachePathFor(model.path)));
     const fetchedBytes = manifest.files.reduce((sum, file) => sum + (file.statOnly === true ? 0 : file.size), 0);
-    log(`manifest: ${manifest.models.length} models, ${manifest.files.length} files, ${(fetchedBytes / 1024 / 1024).toFixed(1)} MB preloaded, stat-only: ${statOnly.join(", ")}`);
+    const lazy = manifest.files.filter(file => file.lazy === true).map(file => file.path);
+    log(`manifest: ${manifest.models.length} models, ${manifest.files.length} files, ${(fetchedBytes / 1024 / 1024).toFixed(1)} MB preloaded, stat-only: ${statOnly.join(", ")}, lazy: ${lazy.join(", ") || "none"}`);
 
     const terminal = new TerminalScreen(SIZE.columns, SIZE.rows);
     const world = new DebugWorld({platform});

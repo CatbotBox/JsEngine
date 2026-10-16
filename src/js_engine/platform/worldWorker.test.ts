@@ -6,7 +6,13 @@ import type {WorldWorkerScope} from "./worldWorkerPlatform";
 import {connectWorldWorker} from "./worldWorkerPage";
 import type {PageTerminal, WorldWorker} from "./worldWorkerPage";
 import type {TerminalSubscription} from "./browserPlatform";
-import {isPageToWorldMessage, isWorldToPageMessage, requestedRasterWorkersFromQuery} from "./worldWorkerProtocol";
+import {
+    FIXED_TERMINAL_LIMITS,
+    fixedTerminalSizeFromQuery,
+    isPageToWorldMessage,
+    isWorldToPageMessage,
+    requestedRasterWorkersFromQuery,
+} from "./worldWorkerProtocol";
 import type {PageToWorldMessage, WorldToPageMessage} from "./worldWorkerProtocol";
 import {MemoryFileSource, MemoryOutput, MemoryPlatform} from "./memoryPlatform";
 import {WORKER_ENTRY_POINT} from "./platform";
@@ -179,6 +185,20 @@ describe("world worker protocol", () => {
         expect(requestedRasterWorkersFromQuery("?threads=-1")).toBeUndefined();
         expect(requestedRasterWorkersFromQuery("?threads=2.5")).toBeUndefined();
         expect(requestedRasterWorkersFromQuery("?threads=many")).toBeUndefined();
+    });
+
+    test("?cols= and ?rows= fix each dimension given as a whole number in range; others fit the window", () => {
+        expect(fixedTerminalSizeFromQuery("?cols=120&rows=40")).toEqual({columns: 120, rows: 40});
+        expect(fixedTerminalSizeFromQuery("?threads=2&rows=30")).toEqual({rows: 30});
+        expect(fixedTerminalSizeFromQuery("?cols=100")).toEqual({columns: 100});
+        expect(fixedTerminalSizeFromQuery("")).toEqual({});
+        expect(fixedTerminalSizeFromQuery("?cols=&rows=")).toEqual({});
+        expect(fixedTerminalSizeFromQuery("?cols=80.5&rows=-3")).toEqual({});
+        expect(fixedTerminalSizeFromQuery("?cols=wide&rows=1e2")).toEqual({});
+        const {minColumns, minRows, max} = FIXED_TERMINAL_LIMITS;
+        expect(fixedTerminalSizeFromQuery(`?cols=${minColumns}&rows=${minRows}`)).toEqual({columns: minColumns, rows: minRows});
+        expect(fixedTerminalSizeFromQuery(`?cols=${minColumns - 1}&rows=${minRows - 1}`)).toEqual({});
+        expect(fixedTerminalSizeFromQuery(`?cols=${max}&rows=${max + 1}`)).toEqual({columns: max});
     });
 
     test("each side only accepts the other side's message types", () => {

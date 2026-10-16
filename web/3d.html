@@ -4,23 +4,23 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>JsEngine 3D</title>
+    <script src="coi-serviceworker.js"></script>
     <link rel="stylesheet" href="xterm.css">
-    <style>
-        html, body {
-            margin: 0;
-            height: 100%;
-            overflow: hidden;
-            background: #000;
-        }
-
-        #terminal {
-            position: fixed;
-            inset: 0;
-        }
-    </style>
+    <link rel="stylesheet" href="demo.css">
 </head>
 <body>
 <div id="terminal"></div>
+<div id="focus-hint">Click the terminal to give it the keyboard</div>
+<button id="play" type="button" autofocus>
+    <h1>JsEngine 3D</h1>
+    <p>A software rasterizer drawing lit, textured OBJ meshes into terminal cells, run in a Web Worker and split
+        across raster threads where the page is cross-origin isolated. The large bugatti downloads only when you
+        select it with <kbd>n</kbd>.</p>
+    <p><kbd>wasd</kbd> move &middot; <kbd>q</kbd>/<kbd>e</kbd> down/up &middot; drag to look &middot; wheel zoom
+        &middot; <kbd>space</kbd> spawn &middot; <kbd>n</kbd> next model &middot; <kbd>arrows</kbd> rotate
+        &middot; <kbd>1</kbd>-<kbd>4</kbd> anti-aliasing &middot; <kbd>h</kbd> lights &middot; <kbd>esc</kbd> stop</p>
+    <span class="start">Click to play</span>
+</button>
 <script type="module" src="3d.js"></script>
 </body>
 </html>
