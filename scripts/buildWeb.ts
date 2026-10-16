@@ -13,7 +13,8 @@ import {buildDemo3dManifest} from "../demo/3d/assets";
 const ROOT = resolve(__dirname, "..");
 const WEB = join(ROOT, "web");
 const DIST = join(WEB, "dist");
-const ENTRY_POINTS = [join(WEB, "2d.ts"), join(WEB, "3d.ts")];
+/** Each page script owns the terminal and spawns its world worker (`<name>.worker.js` beside it). */
+const ENTRY_POINTS = ["2d.ts", "world2d.worker.ts", "3d.ts", "world3d.worker.ts"].map(name => join(WEB, name));
 const STATIC_FILES: readonly [from: string, to: string][] = [
     [join(WEB, "index.html"), "index.html"],
     [join(WEB, "3d.html"), "3d.html"],
@@ -91,7 +92,7 @@ async function main(): Promise<void> {
     rmSync(DIST, {recursive: true, force: true});
     mkdirSync(DIST, {recursive: true});
 
-    // One build per page: bun bundling several entry points together (without splitting) puts
+    // One build per entry: bun bundling several entry points together (without splitting) puts
     // modules only one of them reaches into every bundle (the 2D page grew the 3D renderer).
     for (const entryPoint of ENTRY_POINTS) {
         const result = await Bun.build({
