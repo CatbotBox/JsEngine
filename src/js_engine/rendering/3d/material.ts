@@ -1,4 +1,6 @@
 import {Texture} from "./texture";
+import type {AssetLoadOptions} from "../../platform";
+import {nodePlatform} from "../../platform";
 
 export class Material {
     public static readonly DEFAULT_NAME = "default";
@@ -32,19 +34,19 @@ const TEXTURE_SLOTS: readonly TextureSlot[] = [
     {path: "specularTexturePath", texture: "specularTexture"},
 ];
 
-export function loadMaterialTextures(materials: readonly Material[], cache: Map<string, Texture> = new Map()): void {
-    const fs = require("fs") as typeof import("fs");
+export function loadMaterialTextures(materials: readonly Material[], cache: Map<string, Texture> = new Map(), options: AssetLoadOptions = {}): void {
+    const files = options.files ?? nodePlatform().files;
     for (const material of materials) {
         for (const slot of TEXTURE_SLOTS) {
             const path = material[slot.path];
             if (path === undefined || material[slot.texture] !== undefined) continue;
             let texture = cache.get(path);
             if (texture === undefined) {
-                if (!fs.existsSync(path)) {
+                if (!files.exists(path)) {
                     console.warn(`Texture ${path} for material ${material.name} not found; rendering it untextured`);
                     continue;
                 }
-                texture = Texture.fromFile(path);
+                texture = Texture.fromFile(path, Texture.maxDimension, {files, inflate: options.inflate});
                 cache.set(path, texture);
             }
             material[slot.texture] = texture;

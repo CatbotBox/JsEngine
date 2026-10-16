@@ -7,6 +7,7 @@ import {ScreenBuffer} from "../consoleScreenBuffer";
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
 import {RasterWorkerPool} from "./rasterWorkerPool";
 import {TextureStore} from "./textureStore";
+import type {WorkerFactory} from "../../../platform";
 
 export interface MeshRasterizerConfig {
     /** Depth at which shading fades to black. */
@@ -125,6 +126,10 @@ export class MeshRasterizer {
     private rowsPerBand = 0;
     private faceCulling = FaceCulling.BackFaces;
 
+    /** Without `workers` the rasterizer is single-threaded whatever `workerCount` says. */
+    public constructor(private readonly workers?: WorkerFactory) {
+    }
+
     public beginFrame(screenBuffer: ScreenBuffer, width: number, height: number, config: MeshRasterizerConfig): void {
         this.screenBuffer = screenBuffer;
         this.config = config;
@@ -182,10 +187,10 @@ export class MeshRasterizer {
     }
 
     private ensurePool(workerCount: number): RasterWorkerPool | undefined {
-        if (workerCount <= 0 || this.poolBroken) return undefined;
+        if (workerCount <= 0 || this.poolBroken || this.workers === undefined) return undefined;
         if (this.pool === undefined) {
             try {
-                this.pool = new RasterWorkerPool(workerCount);
+                this.pool = new RasterWorkerPool(workerCount, this.workers);
             } catch {
                 // No SharedArrayBuffer / worker support here — stay synchronous.
                 this.poolBroken = true;

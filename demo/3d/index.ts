@@ -32,7 +32,12 @@ import {
 } from "../../src/js_engine/rendering/3d";
 import {ReadonlyVec3, ReadonlyVec4, Vec, Vec3} from "../../src/js_engine/math/types/vec";
 import {Quaternions} from "../../src/js_engine/math/quaternions";
+import {consoleOverride} from "../../src/js_engine/debugging";
+import {fileLogger} from "../../src/js_engine/debugging/fileLogger";
 import {createHudLabel} from "../_shared/hud";
+
+// The renderer owns the terminal, so console output is only readable in ./logs.
+consoleOverride.addConsoleEventListener(fileLogger);
 
 const formatCompact = (num: number): string => {
     const abs = Math.abs(num);

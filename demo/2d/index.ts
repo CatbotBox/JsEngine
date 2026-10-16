@@ -26,8 +26,12 @@ import {
     SpriteImage,
 } from "../../src/js_engine/rendering/console/2d";
 import {AverageStat} from "../../src/js_engine/datatypes";
+import {consoleOverride} from "../../src/js_engine/debugging";
+import {fileLogger} from "../../src/js_engine/debugging/fileLogger";
 import {createHudLabel} from "../_shared/hud";
 
+// The renderer owns the terminal, so console output is only readable in ./logs.
+consoleOverride.addConsoleEventListener(fileLogger);
 
 const world = new DebugWorld();
 

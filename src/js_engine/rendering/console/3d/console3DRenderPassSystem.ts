@@ -33,7 +33,7 @@ export class Console3DRenderPassSystem extends System {
     private _alwaysRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
 
-    private _rasterizer = new MeshRasterizer();
+    private _rasterizer!: MeshRasterizer;
     private _modelViewScratch = new Float32Array(16);
     private _normalMatrixScratch = new Float32Array(9);
     private _viewSpaceMesh = new ViewSpaceMesh();
@@ -55,6 +55,7 @@ export class Console3DRenderPassSystem extends System {
     }
 
     protected onCreate() {
+        this._rasterizer = new MeshRasterizer(this.world.platform.workers);
         this.requireAllForUpdate(this._settingsQuery);
         this.requireAllForUpdate(this._cameraQuery);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
