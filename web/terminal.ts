@@ -50,38 +50,49 @@ function trackFocus(terminal: Terminal): void {
 }
 
 /**
- * Atlas pages kept before the glyph atlas is cleared. xterm's WebGL atlas holds one glyph per
- * (char, fg, bg) and never evicts, so truecolor half-block frames add pages every frame; at
- * MAX_TEXTURE_IMAGE_UNITS pages (>= 8) it merges pages mid-frame and the cells already placed
- * that frame sample stale texture coordinates (horizontal smears). Clearing well below that
- * reuses the existing pages instead.
+ * xterm's WebGL glyph atlas caches one glyph per (char, fg, bg) and never evicts, so truecolor
+ * half-block frames (a fading pixel is a new colour pair every few frames) keep adding pages. At
+ * MAX_TEXTURE_IMAGE_UNITS pages (16 under WebGL2) it merges pages in the middle of a frame, and
+ * cells already placed sample stale texture coordinates: sprites vanish or smear across the row.
+ * Swapping in a fresh atlas between frames once it holds this many pages keeps it from merging.
  */
-const MAX_ATLAS_PAGES = 4;
+const ATLAS_RESET_PAGES = 8;
 
 function loadWebglRenderer(terminal: Terminal): void {
     try {
         const webgl = new WebglAddon();
         webgl.onContextLoss(() => webgl.dispose());
         terminal.loadAddon(webgl);
-        boundGlyphAtlas(webgl);
+        boundGlyphAtlas(terminal, webgl);
     } catch (error) {
         console.warn("WebGL renderer unavailable, using the default renderer:", error);
     }
 }
 
-function boundGlyphAtlas(webgl: WebglAddon): void {
+function boundGlyphAtlas(terminal: Terminal, webgl: WebglAddon): void {
     let pages = 1;
-    let clearPending = false;
+    let resetPending = false;
     webgl.onChangeTextureAtlas(() => pages = 1);
     webgl.onRemoveTextureAtlasCanvas(() => pages--);
     webgl.onAddTextureAtlasCanvas(() => {
-        pages++;
-        if (pages < MAX_ATLAS_PAGES || clearPending) return;
-        clearPending = true;
-        // Pages are added while a frame renders; clear after it, not under it.
+        if (++pages < ATLAS_RESET_PAGES || resetPending) return;
+        resetPending = true;
+        // Pages are added while a frame renders; replace the atlas after it, not under it.
         setTimeout(() => {
-            clearPending = false;
-            webgl.clearTextureAtlas();
+            resetPending = false;
+            replaceGlyphAtlas(terminal, webgl);
         });
     });
+}
+
+/**
+ * clearTextureAtlas() keeps every page (and skips the clear whenever page 0 happens to be
+ * empty), so it cannot shrink the atlas. Atlases are cached by the options they render with and a
+ * terminal's old one is disposed when its options stop matching, so alternating fontWeightBold
+ * between two spellings of the same weight yields a fresh one-page atlas; clearTextureAtlas()
+ * then drops the render model's references into the old one.
+ */
+function replaceGlyphAtlas(terminal: Terminal, webgl: WebglAddon): void {
+    terminal.options.fontWeightBold = terminal.options.fontWeightBold === 700 ? "bold" : 700;
+    webgl.clearTextureAtlas();
 }
