@@ -17,7 +17,7 @@ rasterizer is multithreaded over shared memory.
 
 Textures: PNG (any color type, non-interlaced), baseline JPEG (any chroma subsampling, restart intervals; not
 progressive or CMYK) and binary PPM are decoded in-engine with no dependencies. `map_Kd` paths may contain spaces
-and Windows backslashes. `bun scripts/makeCheckerTexture.ts` regenerates the checkerboard used by
+and Windows backslashes. `bun run texture:generate-checker` regenerates the checkerboard used by
 `demo/3d/cube.obj`. Textured models render with a white tint in the demo so the texture colors show unmodified.
 
 Parsed meshes are cached in a binary `<file>.obj.meshcache` beside the obj (gitignored), so the second launch
