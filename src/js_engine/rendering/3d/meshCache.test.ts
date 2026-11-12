@@ -32,13 +32,17 @@ interface ModelFiles {
     cachePath: string;
 }
 
-function freshModel(): ModelFiles {
+function withFreshModel(run: (model: ModelFiles) => void): void {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "jsengine-meshcache-"));
-    const objPath = path.join(directory, "model.obj");
-    const mtlPath = path.join(directory, "model.mtl");
-    fs.writeFileSync(objPath, OBJ);
-    fs.writeFileSync(mtlPath, MTL);
-    return {objPath, mtlPath, cachePath: meshCachePathFor(objPath)};
+    try {
+        const objPath = path.join(directory, "model.obj");
+        const mtlPath = path.join(directory, "model.mtl");
+        fs.writeFileSync(objPath, OBJ);
+        fs.writeFileSync(mtlPath, MTL);
+        run({objPath, mtlPath, cachePath: meshCachePathFor(objPath)});
+    } finally {
+        fs.rmSync(directory, {recursive: true, force: true});
+    }
 }
 
 function describeMesh(mesh: Mesh) {
@@ -51,8 +55,7 @@ function describeMesh(mesh: Mesh) {
 }
 
 describe("mesh cache", () => {
-    test("the first load writes the cache and the second load reproduces the mesh from it", () => {
-        const model = freshModel();
+    test("the first load writes the cache and the second load reproduces the mesh from it", () => withFreshModel(model => {
         const parsed = Mesh.fromFile(model.objPath);
         expect(fs.existsSync(model.cachePath)).toBe(true);
         const cachedWriteTime = fs.statSync(model.cachePath).mtimeMs;
@@ -64,10 +67,9 @@ describe("mesh cache", () => {
         expect(fromCache.triangleCount).toBe(3);
         expect(fromCache.materials[2].name).toBe("unlisted");
         expect(fromCache.materials[2].diffuseColor).toBe(0xFFFFFF);
-    });
+    }));
 
-    test("readMeshCache rejects stale, truncated and corrupt files", () => {
-        const model = freshModel();
+    test("readMeshCache rejects stale, truncated and corrupt files", () => withFreshModel(model => {
         Mesh.fromFile(model.objPath);
         const valid = readMeshCache(model.objPath)!;
         expect(valid.vertCount).toBe(9);
@@ -93,21 +95,19 @@ describe("mesh cache", () => {
         bytes[0] = 0;
         fs.writeFileSync(model.cachePath, bytes);
         expect(readMeshCache(model.objPath)).toBeUndefined();
-    });
+    }));
 
-    test("materials come from the live .mtl on a cache hit", () => {
-        const model = freshModel();
+    test("materials come from the live .mtl on a cache hit", () => withFreshModel(model => {
         Mesh.fromFile(model.objPath);
         fs.writeFileSync(model.mtlPath, "newmtl red\nKd 0 1 0\nnewmtl blue\nKd 0 0 1\n");
         const reloaded = Mesh.fromFile(model.objPath);
         expect(reloaded.materials[0].diffuseColor).toBe(packRgb(0, 1, 0));
         expect(readMeshCache(model.objPath)).toBeDefined();
-    });
+    }));
 
-    test("cache: false loads without touching the disk cache", () => {
-        const model = freshModel();
+    test("cache: false loads without touching the disk cache", () => withFreshModel(model => {
         const mesh = Mesh.fromFile(model.objPath, {cache: false});
         expect(mesh.triangleCount).toBe(3);
         expect(fs.existsSync(model.cachePath)).toBe(false);
-    });
+    }));
 });
