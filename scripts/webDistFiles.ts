@@ -1,8 +1,6 @@
-/** Serving web/dist: the isolation headers, content types and URL-path -> file lookup. */
 import {existsSync, statSync} from "fs";
 import {extname, isAbsolute, relative, resolve} from "path";
 
-/** Cross-origin isolation, so SharedArrayBuffer (threaded raster) is available to the page. */
 export const ISOLATION_HEADERS: Readonly<Record<string, string>> = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp",
@@ -27,7 +25,6 @@ export function contentTypeOf(path: string): string {
     return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 
-/** The file under `distDirectory` a URL path names, or undefined if it is missing or escapes it. */
 export function distFileFor(distDirectory: string, urlPath: string): string | undefined {
     const decoded = decodeURIComponent(urlPath);
     const path = resolve(distDirectory, "." + (decoded.endsWith("/") ? decoded + "index.html" : decoded));

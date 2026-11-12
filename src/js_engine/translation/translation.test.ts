@@ -11,20 +11,6 @@ import {TranslationSystemGroup} from "./translationSystemGroup";
 import {LocalToWorldSystem} from "./localToWorldSystem";
 import type {Entity} from "../core/entity";
 
-/**
- * The transform hierarchy had no coverage at all, which is why the Children
- * storage change (Set -> dense array + swap-remove) could not be verified
- * against anything. These pin the behaviour that change could plausibly break.
- *
- * Two traps worth knowing when writing more of these:
- *  - Import everything relatively. An absolute path resolves to a *separate*
- *    module instance, so `RootSystemGroup` becomes a different class object,
- *    lands under a second key in World's system map, and nothing attaches to
- *    the group you then tick.
- *  - Create LocalToWorldSystem, not just TranslationSystemGroup. Its onCreate
- *    ensures ParentTransformSyncSystem, which ensures HierarchySyncSystem;
- *    creating only the group leaves all three absent and nothing syncs.
- */
 function makeWorld() {
     const world = new World();
     world.getOrCreateSystem(TranslationSystemGroup);
@@ -33,7 +19,9 @@ function makeWorld() {
     return {world, root, em: world.entityManager};
 }
 
-function tick(root: {update(): void}, n = 8) {
+const SETTLE_TICKS = 8;
+
+function tick(root: {update(): void}, n = SETTLE_TICKS) {
     for (let i = 0; i < n; i++) root.update();
 }
 
@@ -84,10 +72,6 @@ describe("transform hierarchy", () => {
     });
 
     test("a parent handle taken before its first child still moves the children", () => {
-        // Regression: getComponent's tracked handle used to bind to the archetype
-        // it was fetched from. Adding the first child gives the parent a Children
-        // component -- a structural move -- after which writes through that handle
-        // stamped the archetype the parent had left, and the cascade never ran.
         const {root, em} = makeWorld();
         const parent = em.createEntity("parent");
         em.addComponent(parent, new LocalPosition(10, 0, 0));
@@ -97,7 +81,7 @@ describe("transform hierarchy", () => {
         const kid = em.createEntity("child");
         em.addComponent(kid, new LocalPosition(1, 0, 0));
         em.addComponent(kid, new LocalToWorld());
-        em.addComponent(kid, new Parent(parent));   // parent gains Children here
+        em.addComponent(kid, new Parent(parent));
         tick(root);
 
         const worldX = (e: Entity) => Vec.x(em.getComponent<LocalToWorld>(e, LocalToWorld)!.position);
@@ -114,15 +98,13 @@ describe("transform hierarchy", () => {
         const children = new Children(a, b, c);
         expect(children.children.length).toBe(3);
 
-        // Remove the MIDDLE one: swap-remove moves the last entry into its slot,
-        // which is exactly where an off-by-one would drop the wrong entity.
         children.removeChild(b);
         expect(children.children.length).toBe(2);
         expect(children.has(a)).toBe(true);
         expect(children.has(c)).toBe(true);
         expect(children.has(b)).toBe(false);
 
-        children.addChild(a); // Set semantics preserved: no duplicates
+        children.addChild(a);
         expect(children.children.length).toBe(2);
 
         children.removeChild(a);

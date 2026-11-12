@@ -5,20 +5,14 @@ export interface TerminalSubscription {
     dispose(): void;
 }
 
-/**
- * What the engine needs from a browser terminal. An xterm.js `Terminal` satisfies it as is; the
- * page owns sizing (the fit addon) and reports changes through `onResize`.
- */
 export interface BrowserTerminal {
     readonly cols: number;
     readonly rows: number;
     write(data: string): void;
-    /** Raw terminal bytes typed by the user, escape sequences included. */
     onData(listener: (data: string) => void): TerminalSubscription;
     onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription;
 }
 
-/** The page globals used, listed rather than taken from the DOM typings so the src build needs no `dom` lib. */
 interface BrowserHost {
     readonly navigator?: {readonly hardwareConcurrency?: number};
     addEventListener?(type: string, listener: () => void): void;
@@ -27,7 +21,6 @@ interface BrowserHost {
 
 const EXIT_EVENTS = ["pagehide", "beforeunload"] as const;
 
-/** A page with a terminal: output, input and size from `terminal`, files from what the page preloaded, the hand-written inflate. No workers. */
 export function browserPlatform(terminal: BrowserTerminal, files: FileSource): Platform {
     const host = globalThis as unknown as BrowserHost;
     return {
@@ -72,7 +65,6 @@ function createTerminalScreen(terminal: BrowserTerminal): PlatformScreen {
     };
 }
 
-/** Both events can fire for one unload; the callback runs once. */
 function onPageExit(host: BrowserHost, callback: () => void): () => void {
     const cancel = (): void => {
         for (const type of EXIT_EVENTS) host.removeEventListener?.(type, run);

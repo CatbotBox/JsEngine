@@ -2,12 +2,10 @@ import type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
 import type {PageToWorldMessage} from "./worldWorkerProtocol";
 import {isWorldToPageMessage} from "./worldWorkerProtocol";
 
-/** A page terminal that reports when it has parsed a write; an xterm.js `Terminal` satisfies it. */
 export interface PageTerminal extends BrowserTerminal {
     write(data: string, callback?: () => void): void;
 }
 
-/** What the page needs of the Worker its world runs in; a DOM `Worker` satisfies it. */
 export interface WorldWorker {
     postMessage(message: PageToWorldMessage): void;
     addEventListener(type: "message", listener: (event: {readonly data: unknown}) => void): void;
@@ -16,16 +14,12 @@ export interface WorldWorker {
 }
 
 export interface WorldWorkerPageOptions {
-    /** Names the world in error lines, e.g. "the 3D demo". */
     readonly name: string;
-    /** Forwarded in `init`; see `requestedRasterWorkersFromQuery`. */
     readonly requestedRasterWorkers?: number;
-    /** Runs after the world quit and the stopped line is written, e.g. to close a native window. */
     readonly onQuit?: () => void;
 }
 
 export interface WorldWorkerPage {
-    /** Tells the world the page is going away (call it on pagehide). */
     exit(): void;
 }
 
@@ -33,13 +27,6 @@ const RESET = "\x1b[0m";
 const RED = "\x1b[31m";
 const STOPPED_LINE = `${RESET}\r\nStopped. Reload the page to restart.\r\n`;
 
-/**
- * The page's end of the connection to a world worker: sends `init` with the terminal's current
- * size first, then forwards typed bytes and resizes; writes each `output` message to the terminal
- * and acknowledges it once the terminal has parsed it, which is what lets the world skip frames
- * instead of queueing them while the terminal falls behind. On `quit` or `error` it stops
- * forwarding, terminates the worker and says why on the terminal.
- */
 export function connectWorldWorker(terminal: PageTerminal, worker: WorldWorker, options: WorldWorkerPageOptions): WorldWorkerPage {
     const subscriptions: TerminalSubscription[] = [];
     let closed = false;

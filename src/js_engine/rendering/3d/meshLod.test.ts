@@ -4,12 +4,14 @@ import {Mesh, MeshBuilder} from "./mesh";
 import {Material} from "./material";
 import {buildLodParts, selectLodLevel} from "./meshLod";
 import {meshCachePathFor} from "./meshCache";
+import type * as Fs from "fs";
+import type * as Os from "os";
+import type * as Path from "path";
 
-const fs = require("fs") as typeof import("fs");
-const os = require("os") as typeof import("os");
-const path = require("path") as typeof import("path");
+const fs = require("fs") as typeof Fs;
+const os = require("os") as typeof Os;
+const path = require("path") as typeof Path;
 
-/** n x n quads on the XZ plane over [0,1]², uv = (x, z), normals +Y; materials alternate by vertex column. */
 function tessellatedPlane(n: number, materialCount = 1): Mesh {
     const builder = new MeshBuilder();
     for (let m = 0; m < materialCount; m++) builder.materials.push(new Material(`m${m}`));

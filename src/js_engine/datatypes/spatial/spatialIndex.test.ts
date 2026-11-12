@@ -4,8 +4,9 @@ import {QueryHit, SpatialIndex} from "./spatialIndex";
 import {LinearIndex} from "./linearIndex";
 import {ObjectOctree} from "./objectOctree";
 
-/** Deterministic PRNG so a failing case is reproducible from its seed. */
-function rng(seed: number): () => number {
+const UINT32_RANGE = 0x100000000;
+
+function xorshift32Rng(seed: number): () => number {
     let s = seed >>> 0;
     return () => {
         s ^= s << 13;
@@ -13,7 +14,7 @@ function rng(seed: number): () => number {
         s ^= s >>> 17;
         s ^= s << 5;
         s >>>= 0;
-        return s / 0x100000000;
+        return s / UINT32_RANGE;
     };
 }
 
@@ -21,21 +22,20 @@ function box(x: number, y: number, size = 1): AABB {
     return AABB.of(x, y, 0, x + size, y + size, 1);
 }
 
-/** Sorted payloads, so results can be compared regardless of traversal order. */
-function hits<P>(index: SpatialIndex<P>, range: AABB): P[] {
+function sortedPayloadHits<P>(index: SpatialIndex<P>, range: AABB): P[] {
     const out: QueryHit<P>[] = [];
     const n = index.query(range, out);
     return out.slice(0, n).map(h => h.payload).sort((a, b) => (a as number) - (b as number));
 }
 
 const WORLD = AABB.of(-1e6, -1e6, -1e6, 1e6, 1e6, 1e6);
+const HEAVILY_SUBDIVIDING = {capacity: 2, maxDepth: 6};
+const BARE_ROOT_NODE_COUNT = 1;
 
 const implementations: Array<[string, () => SpatialIndex<number>]> = [
     ["LinearIndex", () => new LinearIndex<number>()],
     ["ObjectOctree", () => new ObjectOctree<number>()],
-    // capacity 2 forces heavy subdivision at small N, so the tree paths get
-    // exercised even by the little cases below.
-    ["ObjectOctree(cap=2)", () => new ObjectOctree<number>({capacity: 2, maxDepth: 6})],
+    ["ObjectOctree(cap=2)", () => new ObjectOctree<number>(HEAVILY_SUBDIVIDING)],
 ];
 
 for (const [name, make] of implementations) {
@@ -47,13 +47,10 @@ for (const [name, make] of implementations) {
             ix.insertBatch(1, bounds, payloads);
 
             expect(ix.count).toBe(50);
-            expect(hits(ix, WORLD)).toEqual(payloads);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual(payloads);
         });
 
         test("replaceBatch twice does not duplicate", () => {
-            // THE regression: the render pass called insertBatch every frame with
-            // no matching remove, so 200 sprites became 48,000 entries in 240
-            // frames and every duplicate was blitted.
             const ix = make();
             const bounds = Array.from({length: 20}, (_, i) => box(i, 0));
             const payloads = Array.from({length: 20}, (_, i) => i);
@@ -62,7 +59,7 @@ for (const [name, make] of implementations) {
                 ix.replaceBatch(7, bounds, payloads);
                 expect(ix.count).toBe(20);
             }
-            expect(hits(ix, WORLD)).toEqual(payloads);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual(payloads);
         });
 
         test("insertBatch is additive, unlike replaceBatch", () => {
@@ -73,7 +70,7 @@ for (const [name, make] of implementations) {
 
             ix.replaceBatch(1, [box(2, 0)], [12]);
             expect(ix.count).toBe(1);
-            expect(hits(ix, WORLD)).toEqual([12]);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual([12]);
         });
 
         test("removeBatch removes exactly its own batch", () => {
@@ -84,11 +81,11 @@ for (const [name, make] of implementations) {
 
             ix.removeBatch(1);
             expect(ix.count).toBe(30);
-            expect(hits(ix, WORLD)).toEqual(Array.from({length: 30}, (_, i) => 100 + i));
+            expect(sortedPayloadHits(ix, WORLD)).toEqual(Array.from({length: 30}, (_, i) => 100 + i));
 
             ix.removeBatch(2);
             expect(ix.count).toBe(0);
-            expect(hits(ix, WORLD)).toEqual([]);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual([]);
         });
 
         test("removing an unknown batch is a no-op", () => {
@@ -99,8 +96,6 @@ for (const [name, make] of implementations) {
         });
 
         test("churn one batch at a time leaves no residue", () => {
-            // The pattern named in the bug report: items removed and added back
-            // one at a time, where the cost used to persist afterwards.
             const ix = make();
             for (let round = 0; round < 50; round++) {
                 for (let b = 0; b < 10; b++) {
@@ -111,11 +106,11 @@ for (const [name, make] of implementations) {
 
             for (let b = 0; b < 10; b++) ix.removeBatch(b);
             expect(ix.count).toBe(0);
-            expect(hits(ix, WORLD)).toEqual([]);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual([]);
         });
 
         test("query matches a brute-force scan across selectivities", () => {
-            const rand = rng(0xC0FFEE);
+            const rand = xorshift32Rng(0xC0FFEE);
             const ix = make();
             const n = 400;
             const bounds: AABB[] = [];
@@ -128,15 +123,15 @@ for (const [name, make] of implementations) {
             }
             ix.insertBatch(1, bounds, payloads);
 
-            for (const half of [2, 20, 100]) { // ~1%, ~25%, ~80% selectivity
+            for (const half of [2, 20, 100]) {
                 const range = AABB.of(-half, -half, -1, half, half, 2);
                 const expected = payloads.filter(i => AABB.intersects(bounds[i], range)).sort((a, b) => a - b);
-                expect(hits(ix, range)).toEqual(expected);
+                expect(sortedPayloadHits(ix, range)).toEqual(expected);
             }
         });
 
         test("query is empty before anything is inserted", () => {
-            expect(hits(make(), WORLD)).toEqual([]);
+            expect(sortedPayloadHits(make(), WORLD)).toEqual([]);
         });
 
         test("clear empties the index and it stays usable", () => {
@@ -144,19 +139,19 @@ for (const [name, make] of implementations) {
             ix.insertBatch(1, Array.from({length: 40}, (_, i) => box(i, 0)), Array.from({length: 40}, (_, i) => i));
             ix.clear();
             expect(ix.count).toBe(0);
-            expect(hits(ix, WORLD)).toEqual([]);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual([]);
 
             ix.insertBatch(1, [box(0, 0)], [99]);
-            expect(hits(ix, WORLD)).toEqual([99]);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual([99]);
         });
 
         test("handles bounds far outside the initial extent", () => {
             const ix = make();
             ix.insertBatch(1, [box(0, 0)], [1]);
-            ix.insertBatch(2, [box(50_000, -50_000)], [2]);   // forces the root to grow
+            ix.insertBatch(2, [box(50_000, -50_000)], [2]);
             expect(ix.count).toBe(2);
-            expect(hits(ix, WORLD)).toEqual([1, 2]);
-            expect(hits(ix, AABB.of(49_999, -50_001, -1, 50_002, -49_998, 2))).toEqual([2]);
+            expect(sortedPayloadHits(ix, WORLD)).toEqual([1, 2]);
+            expect(sortedPayloadHits(ix, AABB.of(49_999, -50_001, -1, 50_002, -49_998, 2))).toEqual([2]);
         });
 
         test("reuses the caller's output buffer without allocating per hit", () => {
@@ -167,7 +162,7 @@ for (const [name, make] of implementations) {
             expect(ix.query(WORLD, out)).toBe(10);
             const firstRecord = out[0];
             expect(ix.query(WORLD, out)).toBe(10);
-            expect(out[0]).toBe(firstRecord); // same record object, mutated in place
+            expect(out[0]).toBe(firstRecord);
         });
 
         test("hit records carry the item's bounds", () => {
@@ -184,8 +179,7 @@ for (const [name, make] of implementations) {
 
 describe("implementations agree with each other", () => {
     test("identical results for the same random workload", () => {
-        // The cross-check the benchmark relies on: a fast wrong answer must not win.
-        const rand = rng(0x5EED);
+        const rand = xorshift32Rng(0x5EED);
         const linear = new LinearIndex<number>();
         const octree = new ObjectOctree<number>();
         const tight = new ObjectOctree<number>({capacity: 2, maxDepth: 6, looseFactor: 1.0});
@@ -202,7 +196,6 @@ describe("implementations agree with each other", () => {
             for (const ix of [linear, octree, tight]) ix.replaceBatch(batch, bounds, payloads);
         }
 
-        // remove a few batches, replace others — the churn the render pass creates
         for (const b of [1, 4, 9]) for (const ix of [linear, octree, tight]) ix.removeBatch(b);
 
         expect(octree.count).toBe(linear.count);
@@ -212,28 +205,26 @@ describe("implementations agree with each other", () => {
             const cx = (rand() - 0.5) * 300, cy = (rand() - 0.5) * 300;
             const half = 5 + rand() * 120;
             const range = AABB.of(cx - half, cy - half, -1, cx + half, cy + half, 2);
-            const expected = hits(linear, range);
-            expect(hits(octree, range)).toEqual(expected);
-            expect(hits(tight, range)).toEqual(expected);
+            const expected = sortedPayloadHits(linear, range);
+            expect(sortedPayloadHits(octree, range)).toEqual(expected);
+            expect(sortedPayloadHits(tight, range)).toEqual(expected);
         }
     });
 });
 
 describe("ObjectOctree structure", () => {
     test("empty subtrees collapse back to a leaf", () => {
-        // The original never reset node.children, so query cost stayed pinned to
-        // the historical peak node count forever. This is that regression.
-        const octree = new ObjectOctree<number>({capacity: 2, maxDepth: 6});
+        const octree = new ObjectOctree<number>(HEAVILY_SUBDIVIDING);
         const bounds = Array.from({length: 200}, (_, i) => box((i % 20) * 5, Math.floor(i / 20) * 5));
         const payloads = Array.from({length: 200}, (_, i) => i);
 
         octree.insertBatch(1, bounds, payloads);
         const subdivided = octree.nodeCount;
-        expect(subdivided).toBeGreaterThan(1); // it really did subdivide
+        expect(subdivided).toBeGreaterThan(BARE_ROOT_NODE_COUNT);
 
         octree.removeBatch(1);
         expect(octree.count).toBe(0);
-        expect(octree.nodeCount).toBe(1); // back to a bare root
+        expect(octree.nodeCount).toBe(BARE_ROOT_NODE_COUNT);
     });
 
     test("repeated spawn/despawn does not grow the tree without bound", () => {
@@ -247,6 +238,6 @@ describe("ObjectOctree structure", () => {
         for (let i = 0; i < 25; i++) octree.replaceBatch(1, bounds, payloads);
 
         expect(octree.count).toBe(300);
-        expect(octree.nodeCount).toBe(afterFirst); // stable, not creeping upward
+        expect(octree.nodeCount).toBe(afterFirst);
     });
 });

@@ -11,11 +11,14 @@ import type {
 } from "./platform";
 import {normalizePath} from "./paths";
 
+const DEFAULT_COLUMNS = 80;
+const DEFAULT_ROWS = 24;
+const INTERACTIVE = true;
+
 export class MemoryOutput implements PlatformOutput {
     public readonly chunks: string[] = [];
     private _length = 0;
 
-    /** Total characters written so far. */
     public get length(): number {
         return this._length;
     }
@@ -35,13 +38,12 @@ export class MemoryOutput implements PlatformOutput {
     }
 }
 
-/** Input bytes are scripted: `feed` delivers them to the reader, or holds them until one starts. */
 export class MemoryInput implements PlatformInput {
     public interactive: boolean;
     private reader: ((data: string) => void) | undefined;
     private readonly pending: string[];
 
-    public constructor(interactive: boolean = true, scripted: readonly string[] = []) {
+    public constructor(interactive: boolean = INTERACTIVE, scripted: readonly string[] = []) {
         this.interactive = interactive;
         this.pending = [...scripted];
     }
@@ -103,11 +105,6 @@ interface MemoryFile {
     readonly mtimeMs: number;
 }
 
-/**
- * Files held in memory, keyed by normalized path (so `./a/b.obj`, `a\b.obj` and `a/b.obj` are one
- * file). Modification times come from a counter, so they are deterministic and every write moves
- * them forward. The prototype of the browser's preloaded file source.
- */
 export class MemoryFileSource implements FileSource {
     private readonly entries = new Map<string, MemoryFile>();
     private clock = 0;
@@ -161,13 +158,9 @@ export interface MemoryPlatformOptions {
     readonly columns?: number;
     readonly rows?: number;
     readonly files?: Readonly<Record<string, string | Uint8Array>>;
-    /** Replaces the in-memory files, e.g. with a PreloadedFileSource as a page would use; `files` is then ignored. */
     readonly fileSource?: FileSource;
-    /** Delivered as soon as input starts. */
     readonly input?: readonly string[];
-    /** False makes `input.available()` report a non-interactive host. */
     readonly interactive?: boolean;
-    /** Without one, decoding a PNG through this platform throws. */
     readonly inflate?: Inflate;
     readonly workers?: WorkerFactory;
     readonly hardwareConcurrency?: number;
@@ -175,7 +168,6 @@ export interface MemoryPlatformOptions {
     readonly now?: number;
 }
 
-/** A host that exists only in memory: the test double for everything that reads `world.platform`. */
 export class MemoryPlatform implements Platform {
     public readonly output = new MemoryOutput();
     public readonly input: MemoryInput;
@@ -190,8 +182,8 @@ export class MemoryPlatform implements Platform {
     private _now: number;
 
     public constructor(options: MemoryPlatformOptions = {}) {
-        this.input = new MemoryInput(options.interactive ?? true, options.input ?? []);
-        this.screen = new MemoryScreen(options.columns ?? 80, options.rows ?? 24);
+        this.input = new MemoryInput(options.interactive ?? INTERACTIVE, options.input ?? []);
+        this.screen = new MemoryScreen(options.columns ?? DEFAULT_COLUMNS, options.rows ?? DEFAULT_ROWS);
         this.files = options.fileSource ?? new MemoryFileSource(options.files ?? {});
         this.workers = options.workers;
         this._inflate = options.inflate;
@@ -227,7 +219,6 @@ export class MemoryPlatform implements Platform {
         };
     };
 
-    /** Runs every exit callback once, as a host shutting down would. */
     public exit(): void {
         const callbacks = [...this.exitCallbacks];
         this.exitCallbacks.clear();

@@ -1,25 +1,22 @@
-/** One key press, shaped like the key object node's readline hands to 'keypress' listeners. */
 export interface DecodedKey {
     sequence: string;
-    /** "undefined" (the string) for an escape sequence readline does not name. */
     name?: string;
     ctrl: boolean;
     meta: boolean;
     shift: boolean;
-    /** The escape-sequence code, e.g. "[A"; only set for escape sequences. */
     code?: string;
 }
 
 const ESCAPE = "\x1b";
-/** A trailing ESC waits this long for the rest of a sequence before it counts as the Escape key. */
-const ESCAPE_CODE_TIMEOUT_MS = 500;
+const DELETE = "\x7f";
+const LAST_CTRL_LETTER = "\x1a";
+const TRAILING_ESCAPE_WAIT_MS = 500;
+const SHIFT_MODIFIER_BIT = 1;
+const CTRL_MODIFIER_BIT = 4;
+const ALT_OR_META_MODIFIER_BITS = 10;
+const FIRST_ASTRAL_CODE_POINT = 0x10000;
+const UNNAMED_ESCAPE_CODE_NAME = "undefined";
 
-/**
- * Raw terminal input -> key presses. This is node's readline key decoder (`emitKeys` behind
- * `readline.emitKeypressEvents`) ported line for line, so key names, modifiers and timing match
- * what the engine got from readline, on any host: node, bun, or an xterm.js `onData` stream.
- * Mouse reports must be split off before the bytes reach it.
- */
 export class AnsiKeyDecoder {
     private parser = this.startParser();
     private escapeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -36,7 +33,7 @@ export class AnsiKeyDecoder {
             try {
                 this.parser.next(character);
                 if (length === data.length && character === ESCAPE) {
-                    this.escapeTimer = setTimeout(() => this.parser.next(""), ESCAPE_CODE_TIMEOUT_MS);
+                    this.escapeTimer = setTimeout(() => this.parser.next(""), TRAILING_ESCAPE_WAIT_MS);
                 }
             } catch (error) {
                 this.parser = this.startParser();
@@ -45,7 +42,6 @@ export class AnsiKeyDecoder {
         }
     }
 
-    /** Drops a half-read sequence and any pending lone-ESC timeout. */
     public reset(): void {
         clearTimeout(this.escapeTimer);
         this.escapeTimer = undefined;
@@ -76,7 +72,6 @@ export class AnsiKeyDecoder {
                 let modifier = 0;
 
                 if (ch === "O") {
-                    // ESC O letter, ESC O modifier letter
                     s += (ch = yield);
                     if (ch >= "0" && ch <= "9") {
                         modifier = Number(ch) - 1;
@@ -84,15 +79,12 @@ export class AnsiKeyDecoder {
                     }
                     code += ch;
                 } else {
-                    // ESC [ letter, ESC [ modifier letter, ESC [ [ modifier letter, ESC [ [ num char
                     s += (ch = yield);
                     if (ch === "[") {
                         code += ch;
                         s += (ch = yield);
                     }
 
-                    // Buffer just enough for `\x1b[24;5~` (code "[24~", modifier 5) or
-                    // `\x1b[1;5H` (code "[H", modifier 5): up to three digits, then an optional ;digit.
                     const cmdStart = s.length - 1;
                     if (ch >= "0" && ch <= "9") {
                         s += (ch = yield);
@@ -123,9 +115,9 @@ export class AnsiKeyDecoder {
                     }
                 }
 
-                key.ctrl = !!(modifier & 4);
-                key.meta = !!(modifier & 10);
-                key.shift = !!(modifier & 1);
+                key.ctrl = !!(modifier & CTRL_MODIFIER_BIT);
+                key.meta = !!(modifier & ALT_OR_META_MODIFIER_BITS);
+                key.shift = !!(modifier & SHIFT_MODIFIER_BIT);
                 key.code = code;
                 nameEscapeCode(key, code);
             } else if (ch === "\r") {
@@ -137,7 +129,7 @@ export class AnsiKeyDecoder {
             } else if (ch === "\t") {
                 key.name = "tab";
                 key.meta = escaped;
-            } else if (ch === "\b" || ch === "\x7f") {
+            } else if (ch === "\b" || ch === DELETE) {
                 key.name = "backspace";
                 key.meta = escaped;
             } else if (ch === ESCAPE) {
@@ -146,8 +138,7 @@ export class AnsiKeyDecoder {
             } else if (ch === " ") {
                 key.name = "space";
                 key.meta = escaped;
-            } else if (!escaped && ch <= "\x1a") {
-                // ctrl+letter
+            } else if (!escaped && ch <= LAST_CTRL_LETTER) {
                 key.name = String.fromCharCode(ch.charCodeAt(0) + "a".charCodeAt(0) - 1);
                 key.ctrl = true;
             } else if (/^[0-9A-Za-z]$/.test(ch)) {
@@ -155,53 +146,71 @@ export class AnsiKeyDecoder {
                 key.shift = /^[A-Z]$/.test(ch);
                 key.meta = escaped;
             } else if (escaped) {
-                // ESC timed out ("") or ESC + a character readline has no name for
-                key.name = ch.length ? undefined : "escape";
+                const escapeTimedOut = !ch.length;
+                key.name = escapeTimedOut ? "escape" : undefined;
                 key.meta = true;
             }
 
             key.sequence = s;
 
+            const isSingleCharacter = charLengthAt(s, 0) === s.length;
             if (s.length !== 0 && (key.name !== undefined || escaped)) {
                 this.onKey(key);
-            } else if (charLengthAt(s, 0) === s.length) {
-                // a single unnamed character, e.g. "."
+            } else if (isSingleCharacter) {
                 this.onKey(key);
             }
-            // anything else is an unrecognised or broken sequence: dropped
         }
     }
 }
 
 function charLengthAt(text: string, index: number): number {
     if (text.length <= index) return 1;
-    return text.codePointAt(index)! >= 0x10000 ? 2 : 1;
+    return text.codePointAt(index)! >= FIRST_ASTRAL_CODE_POINT ? 2 : 1;
 }
 
-const NAMES_BY_CODE: Readonly<Record<string, string>> = {
-    // xterm/gnome ESC [ letter (with modifier), ESC O letter (without)
+const XTERM_GNOME_FUNCTION_KEY_NAMES: Readonly<Record<string, string>> = {
     "[P": "f1", "[Q": "f2", "[R": "f3", "[S": "f4",
     "OP": "f1", "OQ": "f2", "OR": "f3", "OS": "f4",
-    // xterm/rxvt ESC [ number ~
+};
+const XTERM_RXVT_FUNCTION_KEY_NAMES: Readonly<Record<string, string>> = {
     "[11~": "f1", "[12~": "f2", "[13~": "f3", "[14~": "f4",
-    // paste bracket mode
+};
+const BRACKETED_PASTE_NAMES: Readonly<Record<string, string>> = {
     "[200~": "paste-start", "[201~": "paste-end",
-    // Cygwin and libuv
+};
+const CYGWIN_LIBUV_FUNCTION_KEY_NAMES: Readonly<Record<string, string>> = {
     "[[A": "f1", "[[B": "f2", "[[C": "f3", "[[D": "f4", "[[E": "f5",
+};
+const COMMON_FUNCTION_KEY_NAMES: Readonly<Record<string, string>> = {
     "[15~": "f5", "[17~": "f6", "[18~": "f7", "[19~": "f8", "[20~": "f9", "[21~": "f10", "[23~": "f11", "[24~": "f12",
-    // xterm ESC [ letter, xterm/gnome ESC O letter
+};
+const XTERM_GNOME_CURSOR_KEY_NAMES: Readonly<Record<string, string>> = {
     "[A": "up", "[B": "down", "[C": "right", "[D": "left", "[E": "clear", "[F": "end", "[H": "home",
     "OA": "up", "OB": "down", "OC": "right", "OD": "left", "OE": "clear", "OF": "end", "OH": "home",
-    // xterm/rxvt ESC [ number ~
+};
+const XTERM_RXVT_EDITING_KEY_NAMES: Readonly<Record<string, string>> = {
     "[1~": "home", "[2~": "insert", "[3~": "delete", "[4~": "end", "[5~": "pageup", "[6~": "pagedown",
-    // putty
+};
+const PUTTY_PAGE_KEY_NAMES: Readonly<Record<string, string>> = {
     "[[5~": "pageup", "[[6~": "pagedown",
-    // rxvt
+};
+const RXVT_HOME_END_NAMES: Readonly<Record<string, string>> = {
     "[7~": "home", "[8~": "end",
 };
 
-/** rxvt sequences that carry their modifier in the code itself. */
-const MODIFIED_NAMES_BY_CODE: Readonly<Record<string, {name: string, modifier: "shift" | "ctrl"}>> = {
+const NAMES_BY_CODE: Readonly<Record<string, string>> = {
+    ...XTERM_GNOME_FUNCTION_KEY_NAMES,
+    ...XTERM_RXVT_FUNCTION_KEY_NAMES,
+    ...BRACKETED_PASTE_NAMES,
+    ...CYGWIN_LIBUV_FUNCTION_KEY_NAMES,
+    ...COMMON_FUNCTION_KEY_NAMES,
+    ...XTERM_GNOME_CURSOR_KEY_NAMES,
+    ...XTERM_RXVT_EDITING_KEY_NAMES,
+    ...PUTTY_PAGE_KEY_NAMES,
+    ...RXVT_HOME_END_NAMES,
+};
+
+const RXVT_NAMES_WITH_MODIFIER_BY_CODE: Readonly<Record<string, {name: string, modifier: "shift" | "ctrl"}>> = {
     "[a": {name: "up", modifier: "shift"}, "[b": {name: "down", modifier: "shift"},
     "[c": {name: "right", modifier: "shift"}, "[d": {name: "left", modifier: "shift"},
     "[e": {name: "clear", modifier: "shift"},
@@ -222,11 +231,11 @@ function nameEscapeCode(key: DecodedKey, code: string): void {
         key.name = NAMES_BY_CODE[code];
         return;
     }
-    if (Object.prototype.hasOwnProperty.call(MODIFIED_NAMES_BY_CODE, code)) {
-        const named = MODIFIED_NAMES_BY_CODE[code];
+    if (Object.prototype.hasOwnProperty.call(RXVT_NAMES_WITH_MODIFIER_BY_CODE, code)) {
+        const named = RXVT_NAMES_WITH_MODIFIER_BY_CODE[code];
         key.name = named.name;
         key[named.modifier] = true;
         return;
     }
-    key.name = "undefined";
+    key.name = UNNAMED_ESCAPE_CODE_NAME;
 }

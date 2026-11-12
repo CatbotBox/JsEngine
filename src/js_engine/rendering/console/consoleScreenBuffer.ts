@@ -17,11 +17,10 @@ export class ConsoleScreenBuffer extends Resource {
     }
 }
 
-// Cell representations, chosen per cell each frame.
-const KIND_BACKGROUND = 0; // background char (run-length encoded at flush)
-const KIND_RGB = 1;        // packed 0xRRGGBB background color + space (3D raster output)
-const KIND_TEXT = 2;       // arbitrary self-contained ANSI string (2D sprites / HUD glyphs)
-const KIND_RGB_SPLIT = 3;  // two packed colors, one per half; a half the 3D pass never covered holds NO_COLOR
+const KIND_BACKGROUND = 0;
+const KIND_RGB = 1;
+const KIND_TEXT = 2;
+const KIND_RGB_SPLIT = 3;
 
 const UPPER_HALF_BLOCK = "▀";
 const LOWER_HALF_BLOCK = "▄";
@@ -31,17 +30,13 @@ const DEFAULT_BACKGROUND_ESCAPE = "\x1b[49m";
 const COLOR_UNKNOWN = -1;
 const COLOR_CONSOLE_BACKGROUND = -2;
 
-/** The minimum a blit source must provide: a grid of pre-rendered glyphs. */
+const MAX_CACHED_ESCAPES = 8192;
+const DECIMAL_DIGITS = 10;
+
 export interface BlittableImage {
     readonly pixels: readonly (readonly (string | undefined)[])[];
 }
 
-/**
- * A cell grid holding depth + cell contents in flat typed arrays instead of
- * per-cell ANSI strings. 3D output lives as packed RGB ints and only becomes
- * ANSI text at flush time, where identical adjacent colors share one escape
- * sequence (run-length), shrinking both CPU time and bytes written to the TTY.
- */
 export class ScreenBuffer {
     private width = 0;
     private height = 0;
@@ -55,9 +50,7 @@ export class ScreenBuffer {
     private backgroundGlyph = " ";
     private backgroundEscapes = DEFAULT_BACKGROUND_ESCAPE;
 
-    // Escape sequences for packed colors are memoized; depth-faded scenes reuse
-    // a small palette of colors frame after frame.
-    private static escapeCache = new Map<number, string>();
+    private static backgroundEscapeCache = new Map<number, string>();
     private static foregroundEscapeCache = new Map<number, string>();
 
     public get cellWidth(): number {
@@ -68,7 +61,6 @@ export class ScreenBuffer {
         return this.height;
     }
 
-    /** Packed 0xRRGGBB of a solid cell drawn by the 3D pass (a half-block cell whose covered halves match counts), else undefined. */
     public rgbAt(x: number, y: number): number | undefined {
         const idx = y * this.width + x;
         const kind = this.kind[idx];
@@ -77,7 +69,6 @@ export class ScreenBuffer {
         return undefined;
     }
 
-    /** [top, bottom] packed colors of a half-block cell whose halves differ; an uncovered half is undefined. */
     public splitRgbAt(x: number, y: number): [number | undefined, number | undefined] | undefined {
         const idx = y * this.width + x;
         if (this.kind[idx] !== KIND_RGB_SPLIT || this.isSolidSplit(idx)) return undefined;
@@ -89,18 +80,12 @@ export class ScreenBuffer {
         return this.rgbTop[idx] === this.rgb[idx] && this.rgb[idx] !== NO_COLOR;
     }
 
-    /**
-     * (Re)initialize the cell grid with the given background char. Buffers are
-     * only reallocated when the screen size actually changes.
-     */
     public beginFrame({screenSize}: { screenSize: ScreenSize }, backgroundChar: string) {
         this.resize(Math.max(0, screenSize.x | 0), Math.max(0, screenSize.y | 0));
 
         if (backgroundChar !== this.backgroundFull) {
             this.backgroundFull = backgroundChar;
             const glyph = Ansi.strip(backgroundChar);
-            // A background with no visible glyph can't be run-length encoded;
-            // fall back to repeating the full string (old behavior).
             this.backgroundGlyph = glyph.length > 0 ? glyph : backgroundChar;
             const escapes = glyph.length > 0 ? backgroundChar.replace(glyph, "") : backgroundChar;
             this.backgroundEscapes = escapes.length > 0 ? escapes : DEFAULT_BACKGROUND_ESCAPE;
@@ -119,7 +104,7 @@ export class ScreenBuffer {
             for (let x = 0; x < this.width; x++) {
                 const idx = y * this.width + x;
                 this.kind[idx] = KIND_TEXT;
-                this.text[idx] = String((x + y) % 10);
+                this.text[idx] = String((x + y) % DECIMAL_DIGITS);
             }
         }
     }
@@ -136,19 +121,6 @@ export class ScreenBuffer {
         this.text = new Array(cellCount);
     }
 
-    /**
-     * Blit ANSI-decorated image lines at a destination top-left in SCREEN space.
-     * Clipped automatically to the current buffer.
-     */
-    //depth refers to distance from camera
-    /**
-     * Blit ANSI-decorated image lines at a destination top-left in SCREEN space.
-     * Clipped automatically to the current buffer.
-     *
-     * Takes only what it reads — a pixel grid — rather than a whole ConsoleImage,
-     * so a DeepReadonly component from a read-only query row satisfies it without
-     * a cast. depth is distance from the camera.
-     */
     public blit(image: BlittableImage, dstX: number, dstY: number, depth: number) {
         const width = this.width, height = this.height;
         if (width === 0 || height === 0) return;
@@ -175,7 +147,6 @@ export class ScreenBuffer {
         }
     }
 
-    //depth refers to distance from camera
     public setPixel(pixel: string, x: number, y: number, depth: number) {
         const idx = y * this.width + x;
         if (this.depth[idx] < depth) return;
@@ -184,18 +155,11 @@ export class ScreenBuffer {
         this.text[idx] = pixel;
     }
 
-    /**
-     * Depth-composite a rasterized RGB layer (flat row-major, same dimensions)
-     * into this buffer. Cells the layer never touched keep depth +Infinity and
-     * are skipped by the comparison.
-     */
     public mergeRgbLayer(depthLayer: Float32Array, colorLayer: Int32Array): void {
         const cellCount = this.width * this.height;
         const depth = this.depth;
         const kind = this.kind;
         const rgb = this.rgb;
-        // Strict comparison: untouched layer cells stay +Infinity and must not
-        // beat +Infinity background cells.
         for (let i = 0; i < cellCount; i++) {
             const d = depthLayer[i];
             if (d < depth[i]) {
@@ -206,11 +170,6 @@ export class ScreenBuffer {
         }
     }
 
-    /**
-     * Depth-composite two half-cell layers (top and bottom rows of each cell) into
-     * half-block cells. A half the layers never touched shows the console background
-     * at flush time.
-     */
     public mergeRgbSplitLayer(depthTop: Float32Array, colorTop: Int32Array, depthBottom: Float32Array, colorBottom: Int32Array): void {
         const cellCount = this.width * this.height;
         const depth = this.depth;
@@ -229,12 +188,12 @@ export class ScreenBuffer {
         }
     }
 
-    private static escapeFor(color: number): string {
-        let escape = ScreenBuffer.escapeCache.get(color);
+    private static backgroundEscapeFor(color: number): string {
+        let escape = ScreenBuffer.backgroundEscapeCache.get(color);
         if (escape === undefined) {
-            if (ScreenBuffer.escapeCache.size > 8192) ScreenBuffer.escapeCache.clear();
+            if (ScreenBuffer.backgroundEscapeCache.size > MAX_CACHED_ESCAPES) ScreenBuffer.backgroundEscapeCache.clear();
             escape = `\x1b[48;2;${(color >> 16) & 255};${(color >> 8) & 255};${color & 255}m`;
-            ScreenBuffer.escapeCache.set(color, escape);
+            ScreenBuffer.backgroundEscapeCache.set(color, escape);
         }
         return escape;
     }
@@ -242,18 +201,13 @@ export class ScreenBuffer {
     private static foregroundEscapeFor(color: number): string {
         let escape = ScreenBuffer.foregroundEscapeCache.get(color);
         if (escape === undefined) {
-            if (ScreenBuffer.foregroundEscapeCache.size > 8192) ScreenBuffer.foregroundEscapeCache.clear();
+            if (ScreenBuffer.foregroundEscapeCache.size > MAX_CACHED_ESCAPES) ScreenBuffer.foregroundEscapeCache.clear();
             escape = `\x1b[38;2;${(color >> 16) & 255};${(color >> 8) & 255};${color & 255}m`;
             ScreenBuffer.foregroundEscapeCache.set(color, escape);
         }
         return escape;
     }
 
-    /**
-     * Build one self-contained ANSI string per row (each starts by asserting its
-     * own colors and ends with a reset), so callers can write any subset of rows
-     * in any order — the basis for damage-tracked terminal output.
-     */
     public flushRows(): string[] {
         const rows: string[] = new Array(this.height);
         const {width, kind, rgb, rgbTop, text, backgroundFull, backgroundGlyph, backgroundEscapes} = this;
@@ -267,8 +221,6 @@ export class ScreenBuffer {
             for (let x = 0; x < width; x++) {
                 const idx = rowIndex + x;
                 let cellKind = kind[idx];
-                // A split cell whose halves match is just a solid cell; keeping it on
-                // the cheaper path also keeps runs of flat color unbroken.
                 if (cellKind === KIND_RGB_SPLIT && this.isSolidSplit(idx)) cellKind = KIND_RGB;
 
                 if (cellKind === KIND_BACKGROUND) {
@@ -282,7 +234,7 @@ export class ScreenBuffer {
                 } else if (cellKind === KIND_RGB) {
                     const color = rgb[idx];
                     if (background !== color) {
-                        row += ScreenBuffer.escapeFor(color);
+                        row += ScreenBuffer.backgroundEscapeFor(color);
                         background = color;
                     }
                     row += " ";
@@ -294,13 +246,11 @@ export class ScreenBuffer {
                             foreground = top;
                         }
                         if (background !== bottom) {
-                            row += ScreenBuffer.escapeFor(bottom);
+                            row += ScreenBuffer.backgroundEscapeFor(bottom);
                             background = bottom;
                         }
                         row += UPPER_HALF_BLOCK;
                     } else {
-                        // One half is uncovered: it becomes the cell background, painted with
-                        // the console background's own escapes so it matches untouched cells.
                         if (background !== COLOR_CONSOLE_BACKGROUND) {
                             row += backgroundEscapes;
                             background = COLOR_CONSOLE_BACKGROUND;
@@ -314,9 +264,6 @@ export class ScreenBuffer {
                         row += top !== NO_COLOR ? UPPER_HALF_BLOCK : LOWER_HALF_BLOCK;
                     }
                 } else {
-                    // Text cells are self-contained (reset ... reset), see
-                    // ConsoleImage.splitIntoGlyphsInto — but they leave the terminal
-                    // in a reset state, so re-assert colors afterwards.
                     row += text[idx];
                     foreground = COLOR_UNKNOWN;
                     background = COLOR_UNKNOWN;
@@ -327,9 +274,6 @@ export class ScreenBuffer {
         return rows;
     }
 
-    /**
-     * Finalize the current cells to a full screen string.
-     */
     public flush(): string {
         return this.flushRows().join("\n");
     }

@@ -7,6 +7,12 @@ import {Parent, ParentTransform} from "./parent";
 import {ParentTransformSyncSystem} from "./parentTransformSyncSystem";
 import {TranslationSystemGroup} from "./translationSystemGroup";
 
+const EARLY_TRANSLATION_PRIORITY = -10;
+const POSITION_FLOATS = 3;
+const ROTATION_FLOATS = 4;
+const SCALE_FLOATS = 3;
+const MATRIX_FLOATS_SHIFT = 4;
+
 export class LocalToWorldSystem extends System {
     private _baseQuery = this.createEntityQuery([LocalPosition, LocalToWorld])
 
@@ -15,7 +21,7 @@ export class LocalToWorldSystem extends System {
     }
 
     override priority(): number {
-        return -10;
+        return EARLY_TRANSLATION_PRIORITY;
     }
 
     protected onCreate() {
@@ -25,11 +31,6 @@ export class LocalToWorldSystem extends System {
 
     onUpdate() {
         this._baseQuery.stream({
-            // The query only requires [LocalPosition, LocalToWorld]. Everything else
-            // is optional — most entities have no rotation, scale or parent, and the
-            // body below substitutes defaults. Listing them under `read` would skip
-            // every archetype lacking them, which silently leaves those entities on
-            // an identity matrix.
             read: {position: LocalPosition},
             write: {localToWorld: LocalToWorld},
             optional: {
@@ -39,23 +40,19 @@ export class LocalToWorldSystem extends System {
             },
         }, {
             filterLastUpdated: this.lastUpdateTime,
-            // Derives each entity's output from its own components, so a removal
-            // leaves nothing to redo — see EntityFilterOptions.structuralFilter.
             structuralFilter: "additions",
             filterBlackList: [LocalToWorld],
-            // consumeSpans, not consume: raw Float32Array columns and a row
-            // range, no per-entity objects at all. Measured at 4-20x the row path.
         }).consumeSpans(({start, end, cols}) => {
-            const pos = cols.position!;         // width 3
-            const out = cols.localToWorld!;     // width 16
-            const rot = cols.localRotation;     // width 4, or absent
-            const scl = cols.localScale;        // width 3, or absent
-            const par = cols.parentTransform;   // width 16, or absent
+            const pos = cols.position!;
+            const out = cols.localToWorld!;
+            const rot = cols.localRotation;
+            const scl = cols.localScale;
+            const par = cols.parentTransform;
 
             for (let i = start; i < end; i++) {
                 let qx = 0, qy = 0, qz = 0, qw = 1;
                 if (rot !== undefined) {
-                    const r = i * 4;
+                    const r = i * ROTATION_FLOATS;
                     qx = rot[r];
                     qy = rot[r + 1];
                     qz = rot[r + 2];
@@ -63,12 +60,12 @@ export class LocalToWorldSystem extends System {
                 }
                 let sx = 1, sy = 1, sz = 1;
                 if (scl !== undefined) {
-                    const s = i * 3;
+                    const s = i * SCALE_FLOATS;
                     sx = scl[s];
                     sy = scl[s + 1];
                     sz = scl[s + 2];
                 }
-                const p = i * 3, o = i << 4;
+                const p = i * POSITION_FLOATS, o = i << MATRIX_FLOATS_SHIFT;
                 LocalToWorld.fromTRSAt(out, o, pos[p], pos[p + 1], pos[p + 2], qx, qy, qz, qw, sx, sy, sz);
                 if (par !== undefined) LocalToWorld.mulAt(par, o, out, o, out, o);
             }

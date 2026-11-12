@@ -3,9 +3,13 @@ import {ComponentType} from "./componentType";
 import {Event} from "../util/event";
 import {ArchetypeEdge, EntityArchetype} from "./entityArchetype";
 
+const FNV1A_32_OFFSET_BASIS = 0x811c9dc5;
+const FNV1A_32_PRIME = 0x01000193;
+const INITIAL_SCRATCH_ID_CAPACITY = 16;
+
 function hashTypeIds(ids: Int32Array, count: number): number {
-  let h = 0x811c9dc5 | 0;
-  for (let i = 0; i < count; i++) h = Math.imul(h ^ ids[i], 0x01000193);
+  let h = FNV1A_32_OFFSET_BASIS | 0;
+  for (let i = 0; i < count; i++) h = Math.imul(h ^ ids[i], FNV1A_32_PRIME);
   return h;
 }
 
@@ -24,9 +28,8 @@ function buildColumnMap<CT extends ComponentType<any>>(source: EntityArchetype<C
 
 export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<any>> {
   private _archetypes: Set<EntityArchetype<CT>> = new Set();
-  /** By hashTypeIds of `sortedTypeIds`; a bucket holds more than one archetype only on a hash collision. */
   private _byTypeHash: Map<number, EntityArchetype<CT>[]> = new Map();
-  private _scratchIds: Int32Array = new Int32Array(16);
+  private _scratchIds: Int32Array = new Int32Array(INITIAL_SCRATCH_ID_CAPACITY);
 
   public get loadedArchetypes(): number {
     return this._archetypes.size;
@@ -35,14 +38,8 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
   public onCreateArchetype: Event<EntityArchetype<CT>> = new Event();
   public onPruneArchetype: Event<EntityArchetype<CT>> = new Event();
 
-  /**
-   * Accepts tokens or constructors, in any order and with repeats; a constructor
-   * resolves to its token's id, so both name the same archetype. (They once got
-   * different ids, which silently built a parallel empty archetype that never
-   * matched anything.) The hit path allocates nothing.
-   */
   public getOrCreate(types: readonly TokenOrCtor[]): EntityArchetype<CT> {
-    const count = this.collectSortedIds(types);
+    const count = this.writeSortedUniqueIdsToScratch(types);
     const ids = this._scratchIds;
     const hash = hashTypeIds(ids, count);
     const bucket = this._byTypeHash.get(hash);
@@ -60,8 +57,7 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
     return archetype;
   }
 
-  /** Write the distinct ids of `types` into `_scratchIds`, ascending; returns how many there are. */
-  private collectSortedIds(types: readonly TokenOrCtor[]): number {
+  private writeSortedUniqueIdsToScratch(types: readonly TokenOrCtor[]): number {
     if (this._scratchIds.length < types.length) this._scratchIds = new Int32Array(types.length * 2);
     const ids = this._scratchIds;
     let count = 0;
@@ -78,36 +74,30 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
     return count;
   }
 
-  /** The edge from `from` to `from + token`. Throws if `from` already has `token`. */
   public withAdded(from: EntityArchetype<CT>, token: CT): ArchetypeEdge<CT> {
     const edge = from.addEdges.get(token);
     if (edge !== undefined) return edge;
     if (from.getColumn(token) !== undefined) throw new Error("archetype already has the component being added");
 
-    this.link(from, this.getOrCreate([...from.componentTypes, token]), token);
+    this.linkBothWays(from, this.getOrCreate([...from.componentTypes, token]), token);
     return from.addEdges.get(token)!;
   }
 
-  /** The edge from `from` to `from - token`. Throws if `from` lacks `token`. */
   public withRemoved(from: EntityArchetype<CT>, token: CT): ArchetypeEdge<CT> {
     const edge = from.removeEdges.get(token);
     if (edge !== undefined) return edge;
     if (from.getColumn(token) === undefined) throw new Error("archetype lacks the component being removed");
 
-    this.link(this.getOrCreate(from.componentTypes.filter(t => t !== token)), from, token);
+    this.linkBothWays(this.getOrCreate(from.componentTypes.filter(t => t !== token)), from, token);
     return from.removeEdges.get(token)!;
   }
 
-  /**
-   * Drop every archetype holding no entities (disabled ones count), except the
-   * component-less archetype every new entity starts in. Edges into and out of a
-   * pruned archetype go with it, so neither `getOrCreate` nor an edge can hand it
-   * back; a later request builds a fresh one.
-   */
   public prune(): number {
     let pruneCount = 0;
     for (const arch of this._archetypes) {
-      if (arch.entityCountUnfiltered !== 0 || arch.componentTypes.length === 0) continue;
+      const holdsAnyEntity = arch.entityCountUnfiltered !== 0;
+      const isSpawnArchetype = arch.componentTypes.length === 0;
+      if (holdsAnyEntity || isSpawnArchetype) continue;
       this._archetypes.delete(arch);
       this.forgetTypeKey(arch);
       this.unlink(arch);
@@ -129,8 +119,7 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
     else bucket.splice(bucket.indexOf(arch), 1);
   }
 
-  /** Cache `smaller --add token--> larger` and `larger --remove token--> smaller`. */
-  private link(smaller: EntityArchetype<CT>, larger: EntityArchetype<CT>, token: CT) {
+  private linkBothWays(smaller: EntityArchetype<CT>, larger: EntityArchetype<CT>, token: CT) {
     smaller.addEdges.set(token, {target: larger, columnMap: buildColumnMap(smaller, larger)});
     larger.removeEdges.set(token, {target: smaller, columnMap: buildColumnMap(larger, smaller)});
   }

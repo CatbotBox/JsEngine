@@ -1,18 +1,3 @@
-/**
- * Runs the browser pages' world workers for real: web/world2d.worker.ts and web/world3d.worker.ts
- * in bun module Web Workers, as the pages spawn them, with this script playing the page:
- * connectWorldWorker over a model of xterm.js that acknowledges each write once "parsed". Checks
- * the protocol end to end: init, whole frames, a resize, Ctrl+C -> quit -> "Stopped", no errors.
- * The 3D worker runs twice: cross-origin isolated, where its raster runs on nested Web Workers
- * from the browser factory and the HUD must say so, and not isolated, the single-threaded
- * fallback. tests/worldWorkerShim.ts supplies relative fetches and the isolation flag, which
- * bun's workers lack. The isolated run also checks the lazy model (the bugatti): left out of the
- * first load, fetched only once `n` selects it, a spawn queued meanwhile, then spawned.
- *
- * Run: bun tests/verifyWorldWorker.ts
- *      bun tests/verifyWorldWorker.ts --dist web/dist-prod   the built bundles instead of web/*.ts,
- *      fetching from that site (minified code, gzip-compressed and chunked assets)
- */
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
 import {connectWorldWorker} from "../src/js_engine/platform";
@@ -24,18 +9,23 @@ import type {Demo3dManifest} from "../demo/3d/assets";
 
 const ROOT = resolve(__dirname, "..");
 const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
+const DEFAULT_DIST = "web/dist-prod";
 const DIST_ARG = process.argv.indexOf("--dist");
-const DIST = DIST_ARG < 0 ? undefined : resolve(process.argv[DIST_ARG + 1] ?? "web/dist-prod");
+const DIST = DIST_ARG < 0 ? undefined : resolve(process.argv[DIST_ARG + 1] ?? DEFAULT_DIST);
 const CTRL_C = "\x03";
 const START = {columns: 120, rows: 40};
 const RESIZED = {columns: 160, rows: 50};
 const RASTER_WORKERS = 3;
 const TIMEOUT_MS = 20_000;
-/** Loading a lazy model includes decoding its mesh cache in the worker and drawing it. */
 const LAZY_SPAWN_TIMEOUT_MS = 60_000;
-/** Longer than the input's synthetic key-release delay, so the next press of a key is a fresh one. */
 const KEY_RELEASE_WAIT_MS = 200;
-const MB = 1024 * 1024;
+const BYTES_PER_MB = 1024 * 1024;
+const POLL_INTERVAL_MS = 10;
+const FRAME_ARRIVAL_WINDOW_MS = 300;
+const PROMPT_ROWS = 1;
+const MIN_SCENE_CELL_DIVISOR = 50;
+const ISOLATED = true;
+const NOT_ISOLATED = false;
 
 function workerEntry(name: string): string {
     return DIST === undefined ? join(ROOT, "web", `${name}.worker.ts`) : join(DIST, `${name}.worker.js`);
@@ -65,20 +55,18 @@ async function waitUntil(condition: () => boolean, timeoutMs: number = TIMEOUT_M
     const deadline = performance.now() + timeoutMs;
     while (!condition()) {
         if (performance.now() > deadline) return false;
-        await sleep(10);
+        await sleep(POLL_INTERVAL_MS);
     }
     return true;
 }
 
-/** xterm.js as the page sees it: a screen model, and each write "parsed" on the next task. */
 class ModelTerminal implements PageTerminal {
     public readonly screen: TerminalScreen;
     public transcript = "";
     public writes = 0;
     private readonly dataListeners = new Set<(data: string) => void>();
     private readonly resizeListeners = new Set<(size: {cols: number, rows: number}) => void>();
-    /** Text to look for on the screen after every write, and whether it has shown yet. */
-    private readonly watched = new Map<string, boolean>();
+    private readonly seenByPattern = new Map<string, boolean>();
 
     public constructor(public cols: number, public rows: number) {
         this.screen = new TerminalScreen(cols, rows);
@@ -88,19 +76,19 @@ class ModelTerminal implements PageTerminal {
         this.screen.write(data);
         this.transcript += data;
         this.writes++;
-        if (this.watched.size > 0) {
+        if (this.seenByPattern.size > 0) {
             const text = this.screen.text();
-            for (const [pattern, seen] of this.watched) if (!seen && text.includes(pattern)) this.watched.set(pattern, true);
+            for (const [pattern, seen] of this.seenByPattern) if (!seen && text.includes(pattern)) this.seenByPattern.set(pattern, true);
         }
         if (callback !== undefined) setTimeout(callback, 0);
     }
 
     public watch(pattern: string): void {
-        this.watched.set(pattern, this.screen.text().includes(pattern));
+        this.seenByPattern.set(pattern, this.screen.text().includes(pattern));
     }
 
     public shown(pattern: string): boolean {
-        return this.watched.get(pattern) === true;
+        return this.seenByPattern.get(pattern) === true;
     }
 
     public showing(pattern: string): boolean {
@@ -132,16 +120,14 @@ class ModelTerminal implements PageTerminal {
         return Ansi.strip(this.transcript);
     }
 
-    /** The frame is one row short of the terminal: the last row is left for the prompt. */
     public framePainted(): boolean {
-        return this.screen.writtenCells(this.cols, this.rows - 1) === this.cols * (this.rows - 1);
+        return this.screen.writtenCells(this.cols, this.rows - PROMPT_ROWS) === this.cols * (this.rows - PROMPT_ROWS);
     }
 }
 
 class Page {
     public readonly terminal = new ModelTerminal(START.columns, START.rows);
     public readonly errors: string[] = [];
-    /** Every URL the world worker fetched, in order (reported by the shim). */
     public readonly fetched: string[] = [];
     public terminated = false;
     private readonly worker: Worker;
@@ -188,13 +174,13 @@ class Page {
 }
 
 async function verify2d(): Promise<void> {
-    const page = new Page(workerEntry("world2d"), "the 2D demo", false);
+    const page = new Page(workerEntry("world2d"), "the 2D demo", NOT_ISOLATED);
     try {
         expect(await waitUntil(() => page.terminal.framePainted()), "2D: every frame cell painted on start");
         expect(await waitUntil(() => page.terminal.text().includes("FPS:")), "2D: the FPS label rendered");
         const writesBefore = page.terminal.writes;
-        await sleep(300);
-        expect(page.terminal.writes > writesBefore, `2D: frames keep arriving (${page.terminal.writes - writesBefore} output messages in 300 ms)`);
+        await sleep(FRAME_ARRIVAL_WINDOW_MS);
+        expect(page.terminal.writes > writesBefore, `2D: frames keep arriving (${page.terminal.writes - writesBefore} output messages in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
 
         page.terminal.resize(RESIZED.columns, RESIZED.rows);
         expect(await waitUntil(() => page.terminal.framePainted()), `2D: repainted at the new size (${RESIZED.columns}x${RESIZED.rows})`);
@@ -204,17 +190,11 @@ async function verify2d(): Promise<void> {
     }
 }
 
-/** The last "Loading assets" line's total, in MB. */
 function firstLoadMegabytes(page: Page): number | undefined {
     const totals = [...page.terminal.text().matchAll(/Loading assets: \d+\/\d+ files, [\d.]+\/([\d.]+) MB/g)];
     return totals.length === 0 ? undefined : Number(totals[totals.length - 1][1]);
 }
 
-/**
- * Selects the manifest's lazy model with `n` and spawns it with space straight away, while its
- * files are still on the way: it must not be fetched before it is selected, must show its
- * download in the HUD, and must spawn once it has arrived.
- */
 async function verifyLazyModel(page: Page, label: string, manifest: Demo3dManifest): Promise<void> {
     const byPath = new Map(manifest.files.map(file => [file.path, file]));
     const index = manifest.models.findIndex(model => model.files.some(path => byPath.get(path)?.lazy === true));
@@ -227,7 +207,7 @@ async function verifyLazyModel(page: Page, label: string, manifest: Demo3dManife
     const lazyFetches = () => page.fetched.filter(url => lazyUrls.some(prefix => url.startsWith(prefix)));
 
     const firstLoad = firstLoadMegabytes(page);
-    expect(firstLoad !== undefined && firstLoad * MB < lazyBytes, `${label}: the first load (${firstLoad} MB) leaves out ${model.name} (${(lazyBytes / MB).toFixed(1)} MB)`);
+    expect(firstLoad !== undefined && firstLoad * BYTES_PER_MB < lazyBytes, `${label}: the first load (${firstLoad} MB) leaves out ${model.name} (${(lazyBytes / BYTES_PER_MB).toFixed(1)} MB)`);
     const loading = `Loading ${model.name}... `;
     page.terminal.watch(loading);
     page.terminal.watch(", 1 to spawn");
@@ -252,8 +232,8 @@ async function verify3d(isolated: boolean, manifest: Demo3dManifest): Promise<vo
     try {
         const expected = isolated ? `Raster workers: ${RASTER_WORKERS}` : "Raster workers: none (single-threaded)";
         expect(await waitUntil(() => page.terminal.text().includes(expected)), `${label}: the HUD shows "${expected}"`);
-        const frameCells = page.terminal.cols * (page.terminal.rows - 1);
-        expect(await waitUntil(() => page.terminal.screen.truecolorCells() > frameCells / 50), `${label}: the scene is painted in 24-bit colour (${page.terminal.screen.truecolorCells()}/${frameCells})`);
+        const frameCells = page.terminal.cols * (page.terminal.rows - PROMPT_ROWS);
+        expect(await waitUntil(() => page.terminal.screen.truecolorCells() > frameCells / MIN_SCENE_CELL_DIVISOR), `${label}: the scene is painted in 24-bit colour (${page.terminal.screen.truecolorCells()}/${frameCells})`);
         expect(page.terminal.text().includes("Loading assets: "), `${label}: preload progress reached the page`);
         if (isolated) await verifyLazyModel(page, label, manifest);
         await page.quit(label);
@@ -270,8 +250,8 @@ async function main(): Promise<void> {
     if (DIST !== undefined) log(`running the built site in ${DIST}`);
     const manifest = demo3dManifest();
     await verify2d();
-    await verify3d(true, manifest);
-    await verify3d(false, manifest);
+    await verify3d(ISOLATED, manifest);
+    await verify3d(NOT_ISOLATED, manifest);
     if (failures > 0) {
         console.error(`${failures} world worker failures`);
         process.exit(1);

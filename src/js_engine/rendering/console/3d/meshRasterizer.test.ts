@@ -10,6 +10,9 @@ import {ConsoleCellResolveConfig, ConsoleCellResolveTarget} from "./consoleCellR
 import {FaceCulling} from "../../3d/faceCulling";
 
 const WIDTH = 8, HEIGHT = 8;
+const BACK_FACING = true;
+const FRONT_FACING = false;
+const FIXED_SIZE = false;
 
 type RenderConfig = MeshRasterizerConfig & ConsoleCellResolveConfig;
 
@@ -29,7 +32,6 @@ function beginFrame(rasterizer: MeshRasterizer, buffer: ScreenBuffer, frameConfi
 
 const identityModelView = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
-/** A quad in view space at z = 1 that exactly covers the screen under orthographic projection (cellRatio 1). */
 function screenQuad(material: Material): Mesh {
     const builder = new MeshBuilder();
     const hw = WIDTH / 2, hh = HEIGHT / 2;
@@ -115,7 +117,6 @@ describe("MeshRasterizer textures", () => {
     });
 });
 
-/** A quad covering the given screen rect (cells) at z = 1 under orthographic projection. */
 function screenRectQuad(material: Material, x0: number, y0: number, x1: number, y1: number): Mesh {
     const builder = new MeshBuilder();
     const hw = WIDTH / 2, hh = HEIGHT / 2;
@@ -201,7 +202,7 @@ describe("TextureStore", () => {
     });
 
     test("a fixed-size store refuses textures it cannot fit", () => {
-        const store = new TextureStore(new Int32Array(4), new Int32Array(TextureStore.DESCRIPTOR_STRIDE), false);
+        const store = new TextureStore(new Int32Array(4), new Int32Array(TextureStore.DESCRIPTOR_STRIDE), FIXED_SIZE);
         const small = Texture.fromRgba(1, 1, new Uint8Array(4));
         const big = Texture.fromRgba(2, 2, new Uint8Array(16));
         expect(store.idOf(small)).toBe(0);
@@ -264,13 +265,13 @@ describe("near-plane clipping", () => {
 
     test("a fully visible spanning triangle covers the screen and its back face is culled", () => {
         expect(coveredCells(spanningTriangle(AHEAD, AHEAD, AHEAD))).toBeGreaterThan(0);
-        expect(coveredCells(spanningTriangle(AHEAD, AHEAD, AHEAD, true))).toBe(0);
+        expect(coveredCells(spanningTriangle(AHEAD, AHEAD, AHEAD, BACK_FACING))).toBe(0);
     });
 
     for (const [name, zA, zB, zC] of depthCases) {
         test(`${name}: the clipped piece keeps its winding and still renders`, () => {
             expect(coveredCells(spanningTriangle(zA, zB, zC))).toBeGreaterThan(0);
-            expect(coveredCells(spanningTriangle(zA, zB, zC, true))).toBe(0);
+            expect(coveredCells(spanningTriangle(zA, zB, zC, BACK_FACING))).toBe(0);
         });
     }
 });
@@ -312,20 +313,20 @@ describe("face culling modes", () => {
     }
 
     test("a back face renders exactly like its front face when culling is off", () => {
-        const front = cells(render(spanningTriangle(5, 5, 5, false), FaceCulling.BackFaces));
-        const back = cells(render(spanningTriangle(5, 5, 5, true), FaceCulling.None));
+        const front = cells(render(spanningTriangle(5, 5, 5, FRONT_FACING), FaceCulling.BackFaces));
+        const back = cells(render(spanningTriangle(5, 5, 5, BACK_FACING), FaceCulling.None));
         expect(front.some(c => c !== undefined)).toBe(true);
         expect(back).toEqual(front);
     });
 
     test("a clipped back face renders when culling is off and stays culled when it is on", () => {
-        const clippedBack = spanningTriangle(5, -1, 5, true);
+        const clippedBack = spanningTriangle(5, -1, 5, BACK_FACING);
         expect(cells(render(clippedBack, FaceCulling.BackFaces)).every(c => c === undefined)).toBe(true);
-        expect(cells(render(clippedBack, FaceCulling.None))).toEqual(cells(render(spanningTriangle(5, -1, 5, false), FaceCulling.BackFaces)));
+        expect(cells(render(clippedBack, FaceCulling.None))).toEqual(cells(render(spanningTriangle(5, -1, 5, FRONT_FACING), FaceCulling.BackFaces)));
     });
 
     test("the default keeps culling on", () => {
-        expect(cells(render(spanningTriangle(5, 5, 5, true))).every(c => c === undefined)).toBe(true);
+        expect(cells(render(spanningTriangle(5, 5, 5, BACK_FACING))).every(c => c === undefined)).toBe(true);
     });
 });
 
@@ -361,14 +362,14 @@ describe("front face culling", () => {
     }
 
     test("FrontFaces hides the front face and shows the back face", () => {
-        expect(coveredCells(triangle(false), FaceCulling.FrontFaces)).toBe(0);
-        expect(coveredCells(triangle(true), FaceCulling.FrontFaces)).toBeGreaterThan(0);
+        expect(coveredCells(triangle(FRONT_FACING), FaceCulling.FrontFaces)).toBe(0);
+        expect(coveredCells(triangle(BACK_FACING), FaceCulling.FrontFaces)).toBeGreaterThan(0);
     });
 
     test("BackFaces and None agree on which faces each mode shows", () => {
-        const frontCells = coveredCells(triangle(false), FaceCulling.BackFaces);
-        expect(coveredCells(triangle(true), FaceCulling.BackFaces)).toBe(0);
-        expect(coveredCells(triangle(false), FaceCulling.None)).toBe(frontCells);
-        expect(coveredCells(triangle(true), FaceCulling.None)).toBe(frontCells);
+        const frontCells = coveredCells(triangle(FRONT_FACING), FaceCulling.BackFaces);
+        expect(coveredCells(triangle(BACK_FACING), FaceCulling.BackFaces)).toBe(0);
+        expect(coveredCells(triangle(FRONT_FACING), FaceCulling.None)).toBe(frontCells);
+        expect(coveredCells(triangle(BACK_FACING), FaceCulling.None)).toBe(frontCells);
     });
 });

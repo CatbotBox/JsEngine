@@ -4,10 +4,8 @@ import {ConsoleCellRatio} from "../consoleCellRatio";
 import {RenderingSystemGroup} from "../renderingSystemGroup";
 import {ScreenSize} from "../screenSize";
 
-/**
- * Fits every camera to the console: gives it a ConsoleCellRatio if it lacks one, and keeps its
- * ScreenSize equal to the platform's terminal, minus one row left for the prompt.
- */
+const PROMPT_ROWS = 1;
+
 export class ConsoleCameraSizingSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize])
     private _camerasWithoutCellRatioQuery = this.createEntityQuery([Camera], [ConsoleCellRatio])
@@ -42,10 +40,6 @@ export class ConsoleCameraSizingSystem extends System {
         this._sizeStale = true;
     }
 
-    /**
-     * Played back here rather than by EntityCommandBufferSystem, which runs after rendering:
-     * a camera created this frame must already have its ratio when the render passes run.
-     */
     private addMissingCellRatios() {
         if (!this._camerasWithoutCellRatioQuery.hasEntity()) return;
         for (const camera of this._camerasWithoutCellRatioQuery) {
@@ -56,12 +50,10 @@ export class ConsoleCameraSizingSystem extends System {
 
     public refreshSize() {
         const {columns, rows} = this.world.platform.screen.size();
-        const height = rows - 1; // leave one row for the prompt
+        const height = rows - PROMPT_ROWS;
 
         const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
         const screenSize = cameraEntity.screenSize;
-        // The terminal is the same size on almost every frame, and ScreenSize is
-        // a component other systems watch -- writing it anyway is not free.
         if (screenSize.x === columns && screenSize.y === height) return;
         screenSize.x = columns;
         screenSize.y = height;

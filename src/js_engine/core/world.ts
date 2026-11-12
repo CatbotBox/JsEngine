@@ -10,10 +10,11 @@ import {ResourceManager} from "./resourceManager";
 import type {Platform} from "../platform/platform";
 import {nodePlatform} from "../platform/nodePlatform";
 
+const MS_PER_SECOND = 1000;
+const DEFAULT_TARGET_FPS = 60;
+const LOOP_POLLS_PER_FRAME = 10;
+
 class Time {
-    /**
-     * time from last tick (in milliseconds)
-     */
     public deltaTime: number = 0;
 
     public get elapsedTime(): number {
@@ -23,7 +24,6 @@ class Time {
 }
 
 export interface WorldOptions {
-    /** The host the world runs on; defaults to the node platform. */
     readonly platform?: Platform;
 }
 
@@ -44,29 +44,16 @@ export class World extends WorldSource {
         return this._resources;
     }
 
-    /**
-     * EntityManager holds nothing but a reference to this World, so one instance
-     * per World is enough. This used to be `new EntityManager(this)` on every
-     * read — a getter that allocates is a trap even where, as here, no caller is
-     * on a per-frame path.
-     */
     get entityManager(): EntityManager {
         return this._entityManager ??= new EntityManager(this);
     }
 
-    /**
-     * The group a system attaches to when its `systemGroup()` returns undefined.
-     *
-     * Undefined only during the root group's own construction: `create()` runs
-     * before the assignment below completes, and the root group has no parent.
-     * `System.create()` tolerates that rather than special-casing the type.
-     */
     get rootSystemGroup(): SystemGroup | undefined {
         return this._rootSystemGroup;
     }
 
     private _loopHandle: ReturnType<typeof setInterval> | null = null;
-    protected _targetDeltaTime: number = 1000 / 60; // default to 60 FPS
+    protected _targetDeltaTime: number = MS_PER_SECOND / DEFAULT_TARGET_FPS;
 
     constructor(options: WorldOptions = {}) {
         super(undefined!);
@@ -134,14 +121,14 @@ export class World extends WorldSource {
             const delta = now - prevCycle;
             if (delta < this._targetDeltaTime) {
                 updateInProgress = false;
-                return; // skip update if not enough time has passed
+                return;
             }
             prevCycle = now;
             time.deltaTime = delta;
             this.update();
             updateInProgress = false;
 
-        }, this._targetDeltaTime / 10);
+        }, this._targetDeltaTime / LOOP_POLLS_PER_FRAME);
     }
 
     public pause(): void {
@@ -170,12 +157,12 @@ export class World extends WorldSource {
     }
 
     public get targetFramerate(): number {
-        return 1000 / this._targetDeltaTime;
+        return MS_PER_SECOND / this._targetDeltaTime;
     }
 
     public set targetFramerate(value: number) {
         if (value <= 0) throw new Error("Framerate must be positive and non-zero");
-        this.targetDeltaTime = 1000 / value;
+        this.targetDeltaTime = MS_PER_SECOND / value;
     }
 
     private update(): void {

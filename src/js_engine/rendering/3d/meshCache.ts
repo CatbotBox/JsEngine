@@ -2,17 +2,17 @@ import type {Mesh} from "./mesh";
 import type {FileSource} from "../../platform";
 import {nodePlatform} from "../../platform";
 
-// increment whenever a change is made to this file
 export const MESH_CACHE_FORMAT_VERSION = 3;
 export const MESH_CACHE_EXTENSION = ".meshcache";
 
 const MAGIC = "JSENGINE_MESHCACHE";
 const HEADER_LENGTH_OFFSET = MAGIC.length;
-const HEADER_OFFSET = HEADER_LENGTH_OFFSET + 4;
+const UINT32_BYTES = 4;
+const HEADER_OFFSET = HEADER_LENGTH_OFFSET + UINT32_BYTES;
+const LITTLE_ENDIAN = true;
 const BYTES_PER_FLOAT = 4;
 const BYTES_PER_MATERIAL_INDEX = 2;
 
-/** Geometry of one mesh or detail level: `data` in the Mesh layout, then one material index per vertex. */
 export interface CachedGeometry {
     readonly data: Float32Array;
     readonly vertCount: number;
@@ -23,7 +23,6 @@ export interface CachedGeometry {
 export interface CachedMesh extends CachedGeometry {
     readonly materialNames: readonly string[];
     readonly materialLibraryNames: readonly string[];
-    /** Coarser detail levels, finest first, sharing the mesh's materials. */
     readonly lods: readonly CachedGeometry[];
 }
 
@@ -45,7 +44,6 @@ export function meshCachePathFor(objPath: string): string {
     return objPath + MESH_CACHE_EXTENSION;
 }
 
-/** Undefined when there is no valid cache, or `files` cannot `stat` the obj to validate one. */
 export function readMeshCache(objPath: string, files: FileSource = nodePlatform().files): CachedMesh | undefined {
     if (files.stat === undefined) return undefined;
     const cachePath = meshCachePathFor(objPath);
@@ -58,7 +56,6 @@ export function readMeshCache(objPath: string, files: FileSource = nodePlatform(
     }
 }
 
-/** Does nothing unless `files` can both `write` the cache and `stat` the obj it is keyed on. */
 export function writeMeshCache(objPath: string, mesh: Mesh, materialLibraryNames: readonly string[], files: FileSource = nodePlatform().files): void {
     if (files.write === undefined || files.stat === undefined) return;
     const cachePath = meshCachePathFor(objPath);
@@ -90,7 +87,7 @@ function encodeCache(mesh: Mesh, materialLibraryNames: readonly string[], objByt
     const out = new Uint8Array(totalLength);
     const view = new DataView(out.buffer);
     for (let i = 0; i < MAGIC.length; i++) out[i] = MAGIC.charCodeAt(i);
-    view.setUint32(HEADER_LENGTH_OFFSET, headerBytes.length, true);
+    view.setUint32(HEADER_LENGTH_OFFSET, headerBytes.length, LITTLE_ENDIAN);
     out.set(headerBytes, HEADER_OFFSET);
     let offset = HEADER_OFFSET + headerBytes.length;
     for (const geometry of geometries) {
@@ -110,7 +107,7 @@ function decodeCache(bytes: Uint8Array, objByteLength: number, objMtimeMs: numbe
         if (bytes[i] !== MAGIC.charCodeAt(i)) return undefined;
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const headerLength = view.getUint32(HEADER_LENGTH_OFFSET, true);
+    const headerLength = view.getUint32(HEADER_LENGTH_OFFSET, LITTLE_ENDIAN);
     if (bytes.length < HEADER_OFFSET + headerLength) return undefined;
     const header = JSON.parse(new TextDecoder().decode(bytes.subarray(HEADER_OFFSET, HEADER_OFFSET + headerLength))) as CacheHeader;
     if (header.formatVersion !== MESH_CACHE_FORMAT_VERSION) return undefined;

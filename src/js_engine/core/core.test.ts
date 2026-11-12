@@ -11,20 +11,10 @@ import {Unchanged} from "./entityQueryStream";
 import {BLOCK_SIZE} from "./entityArchetype";
 import {ComponentType} from "./componentType";
 import {getOwner} from "./ownership";
+import {EntityCommandBufferSystem} from "./entityCommandBufferSystem";
 import {types} from "util";
 
 const isProxy = types.isProxy;
-
-/**
- * CHARACTERIZATION TESTS for the ECS core.
- *
- * These exist because core/ is ~2,200 lines carrying the whole engine and had no
- * tests at all. They pin *current observable behaviour* so the planned overhaul
- * can be verified rather than hoped at — including behaviour that is arguably
- * wrong. Anything questionable is marked QUIRK with what it does today; if a
- * refactor deliberately changes one, change the test in the same commit and say
- * why. A quirk test failing silently is the failure mode this suite prevents.
- */
 
 class Position extends Component {
     constructor(public x = 0, public y = 0) {
@@ -41,8 +31,7 @@ class Velocity extends Component {
 class Tag extends Component {
 }
 
-/** Adds a companion component when attached — exercises Component.setup(). */
-class WithSetup extends Component {
+class AddsTagInSetup extends Component {
     override setup(entity: Entity, em: { addComponent(e: Entity, c: Component): unknown }) {
         em.addComponent(entity, new Tag());
     }
@@ -80,10 +69,10 @@ describe("EntityManager: lifecycle", () => {
         expect(em.getComponent<Position>(e, Position)!.x).toBe(3);
 
         em.addComponent(e, new Velocity(1, 2));
-        expect(em.hasComponent(e, Position)).toBe(true);   // survived the second move
+        expect(em.hasComponent(e, Position)).toBe(true);
         expect(em.hasComponent(e, Velocity)).toBe(true);
         expect(em.getComponent<Position>(e, Position)!.y).toBe(4);
-        expect(before.entityCountUnfiltered).toBe(0);      // left the empty archetype
+        expect(before.entityCountUnfiltered).toBe(0);
     });
 
     test("removeComponent drops just that component", () => {
@@ -105,12 +94,10 @@ describe("EntityManager: lifecycle", () => {
     });
 
     test("QUIRK: adding a duplicate component is ignored, not an error", () => {
-        // addComponentInternal returns rather than throwing or replacing, and stays silent:
-        // the log it used to emit was pure noise.
         const e = em.createEntity();
         em.addComponent(e, new Position(1, 1));
         em.addComponent(e, new Position(7, 7));
-        expect(em.getComponent<Position>(e, Position)!.x).toBe(1); // first one wins
+        expect(em.getComponent<Position>(e, Position)!.x).toBe(1);
     });
 
     test("setComponent replaces the stored instance in place", () => {
@@ -122,7 +109,7 @@ describe("EntityManager: lifecycle", () => {
 
     test("Component.setup runs on add and can attach further components", () => {
         const e = em.createEntity();
-        em.addComponent(e, new WithSetup());
+        em.addComponent(e, new AddsTagInSetup());
         expect(em.hasComponent(e, Tag)).toBe(true);
     });
 
@@ -149,7 +136,7 @@ describe("EntityArchetype: storage invariants", () => {
 
         em.setEnabledState(es[1], false);
         em.setEnabledState(es[3], false);
-        expect(arch.entityCount).toBe(3);            // enabled kept contiguous at the front
+        expect(arch.entityCount).toBe(3);
         expect(arch.entityCountUnfiltered).toBe(5);
     });
 
@@ -159,7 +146,7 @@ describe("EntityArchetype: storage invariants", () => {
             em.addComponent(e, new Position(i, i));
             return e;
         });
-        em.destroyEntity(es[1]);  // swap-removed from the middle
+        em.destroyEntity(es[1]);
 
         const arch = world.archetypes.getOrCreate([Position.type()]) as EntityArchetype;
         expect(arch.entityCountUnfiltered).toBe(3);
@@ -176,16 +163,13 @@ describe("EntityArchetype: storage invariants", () => {
     });
 
     test("a constructor and its token resolve to the SAME archetype", () => {
-        // The id provider keys off object identity, so these used to produce two
-        // different archetypes with no error — passing a constructor silently built
-        // a parallel empty one that never matched anything.
         const e = em.createEntity();
         em.addComponent(e, new Position(1, 2));
 
         const byToken = world.archetypes.getOrCreate([Position.type()]) as EntityArchetype;
         const byCtor = world.archetypes.getOrCreate([Position]) as EntityArchetype;
         expect(byCtor).toBe(byToken);
-        expect(byCtor.entityCountUnfiltered).toBe(1);   // finds the real entity
+        expect(byCtor.entityCountUnfiltered).toBe(1);
     });
 });
 
@@ -209,7 +193,7 @@ describe("EntityQuery", () => {
 
         const e = em.createEntity();
         em.addComponent(e, new Position());
-        expect(q.entityCount()).toBe(1);   // refreshed lazily
+        expect(q.entityCount()).toBe(1);
     });
 
     test("excludes archetypes carrying a blacklisted component", () => {
@@ -236,7 +220,6 @@ describe("EntityQuery", () => {
     });
 
     test("getSingleton throws where tryGetSingleton returns undefined", () => {
-        // Both share one finder; only the none/ambiguous handling differs.
         const q = new EntityQuery(world, [Position]);
         expect(() => q.getSingleton({p: Position})).toThrow();
 
@@ -281,12 +264,8 @@ describe("EntityQueryStream", () => {
     });
 
     test("a component in `read` that an archetype lacks EXCLUDES that archetype", () => {
-        // This is the sharp edge. LocalToWorldSystem's query requires only
-        // [LocalPosition, LocalToWorld] but listed LocalRotation/LocalScale under
-        // `read` — so every entity without a rotation was silently dropped, their
-        // LocalToWorld never updated, and the whole scene rendered at the origin.
-        spawn(3);                                   // Position + Velocity
-        const plain = em.createEntity();            // Position only
+        spawn(3);
+        const plain = em.createEntity();
         em.addComponent(plain, new Position(99, 99));
 
         const q = new EntityQuery(world, [Position]);
@@ -294,7 +273,7 @@ describe("EntityQueryStream", () => {
 
         let rows = 0;
         q.stream({read: {p: Position, v: Velocity}}).forEach(() => rows++);
-        expect(rows).toBe(3);                       // the Position-only entity is skipped
+        expect(rows).toBe(3);
     });
 
     test("the same component under `optional` INCLUDES it, as undefined", () => {
@@ -307,7 +286,7 @@ describe("EntityQueryStream", () => {
             .stream({read: {p: Position}, optional: {v: Velocity}})
             .forEach(({p, v}) => seen.push(v === undefined ? undefined : p.x));
 
-        expect(seen.length).toBe(4);                // nothing skipped
+        expect(seen.length).toBe(4);
         expect(seen.filter(s => s === undefined).length).toBe(1);
     });
 
@@ -317,11 +296,11 @@ describe("EntityQueryStream", () => {
 
         const consumed: object[] = [];
         q.stream({read: {p: Position}}).consume(row => consumed.push(row));
-        expect(new Set(consumed).size).toBe(1);     // same object every iteration
+        expect(new Set(consumed).size).toBe(1);
 
         const each: object[] = [];
         q.stream({read: {p: Position}}).forEach(row => each.push(row));
-        expect(new Set(each).size).toBe(3);         // distinct objects
+        expect(new Set(each).size).toBe(3);
     });
 
     test("count matches the query's entity count", () => {
@@ -339,8 +318,6 @@ describe("EntityQueryStream", () => {
     });
 
     test("writing through a streamed row marks the column updated", () => {
-        // Declaring a component under `write` stamps its column once per archetype, so any
-        // write through the row bumps lastUpdatedTime. This is what filterLastUpdated keys off.
         spawn(2);
         const arch = world.archetypes.getOrCreate([Position.type(), Velocity.type()]) as EntityArchetype;
         const before = arch.getColumn(Position.type())!.lastUpdatedTime;
@@ -358,24 +335,17 @@ describe("EntityQueryStream", () => {
         spawn(2);
         const q = new EntityQuery(world, [Position]);
 
-        // touch nothing, then filter on "now" — nothing should come back
         const future = performance.now() + 1000;
         let rows = 0;
         q.stream({read: {p: Position}}, {filterLastUpdated: future}).forEach(() => rows++);
         expect(rows).toBe(0);
 
-        // filtering on 0 lets everything through
         rows = 0;
         q.stream({read: {p: Position}}, {filterLastUpdated: 0}).forEach(() => rows++);
         expect(rows).toBe(2);
     });
 
     test("structuralFilter 'additions' skips removals but not additions or edits", () => {
-        // Change tracking is per-archetype but cost is per-entity, so one removal
-        // used to force a full rebuild: at 40k entities LocalToWorldSystem went
-        // 0.09ms -> 4.92ms for a single retiring entity, every frame, in four
-        // systems at once. Swap-remove keeps survivors' columns paired, so a
-        // removal genuinely leaves derived data valid.
         spawn(4);
         const q = new EntityQuery(world, [Position]);
         const rowsSince = (t: number) => {
@@ -386,15 +356,15 @@ describe("EntityQueryStream", () => {
 
         const victims = spawn(2);
         const mark = performance.now();
-        expect(rowsSince(mark)).toBe(0);                 // nothing changed -> skipped
+        expect(rowsSince(mark)).toBe(0);
 
         em.destroyEntity(victims[0]);
-        expect(rowsSince(mark)).toBe(0);                 // a removal alone must NOT wake it
+        expect(rowsSince(mark)).toBe(0);
 
         const added = em.createEntity();
         em.addComponent(added, new Position(1, 1));
         em.addComponent(added, new Velocity());
-        expect(rowsSince(mark)).toBeGreaterThan(0);      // an addition must
+        expect(rowsSince(mark)).toBeGreaterThan(0);
     });
 
     test("a data edit still wakes a filtered stream", () => {
@@ -405,7 +375,6 @@ describe("EntityQueryStream", () => {
         q.stream({read: {p: Position}}, {filterLastUpdated: mark}).forEach(() => n++);
         expect(n).toBe(0);
 
-        // write through a declared-write stream, which stamps the column
         q.stream({write: {p: Position}}).forEach(({p}) => {
             p.x = p.x + 1;
         });
@@ -420,7 +389,6 @@ describe("EntityQueryStream", () => {
         const q = new EntityQuery(world, [Position]);
         const mark = performance.now();
 
-        // declares a write but tells the stream it wrote nothing
         q.stream({write: {p: Position}}).forEach(() => Unchanged);
 
         let n = 0;
@@ -433,7 +401,6 @@ describe("EntityQueryStream", () => {
         const q = new EntityQuery(world, [Position]);
         const mark = performance.now();
 
-        // granularity is the column, so a single real write wakes every entity
         let i = 0;
         q.stream({write: {p: Position}}).forEach(({p}) => {
             if (i++ !== 1) return Unchanged;
@@ -446,13 +413,11 @@ describe("EntityQueryStream", () => {
     });
 
     test("a callback returning nothing counts as a write", () => {
-        // the opt-out must be opt-in: `undefined` has to keep stamping, or every
-        // existing system silently stops propagating changes
         spawn(3);
         const q = new EntityQuery(world, [Position]);
         const mark = performance.now();
 
-        q.stream({write: {p: Position}}).forEach(() => { /* no return */ });
+        q.stream({write: {p: Position}}).forEach(() => {});
 
         let n = 0;
         q.stream({read: {p: Position}}, {filterLastUpdated: mark}).forEach(() => n++);
@@ -460,10 +425,6 @@ describe("EntityQueryStream", () => {
     });
 
     test("one arrival wakes only its block, not the whole archetype", () => {
-        // The reason block timestamps exist. Profiling at 129,008 entities across 6
-        // archetypes showed a still scene at 41ms/frame and the same scene under churn
-        // at ~196ms, entirely because a few hundred arrivals re-dirtied archetypes of
-        // ~21,500. Appends land at the tail, so only the last block should wake.
         spawn(300);
         const q = new EntityQuery(world, [Position]);
         const mark = performance.now();
@@ -478,8 +439,8 @@ describe("EntityQueryStream", () => {
             structuralFilter: "additions",
         }).forEach(() => n++);
 
-        expect(n).toBeGreaterThan(0);        // the new entity must be processed
-        expect(n).toBeLessThan(BLOCK_SIZE);  // but not 301 of them
+        expect(n).toBeGreaterThan(0);
+        expect(n).toBeLessThan(BLOCK_SIZE);
     });
 
     test("a write to one block does not wake the others", () => {
@@ -487,7 +448,6 @@ describe("EntityQueryStream", () => {
         const q = new EntityQuery(world, [Position]);
         const mark = performance.now();
 
-        // touch only the first few entities; the rest decline the write
         let i = 0;
         q.stream({write: {p: Position}}).forEach(({p}) => {
             if (i++ >= 5) return Unchanged;
@@ -496,13 +456,10 @@ describe("EntityQueryStream", () => {
 
         let n = 0;
         q.stream({read: {p: Position}}, {filterLastUpdated: mark}).forEach(() => n++);
-        expect(n).toBe(BLOCK_SIZE);          // block 0 only
+        expect(n).toBe(BLOCK_SIZE);
     });
 
     test("a removal still forces a full pass for structural 'any' consumers", () => {
-        // Swap-remove moves a survivor's data down into a lower index without stamping
-        // the block it landed in, so block skipping must be disabled for this mode --
-        // Console2DRenderPassSystem keys an index by entity and depends on it.
         const es = spawn(300);
         const q = new EntityQuery(world, [Position]);
         const mark = performance.now();
@@ -515,8 +472,6 @@ describe("EntityQueryStream", () => {
     });
 
     test("a stream may be iterated more than once; each pass re-preps", () => {
-        // Worth pinning because the name suggests otherwise: forEach re-prepares the
-        // plan on entry, so a second pass yields the same rows rather than nothing.
         spawn(2);
         const s = new EntityQuery(world, [Position]).stream({read: {p: Position}});
         let first = 0, second = 0;
@@ -548,10 +503,6 @@ describe("trackComponent", () => {
     });
 
     test("mutation via a method IS tracked when the field is a normal property", () => {
-        // CLAUDE.md states "only property setters are tracked, any component that
-        // mutates internal state via a method must call notifyChanged() itself". That is
-        // wrong for ordinary (TS-`private`) fields: calling the method through the
-        // proxy makes `this` the proxy, so the internal assignment hits the set trap.
         class Counter extends Component {
             private _n = 0;
 
@@ -572,10 +523,6 @@ describe("trackComponent", () => {
     });
 
     test("QUIRK: tracking is incompatible with #private fields — it throws", () => {
-        // Worse than "invisible": ECMAScript private fields are keyed to the target
-        // object, and the proxy is not that object, so any access through the proxy
-        // throws. A component using #private cannot be tracked at all — it fails at
-        // runtime, not at compile time. Use TS `private` (a normal property) instead.
         class HardPrivate extends Component {
             #n = 0;
 
@@ -596,16 +543,11 @@ describe("trackComponent", () => {
 
 describe("tracked handles survive structural changes", () => {
     test("a handle taken before an archetype move still marks its column", () => {
-        // Regression: the proxy used to capture the archetype and column index it
-        // was fetched from, so the first structural change left it stamping the
-        // archetype the entity had already left — silently, for the life of the
-        // handle. Component.setup() adds companions routinely, so "fetch a handle,
-        // then move" is the normal case.
         const e = em.createEntity();
         em.addComponent(e, new Position(1, 2));
         const handle = em.getComponent<Position>(e, Position)!;
 
-        em.addComponent(e, new Velocity(3, 4));   // moves the entity to a new archetype
+        em.addComponent(e, new Velocity(3, 4));
 
         const arch = getOwner(world, e)!;
         const column = arch.getColumn(ComponentType.of(Position))!;
@@ -617,12 +559,7 @@ describe("tracked handles survive structural changes", () => {
         expect(em.getComponent<Position>(e, Position)!.x).toBe(99);
     });
 
-    test("components carried through a command-buffer move are not left wrapped", async () => {
-        // The buffer used to carry a *tracked* snapshot across the move, which put
-        // the Proxy itself into the destination column — and wrapped it again on
-        // every subsequent move, so reads got steadily slower and the stamp went to
-        // the wrong archetype.
-        const {EntityCommandBufferSystem} = await import("./entityCommandBufferSystem");
+    test("components carried through a command-buffer move are not left wrapped", () => {
         const cbSystem = world.getOrCreateSystem(EntityCommandBufferSystem);
 
         const e = em.createEntity();
@@ -642,15 +579,13 @@ describe("tracked handles survive structural changes", () => {
 });
 
 describe("EntityCommandBuffer", () => {
-    test("structural changes are deferred until playback", async () => {
-        const {EntityCommandBufferSystem} = await import("./entityCommandBufferSystem");
+    test("structural changes are deferred until playback", () => {
         const cbSystem = world.getOrCreateSystem(EntityCommandBufferSystem);
         const cb = cbSystem.getEntityCommandBuffer();
 
         const e = cb.createEntity("deferred");
         cb.addComponent(e, new Position(1, 2));
 
-        // nothing has happened yet
         expect(new EntityQuery(world, [Position]).entityCount()).toBe(0);
 
         cbSystem.update();
@@ -675,15 +610,13 @@ describe("Entity handles: generation counters", () => {
         em.addComponent(stale, new Position(1, 1));
         em.destroyEntity(stale);
 
-        // recycles the same index slot with a bumped generation
         const fresh = em.createEntity("second");
         em.addComponent(fresh, new Position(2, 2));
 
-        expect(entityIndexOf(fresh)).toBe(entityIndexOf(stale)); // same slot...
-        expect(fresh === stale).toBe(false);                     // ...different handle
+        expect(entityIndexOf(fresh)).toBe(entityIndexOf(stale));
+        expect(fresh === stale).toBe(false);
         expect(entityGenerationOf(fresh)).toBe(entityGenerationOf(stale) + 1);
 
-        // the stale handle must not read the new occupant's data
         expect(em.exists(stale)).toBe(false);
         expect(em.getComponent(stale, Position)).toBe(undefined);
         expect(em.getComponent<Position>(fresh, Position)!.x).toBe(2);
@@ -693,7 +626,7 @@ describe("Entity handles: generation counters", () => {
         const stale = em.createEntity();
         em.destroyEntity(stale);
         const fresh = em.createEntity();
-        em.destroyEntity(stale); // double free through the old handle
+        em.destroyEntity(stale);
         expect(em.exists(fresh)).toBe(true);
     });
 

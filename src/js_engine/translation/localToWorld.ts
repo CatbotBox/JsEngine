@@ -4,7 +4,6 @@ import {asFloat32Array, fromFloat32Array, ReadonlyVec, ReadonlyVec16, ReadonlyVe
 
 const raw = (v: ReadonlyVec<number>): Float32Array => asFloat32Array(v);
 
-// Column-major index helpers (OpenGL/GLSL style)
 export const M4 = {
     m00: 0, m10: 1, m20: 2, m30: 3,
     m01: 4, m11: 5, m21: 6, m31: 7,
@@ -33,27 +32,13 @@ identity[14] = 0;
 identity[15] = 1;
 
 const normalMatrixScratch = Vec16.alloc();
+const SINGULAR_DETERMINANT_EPSILON = 1e-8;
 
 export class LocalToWorld extends Component implements F32Backed {
-    /** SoA column width: the matrix lives in the archetype's Float32Array column. */
     static readonly f32Width = 16;
 
-    /**
-     * Column-major:
-     * [  0,  4,  8, 12,
-     *    1,  5,  9, 13,
-     *    2,  6, 10, 14,
-     *    3,  7, 11, 15 ]
-     * 0,1,2   → X basis (Right.x, Right.y, Right.z)
-     * 4,5,6   → Y basis (Up.x,    Up.y,    Up.z)
-     * 8,9,10  → Z basis (Fwd.x,   Fwd.y,   Fwd.z)
-     * 12,13,14→ Translation (tx, ty, tz)
-     * 3,7,11  → 0 (affine)
-     * 15      → 1 (affine)
-     */
     private _matrix: Vec16;
 
-    /** Live view over this component's storage — writes land in the matrix. */
     public get matrix(): Vec16 {
         return this._matrix;
     }
@@ -62,8 +47,6 @@ export class LocalToWorld extends Component implements F32Backed {
         Vec.copy(this._matrix, value);
     }
 
-    // Position
-    /** Live view over the translation column — writes land in the matrix. */
     public get position(): Vec3 {
         return fromFloat32Array<3>(asFloat32Array(this._matrix).subarray(M4.tx, M4.tz + 1));
     }
@@ -72,21 +55,16 @@ export class LocalToWorld extends Component implements F32Backed {
         asFloat32Array(this._matrix).set(raw(p), M4.tx);
     }
 
-    // Scale
-    /** Allocates. Use decomposeScaleInto() on any path that runs per frame. */
     public get scale(): Vec3 {
         return this.decomposeScaleInto(Vec.alloc3());
     }
 
-    /** Decompose scale from the basis columns into `out`, allocating nothing. */
     public decomposeScaleInto(out: Vec3): Vec3 {
         const m = raw(this._matrix);
-        // column lengths (|basis|)
-        const sx = Math.hypot(...m.subarray(0, 3));
-        const sy = Math.hypot(...m.subarray(4, 7));
-        const sz = Math.hypot(...m.subarray(8, 11));
+        const sx = Math.hypot(...m.subarray(M4.m00, M4.m30));
+        const sy = Math.hypot(...m.subarray(M4.m01, M4.m31));
+        const sz = Math.hypot(...m.subarray(M4.m02, M4.m32));
 
-        // Handle possible reflection: ensure right-handed by absorbing sign into X scale
         const nx0 = sx > 0 ? m[0] / sx : 0, ny0 = sx > 0 ? m[1] / sx : 0, nz0 = sx > 0 ? m[2] / sx : 0;
         const nx1 = sy > 0 ? m[4] / sy : 0, ny1 = sy > 0 ? m[5] / sy : 0, nz1 = sy > 0 ? m[6] / sy : 0;
         const nx2 = sz > 0 ? m[8] / sz : 0, ny2 = sz > 0 ? m[9] / sz : 0, nz2 = sz > 0 ? m[10] / sz : 0;
@@ -94,29 +72,24 @@ export class LocalToWorld extends Component implements F32Backed {
         const cx = ny0 * nz1 - nz0 * ny1;
         const cy = nz0 * nx1 - nx0 * nz1;
         const cz = nx0 * ny1 - ny0 * nx1;
-        const handedDot = cx * nx2 + cy * ny2 + cz * nz2; // ~det sign
+        const basisDeterminant = cx * nx2 + cy * ny2 + cz * nz2;
 
-        return Vec.set3(out, handedDot < 0 ? -sx : sx, sy, sz);
+        return Vec.set3(out, basisDeterminant < 0 ? -sx : sx, sy, sz);
     }
 
     public set scale(s: ReadonlyVec3) {
-        // Keep current rotation & position; rebuild matrix from TRS
         const r = this.rotation;
         const p = this.position;
         LocalToWorld.fromTRS(this.matrix, p, r, s);
     }
 
-    // Rotation (as quaternion [x,y,z,w])
-    /** Allocates. Use rotationInto() on any path that runs per frame. */
     public get rotation(): Vec4 {
         return this.rotationInto(Vec.alloc4());
     }
 
-    /** Decompose rotation as a quaternion [x,y,z,w] into `out`, allocating nothing. */
     public rotationInto(out: Vec4): Vec4 {
         const m = raw(this._matrix);
 
-        // Extract and normalize basis (remove scale, handle reflection)
         let sx = Math.hypot(m[0], m[1], m[2]);
         let sy = Math.hypot(m[4], m[5], m[6]);
         let sz = Math.hypot(m[8], m[9], m[10]);
@@ -127,47 +100,43 @@ export class LocalToWorld extends Component implements F32Backed {
         let r01 = m[4] / sy, r11 = m[5] / sy, r21 = m[6] / sy;
         let r02 = m[8] / sz, r12 = m[9] / sz, r22 = m[10] / sz;
 
-        // Fix reflection (ensure right-handed)
         const cx = r10 * r21 - r20 * r11;
         const cy = r20 * r01 - r00 * r21;
         const cz = r00 * r11 - r10 * r01;
-        const handedDot = cx * r02 + cy * r12 + cz * r22;
-        if (handedDot < 0) {
-            // Flip X column
+        const basisDeterminant = cx * r02 + cy * r12 + cz * r22;
+        if (basisDeterminant < 0) {
             r00 = -r00;
             r10 = -r10;
             r20 = -r20;
         }
 
-        // Convert 3x3 rotation (column-major) to quaternion
         const trace = r00 + r11 + r22;
         let x: number, y: number, z: number, w: number;
         if (trace > 0) {
-            const S = Math.sqrt(trace + 1.0) * 2; // S = 4*qw
-            w = 0.25 * S;
-            x = (r21 - r12) / S;
-            y = (r02 - r20) / S;
-            z = (r10 - r01) / S;
+            const fourW = Math.sqrt(trace + 1.0) * 2;
+            w = 0.25 * fourW;
+            x = (r21 - r12) / fourW;
+            y = (r02 - r20) / fourW;
+            z = (r10 - r01) / fourW;
         } else if (r00 > r11 && r00 > r22) {
-            const S = Math.sqrt(1.0 + r00 - r11 - r22) * 2; // S = 4*qx
-            w = (r21 - r12) / S;
-            x = 0.25 * S;
-            y = (r01 + r10) / S;
-            z = (r02 + r20) / S;
+            const fourX = Math.sqrt(1.0 + r00 - r11 - r22) * 2;
+            w = (r21 - r12) / fourX;
+            x = 0.25 * fourX;
+            y = (r01 + r10) / fourX;
+            z = (r02 + r20) / fourX;
         } else if (r11 > r22) {
-            const S = Math.sqrt(1.0 + r11 - r00 - r22) * 2; // S = 4*qy
-            w = (r02 - r20) / S;
-            x = (r01 + r10) / S;
-            y = 0.25 * S;
-            z = (r12 + r21) / S;
+            const fourY = Math.sqrt(1.0 + r11 - r00 - r22) * 2;
+            w = (r02 - r20) / fourY;
+            x = (r01 + r10) / fourY;
+            y = 0.25 * fourY;
+            z = (r12 + r21) / fourY;
         } else {
-            const S = Math.sqrt(1.0 + r22 - r00 - r11) * 2; // S = 4*qz
-            w = (r10 - r01) / S;
-            x = (r02 + r20) / S;
-            y = (r12 + r21) / S;
-            z = 0.25 * S;
+            const fourZ = Math.sqrt(1.0 + r22 - r00 - r11) * 2;
+            w = (r10 - r01) / fourZ;
+            x = (r02 + r20) / fourZ;
+            y = (r12 + r21) / fourZ;
+            z = 0.25 * fourZ;
         }
-        // normalize (numeric safety)
         const n = Math.hypot(x, y, z, w) || 1;
         const o = raw(out);
         o[0] = x / n;
@@ -183,44 +152,36 @@ export class LocalToWorld extends Component implements F32Backed {
         LocalToWorld.fromTRS(this.matrix, p, q, s);
     }
 
-    // Set full TRS
     public setTRS(position: ReadonlyVec3, rotation: ReadonlyVec4, scale: ReadonlyVec3): void {
         LocalToWorld.fromTRS(this.matrix, position, rotation, scale);
         this.notifyChanged();
     }
 
-    // ctor
     public constructor() {
         super();
         this._matrix = Vec16.alloc();
         LocalToWorld.identity(this.matrix);
     }
 
-    // F32Backed (store-driven; see core/componentType.ts)
-
     writeF32(dst: Float32Array, offset: number): void {
         dst.set(asFloat32Array(this._matrix), offset);
     }
 
     bindF32(src: Float32Array, offset: number): void {
-        this._matrix = fromFloat32Array<16>(src.subarray(offset, offset + 16));
+        this._matrix = fromFloat32Array<16>(src.subarray(offset, offset + LocalToWorld.f32Width));
     }
 
     detachF32(): void {
-        const own = new Float32Array(16);
+        const own = new Float32Array(LocalToWorld.f32Width);
         own.set(asFloat32Array(this._matrix));
         this._matrix = fromFloat32Array<16>(own);
     }
 
-    // ============== Static utility functions ==============
-
-    /** out = Identity */
-    public static identity(out: Vec16 = Vec.alloc<16>(16)): Vec16 {
+    public static identity(out: Vec16 = Vec.alloc<16>(LocalToWorld.f32Width)): Vec16 {
         raw(out).set(identity);
         return out;
     }
 
-    /** Build column-major mat4 from TRS (vec4 is [x,y,z,w]) */
     public static fromTRS(out: Vec16, p: ReadonlyVec3, q: ReadonlyVec4, s: ReadonlyVec3): Vec16 {
         const qv = raw(q), pv = raw(p), sv = raw(s), out_ = raw(out);
         const x = qv[0], y = qv[1], z = qv[2], w = qv[3];
@@ -230,7 +191,6 @@ export class LocalToWorld extends Component implements F32Backed {
         const wx = w * x2, wy = w * y2, wz = w * z2;
         const sx = sv[0], sy = sv[1], sz = sv[2];
 
-        // Upper-left 3x3 (column-major)
         out_[0] = (1 - (yy + zz)) * sx;
         out_[1] = (xy + wz) * sx;
         out_[2] = (xz - wy) * sx;
@@ -258,11 +218,6 @@ export class LocalToWorld extends Component implements F32Backed {
         this.notifyChanged();
     }
 
-    /**
-     * Column form of {@link fromTRS} for the SoA hot path: scalars in, raw
-     * column out at `off`. Taking scalars (not arrays) lets the caller default
-     * an absent optional rotation/scale column without allocating anything.
-     */
     public static fromTRSAt(
         out: Float32Array, off: number,
         px: number, py: number, pz: number,
@@ -295,12 +250,6 @@ export class LocalToWorld extends Component implements F32Backed {
         out[off + 15] = 1;
     }
 
-    /**
-     * Column form of {@link mul}: out[oOff..] = a[aOff..] * b[bOff..].
-     * Alias-safe the same way mul is — a is hoisted into locals and each of b's
-     * columns is read before out's corresponding column is written, so
-     * `out === b` at the same offset (the in-place parent multiply) is fine.
-     */
     public static mulAt(
         a: Float32Array, aOff: number,
         b: Float32Array, bOff: number,
@@ -345,7 +294,6 @@ export class LocalToWorld extends Component implements F32Backed {
         out[oOff + 15] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
     }
 
-    /** out = a * b (column-major) */
     static mul(a: ReadonlyVec16, b: ReadonlyVec16, out: Vec16 = this.identity()): Vec16 {
         const av = raw(a), bv = raw(b), o = raw(out);
         const a0 = av[0], a1 = av[1], a2 = av[2], a3 = av[3];
@@ -353,14 +301,12 @@ export class LocalToWorld extends Component implements F32Backed {
         const a8 = av[8], a9 = av[9], a10 = av[10], a11 = av[11];
         const a12 = av[12], a13 = av[13], a14 = av[14], a15 = av[15];
 
-        // col 0
         let b0 = bv[0], b1 = bv[1], b2 = bv[2], b3 = bv[3];
         o[0] = a0 * b0 + a4 * b1 + a8 * b2 + a12 * b3;
         o[1] = a1 * b0 + a5 * b1 + a9 * b2 + a13 * b3;
         o[2] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
         o[3] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
 
-        // col 1
         b0 = bv[4];
         b1 = bv[5];
         b2 = bv[6];
@@ -370,7 +316,6 @@ export class LocalToWorld extends Component implements F32Backed {
         o[6] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
         o[7] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
 
-        // col 2
         b0 = bv[8];
         b1 = bv[9];
         b2 = bv[10];
@@ -380,7 +325,6 @@ export class LocalToWorld extends Component implements F32Backed {
         o[10] = a2 * b0 + a6 * b1 + a10 * b2 + a14 * b3;
         o[11] = a3 * b0 + a7 * b1 + a11 * b2 + a15 * b3;
 
-        // col 3
         b0 = bv[12];
         b1 = bv[13];
         b2 = bv[14];
@@ -392,13 +336,12 @@ export class LocalToWorld extends Component implements F32Backed {
         return out;
     }
 
-    /** Transform a point (x,y,z,1). Pass `out` on per-frame paths to avoid allocating. */
     public static transformPoint(m: ReadonlyVec16, point: ReadonlyVec3, out: Vec3 = Vec3.alloc()): Vec3 {
         const mm = raw(m), p = raw(point), o = raw(out);
         const ox = mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12];
         const oy = mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13];
         const oz = mm[2] * p[0] + mm[6] * p[1] + mm[10] * p[2] + mm[14];
-        o[0] = ox;  // via locals, so out may alias point
+        o[0] = ox;
         o[1] = oy;
         o[2] = oz;
         return out;
@@ -429,7 +372,6 @@ export class LocalToWorld extends Component implements F32Backed {
         return out;
     }
 
-    /** Invert an affine matrix (ignores perspective) */
     public static invertAffine(mat: ReadonlyVec16, out: Vec16 = this.identity()): Vec16 {
         const m = raw(mat), o = raw(out);
         const a00 = m[0], a01 = m[4], a02 = m[8];
@@ -441,10 +383,9 @@ export class LocalToWorld extends Component implements F32Backed {
         const b21 = a21 * a10 - a11 * a20;
 
         let det = a00 * b01 + a01 * b11 + a02 * b21;
-        if (Math.abs(det) < 1e-8) return LocalToWorld.identity(out);
+        if (Math.abs(det) < SINGULAR_DETERMINANT_EPSILON) return LocalToWorld.identity(out);
         det = 1.0 / det;
 
-        // inverse 3x3 (column-major)
         const i00 = b01 * det;
         const i01 = (-a22 * a01 + a02 * a21) * det;
         const i02 = (a12 * a01 - a02 * a11) * det;

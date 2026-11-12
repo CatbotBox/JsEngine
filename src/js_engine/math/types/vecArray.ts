@@ -49,7 +49,6 @@ export class VecArray<factor extends number, length extends number = number> {
             this.rawData = new Float32Array(this.length * factor);
             return;
         }
-        // arraylike + maybe vecArray
 
         endIndex = endIndex ?? flexArg.length;
         const absoluteStartIndex = startIndex * factor;
@@ -57,13 +56,10 @@ export class VecArray<factor extends number, length extends number = number> {
         if (absoluteEndIndex > (flexArg.length * factor)) throw new Error("Out of bounds");
         this.length = (endIndex - startIndex) as length;
 
-        // Vec Array share view
         if (VecArray.isVecArray(flexArg)) {
-            // view into other vecArray
             this.rawData = flexArg.rawData.subarray(absoluteStartIndex, absoluteEndIndex);
             return;
         }
-        // arrayLike copy view
         const arrayLike = flexArg;
         this.rawData = new Float32Array(this.length * factor);
         for (let i = startIndex; i < endIndex; i++) {
@@ -75,10 +71,6 @@ export class VecArray<factor extends number, length extends number = number> {
         return fromFloat32Array<factor>(this.rawData.subarray(index * this.factor, (index + 1) * this.factor));
     }
 
-    /**
-     * Direct access to the flat backing storage (element i lives at [i * factor .. i * factor + factor)).
-     * Unlike at(), this allocates nothing — use it in per-frame hot loops.
-     */
     public get raw(): Float32Array {
         return this.rawData;
     }
@@ -97,7 +89,6 @@ export class VecArray<factor extends number, length extends number = number> {
     public set(array: ArrayLike<Vec<factor>> | VecArray<factor> | Vec<factor>, offset: number = 0): void {
         const absoluteOffset = offset * this.factor;
 
-        // vecArray
         if (VecArray.isVecArray(array)) {
             if (array.length <= 0) return;
             this.rawData.set(array.rawData, absoluteOffset);
@@ -109,7 +100,6 @@ export class VecArray<factor extends number, length extends number = number> {
             return;
         }
 
-        // array of Vec
         const list = array as ArrayLike<Vec<factor>>;
         for (let i = 0; i < list.length; i++) {
             this.rawData.set(asFloat32Array(list[i]), absoluteOffset + (i * this.factor));

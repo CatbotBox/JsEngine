@@ -5,18 +5,17 @@ import type {DemoModel, DemoModelFiles} from "../demo/3d/game";
 import type {Demo3dManifest} from "../demo/3d/assets";
 import {runWorldWorker} from "./worldWorker";
 
-/** Written by scripts/buildWeb.ts beside this worker; asset paths in it are relative to it too. */
 const MANIFEST_URL = "3d-manifest.json";
 
 const MB = 1024 * 1024;
+const RETURN_AND_CLEAR_LINE = "\r\x1b[2K";
 
 function progressLine(progress: PreloadProgress): string {
     const loaded = (progress.loadedBytes / MB).toFixed(1);
     const total = (progress.totalBytes / MB).toFixed(1);
-    return `\r\x1b[2KLoading assets: ${progress.loadedFiles}/${progress.totalFiles} files, ${loaded}/${total} MB`;
+    return `${RETURN_AND_CLEAR_LINE}Loading assets: ${progress.loadedFiles}/${progress.totalFiles} files, ${loaded}/${total} MB`;
 }
 
-/** Writes the progress line only when what it says changes: bytes arrive in many small chunks. */
 function progressWriter(output: PlatformOutput): (progress: PreloadProgress) => void {
     let shown = "";
     return progress => {
@@ -33,7 +32,6 @@ async function fetchManifest(): Promise<Demo3dManifest> {
     return await response.json() as Demo3dManifest;
 }
 
-/** A model is ready once none of the files the manifest lists for it is a lazy entry still to fetch. */
 function manifestModelFiles(manifest: Demo3dManifest, files: PreloadedFileSource): DemoModelFiles {
     const pathsByModel = new Map(manifest.models.map(model => [model.path, model.files]));
     const pathsOf = (model: DemoModel) => pathsByModel.get(model.path) ?? [];

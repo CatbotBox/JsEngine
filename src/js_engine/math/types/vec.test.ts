@@ -7,8 +7,6 @@ import {RenderBounds} from "../../rendering/renderBounds";
 
 describe("Vec", () => {
     test("is Float32Array-backed regardless of how it was made", () => {
-        // The old union type meant `Vec3` was a Float32Array from a component and
-        // a plain array from Vec.add() — this is the invariant that replaced it.
         for (const v of [Vec.alloc3(), Vec.alloc3(1, 2, 3), Vec.of<3>([1, 2, 3]), Vec.clone(Vec.alloc3())]) {
             expect(asFloat32Array(v)).toBeInstanceOf(Float32Array);
             expect(Vec.size(v)).toBe(3);
@@ -25,7 +23,6 @@ describe("Vec", () => {
     });
 
     test("float32 precision is honest about itself", () => {
-        // Vec is f32, not f64 — worth pinning so a future change to f64 is deliberate.
         const v = Vec.alloc3(0.1, 0, 0);
         expect(Vec.x(v)).toBeCloseTo(0.1, 6);
         expect(Vec.x(v)).not.toBe(0.1);
@@ -36,9 +33,9 @@ describe("Vec", () => {
         const b = Vec.alloc3(10, 20, 30);
         const out = Vec.alloc3();
 
-        expect(Vec.addInto(out, a, b)).toBe(out); // returns the same object
+        expect(Vec.addInto(out, a, b)).toBe(out);
         expect(Vec.toArray(out)).toEqual([11, 22, 33]);
-        expect(Vec.toArray(a)).toEqual([1, 2, 3]); // inputs untouched
+        expect(Vec.toArray(a)).toEqual([1, 2, 3]);
 
         Vec.subInto(out, b, a);
         expect(Vec.toArray(out)).toEqual([9, 18, 27]);
@@ -57,7 +54,6 @@ describe("Vec", () => {
         Vec.addInto(a, a, a);
         expect(Vec.toArray(a)).toEqual([2, 4, 6]);
 
-        // cross writes through locals, so aliasing must still be correct
         const x = Vec.alloc3(1, 0, 0);
         const y = Vec.alloc3(0, 1, 0);
         Vec.crossInto(x, x, y);
@@ -72,7 +68,6 @@ describe("Vec", () => {
 
         const n = Vec.normalizeInto(Vec.alloc3(), a);
         expect(Vec.length(n)).toBeCloseTo(1);
-        // a zero vector normalizes to itself rather than NaN
         expect(Vec.toArray(Vec.normalizeInto(Vec.alloc3(), Vec.alloc3()))).toEqual([0, 0, 0]);
     });
 
@@ -80,7 +75,7 @@ describe("Vec", () => {
         const raw = new Float32Array([1, 2, 3]);
         const v = fromFloat32Array<3>(raw);
         Vec.setX(v, 42);
-        expect(raw[0]).toBe(42); // same storage
+        expect(raw[0]).toBe(42);
     });
 
     test("equals compares by value", () => {
@@ -91,8 +86,6 @@ describe("Vec", () => {
 
 describe("aabb", () => {
     test("layout matches RenderBounds field order", () => {
-        // This is what lets RenderBounds hand out its backing array directly
-        // instead of reimplementing the interface.
         const rb = new RenderBounds();
         rb.xMin = 1;
         rb.yMin = 2;
@@ -106,7 +99,6 @@ describe("aabb", () => {
         expect([AABB.xMin(b), AABB.yMin(b), AABB.zMin(b)]).toEqual([1, 2, 3]);
         expect([AABB.xMax(b), AABB.yMax(b), AABB.zMax(b)]).toEqual([4, 5, 6]);
 
-        // and it is a live view, not a snapshot
         rb.xMin = 99;
         expect(AABB.xMin(b)).toBe(99);
     });
@@ -115,7 +107,7 @@ describe("aabb", () => {
         const a = AABB.of(0, 0, 0, 10, 10, 10);
         expect(AABB.intersects(a, AABB.of(5, 5, 5, 15, 15, 15))).toBe(true);
         expect(AABB.intersects(a, AABB.of(11, 0, 0, 12, 1, 1))).toBe(false);
-        expect(AABB.intersects(a, AABB.of(10, 10, 10, 11, 11, 11))).toBe(true); // touching counts
+        expect(AABB.intersects(a, AABB.of(10, 10, 10, 11, 11, 11))).toBe(true);
 
         expect(AABB.contains(a, AABB.of(1, 1, 1, 2, 2, 2))).toBe(true);
         expect(AABB.contains(a, AABB.of(1, 1, 1, 11, 2, 2))).toBe(false);
@@ -132,16 +124,15 @@ describe("aabb", () => {
         expect(AABB.contains(out, b)).toBe(true);
         expect([AABB.xMin(out), AABB.yMin(out), AABB.zMin(out)]).toEqual([0, -5, 0]);
 
-        AABB.unionInto(a, a, b); // aliasing
+        AABB.unionInto(a, a, b);
         expect(AABB.equals(a, out)).toBe(true);
     });
 
     test("inflateInto scales about the centre with a half-extent floor", () => {
         const b = AABB.of(0, 0, 0, 10, 10, 10);
         const out = AABB.inflateInto(AABB.alloc(), b, 2);
-        expect([AABB.xMin(out), AABB.xMax(out)]).toEqual([-5, 15]); // centre 5, half-extent 10
+        expect([AABB.xMin(out), AABB.xMax(out)]).toEqual([-5, 15]);
 
-        // a degenerate box still gets the 0.5 floor rather than staying a point
         const point = AABB.of(1, 1, 1, 1, 1, 1);
         const inflated = AABB.inflateInto(AABB.alloc(), point, 1.1);
         expect(AABB.xMax(inflated) - AABB.xMin(inflated)).toBeCloseTo(1);
@@ -179,7 +170,6 @@ describe("LocalToWorld after the Vec rework", () => {
         expect(Vec.y(scale)).toBeCloseTo(2, 4);
         expect(Vec.z(scale)).toBeCloseTo(2, 4);
 
-        // Quaternion sign is arbitrary, so compare orientation via the rebuilt matrix.
         const rebuilt = LocalToWorld.fromTRS(Vec.alloc<16>(16), l2w.position, l2w.rotation, l2w.scale);
         const a = asFloat32Array(rebuilt), b = asFloat32Array(l2w.matrix);
         for (let i = 0; i < 16; i++) expect(a[i]).toBeCloseTo(b[i], 3);
@@ -208,7 +198,7 @@ describe("LocalToWorld after the Vec rework", () => {
         const i = LocalToWorld.identity();
         const m = LocalToWorld.fromTRS(Vec.alloc<16>(16), Vec.alloc3(1, 2, 3), Vec.alloc4(0, 0, 0, 1), Vec.alloc3(1, 1, 1));
         const out = LocalToWorld.mul(i, m, Vec.alloc<16>(16));
-        expect(Vec.toArray(out)).toEqual(Vec.toArray(m)); // I * M === M
+        expect(Vec.toArray(out)).toEqual(Vec.toArray(m));
     });
 
     test("transformPoint honours an out parameter", () => {
@@ -244,13 +234,10 @@ describe("Quaternions", () => {
         const a = Quaternions.eulerToQuat(Vec.alloc3(0, 0, 90), "ZYX", {deg: true});
         const out = Vec.alloc4();
         expect(Quaternions.qMulInto(out, a, a)).toBe(out);
-        // 90° + 90° about Z === 180°, i.e. w ≈ 0
         expect(Vec.w(out)).toBeCloseTo(0, 5);
     });
 
     test("the shared scratch does not corrupt repeated calls", () => {
-        // eulerToQuat reuses module-level scratch; back-to-back calls must agree
-        // with independently computed values.
         const first = Vec.clone(Quaternions.eulerToQuat(Vec.alloc3(10, 20, 30), "ZYX", {deg: true}));
         Quaternions.eulerToQuat(Vec.alloc3(90, 0, 45), "XYZ", {deg: true});
         const again = Quaternions.eulerToQuat(Vec.alloc3(10, 20, 30), "ZYX", {deg: true});

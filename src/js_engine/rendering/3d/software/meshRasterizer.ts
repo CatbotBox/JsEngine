@@ -10,31 +10,15 @@ import {RasterTarget, SubsampleLayers} from "./rasterTarget";
 import type {WorkerFactory} from "../../../platform";
 
 export interface MeshRasterizerConfig {
-    /** Depth at which shading fades to black. */
     maxDepthFade: number;
-    /** ANDed onto packed colors; dropping low bits lengthens ANSI color runs. */
     colorQuantMask: number;
-    /**
-     * Antialiasing factor: each cell is rasterized as supersample×supersample
-     * subsamples for the RasterTarget to resolve. 1 disables AA and reproduces
-     * the single-sample pipeline exactly.
-     */
     supersample: number;
-    /** Per-axis overrides for supersample; terminal cells are ~2:1, so 2x4 gives square subsamples. */
     supersampleX?: number;
     supersampleY?: number;
-    /**
-     * Render two vertical samples per cell (top half first), doubling vertical
-     * resolution. Each half still gets supersampleX × supersampleY subsamples.
-     */
     halfBlock?: boolean;
-    /** Worker threads to use (0 disables threading entirely). */
     workerCount: number;
-    /** Dispatch to the pool only when a batch has at least this many triangles… */
     threadTriangleThreshold: number;
-    /** …or its bounding boxes cover at least this many cells (whichever hits first). */
     threadAreaThreshold: number;
-    /** Sample material textures; off renders every material by its diffuse color. */
     textures: boolean;
 }
 
@@ -43,17 +27,25 @@ type Writable<T> = { -readonly [K in keyof T]: T[K] };
 export const NEAR_PLANE_Z = 0.1;
 const LOG2 = Math.log(2);
 const MAX_SUPERSAMPLE = 4;
+const INITIAL_TRIANGLE_CAPACITY = 4096;
+const CHANNEL_MAX = 255;
+const PACKED_RGB_MASK = 0xFFFFFF;
+const A_INSIDE = 1;
+const B_INSIDE = 2;
+const C_INSIDE = 4;
+const CONTINUE_FRAME = true;
+const END_OF_FRAME = false;
 
 function clampSupersample(value: number): number {
     return Math.max(1, Math.min(MAX_SUPERSAMPLE, Math.floor(value) || 1));
 }
 
 function packUnitRgb(r: number, g: number, b: number): number {
-    return (clampToByte(r * 255) << 16) | (clampToByte(g * 255) << 8) | clampToByte(b * 255);
+    return (clampToByte(r * CHANNEL_MAX) << 16) | (clampToByte(g * CHANNEL_MAX) << 8) | clampToByte(b * CHANNEL_MAX);
 }
 
 function clampToByte(value: number): number {
-    return value <= 0 ? 0 : value >= 255 ? 255 : Math.round(value);
+    return value <= 0 ? 0 : value >= CHANNEL_MAX ? CHANNEL_MAX : Math.round(value);
 }
 
 function lerpPackedColor(from: number, to: number, t: number): number {
@@ -63,26 +55,16 @@ function lerpPackedColor(from: number, to: number, t: number): number {
     return (clampToByte(r) << 16) | (clampToByte(g) << 8) | clampToByte(b);
 }
 
-/**
- * Frame-scoped software triangle pipeline:
- * model→view vertex transform, near-plane clipping, backface culling and
- * screen-space projection all run scalar over flat typed arrays (zero per-frame
- * allocation in steady state). Packed triangles are rasterized either on a
- * worker pool (disjoint row bands over shared memory) or synchronously into
- * subsample layers, which are handed to a RasterTarget on every flush.
- */
 export class MeshRasterizer {
     private pool?: RasterWorkerPool;
     private poolBroken = false;
 
-    // Triangle batch + raster layers; these alias the pool's shared buffers in
-    // pooled mode, or locally grown arrays in synchronous mode.
     private triData: Float32Array<ArrayBufferLike> = new Float32Array(0);
     private triInts: Int32Array<ArrayBufferLike> = new Int32Array(0);
     private depthLayer: Float32Array<ArrayBufferLike> = new Float32Array(0);
     private colorLayer: Int32Array<ArrayBufferLike> = new Int32Array(0);
     private textureStore: TextureStore = TextureStore.growable();
-    private localTriData = new Float32Array(4096 * TRI_STRIDE);
+    private localTriData = new Float32Array(INITIAL_TRIANGLE_CAPACITY * TRI_STRIDE);
     private localTriInts: Int32Array<ArrayBufferLike> = new Int32Array(this.localTriData.buffer);
     private localDepthLayer = new Float32Array(0);
     private localColorLayer = new Int32Array(0);
@@ -109,15 +91,12 @@ export class MeshRasterizer {
     private materialTexelAreas = new Float64Array(0);
     private materialLevelCounts = new Int32Array(0);
 
-    // Frame state
     private target!: RasterTarget;
     private config!: MeshRasterizerConfig;
     private width = 0;
     private height = 0;
     private halfWidth = 0;
     private halfHeight = 0;
-    // Supersampling: raster* dimensions are the subsample grid (cell dims x supersample factors)
-    // that the kernel, layers and band binning all operate in.
     private supersampleX = 1;
     private rowsPerCell = 1;
     private subsamplesPerCell = 1;
@@ -129,11 +108,9 @@ export class MeshRasterizer {
     private rowsPerBand = 0;
     private faceCulling = FaceCulling.BackFaces;
 
-    /** Without `workers` the rasterizer is single-threaded whatever `workerCount` says. */
     public constructor(private readonly workers?: WorkerFactory) {
     }
 
-    /** Worker threads rasterizing alongside the calling thread this frame; 0 while they boot, or when single-threaded. */
     public get activeWorkerCount(): number {
         const pool = this.pool;
         return this.usingPool && pool !== undefined && pool.usable && pool.ready ? pool.workerCount : 0;
@@ -158,7 +135,7 @@ export class MeshRasterizer {
         this.bboxAreaAccum = 0;
 
         const rasterCells = this.rasterWidth * this.rasterHeight;
-        const pool = this.ensurePool(config.workerCount);
+        const pool = this.usablePoolOrUndefined(config.workerCount);
         this.usingPool = pool !== undefined && rasterCells <= RasterWorkerPool.MAX_CELLS;
 
         if (this.usingPool) {
@@ -196,13 +173,12 @@ export class MeshRasterizer {
         this.depthLayer.fill(Number.POSITIVE_INFINITY, 0, rasterCells);
     }
 
-    private ensurePool(workerCount: number): RasterWorkerPool | undefined {
+    private usablePoolOrUndefined(workerCount: number): RasterWorkerPool | undefined {
         if (workerCount <= 0 || this.poolBroken || this.workers === undefined) return undefined;
         if (this.pool === undefined) {
             try {
                 this.pool = new RasterWorkerPool(workerCount, this.workers);
             } catch {
-                // No SharedArrayBuffer / worker support here — stay synchronous.
                 this.poolBroken = true;
                 return undefined;
             }
@@ -214,21 +190,12 @@ export class MeshRasterizer {
         return this.pool;
     }
 
-    /**
-     * Transform, clip, cull, project and enqueue every triangle of a mesh.
-     *
-     * @param modelView   combined inverse-camera × local-to-world matrix (column-major 4x4)
-     * @param focalLength screenHeight / (2 * tan(fov / 2)); undefined renders without perspective
-     * @param cellRatio   horizontal cell aspect correction factor
-     * @param baseColor   packed 0xRRGGBB tint multiplied onto every material color
-     * @param vertexRgb   optional per-vertex linear color, 3 floats in 0..1 per vertex (replaces material color × tint)
-     */
-    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null = null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
+    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgbOrNull: Float64Array | null = null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
         if (this.width === 0 || this.height === 0) return;
-        this.addViewSpaceMesh(mesh, this.viewSpaceMesh.transformFrom(mesh, modelView, null), focalLength, cellRatio, baseColor, vertexRgb, faceCulling);
+        this.addViewSpaceMesh(mesh, this.viewSpaceMesh.transformFrom(mesh, modelView, null), focalLength, cellRatio, baseColor, vertexRgbOrNull, faceCulling);
     }
 
-    public addViewSpaceMesh(mesh: DeepReadonly<Mesh>, viewMesh: ViewSpaceMesh, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgb: Float64Array | null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
+    public addViewSpaceMesh(mesh: DeepReadonly<Mesh>, viewMesh: ViewSpaceMesh, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgbOrNull: Float64Array | null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
         if (this.width === 0 || this.height === 0) return;
         this.faceCulling = faceCulling;
 
@@ -236,8 +203,8 @@ export class MeshRasterizer {
         if (this.vertexColors.length < vertCount) this.vertexColors = new Int32Array(vertCount);
         const view = viewMesh.positions;
         const colors = this.vertexColors;
-        this.fillVertexColors(colors, mesh, baseColor, vertexRgb);
-        const anyTexture = this.prepareMaterialTextures(mesh);
+        this.fillVertexColors(colors, mesh, baseColor, vertexRgbOrNull);
+        const anyTexture = this.anyTextureAfterPreparingMaterials(mesh);
         const uvs = mesh.uvs.raw;
         const vertexMaterial = mesh.vertexMaterial;
         const textureIds = this.materialTextureIds;
@@ -280,20 +247,16 @@ export class MeshRasterizer {
             }
             if (!aIn && !bIn && !cIn) continue;
 
-            // Near-plane clipping. The triangle is rotated cyclically (a cyclic
-            // rotation keeps the winding) so that the clipped-away vertex comes last
-            // or the single surviving vertex comes first; the clipped pieces are then
-            // emitted in that rotated order and keep the original winding.
-            const insideMask = (aIn ? 1 : 0) | (bIn ? 2 : 0) | (cIn ? 4 : 0);
-            if (insideMask === 1) {
+            const insideMask = (aIn ? A_INSIDE : 0) | (bIn ? B_INSIDE : 0) | (cIn ? C_INSIDE : 0);
+            if (insideMask === A_INSIDE) {
                 this.emitClippedCorner(ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
-            } else if (insideMask === 2) {
+            } else if (insideMask === B_INSIDE) {
                 this.emitClippedCorner(bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
-            } else if (insideMask === 4) {
+            } else if (insideMask === C_INSIDE) {
                 this.emitClippedCorner(cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
-            } else if (insideMask === 3) {
+            } else if (insideMask === (A_INSIDE | B_INSIDE)) {
                 this.emitClippedQuad(ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
-            } else if (insideMask === 6) {
+            } else if (insideMask === (B_INSIDE | C_INSIDE)) {
                 this.emitClippedQuad(bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
             } else {
                 this.emitClippedQuad(cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
@@ -301,7 +264,6 @@ export class MeshRasterizer {
         }
     }
 
-    /** One vertex (p) in front of the near plane, q and r behind it: the piece is the triangle p, pq, pr. */
     private emitClippedCorner(
         px: number, py: number, pz: number, colorP: number, up: number, vp: number,
         qx: number, qy: number, qz: number, colorQ: number, uq: number, vq: number,
@@ -320,7 +282,6 @@ export class MeshRasterizer {
         );
     }
 
-    /** Two vertices (p, q) in front of the near plane, r behind it: the piece is the quad p, q, qr, pr as two triangles. */
     private emitClippedQuad(
         px: number, py: number, pz: number, colorP: number, up: number, vp: number,
         qx: number, qy: number, qz: number, colorQ: number, uq: number, vq: number,
@@ -347,11 +308,11 @@ export class MeshRasterizer {
         );
     }
 
-    private fillVertexColors(colors: Int32Array, mesh: DeepReadonly<Mesh>, tint: number, vertexRgb: Float64Array | null): void {
+    private fillVertexColors(colors: Int32Array, mesh: DeepReadonly<Mesh>, tint: number, vertexRgbOrNull: Float64Array | null): void {
         const vertCount = mesh.vertCount;
-        if (vertexRgb !== null) {
+        if (vertexRgbOrNull !== null) {
             for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
-                colors[i] = packUnitRgb(vertexRgb[j], vertexRgb[j + 1], vertexRgb[j + 2]);
+                colors[i] = packUnitRgb(vertexRgbOrNull[j], vertexRgbOrNull[j + 1], vertexRgbOrNull[j + 2]);
             }
             return;
         }
@@ -370,8 +331,7 @@ export class MeshRasterizer {
         }
     }
 
-    /** Uploads the mesh's textures (once per Texture) and caches per-material lookups; false when nothing is textured. */
-    private prepareMaterialTextures(mesh: DeepReadonly<Mesh>): boolean {
+    private anyTextureAfterPreparingMaterials(mesh: DeepReadonly<Mesh>): boolean {
         if (!this.config.textures) return false;
         const materials = mesh.materials;
         if (this.materialTextureIds.length < materials.length) {
@@ -402,8 +362,6 @@ export class MeshRasterizer {
         textureId: number, texelArea: number, levelCount: number,
         focalLength: number | undefined, cellRatio: number,
     ): void {
-        // View space is Y-up (world convention, and what .obj files store) while
-        // screen rows grow downward, so the vertical axis flips during projection.
         let sax: number, say: number, sbx: number, sby: number, scx: number, scy: number;
         if (focalLength !== undefined) {
             const ppuA = focalLength / az, ppuB = focalLength / bz, ppuC = focalLength / cz;
@@ -422,20 +380,11 @@ export class MeshRasterizer {
             scy = this.halfHeight - cy;
         }
 
-        // Scale into the subsample grid (×1 when AA is off — bit-identical).
         const sx = this.supersampleX, sy = this.rowsPerCell;
         sax *= sx; say *= sy;
         sbx *= sx; sby *= sy;
         scx *= sx; scy *= sy;
 
-        // Backface / degenerate cull: only one winding can ever pass the
-        // kernel's inside test, so skip the rest before they cost anything.
-        // Mirroring Y above reversed screen-space winding, so vertices are
-        // emitted as A, C, B (see the pack below) and culled in that same order
-        // — flipping the projection without this would cull exactly the faces
-        // that should be visible and draw the ones that shouldn't.
-        // A drawn back face is re-wound (B and C swapped) so the kernel still
-        // sees the one winding it accepts.
         const area2 = (scx - sax) * (sby - say) - (scy - say) * (sbx - sax);
         if (area2 === 0) return;
         const isBackFace = area2 > 0;
@@ -449,7 +398,6 @@ export class MeshRasterizer {
             swap = vb; vb = vc; vc = swap;
         }
 
-        // Off-screen cull + workload estimate for the threading heuristic.
         let minX = sax < sbx ? sax : sbx; if (scx < minX) minX = scx;
         let maxX = sax > sbx ? sax : sbx; if (scx > maxX) maxX = scx;
         let minY = say < sby ? say : sby; if (scy < minY) minY = scy;
@@ -463,8 +411,7 @@ export class MeshRasterizer {
 
         if (this.triCount * TRI_STRIDE >= this.triData.length) {
             if (this.usingPool) {
-                // Shared batch is full — rasterize and merge what we have, then reuse it.
-                this.flushBatch(true);
+                this.flushBatch(CONTINUE_FRAME);
             } else {
                 const grown = new Float32Array(this.triData.length * 2);
                 grown.set(this.triData);
@@ -478,8 +425,6 @@ export class MeshRasterizer {
         const o = this.triCount * TRI_STRIDE;
         const tris = this.triData;
         const ints = this.triInts;
-        // Packed as A, C, B — the Y mirror's winding fix. Each slot's 1/z, color
-        // and uv stay paired with their own vertex, so interpolation is unaffected.
         tris[o] = sax;
         tris[o + 1] = say;
         tris[o + 2] = scx;
@@ -503,11 +448,8 @@ export class MeshRasterizer {
             ints[o + 19] = mipLevelFor(ua, va, ub, vb, uc, vc, texelArea, -area2, levelCount);
         }
 
-        // Band binning: record which row bands this triangle overlaps so each
-        // rasterizing thread only visits its own triangles.
         if (this.usingPool) {
             const pool = this.pool!;
-            // The kernel visits pixel rows [floor(minY), ceil(maxY)) — mirror that here.
             const firstBand = (clampedMinY / this.rowsPerBand) | 0;
             const lastBand = ((Math.ceil(clampedMaxY) - 1) / this.rowsPerBand) | 0;
             for (let band = firstBand; band <= lastBand; band++) {
@@ -522,18 +464,14 @@ export class MeshRasterizer {
         if (this.triCount === 0) return;
         const {rasterWidth, rasterHeight, config, subsamplesPerCell} = this;
         const singleSample = subsamplesPerCell === 1;
-        // When supersampling, quantize after the resolve average instead of per
-        // subsample, otherwise the average un-quantizes the colors again.
-        const quantMask = singleSample ? config.colorQuantMask & 0xFFFFFF : 0xFFFFFF;
+        const quantMask = singleSample ? config.colorQuantMask & PACKED_RGB_MASK : PACKED_RGB_MASK;
 
         const pool = this.usingPool ? this.pool : undefined;
         const threaded = pool !== undefined
             && (this.triCount >= config.threadTriangleThreshold || this.bboxAreaAccum >= config.threadAreaThreshold * this.subsamplesPerCell);
 
         if (threaded) {
-            if (!pool!.dispatch(this.triCount, rasterWidth, rasterHeight, config.maxDepthFade, quantMask)) {
-                // Pool broke mid-frame; dispatch() already completed the layers
-                // synchronously. Future frames go single-threaded.
+            if (!pool!.stillUsableAfterDispatch(this.triCount, rasterWidth, rasterHeight, config.maxDepthFade, quantMask)) {
                 this.poolBroken = true;
             }
         } else {
@@ -550,9 +488,8 @@ export class MeshRasterizer {
         }
     }
 
-    /** Rasterize any queued triangles and hand them to the target. */
     public endFrame(): void {
-        this.flushBatch(false);
+        this.flushBatch(END_OF_FRAME);
     }
 
     public dispose(): void {
@@ -561,10 +498,6 @@ export class MeshRasterizer {
     }
 }
 
-/**
- * Mip level whose texel density best matches the triangle's screen density:
- * log2 of the ratio between texels covered and subsamples covered, rounded.
- */
 function mipLevelFor(ua: number, va: number, ub: number, vb: number, uc: number, vc: number, texelArea: number, screenArea2: number, levelCount: number): number {
     const uvArea2 = Math.abs((ub - ua) * (vc - va) - (uc - ua) * (vb - va));
     if (uvArea2 === 0 || screenArea2 <= 0) return 0;

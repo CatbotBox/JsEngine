@@ -2,10 +2,13 @@ import {describe, expect, test} from "../../testing/harness";
 import {Mesh} from "./mesh";
 import {meshCachePathFor, readMeshCache} from "./meshCache";
 import {packRgb} from "./material";
+import type * as Fs from "fs";
+import type * as Os from "os";
+import type * as Path from "path";
 
-const fs = require("fs") as typeof import("fs");
-const os = require("os") as typeof import("os");
-const path = require("path") as typeof import("path");
+const fs = require("fs") as typeof Fs;
+const os = require("os") as typeof Os;
+const path = require("path") as typeof Path;
 
 const OBJ = `mtllib model.mtl
 v 0 0 0

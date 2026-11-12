@@ -27,7 +27,6 @@ import {ConsoleRenderPassSystemGroup} from "../rendering/console/consoleRenderPa
 
 const nextTask = () => new Promise<void>(done => setTimeout(done, 0));
 
-/** The world worker's `self`: records what the world posts, and delivers what the page sends. */
 class FakeScope implements WorldWorkerScope {
     public readonly posted: WorldToPageMessage[] = [];
     public readonly navigator = {hardwareConcurrency: 6};
@@ -58,10 +57,8 @@ async function openConnection(scope: FakeScope = new FakeScope(), files = new Me
     return await opening;
 }
 
-/** A Web Worker that records what it is sent and lets the test fire its events. */
 class FakeBrowserWorker implements BrowserWorker {
     public static readonly created: FakeBrowserWorker[] = [];
-    /** Each call's arguments, so a missing transfer list is told apart from an undefined one. */
     public readonly posted: unknown[][] = [];
     public terminated = false;
     private readonly listeners = new Map<string, ((event: never) => void)[]>();
@@ -113,7 +110,6 @@ class FakePageTerminal implements PageTerminal {
     public cols = 120;
     public rows = 40;
     public readonly written: string[] = [];
-    /** Write callbacks not yet run: the terminal has not parsed those writes. */
     public readonly unparsed: (() => void)[] = [];
     public readonly dataListeners = new Set<(data: string) => void>();
     public readonly resizeListeners = new Set<(size: {cols: number, rows: number}) => void>();

@@ -9,6 +9,10 @@ import {ConsoleRenderPassSystemGroup} from "../consoleRenderPassSystemGroup";
 import {RenderBounds2DApplyModifierSystem} from "./renderBounds2DApplyModifierSystem";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {Vec} from "../../../math/types/vec";
+import {AABB_STRIDE} from "../../../datatypes/aabb";
+
+const CAMERA_DEPTH_EXTENT = 1000;
+const TRANSLATION_Z = 14;
 
 export class Console2DRenderPassSystem extends System {
 
@@ -28,8 +32,8 @@ export class Console2DRenderPassSystem extends System {
     }
 
     protected onCreate() {
-        this.requireAllForUpdate(this._cameraQuery) // always require a camera
-        this.requireAnyForUpdate(this._objectQuery) // and require at least one renderer object
+        this.requireAllForUpdate(this._cameraQuery)
+        this.requireAnyForUpdate(this._objectQuery)
 
         this.world.ensureSystemExists(RenderBounds2DApplyModifierSystem)
     }
@@ -54,7 +58,7 @@ export class Console2DRenderPassSystem extends System {
 
         const camXMin = Math.min(cx0, cx1), camXMax = Math.max(cx0, cx1);
         const camYMin = Math.min(cy0, cy1), camYMax = Math.max(cy0, cy1);
-        const camZMin = -1000, camZMax = 1000;
+        const camZMin = -CAMERA_DEPTH_EXTENT, camZMax = CAMERA_DEPTH_EXTENT;
 
         for (const arch of this._objectQuery.archetypes) {
             const boundsCol = arch.getColumn(this._boundsToken);
@@ -67,8 +71,7 @@ export class Console2DRenderPassSystem extends System {
 
             const n = arch.entityCount;
             for (let row = 0; row < n; row++) {
-                // AABB layout: [xMin, yMin, zMin, xMax, yMax, zMax]
-                const b = row * 6;
+                const b = row * AABB_STRIDE;
                 const xMin = wb[b], yMin = wb[b + 1];
                 if (wb[b + 3] < camXMin || xMin > camXMax) continue;
                 if (wb[b + 4] < camYMin || yMin > camYMax) continue;
@@ -78,7 +81,7 @@ export class Console2DRenderPassSystem extends System {
                     imageCol.get(row) as ConsoleImage,
                     Math.floor(xMin - camXMin),
                     Math.floor(yMin - camYMin),
-                    l2w !== undefined ? l2w[(row << 4) + 14] : 0,
+                    l2w !== undefined ? l2w[(row << 4) + TRANSLATION_Z] : 0,
                 );
             }
         }

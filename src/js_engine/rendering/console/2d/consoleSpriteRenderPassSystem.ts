@@ -11,15 +11,12 @@ import {SpriteRasterizer} from "./spriteRasterizer";
 import {RenderBoundsSpriteApplyModifierSystem} from "./renderBoundsSpriteApplyModifierSystem";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {Vec} from "../../../math/types/vec";
+import {AABB_STRIDE} from "../../../datatypes/aabb";
 
-/**
- * Draws every Sprite as packed-RGB half-block cells — the 2D counterpart
- * of Console3DRenderPassSystem, sharing its ScreenBuffer color pipeline (depth
- * compositing, half-block split cells, quantization, depth fade) instead of the
- * legacy ANSI-text blit of Console2DRenderPassSystem. Runs only while a
- * singleton Console2DRenderSettings entity exists; that entity is the
- * configuration.
- */
+const CAMERA_DEPTH_EXTENT = 1000;
+const TRANSLATION_Z = 14;
+const HALF_ROWS_PER_CELL = 2;
+
 export class ConsoleSpriteRenderPassSystem extends System {
     private _settingsQuery = this.createEntityQuery([Console2DRenderSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
@@ -31,7 +28,6 @@ export class ConsoleSpriteRenderPassSystem extends System {
 
     private _rasterizer = new SpriteRasterizer();
 
-    /** Sprites handed to the rasterizer this frame, after camera culling. */
     public spritesDrawn = 0;
 
     override systemGroup() {
@@ -44,13 +40,12 @@ export class ConsoleSpriteRenderPassSystem extends System {
 
     protected onCreate() {
         this.requireAllForUpdate(this._settingsQuery);
-        this.requireAllForUpdate(this._cameraQuery); // always require a camera
-        this.requireAnyForUpdate(this._objectQuery); // and at least one sprite
+        this.requireAllForUpdate(this._cameraQuery);
+        this.requireAnyForUpdate(this._objectQuery);
 
         this.world.ensureSystemExists(RenderBoundsSpriteApplyModifierSystem);
     }
 
-    /** The frame stat reads as zero whenever the pass is disabled or has nothing to draw. */
     override update(): void {
         this.spritesDrawn = 0;
         super.update();
@@ -78,7 +73,7 @@ export class ConsoleSpriteRenderPassSystem extends System {
 
         const camXMin = Math.min(cx0, cx1), camXMax = Math.max(cx0, cx1);
         const camYMin = Math.min(cy0, cy1), camYMax = Math.max(cy0, cy1);
-        const camZMin = -1000, camZMax = 1000;
+        const camZMin = -CAMERA_DEPTH_EXTENT, camZMax = CAMERA_DEPTH_EXTENT;
 
         const rasterizer = this._rasterizer;
         rasterizer.beginFrame(dualScreenBuffer.screenBuffer, width, height, settings.toRasterizerConfig());
@@ -94,8 +89,7 @@ export class ConsoleSpriteRenderPassSystem extends System {
 
             const n = arch.entityCount;
             for (let row = 0; row < n; row++) {
-                // AABB layout: [xMin, yMin, zMin, xMax, yMax, zMax]
-                const b = row * 6;
+                const b = row * AABB_STRIDE;
                 const xMin = wb[b], yMin = wb[b + 1];
                 if (wb[b + 3] < camXMin || xMin > camXMax) continue;
                 if (wb[b + 4] < camYMin || yMin > camYMax) continue;
@@ -109,10 +103,8 @@ export class ConsoleSpriteRenderPassSystem extends System {
                 rasterizer.blitSprite(
                     image,
                     Math.floor(xMin - camXMin),
-                    // Half-rows: the vertical axis has twice the cell resolution,
-                    // so fractional world Y positions land on half-cell boundaries.
-                    Math.floor((yMin - camYMin) * 2),
-                    l2w !== undefined ? l2w[(row << 4) + 14] : 0,
+                    Math.floor((yMin - camYMin) * HALF_ROWS_PER_CELL),
+                    l2w !== undefined ? l2w[(row << 4) + TRANSLATION_Z] : 0,
                     sprite.tint,
                     sprite.opacity,
                 );

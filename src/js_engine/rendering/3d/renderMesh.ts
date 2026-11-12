@@ -4,24 +4,16 @@ import {Mesh} from "./mesh";
 import {RenderBounds} from "../renderBounds";
 import {FaceCulling} from "./faceCulling";
 
+const WHITE = 0xFFFFFF;
+const PACKED_RGB_MASK = 0xFFFFFF;
+
 export class RenderMesh extends Component {
-    /**
-     * Which faces to skip by screen-space winding. BackFaces (default) hides
-     * the far side of closed meshes; None draws both sides for meshes with
-     * inconsistent winding or open shells; FrontFaces shows only the far side.
-     * A drawn back face keeps its front-face lighting.
-     */
     public faceCulling: FaceCulling = FaceCulling.BackFaces;
 
-    public constructor(private _mesh?: Mesh, private _color: number = 0xFFFFFF) {
+    public constructor(private _mesh?: Mesh, private _color: number = WHITE) {
         super();
     }
 
-    /**
-     * RenderBounds (and, via its setup, WorldSpaceRenderBounds) is what lets
-     * the 3D pass frustum-cull the mesh before touching its triangles;
-     * RenderMeshBoundsSystem keeps it in sync with the mesh + transform.
-     */
     public setup(entity: Entity, entityManager: EntityWriteOptions) {
         entityManager.addComponent(entity, new RenderBounds());
     }
@@ -34,12 +26,11 @@ export class RenderMesh extends Component {
         this._mesh = value;
     }
 
-    /** Packed 0xRRGGBB base color; shading (depth fade) is applied on top. */
     get color(): number {
         return this._color;
     }
 
     set color(value: number) {
-        this._color = value & 0xFFFFFF;
+        this._color = value & PACKED_RGB_MASK;
     }
 }

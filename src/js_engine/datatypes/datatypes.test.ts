@@ -3,13 +3,9 @@ import {RingQueue} from "./ringQueue";
 import {AverageStat} from "./averageStat";
 import {VecArray} from "../math/types/vecArray";
 
+const REQUIRE_FILLED_BUFFER = true;
+
 describe("AverageStat", () => {
-    /**
-     * Regression: getAvg() used to divide by the window *capacity* rather than the number of
-     * samples held, because AverageStat.sampleSize returned RingQueue's `length` ctor field
-     * (the capacity) instead of `count`. A partially filled window therefore read low - which
-     * is what the demos' FPS counter showed on startup.
-     */
     test("averages over the samples held, not the window capacity", () => {
         const stat = new AverageStat(10);
         stat.add(30);
@@ -24,7 +20,7 @@ describe("AverageStat", () => {
         for (const v of [1, 2, 3]) stat.add(v);
         expect(stat.getAvg()).toBe(2);
 
-        stat.add(4); // evicts the 1
+        stat.add(4);
         expect(stat.sampleSize).toBe(3);
         expect(stat.getAvg()).toBe(3);
     });
@@ -32,15 +28,14 @@ describe("AverageStat", () => {
     test("requireFilledBuffer declines to answer until the window fills", () => {
         const stat = new AverageStat(3);
         stat.add(1);
-        expect(stat.getAvg(true)).toBe(undefined);
+        expect(stat.getAvg(REQUIRE_FILLED_BUFFER)).toBe(undefined);
         stat.add(2);
         stat.add(3);
-        expect(stat.getAvg(true)).toBe(2);
+        expect(stat.getAvg(REQUIRE_FILLED_BUFFER)).toBe(2);
     });
 });
 
 describe("RingQueue", () => {
-    /** Regression: add() only grew the capacity and dropped the item on the floor. */
     test("add stores the item", () => {
         const q = new RingQueue<number>(4);
         q.add(7);
@@ -72,10 +67,6 @@ describe("RingQueue", () => {
 });
 
 describe("VecArray.isVecArray", () => {
-    /**
-     * Regression: the factor check read `test.factor !== factor`, so passing a factor made the
-     * guard return true precisely when the factor did NOT match.
-     */
     test("accepts a matching factor and rejects a mismatching one", () => {
         const vecs = new VecArray(2, 3);
 

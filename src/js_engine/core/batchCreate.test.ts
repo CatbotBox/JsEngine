@@ -156,7 +156,7 @@ describe("EntityCommandBuffer playback semantics", () => {
         const column = ownerOf(e).getColumn(ComponentType.of(Position))!;
         const before = column.lastUpdatedTime;
         const t = performance.now();
-        while (performance.now() === t) { /* spin past the clock's resolution */ }
+        while (performance.now() === t) {}
         handle.x = 42;
 
         expect(column.lastUpdatedTime > before).toBe(true);
@@ -216,7 +216,6 @@ describe("EntityCommandBuffer playback semantics", () => {
     });
 });
 
-/** Counts placements into `arch` (addEntity on this instance only). */
 function countPlacements(arch: EntityArchetype): () => number {
     let placements = 0;
     const addEntity = arch.addEntity.bind(arch);

@@ -1,15 +1,9 @@
-/**
- * Path helpers for loaders, independent of node's `path`. Both `/` and `\` separate segments;
- * results always use `/`, which every host's file source accepts (node's fs on Windows included).
- */
-
 const DRIVE = /^[a-zA-Z]:/;
 
 export function isAbsolutePath(path: string): boolean {
     return /^([a-zA-Z]:)?[\\/]/.test(path);
 }
 
-/** Collapses repeated separators and `.` segments and resolves `..` where it can, like node's `path.normalize`. */
 export function normalizePath(path: string): string {
     const unified = path.replace(/\\/g, "/");
     const drive = DRIVE.exec(unified)?.[0] ?? "";
@@ -36,7 +30,6 @@ export function joinPath(directory: string, relative: string): string {
     return normalizePath([directory, relative].filter(part => part.length > 0).join("/"));
 }
 
-/** The directory part of a file path: "." when it has none, the root itself for a file at the root. */
 export function dirname(filePath: string): string {
     const end = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
     if (end < 0) return ".";

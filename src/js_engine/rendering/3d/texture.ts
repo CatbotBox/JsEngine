@@ -2,10 +2,11 @@ import {DecodedImage, decodeImageFile} from "./image/decodedImage";
 import type {AssetLoadOptions} from "../../platform";
 import "./image/builtinDecoders";
 
+const RGBA_BYTES = 4;
+
 export interface TextureLevel {
     readonly width: number;
     readonly height: number;
-    /** Row-major packed 0xAARRGGBB texels. */
     readonly texels: Int32Array;
 }
 
@@ -58,7 +59,7 @@ export class Texture {
 
 function packLevel(width: number, height: number, rgba: Uint8Array): TextureLevel {
     const texels = new Int32Array(width * height);
-    for (let i = 0, j = 0; i < texels.length; i++, j += 4) {
+    for (let i = 0, j = 0; i < texels.length; i++, j += RGBA_BYTES) {
         texels[i] = (rgba[j + 3] << 24) | (rgba[j] << 16) | (rgba[j + 1] << 8) | rgba[j + 2];
     }
     return {width, height, texels};

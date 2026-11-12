@@ -18,11 +18,99 @@ const MARKER_DRI = 0xDD;
 const MARKER_APP0 = 0xE0;
 const MARKER_APP14 = 0xEE;
 
+const MARKER_BYTES = 2;
+const LENGTH_FIELD_BYTES = 2;
+const STUFFED_FF_BYTES = 2;
+const BITS_PER_BYTE = 8;
+const BYTE_MAX = 255;
+const RGBA_BYTES = 4;
+const YCC_CHANNELS = 3;
+const OPAQUE_ALPHA = 255;
+
 const BLOCK_SIZE = 8;
 const BLOCK_AREA = 64;
+const LAST_COEFFICIENT = 63;
+const SAMPLE_CENTER = 128;
+const SAMPLE_CENTER_PLUS_ROUNDING = 128.5;
+const IDCT_OUTPUT_SCALE = 0.125;
+const FDCT_OUTPUT_SCALE = 0.25;
+const DCT_ANGLE_DIVISOR = 16;
+
+const QUANT_PRECISION_8_BIT = 0;
+const QUANT_16_BIT_ENTRY_BYTES = 2;
+const HUFFMAN_CLASS_DC = 0;
+const HUFFMAN_CLASS_AC_BITS = 0x10;
+const HUFFMAN_MAX_CODE_LENGTH = 16;
+const HUFFMAN_SEGMENT_HEADER_BYTES = 17;
+const HUFFMAN_LOOKAHEAD_BITS = 8;
+const HUFFMAN_LOOKAHEAD_ENTRIES = 256;
+const HUFFMAN_SYMBOL_COUNT = 256;
+const INT32_MAX = 0x7FFFFFFF;
+const AC_ZERO_RUN_SYMBOL_RUN = 15;
+const AC_ZERO_RUN_COEFFICIENTS = 16;
+const AC_ZERO_RUN_SYMBOL = 0xF0;
+const AC_END_OF_BLOCK_SYMBOL = 0x00;
+const BIT_BUFFER_REFILL_LIMIT_BITS = 24;
+const RESTART_MARKER_INDEX_MASK = 7;
+
+const BASELINE_SAMPLE_BITS = 8;
+const FRAME_HEIGHT_OFFSET = 1;
+const FRAME_WIDTH_OFFSET = 3;
+const FRAME_COMPONENT_COUNT_OFFSET = 5;
+const FRAME_COMPONENTS_OFFSET = 6;
+const FRAME_COMPONENT_BYTES = 3;
+const MAX_SAMPLING_FACTOR = 4;
+const SCAN_COMPONENTS_OFFSET = 1;
+const SCAN_COMPONENT_BYTES = 2;
+const SPECTRAL_SELECTION_START = 0;
+const SUCCESSIVE_APPROXIMATION = 0;
+
+const ADOBE_SIGNATURE = [0x41, 0x64, 0x6F, 0x62, 0x65];
+const ADOBE_TRANSFORM_OFFSET = 11;
+const ADOBE_SEGMENT_MIN_BYTES = 12;
+const ADOBE_TRANSFORM_NONE = 0;
+const COMPONENT_ID_R = 82;
+const COMPONENT_ID_G = 71;
+const COMPONENT_ID_B = 66;
+
+const YCC_FIXED_POINT_BITS = 16;
+const YCC_FIXED_POINT_HALF = 32768;
+const YCC_CR_TO_R_FIXED = 91881;
+const YCC_CB_TO_G_FIXED = 22554;
+const YCC_CR_TO_G_FIXED = 46802;
+const YCC_CB_TO_B_FIXED = 116130;
+
+const LUMA_FROM_R = 0.299;
+const LUMA_FROM_G = 0.587;
+const LUMA_FROM_B = 0.114;
+const CB_FROM_R = 0.168736;
+const CB_FROM_G = 0.331264;
+const CB_FROM_B = 0.5;
+const CR_FROM_R = 0.5;
+const CR_FROM_G = 0.418688;
+const CR_FROM_B = 0.081312;
+
+const AAN_SQRT2 = 1.414213562;
+const AAN_2_COS_PI_8 = 1.847759065;
+const AAN_2_COS_PI_8_MINUS_COS_3PI_8 = 1.082392200;
+const AAN_2_COS_PI_8_PLUS_COS_3PI_8 = 2.613125930;
+
+const DEFAULT_QUALITY = 90;
+const MIN_QUALITY = 1;
+const MAX_QUALITY = 100;
+const IJG_QUALITY_MIDPOINT = 50;
+const IJG_LOW_QUALITY_NUMERATOR = 5000;
+const IJG_HIGH_QUALITY_BASE = 200;
+const PERCENT = 100;
+const PERCENT_ROUNDING = 50;
+const MIN_QUANT_VALUE = 1;
+const CHROMA_SUBSAMPLING_420_FACTOR = 2;
+const JFIF_LUMA_ID = 1;
+const JFIF_CB_ID = 2;
+const JFIF_CR_ID = 3;
+const JFIF_APP0_PAYLOAD = [0x4A, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
 const CONVERT_TO_PNG = "re-save it as a baseline JPEG or convert it to PNG";
 
-/** Zigzag scan position -> natural (row-major) coefficient index. */
 export const ZIGZAG_TO_NATURAL = new Uint8Array([
     0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
     35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
@@ -73,11 +161,11 @@ class JpegDecoder {
     public decode(): DecodedImage {
         const bytes = this.bytes;
         if (bytes[0] !== MARKER_PREFIX || bytes[1] !== MARKER_SOI) throw new Error("Not a JPEG file: missing SOI marker");
-        let offset = 2;
+        let offset = MARKER_BYTES;
         while (offset + 1 < bytes.length) {
             if (bytes[offset] !== MARKER_PREFIX) throw new Error(`JPEG is malformed: expected a marker at byte ${offset}`);
             const marker = bytes[offset + 1];
-            offset += 2;
+            offset += MARKER_BYTES;
             if (marker === MARKER_PREFIX) {
                 offset--;
                 continue;
@@ -85,7 +173,7 @@ class JpegDecoder {
             if (marker === MARKER_EOI) break;
             if (marker === MARKER_SOI || (marker >= MARKER_RST0 && marker <= MARKER_RST7)) continue;
             const length = readUint16(bytes, offset);
-            const segment = bytes.subarray(offset + 2, offset + length);
+            const segment = bytes.subarray(offset + LENGTH_FIELD_BYTES, offset + length);
             offset += length;
             if (marker === MARKER_DQT) this.readQuantTables(segment);
             else if (marker === MARKER_DHT) this.readHuffmanTables(segment);
@@ -108,9 +196,9 @@ class JpegDecoder {
             const table = new Int32Array(BLOCK_AREA);
             offset++;
             for (let k = 0; k < BLOCK_AREA; k++) {
-                table[k] = precision === 0 ? segment[offset + k] : readUint16(segment, offset + k * 2);
+                table[k] = precision === QUANT_PRECISION_8_BIT ? segment[offset + k] : readUint16(segment, offset + k * QUANT_16_BIT_ENTRY_BYTES);
             }
-            offset += precision === 0 ? BLOCK_AREA : BLOCK_AREA * 2;
+            offset += precision === QUANT_PRECISION_8_BIT ? BLOCK_AREA : BLOCK_AREA * QUANT_16_BIT_ENTRY_BYTES;
             this.quantTables[tableId] = table;
         }
     }
@@ -120,29 +208,29 @@ class JpegDecoder {
         while (offset < segment.length) {
             const tableClass = segment[offset] >> 4;
             const tableId = segment[offset] & 15;
-            const counts = segment.subarray(offset + 1, offset + 17);
+            const counts = segment.subarray(offset + 1, offset + HUFFMAN_SEGMENT_HEADER_BYTES);
             let total = 0;
-            for (let i = 0; i < 16; i++) total += counts[i];
-            const values = segment.subarray(offset + 17, offset + 17 + total);
-            (tableClass === 0 ? this.dcTables : this.acTables)[tableId] = new HuffmanTable(counts, values);
-            offset += 17 + total;
+            for (let i = 0; i < HUFFMAN_MAX_CODE_LENGTH; i++) total += counts[i];
+            const values = segment.subarray(offset + HUFFMAN_SEGMENT_HEADER_BYTES, offset + HUFFMAN_SEGMENT_HEADER_BYTES + total);
+            (tableClass === HUFFMAN_CLASS_DC ? this.dcTables : this.acTables)[tableId] = new HuffmanTable(counts, values);
+            offset += HUFFMAN_SEGMENT_HEADER_BYTES + total;
         }
     }
 
     private readFrame(segment: Uint8Array): void {
         const precision = segment[0];
-        if (precision !== 8) throw new Error(`${precision}-bit JPEGs are not supported; ${CONVERT_TO_PNG}`);
-        const height = readUint16(segment, 1);
-        const width = readUint16(segment, 3);
-        const componentCount = segment[5];
+        if (precision !== BASELINE_SAMPLE_BITS) throw new Error(`${precision}-bit JPEGs are not supported; ${CONVERT_TO_PNG}`);
+        const height = readUint16(segment, FRAME_HEIGHT_OFFSET);
+        const width = readUint16(segment, FRAME_WIDTH_OFFSET);
+        const componentCount = segment[FRAME_COMPONENT_COUNT_OFFSET];
         if (height === 0) throw new Error("JPEGs with a deferred height (DNL) are not supported");
         if (width === 0 || componentCount === 0) throw new Error("JPEG frame header is malformed");
         let maxHorizontalSampling = 1, maxVerticalSampling = 1;
         const descriptors: { id: number, h: number, v: number, quantTableId: number }[] = [];
         for (let i = 0; i < componentCount; i++) {
-            const base = 6 + i * 3;
+            const base = FRAME_COMPONENTS_OFFSET + i * FRAME_COMPONENT_BYTES;
             const h = segment[base + 1] >> 4, v = segment[base + 1] & 15;
-            if (h < 1 || h > 4 || v < 1 || v > 4) throw new Error("JPEG sampling factors are out of range");
+            if (h < 1 || h > MAX_SAMPLING_FACTOR || v < 1 || v > MAX_SAMPLING_FACTOR) throw new Error("JPEG sampling factors are out of range");
             descriptors.push({id: segment[base], h, v, quantTableId: segment[base + 2]});
             maxHorizontalSampling = Math.max(maxHorizontalSampling, h);
             maxVerticalSampling = Math.max(maxVerticalSampling, v);
@@ -169,8 +257,8 @@ class JpegDecoder {
     }
 
     private readAdobeSegment(segment: Uint8Array): void {
-        const isAdobe = segment.length >= 12 && segment[0] === 0x41 && segment[1] === 0x64 && segment[2] === 0x6F && segment[3] === 0x62 && segment[4] === 0x65;
-        if (isAdobe) this.adobeTransform = segment[11];
+        const isAdobe = segment.length >= ADOBE_SEGMENT_MIN_BYTES && segment[0] === ADOBE_SIGNATURE[0] && segment[1] === ADOBE_SIGNATURE[1] && segment[2] === ADOBE_SIGNATURE[2] && segment[3] === ADOBE_SIGNATURE[3] && segment[4] === ADOBE_SIGNATURE[4];
+        if (isAdobe) this.adobeTransform = segment[ADOBE_TRANSFORM_OFFSET];
     }
 
     private decodeScan(segment: Uint8Array, dataOffset: number): number {
@@ -179,8 +267,9 @@ class JpegDecoder {
         const scanComponents: FrameComponent[] = [];
         const componentCount = segment[0];
         for (let i = 0; i < componentCount; i++) {
-            const id = segment[1 + i * 2];
-            const tableIds = segment[2 + i * 2];
+            const entry = SCAN_COMPONENTS_OFFSET + i * SCAN_COMPONENT_BYTES;
+            const id = segment[entry];
+            const tableIds = segment[entry + 1];
             const component = frame.components.find(candidate => candidate.id === id);
             if (component === undefined) throw new Error(`JPEG scan references unknown component ${id}`);
             const dcTable = this.dcTables[tableIds >> 4];
@@ -250,12 +339,12 @@ class JpegDecoder {
             const size = runSize & 15;
             const run = runSize >> 4;
             if (size === 0) {
-                if (run !== 15) break;
-                k += 16;
+                if (run !== AC_ZERO_RUN_SYMBOL_RUN) break;
+                k += AC_ZERO_RUN_COEFFICIENTS;
                 continue;
             }
             k += run;
-            if (k > 63) throw new Error("JPEG block has more than 64 coefficients (corrupt scan)");
+            if (k > LAST_COEFFICIENT) throw new Error("JPEG block has more than 64 coefficients (corrupt scan)");
             if (!hasAc) {
                 coefficients.fill(0);
                 hasAc = true;
@@ -268,31 +357,31 @@ class JpegDecoder {
             coefficients[0] = dc;
             inverseDctBlock(coefficients, component.plane, planeOffset, component.planeWidth);
         } else {
-            fillBlock(clampToByte(dc * 0.125 + 128.5), component.plane, planeOffset, component.planeWidth);
+            fillBlock(clampToByte(dc * IDCT_OUTPUT_SCALE + SAMPLE_CENTER_PLUS_ROUNDING), component.plane, planeOffset, component.planeWidth);
         }
     }
 
     private toRgba(frame: Frame): DecodedImage {
         const {width, height, components} = frame;
-        const rgba = new Uint8Array(width * height * 4);
+        const rgba = new Uint8Array(width * height * RGBA_BYTES);
         const columnMaps = components.map(component => buildColumnMap(width, component.horizontalSampling, frame.maxHorizontalSampling));
         const rowOf = (component: FrameComponent, y: number) => Math.floor(y * component.verticalSampling / frame.maxVerticalSampling) * component.planeWidth;
         if (components.length === 1) {
             const [grey] = components;
             for (let y = 0, out = 0; y < height; y++) {
                 const row = rowOf(grey, y);
-                for (let x = 0; x < width; x++, out += 4) {
+                for (let x = 0; x < width; x++, out += RGBA_BYTES) {
                     const value = grey.plane[row + columnMaps[0][x]];
                     rgba[out] = rgba[out + 1] = rgba[out + 2] = value;
-                    rgba[out + 3] = 255;
+                    rgba[out + 3] = OPAQUE_ALPHA;
                 }
             }
-        } else if (components.length === 3) {
+        } else if (components.length === YCC_CHANNELS) {
             const [first, second, third] = components;
-            const storedAsRgb = this.adobeTransform === 0 || (this.adobeTransform === undefined && first.id === 82 && second.id === 71 && third.id === 66);
+            const storedAsRgb = this.adobeTransform === ADOBE_TRANSFORM_NONE || (this.adobeTransform === undefined && first.id === COMPONENT_ID_R && second.id === COMPONENT_ID_G && third.id === COMPONENT_ID_B);
             for (let y = 0, out = 0; y < height; y++) {
                 const row0 = rowOf(first, y), row1 = rowOf(second, y), row2 = rowOf(third, y);
-                for (let x = 0; x < width; x++, out += 4) {
+                for (let x = 0; x < width; x++, out += RGBA_BYTES) {
                     const a = first.plane[row0 + columnMaps[0][x]];
                     const b = second.plane[row1 + columnMaps[1][x]];
                     const c = third.plane[row2 + columnMaps[2][x]];
@@ -301,12 +390,12 @@ class JpegDecoder {
                         rgba[out + 1] = b;
                         rgba[out + 2] = c;
                     } else {
-                        const cb = b - 128, cr = c - 128;
-                        rgba[out] = clampToByte(a + ((91881 * cr + 32768) >> 16));
-                        rgba[out + 1] = clampToByte(a - ((22554 * cb + 46802 * cr + 32768) >> 16));
-                        rgba[out + 2] = clampToByte(a + ((116130 * cb + 32768) >> 16));
+                        const cb = b - SAMPLE_CENTER, cr = c - SAMPLE_CENTER;
+                        rgba[out] = clampToByte(a + ((YCC_CR_TO_R_FIXED * cr + YCC_FIXED_POINT_HALF) >> YCC_FIXED_POINT_BITS));
+                        rgba[out + 1] = clampToByte(a - ((YCC_CB_TO_G_FIXED * cb + YCC_CR_TO_G_FIXED * cr + YCC_FIXED_POINT_HALF) >> YCC_FIXED_POINT_BITS));
+                        rgba[out + 2] = clampToByte(a + ((YCC_CB_TO_B_FIXED * cb + YCC_FIXED_POINT_HALF) >> YCC_FIXED_POINT_BITS));
                     }
-                    rgba[out + 3] = 255;
+                    rgba[out + 3] = OPAQUE_ALPHA;
                 }
             }
         } else {
@@ -317,24 +406,24 @@ class JpegDecoder {
 }
 
 class HuffmanTable {
-    private readonly lookaheadLength = new Uint8Array(256);
-    private readonly lookaheadValue = new Uint8Array(256);
-    private readonly maxCode = new Int32Array(18);
-    private readonly valueOffset = new Int32Array(17);
+    private readonly lookaheadLength = new Uint8Array(HUFFMAN_LOOKAHEAD_ENTRIES);
+    private readonly lookaheadValue = new Uint8Array(HUFFMAN_LOOKAHEAD_ENTRIES);
+    private readonly maxCode = new Int32Array(HUFFMAN_MAX_CODE_LENGTH + 2);
+    private readonly valueOffset = new Int32Array(HUFFMAN_MAX_CODE_LENGTH + 1);
     private readonly values: Uint8Array;
 
     public constructor(counts: Uint8Array, values: Uint8Array) {
         this.values = values;
         let code = 0, k = 0;
-        for (let length = 1; length <= 16; length++) {
+        for (let length = 1; length <= HUFFMAN_MAX_CODE_LENGTH; length++) {
             const count = counts[length - 1];
             if (count === 0) {
                 this.maxCode[length] = -1;
             } else {
                 this.valueOffset[length] = k - code;
                 for (let i = 0; i < count; i++, code++, k++) {
-                    if (length <= 8) {
-                        const shift = 8 - length;
+                    if (length <= HUFFMAN_LOOKAHEAD_BITS) {
+                        const shift = HUFFMAN_LOOKAHEAD_BITS - length;
                         const base = code << shift;
                         for (let j = 0; j < 1 << shift; j++) {
                             this.lookaheadLength[base + j] = length;
@@ -347,23 +436,23 @@ class HuffmanTable {
             if (code > 1 << length) throw new Error("JPEG Huffman table is over-subscribed");
             code <<= 1;
         }
-        this.maxCode[17] = 0x7FFFFFFF;
+        this.maxCode[HUFFMAN_MAX_CODE_LENGTH + 1] = INT32_MAX;
     }
 
     public decode(reader: BitReader): number {
-        const peek = reader.peekBits(8);
+        const peek = reader.peekBits(HUFFMAN_LOOKAHEAD_BITS);
         const lookaheadLength = this.lookaheadLength[peek];
         if (lookaheadLength > 0) {
             reader.consume(lookaheadLength);
             return this.lookaheadValue[peek];
         }
-        reader.consume(8);
+        reader.consume(HUFFMAN_LOOKAHEAD_BITS);
         let code = peek;
-        let length = 8;
+        let length = HUFFMAN_LOOKAHEAD_BITS;
         while (code > this.maxCode[length]) {
             code = (code << 1) | reader.readBit();
             length++;
-            if (length > 16) throw new Error("JPEG scan contains an invalid Huffman code (corrupt data)");
+            if (length > HUFFMAN_MAX_CODE_LENGTH) throw new Error("JPEG scan contains an invalid Huffman code (corrupt data)");
         }
         return this.values[code + this.valueOffset[length]];
     }
@@ -412,7 +501,7 @@ class BitReader {
         this.overrunBits = 0;
         const marker = this.offsetOfNextMarker();
         const markerCode = this.bytes[marker + 1];
-        this.offset = markerCode >= MARKER_RST0 && markerCode <= MARKER_RST7 ? marker + 2 : marker;
+        this.offset = markerCode >= MARKER_RST0 && markerCode <= MARKER_RST7 ? marker + MARKER_BYTES : marker;
     }
 
     public offsetOfNextMarker(): number {
@@ -427,15 +516,15 @@ class BitReader {
 
     private fill(): void {
         const bytes = this.bytes;
-        while (this.bitCount <= 24) {
+        while (this.bitCount <= BIT_BUFFER_REFILL_LIMIT_BITS) {
             let byte = 0;
             if (this.offset >= bytes.length) {
-                this.overrunBits += 8;
+                this.overrunBits += BITS_PER_BYTE;
             } else if (bytes[this.offset] === MARKER_PREFIX) {
                 const next = bytes[this.offset + 1];
                 if (next === 0) {
                     byte = MARKER_PREFIX;
-                    this.offset += 2;
+                    this.offset += STUFFED_FF_BYTES;
                 } else if (next === MARKER_PREFIX) {
                     this.offset++;
                     continue;
@@ -443,14 +532,14 @@ class BitReader {
             } else {
                 byte = bytes[this.offset++];
             }
-            this.bitBuffer = (this.bitBuffer << 8) | byte;
-            this.bitCount += 8;
+            this.bitBuffer = (this.bitBuffer << BITS_PER_BYTE) | byte;
+            this.bitCount += BITS_PER_BYTE;
         }
     }
 }
 
 const EMPTY_SCALE = new Float32Array(BLOCK_AREA);
-const EMPTY_TABLE = new HuffmanTable(new Uint8Array(16), new Uint8Array(0));
+const EMPTY_TABLE = new HuffmanTable(new Uint8Array(HUFFMAN_MAX_CODE_LENGTH), new Uint8Array(0));
 
 const AAN_SCALE = [1.0, 1.387039845, 1.306562965, 1.175875602, 1.0, 0.785694958, 0.541196100, 0.275899379];
 
@@ -483,7 +572,7 @@ function inverseDctBlock(input: Float32Array, plane: Uint8Array, planeOffset: nu
         const rowStart = planeOffset + row * planeWidth;
         const inputStart = row * BLOCK_SIZE;
         for (let column = 0; column < BLOCK_SIZE; column++) {
-            plane[rowStart + column] = clampToByte(input[inputStart + column] * 0.125 + 128.5);
+            plane[rowStart + column] = clampToByte(input[inputStart + column] * IDCT_OUTPUT_SCALE + SAMPLE_CENTER_PLUS_ROUNDING);
         }
     }
 }
@@ -495,7 +584,7 @@ function inverseDct1d(input: Float32Array, inputStart: number, inputStride: numb
     const even10 = in0 + in4;
     const even11 = in0 - in4;
     const even13 = in2 + in6;
-    const even12 = (in2 - in6) * 1.414213562 - even13;
+    const even12 = (in2 - in6) * AAN_SQRT2 - even13;
     const even0 = even10 + even13;
     const even3 = even10 - even13;
     const even1 = even11 + even12;
@@ -506,10 +595,10 @@ function inverseDct1d(input: Float32Array, inputStart: number, inputStride: numb
     const z11 = in1 + in7;
     const z12 = in1 - in7;
     const odd7 = z11 + z13;
-    const odd11 = (z11 - z13) * 1.414213562;
-    const z5 = (z10 + z12) * 1.847759065;
-    const odd10 = 1.082392200 * z12 - z5;
-    const odd12 = -2.613125930 * z10 + z5;
+    const odd11 = (z11 - z13) * AAN_SQRT2;
+    const z5 = (z10 + z12) * AAN_2_COS_PI_8;
+    const odd10 = AAN_2_COS_PI_8_MINUS_COS_3PI_8 * z12 - z5;
+    const odd12 = -AAN_2_COS_PI_8_PLUS_COS_3PI_8 * z10 + z5;
     const odd6 = odd12 - odd7;
     const odd5 = odd11 - odd6;
     const odd4 = odd10 + odd5;
@@ -542,11 +631,11 @@ function isUnsupportedFrameMarker(marker: number): boolean {
 }
 
 function clampToByte(value: number): number {
-    return value < 0 ? 0 : value > 255 ? 255 : value | 0;
+    return value < 0 ? 0 : value > BYTE_MAX ? BYTE_MAX : value | 0;
 }
 
 function readUint16(bytes: Uint8Array, offset: number): number {
-    return (bytes[offset] << 8) | bytes[offset + 1];
+    return (bytes[offset] << BITS_PER_BYTE) | bytes[offset + 1];
 }
 
 export interface JpegEncodeOptions {
@@ -582,14 +671,14 @@ class JpegEncoder {
     private readonly quantized = new Int32Array(BLOCK_AREA);
 
     public constructor(private readonly width: number, private readonly height: number, rgba: Uint8Array, options: JpegEncodeOptions) {
-        const quality = options.quality ?? 90;
+        const quality = options.quality ?? DEFAULT_QUALITY;
         this.restartInterval = options.restartInterval ?? 0;
-        const lumaSampling = options.chromaSubsampling === "4:2:0" && !options.greyscale ? 2 : 1;
+        const lumaSampling = options.chromaSubsampling === "4:2:0" && !options.greyscale ? CHROMA_SUBSAMPLING_420_FACTOR : 1;
         this.mcusPerLine = Math.ceil(width / (BLOCK_SIZE * lumaSampling));
         this.mcusPerColumn = Math.ceil(height / (BLOCK_SIZE * lumaSampling));
         const ycc = toYCbCr(width, height, rgba);
-        const descriptors = [{id: 1, sampling: lumaSampling, tableId: 0, channel: 0}];
-        if (!options.greyscale) descriptors.push({id: 2, sampling: 1, tableId: 1, channel: 1}, {id: 3, sampling: 1, tableId: 1, channel: 2});
+        const descriptors = [{id: JFIF_LUMA_ID, sampling: lumaSampling, tableId: 0, channel: 0}];
+        if (!options.greyscale) descriptors.push({id: JFIF_CB_ID, sampling: 1, tableId: 1, channel: 1}, {id: JFIF_CR_ID, sampling: 1, tableId: 1, channel: 2});
         this.components = descriptors.map(descriptor => {
             const planeWidth = this.mcusPerLine * descriptor.sampling * BLOCK_SIZE;
             const planeHeight = this.mcusPerColumn * descriptor.sampling * BLOCK_SIZE;
@@ -611,26 +700,26 @@ class JpegEncoder {
         const writer = this.writer;
         const tableCount = this.components.length === 1 ? 1 : 2;
         writer.writeMarker(MARKER_SOI);
-        writer.writeSegment(MARKER_APP0, [0x4A, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]);
+        writer.writeSegment(MARKER_APP0, JFIF_APP0_PAYLOAD);
         for (let id = 0; id < tableCount; id++) {
             const table = this.quantTables[id];
             const zigzag: number[] = [id];
             for (let k = 0; k < BLOCK_AREA; k++) zigzag.push(table[ZIGZAG_TO_NATURAL[k]]);
             writer.writeSegment(MARKER_DQT, zigzag);
         }
-        const frameHeader = [8, this.height >> 8, this.height & 255, this.width >> 8, this.width & 255, this.components.length];
+        const frameHeader = [BASELINE_SAMPLE_BITS, this.height >> 8, this.height & 255, this.width >> 8, this.width & 255, this.components.length];
         for (const component of this.components) frameHeader.push(component.id, (component.sampling << 4) | component.sampling, component.tableId);
         writer.writeSegment(MARKER_SOF0, frameHeader);
         for (let id = 0; id < tableCount; id++) {
             const dc = id === 0 ? STANDARD_DC_LUMINANCE : STANDARD_DC_CHROMINANCE;
             const ac = id === 0 ? STANDARD_AC_LUMINANCE : STANDARD_AC_CHROMINANCE;
             writer.writeSegment(MARKER_DHT, [id, ...dc.counts, ...dc.values]);
-            writer.writeSegment(MARKER_DHT, [0x10 | id, ...ac.counts, ...ac.values]);
+            writer.writeSegment(MARKER_DHT, [HUFFMAN_CLASS_AC_BITS | id, ...ac.counts, ...ac.values]);
         }
         if (this.restartInterval > 0) writer.writeSegment(MARKER_DRI, [this.restartInterval >> 8, this.restartInterval & 255]);
         const scanHeader = [this.components.length];
         for (const component of this.components) scanHeader.push(component.id, (component.tableId << 4) | component.tableId);
-        scanHeader.push(0, 63, 0);
+        scanHeader.push(SPECTRAL_SELECTION_START, LAST_COEFFICIENT, SUCCESSIVE_APPROXIMATION);
         writer.writeSegment(MARKER_SOS, scanHeader);
         this.encodeScan();
         writer.writeMarker(MARKER_EOI);
@@ -644,7 +733,7 @@ class JpegEncoder {
             for (let mcuX = 0; mcuX < this.mcusPerLine; mcuX++) {
                 if (this.restartInterval > 0 && mcuIndex > 0 && mcuIndex % this.restartInterval === 0) {
                     this.writer.flushBits();
-                    this.writer.writeMarker(MARKER_RST0 + (restartCount++ & 7));
+                    this.writer.writeMarker(MARKER_RST0 + (restartCount++ & RESTART_MARKER_INDEX_MASK));
                     for (const component of this.components) component.dcPredictor = 0;
                 }
                 for (const component of this.components) {
@@ -666,7 +755,7 @@ class JpegEncoder {
         const planeOffset = blockY * BLOCK_SIZE * component.planeWidth + blockX * BLOCK_SIZE;
         for (let row = 0; row < BLOCK_SIZE; row++) {
             for (let column = 0; column < BLOCK_SIZE; column++) {
-                block[row * BLOCK_SIZE + column] = component.plane[planeOffset + row * component.planeWidth + column] - 128;
+                block[row * BLOCK_SIZE + column] = component.plane[planeOffset + row * component.planeWidth + column] - SAMPLE_CENTER;
             }
         }
         forwardDctBlock(block);
@@ -687,14 +776,14 @@ class JpegEncoder {
                 run++;
                 continue;
             }
-            while (run > 15) {
-                this.writer.writeCode(acCodes, 0xF0);
-                run -= 16;
+            while (run > AC_ZERO_RUN_SYMBOL_RUN) {
+                this.writer.writeCode(acCodes, AC_ZERO_RUN_SYMBOL);
+                run -= AC_ZERO_RUN_COEFFICIENTS;
             }
             this.writeCoefficient(acCodes, run, value);
             run = 0;
         }
-        if (run > 0) this.writer.writeCode(acCodes, 0x00);
+        if (run > 0) this.writer.writeCode(acCodes, AC_END_OF_BLOCK_SYMBOL);
     }
 
     private writeCoefficient(codes: HuffmanCodes, run: number, value: number): void {
@@ -715,10 +804,10 @@ interface StandardHuffmanTable {
 }
 
 function buildHuffmanCodes(table: StandardHuffmanTable): HuffmanCodes {
-    const code = new Uint16Array(256);
-    const length = new Uint8Array(256);
+    const code = new Uint16Array(HUFFMAN_SYMBOL_COUNT);
+    const length = new Uint8Array(HUFFMAN_SYMBOL_COUNT);
     let current = 0, k = 0;
-    for (let bits = 1; bits <= 16; bits++) {
+    for (let bits = 1; bits <= HUFFMAN_MAX_CODE_LENGTH; bits++) {
         for (let i = 0; i < table.counts[bits - 1]; i++, k++, current++) {
             code[table.values[k]] = current;
             length[table.values[k]] = bits;
@@ -739,7 +828,7 @@ class BitWriter {
     }
 
     public writeSegment(marker: number, payload: number[]): void {
-        const length = payload.length + 2;
+        const length = payload.length + LENGTH_FIELD_BYTES;
         this.bytes.push(MARKER_PREFIX, marker, length >> 8, length & 255, ...payload);
     }
 
@@ -752,7 +841,7 @@ class BitWriter {
     public writeBits(value: number, count: number): void {
         for (let bit = count - 1; bit >= 0; bit--) {
             this.bitBuffer = (this.bitBuffer << 1) | ((value >> bit) & 1);
-            if (++this.bitCount === 8) this.emitByte();
+            if (++this.bitCount === BITS_PER_BYTE) this.emitByte();
         }
     }
 
@@ -773,12 +862,12 @@ class BitWriter {
 }
 
 function toYCbCr(width: number, height: number, rgba: Uint8Array): Float32Array {
-    const ycc = new Float32Array(width * height * 3);
-    for (let i = 0, input = 0, output = 0; i < width * height; i++, input += 4, output += 3) {
+    const ycc = new Float32Array(width * height * YCC_CHANNELS);
+    for (let i = 0, input = 0, output = 0; i < width * height; i++, input += RGBA_BYTES, output += YCC_CHANNELS) {
         const r = rgba[input], g = rgba[input + 1], b = rgba[input + 2];
-        ycc[output] = 0.299 * r + 0.587 * g + 0.114 * b;
-        ycc[output + 1] = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-        ycc[output + 2] = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+        ycc[output] = LUMA_FROM_R * r + LUMA_FROM_G * g + LUMA_FROM_B * b;
+        ycc[output + 1] = SAMPLE_CENTER - CB_FROM_R * r - CB_FROM_G * g + CB_FROM_B * b;
+        ycc[output + 2] = SAMPLE_CENTER + CR_FROM_R * r - CR_FROM_G * g - CR_FROM_B * b;
     }
     return ycc;
 }
@@ -793,7 +882,7 @@ function buildComponentPlane(ycc: Float32Array, width: number, height: number, c
                 const sourceY = Math.min(height - 1, y * reduction + dy);
                 for (let dx = 0; dx < reduction; dx++) {
                     const sourceX = Math.min(width - 1, x * reduction + dx);
-                    sum += ycc[(sourceY * width + sourceX) * 3 + channel];
+                    sum += ycc[(sourceY * width + sourceX) * YCC_CHANNELS + channel];
                 }
             }
             plane[y * planeWidth + x] = sum / sampleCount;
@@ -806,7 +895,7 @@ const dctCosine = (() => {
     const table = new Float32Array(BLOCK_AREA);
     for (let x = 0; x < BLOCK_SIZE; x++) {
         for (let u = 0; u < BLOCK_SIZE; u++) {
-            table[x * BLOCK_SIZE + u] = Math.cos((2 * x + 1) * u * Math.PI / 16) * (u === 0 ? Math.SQRT1_2 : 1);
+            table[x * BLOCK_SIZE + u] = Math.cos((2 * x + 1) * u * Math.PI / DCT_ANGLE_DIVISOR) * (u === 0 ? Math.SQRT1_2 : 1);
         }
     }
     return table;
@@ -827,16 +916,16 @@ function forwardDctBlock(block: Float32Array): void {
         for (let u = 0; u < BLOCK_SIZE; u++) {
             let sum = 0;
             for (let y = 0; y < BLOCK_SIZE; y++) sum += workspace[y * BLOCK_SIZE + u] * dctCosine[y * BLOCK_SIZE + v];
-            block[v * BLOCK_SIZE + u] = sum * 0.25;
+            block[v * BLOCK_SIZE + u] = sum * FDCT_OUTPUT_SCALE;
         }
     }
 }
 
 function scaleQuantTable(standard: readonly number[], quality: number): Int32Array {
-    const clampedQuality = Math.max(1, Math.min(100, quality));
-    const scale = clampedQuality < 50 ? 5000 / clampedQuality : 200 - clampedQuality * 2;
+    const clampedQuality = Math.max(MIN_QUALITY, Math.min(MAX_QUALITY, quality));
+    const scale = clampedQuality < IJG_QUALITY_MIDPOINT ? IJG_LOW_QUALITY_NUMERATOR / clampedQuality : IJG_HIGH_QUALITY_BASE - clampedQuality * 2;
     const table = new Int32Array(BLOCK_AREA);
-    for (let i = 0; i < BLOCK_AREA; i++) table[i] = Math.max(1, Math.min(255, Math.floor((standard[i] * scale + 50) / 100)));
+    for (let i = 0; i < BLOCK_AREA; i++) table[i] = Math.max(MIN_QUANT_VALUE, Math.min(BYTE_MAX, Math.floor((standard[i] * scale + PERCENT_ROUNDING) / PERCENT)));
     return table;
 }
 

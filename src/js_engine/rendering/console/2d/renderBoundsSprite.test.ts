@@ -11,16 +11,6 @@ import {Sprite} from "../../2d/sprite";
 import {SpriteImage} from "../../2d/spriteImage";
 import {RenderBoundsSpriteApplyModifierSystem} from "./renderBoundsSpriteApplyModifierSystem";
 
-/**
- * Pins the sprite bounds pipeline against the "sprites jump on first move /
- * archetype change" regression: WorldSpaceRenderBoundsComputeSystem used to
- * blacklist RenderBounds (a column it *reads*) from its change filter, so the
- * apply-modifier write never woke it — every sprite kept a degenerate
- * point-AABB at its position until LocalToWorld happened to be re-stamped
- * (a move, or an archetype change re-stamping the destination columns), and
- * then visibly snapped by the anchor offset.
- */
-
 class Tag extends Component {
 }
 
@@ -28,9 +18,6 @@ function makeWorld() {
     const world = new World();
     world.getOrCreateSystem(TranslationSystemGroup);
     world.getOrCreateSystem(LocalToWorldSystem);
-    // Resolves RenderingSystemGroup first, whose onCreate registers
-    // WorldSpaceRenderBoundsComputeSystem — the same registration order the
-    // demo gets, which is what made the equal-priority ordering bug bite.
     world.getOrCreateSystem(RenderBoundsSpriteApplyModifierSystem);
     const root = world.getOrCreateSystem(RootSystemGroup);
     return {world, root, em: world.entityManager};
@@ -44,7 +31,6 @@ describe("sprite render bounds", () => {
     test("a stationary sprite gets its anchored world AABB, not a point", () => {
         const {root, em} = makeWorld();
         const e = em.createEntity("sprite");
-        // 3x3 pixels: 3 cells wide, 1.5 cells tall, centered anchor.
         em.addComponent(e, new Sprite(SpriteImage.solid(3, 3, 0xFFFFFF)));
         em.addComponent(e, new LocalToWorld());
         em.addComponent(e, new LocalPosition(10, 20, 0));
@@ -87,8 +73,6 @@ describe("sprite render bounds", () => {
         em.addComponent(e, new LocalPosition(10, 20, 0));
         tick(root);
 
-        // The fade-completion path in demo/2d: components removed/added move the
-        // entity between archetypes, re-stamping the destination columns.
         em.addComponent(e, new Tag());
         tick(root);
         em.removeComponent(e, Tag);
@@ -109,8 +93,6 @@ describe("sprite render bounds", () => {
         em.addComponent(e, new LocalPosition(10, 20, 0));
         tick(root);
 
-        // A RenderBounds rewrite with no LocalToWorld change: only the
-        // RenderBounds->compute wake-up can propagate this.
         const sprite = em.getComponent<Sprite>(e, Sprite)!;
         sprite.image = SpriteImage.solid(5, 1, 0xFFFFFF);
         tick(root);

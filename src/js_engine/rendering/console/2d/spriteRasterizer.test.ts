@@ -24,7 +24,6 @@ function config(overrides: Partial<SpriteRasterizerConfig> = {}): SpriteRasteriz
     };
 }
 
-/** A width x height image of one color; alpha applies to every pixel. */
 function solidSprite(width: number, height: number, color: number, alpha = 255): BlittableSpriteImage {
     const rgba = new Uint8Array(width * height * 4);
     for (let i = 0; i < rgba.length; i += 4) {
@@ -65,7 +64,6 @@ describe("SpriteRasterizer", () => {
         raster.blitSprite(solidSprite(1, 2, 0x123456), 2, 0, 5);
         raster.endFrame();
 
-        // Both halves identical → reads back as a solid cell.
         expect(buffer.rgbAt(2, 0)).toBe(0x123456);
     });
 
@@ -74,8 +72,8 @@ describe("SpriteRasterizer", () => {
         const raster = new SpriteRasterizer();
         raster.beginFrame(buffer, WIDTH, HEIGHT, config());
         raster.blitSprite(solidSprite(1, 1, 0x0000FF), 0, 0, 10);
-        raster.blitSprite(solidSprite(1, 1, 0xFF0000), 0, 0, 5);  // nearer, same half
-        raster.blitSprite(solidSprite(1, 1, 0x00FF00), 0, 1, 20); // bottom half untouched by others
+        raster.blitSprite(solidSprite(1, 1, 0xFF0000), 0, 0, 5);
+        raster.blitSprite(solidSprite(1, 1, 0x00FF00), 0, 1, 20);
         raster.endFrame();
 
         expect(buffer.splitRgbAt(0, 0)).toEqual([0xFF0000, 0x00FF00]);
@@ -107,11 +105,10 @@ describe("SpriteRasterizer", () => {
         const buffer = makeBuffer();
         const raster = new SpriteRasterizer();
         raster.beginFrame(buffer, WIDTH, HEIGHT, config({backgroundColor: 0x000000}));
-        raster.blitSprite(solidSprite(1, 1, 0xFF0000, 127.5), 0, 0, 5); // 50% alpha isn't exact in bytes; use 128
+        raster.blitSprite(solidSprite(1, 1, 0xFF0000, 127.5), 0, 0, 5);
         raster.endFrame();
 
         const [top] = buffer.splitRgbAt(0, 0)!;
-        // 255 * (127.5/255→127/255 rounds through bytes); accept the rounded half.
         expect((top! >> 16) & 255).toBeCloseTo(127, -1);
         expect(top! & 0xFFFF).toBe(0);
     });
@@ -130,7 +127,7 @@ describe("SpriteRasterizer", () => {
         const buffer = makeBuffer();
         const raster = new SpriteRasterizer();
         raster.beginFrame(buffer, WIDTH, HEIGHT, config({maxDepthFade: 10}));
-        raster.blitSprite(solidSprite(1, 1, 0xFF0000), 0, 0, 5); // fade = 0.5
+        raster.blitSprite(solidSprite(1, 1, 0xFF0000), 0, 0, 5);
         raster.endFrame();
 
         const [top] = buffer.splitRgbAt(0, 0)!;
@@ -151,10 +148,7 @@ describe("SpriteRasterizer", () => {
         const buffer = makeBuffer();
         const raster = new SpriteRasterizer();
         raster.beginFrame(buffer, WIDTH, HEIGHT, config());
-        // 3x4-pixel sprite hanging off the top-left corner: only its bottom-right
-        // quarter (2 columns, 2 pixel rows = one full cell) is on screen.
         raster.blitSprite(solidSprite(3, 4, 0xAABBCC), -1, -2, 5);
-        // And off the bottom-right corner.
         raster.blitSprite(solidSprite(2, 2, 0x112233), WIDTH - 1, HEIGHT * 2 - 1, 5);
         raster.endFrame();
 
@@ -191,7 +185,7 @@ describe("SpriteRasterizer", () => {
         const cellCount = WIDTH * HEIGHT;
         const depth = new Float32Array(cellCount).fill(Number.POSITIVE_INFINITY);
         const color = new Int32Array(cellCount);
-        depth[0] = 3; // nearer than the sprite below
+        depth[0] = 3;
         color[0] = 0x00FF00;
         buffer.mergeRgbLayer(depth, color);
 
@@ -200,8 +194,6 @@ describe("SpriteRasterizer", () => {
         raster.blitSprite(solidSprite(2, 2, 0xFF0000), 0, 0, 5);
         raster.endFrame();
 
-        // Cell 0 was claimed at depth 3 by the "3D" layer; the whole-cell depth
-        // comparison keeps it. Cell 1 belongs to the sprite.
         expect(buffer.rgbAt(0, 0)).toBe(0x00FF00);
         expect(buffer.rgbAt(1, 0)).toBe(0xFF0000);
     });

@@ -1,23 +1,13 @@
 ﻿import {Component} from "../core";
-import {AABB} from "../datatypes/aabb";
+import {AABB, AABB_STRIDE} from "../datatypes/aabb";
 import type {F32Backed} from "../core/componentType";
 import {Vec, Vec3} from "../math/types/vec";
 
-/**
- * Shared base for the components that are just an AABB in a column.
- *
- * RenderBounds and WorldSpaceRenderBounds were byte-identical apart from the former's
- * setup(), so the accessors live here once. None of this is on a hot path: the render
- * and bounds systems read the Float32 column directly through consumeSpans and never
- * touch these getters, which exist for setup code and tests.
- */
 export abstract class AABBComponent extends Component implements F32Backed {
-    /** SoA column width: the AABB's 6 floats live in the archetype's column. */
-    static readonly f32Width = 6;
+    static readonly f32Width = AABB_STRIDE;
 
     protected _values: AABB = AABB.alloc();
 
-    /** Live AABB view over this component's storage — same buffer, no copy. */
     get bounds(): AABB {
         return this._values;
     }
@@ -86,18 +76,16 @@ export abstract class AABBComponent extends Component implements F32Backed {
         Vec.copy(AABB.max(this._values), value);
     }
 
-    // F32Backed (store-driven; see core/componentType.ts)
-
     writeF32(dst: Float32Array, offset: number): void {
         dst.set(AABB.asFloat32Array(this._values), offset);
     }
 
     bindF32(src: Float32Array, offset: number): void {
-        this._values = AABB.wrap(src.subarray(offset, offset + 6));
+        this._values = AABB.wrap(src.subarray(offset, offset + AABB_STRIDE));
     }
 
     detachF32(): void {
-        const own = new Float32Array(6);
+        const own = new Float32Array(AABB_STRIDE);
         own.set(AABB.asFloat32Array(this._values));
         this._values = AABB.wrap(own);
     }

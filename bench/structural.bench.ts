@@ -1,18 +1,3 @@
-/**
- * Structural ECS operations: spawning (one by one, batch, through a command buffer),
- * tag toggles (archetype moves), command-buffer moves of existing entities
- * (multi-type moves), enable/disable (boundary swaps, the control), despawn, and
- * Parent hierarchies (setup() cascades).
- *
- * Increment 1.0 of docs/roadmap-plan.md: the baseline Phase 1 is judged against.
- * Phase 2 added the command-buffer move scenario (the 1.0 baseline lacks it).
- * Every sample builds a fresh World, never starts its loop, and calls the
- * EntityManager directly. Scenarios are interleaved round-robin and reported as
- * medians; one untimed warm-up round runs first.
- *
- * Run: bun bench/structural.bench.ts [--rounds N]
- *      npm run bench:structural            (node, --expose-gc)
- */
 import * as os from "node:os";
 import {Component, Entity, EntityCommandBufferSystem, EntityManager, World} from "../src/js_engine/core";
 import type {ComponentCtor} from "../src/js_engine/core";
@@ -25,7 +10,7 @@ import {
     Parent,
     ParentTransform
 } from "../src/js_engine/translation";
-import {fmt, median} from "./_harness";
+import {formatMs, median} from "./_harness";
 
 class Velocity extends Component {
     constructor(public dx: number = 0, public dy: number = 0) {
@@ -43,6 +28,9 @@ const ECB_MOVE_FRAMES = 60;
 const HIERARCHY_COUNT = 10_000;
 const HIERARCHY_DEPTH = 4;
 const MIN_SAMPLE_MS = 50;
+const DEFAULT_ROUNDS = 7;
+const US_PER_MS = 1000;
+const BLOCKING_GC = true;
 
 const SPAWN_TYPES: ComponentCtor<Component>[] = [LocalPosition, LocalRotation, LocalScale, LocalToWorld, Velocity, Marker];
 const TOGGLE_BASE_TYPES: ComponentCtor<Component>[] = [LocalPosition, LocalRotation, LocalScale, LocalToWorld, Velocity];
@@ -77,8 +65,7 @@ interface Scenario {
     name: string;
     ops: number;
     opUnit: string;
-    /** Runs per sample, each on a fresh fixture; the reported time is per run. For scenarios under MIN_SAMPLE_MS. */
-    repeat?: number;
+    runsPerSample?: number;
     unavailable?: (fixture: Fixture) => string | undefined;
     setup?: (fixture: Fixture) => void;
     run: (fixture: Fixture) => void;
@@ -246,7 +233,7 @@ const scenarios: Scenario[] = [
         name: "despawn 100k x6",
         ops: SPAWN_COUNT,
         opUnit: "entity",
-        repeat: 3,
+        runsPerSample: 3,
         setup: fixture => spawnOneByOne(fixture, SPAWN_COUNT, spawnComponents),
         run: fixture => {
             const {em, entities} = fixture;
@@ -261,7 +248,7 @@ const scenarios: Scenario[] = [
         name: "spawn 10k Parent hierarchies, depth 4",
         ops: HIERARCHY_COUNT * HIERARCHY_DEPTH,
         opUnit: "entity",
-        repeat: 2,
+        runsPerSample: 2,
         run: fixture => {
             const {em, entities} = fixture;
             for (let h = 0; h < HIERARCHY_COUNT; h++) {
@@ -291,7 +278,7 @@ type GcMode = { label: string, collect: () => void };
 
 function detectGc(): GcMode {
     const bun = (globalThis as { Bun?: { gc(force: boolean): void } }).Bun;
-    if (bun) return {label: "forced before each sample (Bun.gc)", collect: () => bun.gc(true)};
+    if (bun) return {label: "forced before each sample (Bun.gc)", collect: () => bun.gc(BLOCKING_GC)};
     const gc = (globalThis as { gc?: () => void }).gc;
     if (gc) return {label: "forced before each sample (global.gc)", collect: gc};
     return {label: "not forced (run node with --expose-gc)", collect: () => {}};
@@ -304,7 +291,7 @@ function runtimeLabel(): string {
 
 function parseRounds(): number {
     const i = process.argv.indexOf("--rounds");
-    if (i < 0) return 7;
+    if (i < 0) return DEFAULT_ROUNDS;
     const n = Number(process.argv[i + 1]);
     if (!Number.isInteger(n) || n < 1) throw new Error("--rounds expects a positive integer");
     return n;
@@ -328,7 +315,7 @@ function runOnce(scenario: Scenario, gc: GcMode): number | string {
 }
 
 function sample(scenario: Scenario, gc: GcMode): number | string {
-    const repeat = scenario.repeat ?? 1;
+    const repeat = scenario.runsPerSample ?? 1;
     let total = 0;
     for (let r = 0; r < repeat; r++) {
         const result = runOnce(scenario, gc);
@@ -370,11 +357,11 @@ function main() {
         }
         const xs = samples[s];
         const mid = median(xs);
-        const perOpUs = (mid * 1000 / scenario.ops).toFixed(3);
-        const repeat = scenario.repeat ?? 1;
+        const perOpUs = (mid * US_PER_MS / scenario.ops).toFixed(3);
+        const repeat = scenario.runsPerSample ?? 1;
         const note = mid * repeat < MIN_SAMPLE_MS ? `  (sample under ${MIN_SAMPLE_MS} ms)`
             : repeat > 1 ? `  (mean of ${repeat} runs per sample)` : "";
-        console.log(`${row}   ${fmt(mid)} ${fmt(Math.min(...xs))} ${fmt(Math.max(...xs))}   ${perOpUs} us/${scenario.opUnit}${note}`);
+        console.log(`${row}   ${formatMs(mid)} ${formatMs(Math.min(...xs))} ${formatMs(Math.max(...xs))}   ${perOpUs} us/${scenario.opUnit}${note}`);
     }
 }
 

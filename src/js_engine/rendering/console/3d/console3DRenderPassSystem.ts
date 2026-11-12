@@ -23,11 +23,10 @@ import {VertexLighting} from "../../3d/lighting/vertexLighting";
 import {selectLodLevel} from "../../3d/meshLod";
 
 const TRACKED_LOD_LEVELS = 8;
+const MAT4_FLOATS = 16;
+const MAT3_FLOATS = 9;
+const AABB_CORNERS = 8;
 
-/**
- * Draws every RenderMesh through MeshRasterizer. Runs only while a singleton
- * Console3DRenderSettings entity exists; that entity is the configuration.
- */
 export class Console3DRenderPassSystem extends System {
     private _settingsQuery = this.createEntityQuery([Console3DRenderSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld, FieldOfView, ConsoleCellRatio]);
@@ -36,19 +35,16 @@ export class Console3DRenderPassSystem extends System {
 
     private _rasterizer!: MeshRasterizer;
     private _resolveTarget = new ConsoleCellResolveTarget();
-    private _modelViewScratch = new Float32Array(16);
-    private _normalMatrixScratch = new Float32Array(9);
+    private _modelViewScratch = new Float32Array(MAT4_FLOATS);
+    private _normalMatrixScratch = new Float32Array(MAT3_FLOATS);
     private _viewSpaceMesh = new ViewSpaceMesh();
     private _vertexLighting = new VertexLighting();
     private _projectedWidth = 0;
     private _projectedHeight = 0;
 
-    /** Triangles handed to the rasterizer this frame, after detail-level selection. */
     public trianglesDrawn = 0;
-    /** Meshes drawn this frame per detail level (index = level). */
     public readonly lodLevelCounts = new Int32Array(TRACKED_LOD_LEVELS);
 
-    /** Raster worker threads in use; 0 when the raster is single-threaded. */
     public get rasterWorkers(): number {
         return this._rasterizer?.activeWorkerCount ?? 0;
     }
@@ -71,7 +67,6 @@ export class Console3DRenderPassSystem extends System {
         this.world.ensureSystemExists(SceneLightsGatherSystem);
     }
 
-    /** The frame stats read as zero whenever the pass is disabled or has nothing to draw, not as the last drawn frame. */
     override update(): void {
         this.trianglesDrawn = 0;
         this.lodLevelCounts.fill(0);
@@ -118,15 +113,12 @@ export class Console3DRenderPassSystem extends System {
             this.drawMesh(mesh, renderMesh.color, renderMesh.faceCulling, localToWorld, invertedCameraMatrix, focalLength, cellRatio, lit);
         });
 
-        // Entities carrying WorldSpaceRenderBounds get a cheap conservative
-        // frustum test before their triangles are even touched, and their
-        // projected size picks the detail level.
         this._selectiveRenderQuery.stream({
             read: {renderMesh: RenderMesh, localToWorld: LocalToWorld, bounds: WorldSpaceRenderBounds},
         }).consume(({renderMesh, localToWorld, bounds}) => {
             let mesh = renderMesh.mesh;
             if (mesh === undefined) return;
-            if (!this.projectBounds(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
+            if (!this.visibleAfterProjectingBounds(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
             let level = 0;
             if (lodEnabled && mesh.lods.length > 1) {
                 level = selectLodLevel(mesh.lods, this._projectedWidth, this._projectedHeight, settings.lodTrianglesPerCell, settings.lodBias);
@@ -156,14 +148,7 @@ export class Console3DRenderPassSystem extends System {
         this._rasterizer.addViewSpaceMesh(mesh, viewMesh, focalLength, cellRatio, color, vertexRgb, faceCulling);
     }
 
-    /**
-     * Conservative visibility test for a world-space AABB: transform its 8
-     * corners into view space; cull only when all of them are behind the near
-     * plane, or the whole projected extent falls outside the screen. Leaves the
-     * on-screen extent of the projection, in cells, in _projectedWidth/Height;
-     * corners behind the near plane project as if on it, which over-estimates.
-     */
-    private projectBounds(
+    private visibleAfterProjectingBounds(
         bounds: DeepReadonly<WorldSpaceRenderBounds>,
         invertedCameraMatrix: Vec16,
         focalLength: number | undefined,
@@ -179,7 +164,7 @@ export class Console3DRenderPassSystem extends System {
         let minX = Number.POSITIVE_INFINITY, maxX = Number.NEGATIVE_INFINITY;
         let minY = Number.POSITIVE_INFINITY, maxY = Number.NEGATIVE_INFINITY;
 
-        for (let corner = 0; corner < 8; corner++) {
+        for (let corner = 0; corner < AABB_CORNERS; corner++) {
             const x = (corner & 1) === 0 ? bounds.xMin : bounds.xMax;
             const y = (corner & 2) === 0 ? bounds.yMin : bounds.yMax;
             const z = (corner & 4) === 0 ? bounds.zMin : bounds.zMax;
@@ -198,7 +183,7 @@ export class Console3DRenderPassSystem extends System {
 
             const ppu = focalLength !== undefined ? focalLength / depth : 1;
             const sx = halfW + vx * ppu * cellRatio;
-            const sy = halfH - vy * ppu; // Y-up view space → Y-down screen rows, as in emitTriangle
+            const sy = halfH - vy * ppu;
             if (sx < minX) minX = sx;
             if (sx > maxX) maxX = sx;
             if (sy < minY) minY = sy;
@@ -212,8 +197,6 @@ export class Console3DRenderPassSystem extends System {
         this._projectedWidth = right > left ? right - left : 0;
         this._projectedHeight = bottom > top ? bottom - top : 0;
 
-        // A corner behind the camera makes the true projected extent
-        // unbounded, so no screen-cull in that case.
         if (anyBehindNearPlane) return true;
         return maxX > 0 && minX < width && maxY > 0 && minY < height;
     }

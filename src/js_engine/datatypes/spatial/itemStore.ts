@@ -1,23 +1,9 @@
 ﻿import {AABB} from "../aabb";
 
-/**
- * Bound storage shared by every SpatialIndex implementation: six parallel f32
- * columns plus a batch id and a payload per item.
- *
- * SIX COLUMNS, NOT ONE INTERLEAVED BUFFER. Measured on the intersect test with
- * the query hoisted into locals (µs per 100k boxes, best of 5 after warmup):
- *
- *     plain objects        142.1
- *     subarray views       139.9
- *     flat interleaved      93.7
- *     six SoA columns       74.2
- *
- * STABLE INDICES. Items are never swap-removed; freed slots go on a free list and
- * get reused. Tree implementations hold item indices in their nodes, and a
- * swap-remove would mean fixing those up on every removal. Trading a little
- * density for stable indices makes the octrees dramatically simpler and is why
- * `count` (live) and `capacity` (slots ever used) are separate.
- */
+const DEFAULT_CAPACITY = 64;
+const MIN_CAPACITY = 8;
+const END_OF_FREE_LIST = -1;
+
 export class ItemStore<P> {
     xMin: Float32Array;
     yMin: Float32Array;
@@ -28,17 +14,13 @@ export class ItemStore<P> {
     batch: Int32Array;
     payload: (P | undefined)[];
 
-    /** Slots ever handed out; live items are a subset. */
-    private _highWater = 0;
+    private _slotsEverIssued = 0;
     private _count = 0;
     private _capacity: number;
-    // Free list threaded through batch[]: a released slot stores the next free
-    // index there, or -1 to end the chain. Batch ids are assigned from 0 upward,
-    // so -1 is never a real id and is safe as the sentinel.
-    private freeHead = -1;
+    private freeListHeadInBatch = END_OF_FREE_LIST;
 
-    constructor(capacity = 64) {
-        this._capacity = Math.max(8, capacity);
+    constructor(capacity = DEFAULT_CAPACITY) {
+        this._capacity = Math.max(MIN_CAPACITY, capacity);
         this.xMin = new Float32Array(this._capacity);
         this.yMin = new Float32Array(this._capacity);
         this.zMin = new Float32Array(this._capacity);
@@ -58,15 +40,14 @@ export class ItemStore<P> {
         return this._capacity;
     }
 
-    /** Store one item, returning its stable index. */
     add(b: AABB, payload: P, batchId: number): number {
         let i: number;
-        if (this.freeHead !== -1) {
-            i = this.freeHead;
-            this.freeHead = this.batch[i]; // link to the next free slot, or -1
+        if (this.freeListHeadInBatch !== END_OF_FREE_LIST) {
+            i = this.freeListHeadInBatch;
+            this.freeListHeadInBatch = this.batch[i];
         } else {
-            if (this._highWater === this._capacity) this.grow();
-            i = this._highWater++;
+            if (this._slotsEverIssued === this._capacity) this.grow();
+            i = this._slotsEverIssued++;
         }
 
         const raw = AABB.asFloat32Array(b);
@@ -82,19 +63,18 @@ export class ItemStore<P> {
         return i;
     }
 
-    /** Release a slot. The index must not be used again until re-issued by add(). */
     release(index: number): void {
-        this.payload[index] = undefined;   // drop the reference so it can be collected
-        this.batch[index] = this.freeHead; // -1 when this becomes the only free slot
-        this.freeHead = index;
+        this.payload[index] = undefined;
+        this.batch[index] = this.freeListHeadInBatch;
+        this.freeListHeadInBatch = index;
         this._count--;
     }
 
     clear(): void {
         this.payload.fill(undefined);
         this._count = 0;
-        this._highWater = 0;
-        this.freeHead = -1;
+        this._slotsEverIssued = 0;
+        this.freeListHeadInBatch = END_OF_FREE_LIST;
     }
 
     private grow(): void {

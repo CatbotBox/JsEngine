@@ -3,22 +3,13 @@ import type {EntityArchetype} from "./entityArchetype";
 import type {AnyCT} from "../util/tokenUtils";
 import type {World} from "./world";
 
-/**
- * The global entity registry: parallel side tables indexed by an entity handle's
- * low bits. An entity is an integer, so everything about it lives here: its owner
- * archetype, its world, its row within that archetype, and its debug name.
- *
- * Global rather than per-World on purpose: `getOwnerInferred` has no world
- * argument, and cross-world misuse must throw (as before), not silently read
- * another world's slot.
- */
-// The world/arch tables are deliberately untyped: a top-level declaration whose
-// type mentions EntityArchetype (whose Maps scriptc cannot lower) disqualifies
-// this whole module from static analysis. The exported accessors carry the types.
+const UNOWNED_ROW = -1;
+const NEVER_VALID_GENERATION = 0;
+const FIRST_GENERATION = 1;
+
 const generations: number[] = [];
 const worldOf: unknown[] = [];
 const archOf: unknown[] = [];
-/** Row within the owning archetype's dense arrays; -1 when unowned. */
 const rowOf: number[] = [];
 const nameOf: (string | undefined)[] = [];
 const freeIndices: number[] = [];
@@ -31,36 +22,33 @@ export function allocEntityHandle(name?: string): Entity {
     } else {
         i = nextIndex++;
         if (i > ENTITY_INDEX_MASK) throw new Error("Entity index space exhausted (2^20 concurrent entities)");
-        generations[i] = 1;
+        generations[i] = FIRST_GENERATION;
         worldOf[i] = undefined;
         archOf[i] = undefined;
-        rowOf[i] = -1;
+        rowOf[i] = UNOWNED_ROW;
     }
     nameOf[i] = name;
     return makeEntityHandle(i, generations[i]);
 }
 
-/**
- * Retire a handle: bump the slot's generation (so every outstanding copy of this
- * handle goes stale) and recycle the index. Double-frees are no-ops — the stale
- * handle no longer matches the slot.
- */
 export function freeEntityHandle(e: Entity): void {
     const i = e & ENTITY_INDEX_MASK;
-    if (generations[i] !== e >>> ENTITY_INDEX_BITS) return; // stale: slot already recycled
+    const slotAlreadyRecycled = generations[i] !== e >>> ENTITY_INDEX_BITS;
+    if (slotAlreadyRecycled) return;
     let g = (generations[i] + 1) & ENTITY_GENERATION_MASK;
-    if (g === 0) g = 1; // generation 0 is reserved for "never valid"
+    if (g === NEVER_VALID_GENERATION) g = FIRST_GENERATION;
     generations[i] = g;
     worldOf[i] = undefined;
     archOf[i] = undefined;
-    rowOf[i] = -1;
+    rowOf[i] = UNOWNED_ROW;
     nameOf[i] = undefined;
     freeIndices.push(i);
 }
 
 export function getOwnerInferred(entity: Entity): EntityArchetype<AnyCT> | undefined {
     const i = entity & ENTITY_INDEX_MASK;
-    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined; // destroyed or recycled
+    const destroyedOrRecycled = generations[i] !== entity >>> ENTITY_INDEX_BITS;
+    if (destroyedOrRecycled) return undefined;
     return archOf[i] as EntityArchetype<AnyCT> | undefined;
 }
 
@@ -77,11 +65,12 @@ export function getOwner(world: World, entity: Entity): EntityArchetype<AnyCT> |
 
 export function setOwner(world: World, entity: Entity, arch: EntityArchetype<AnyCT> | undefined): void {
     const i = entity & ENTITY_INDEX_MASK;
-    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return; // stale handle owns nothing
+    const staleHandle = generations[i] !== entity >>> ENTITY_INDEX_BITS;
+    if (staleHandle) return;
     if (arch === undefined) {
         worldOf[i] = undefined;
         archOf[i] = undefined;
-        rowOf[i] = -1;
+        rowOf[i] = UNOWNED_ROW;
         return;
     }
     worldOf[i] = world;
@@ -94,12 +83,9 @@ export function requireOwner(world: World, entity: Entity): EntityArchetype<AnyC
     return arch;
 }
 
-// ---- row + name accessors (hot paths: no generation check; the archetype's
-// dense array is the source of truth and validates the handle it hands back) ----
-
 export function getEntityRow(entity: Entity): number {
     const row = rowOf[entity & ENTITY_INDEX_MASK];
-    return row === undefined ? -1 : row;
+    return row === undefined ? UNOWNED_ROW : row;
 }
 
 export function setEntityRow(entity: Entity, row: number): void {

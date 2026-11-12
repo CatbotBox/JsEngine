@@ -5,6 +5,8 @@ import {EntityCommandBufferSystem} from "../core";
 import {TranslationSystemGroup} from "./translationSystemGroup";
 import {Children} from "./children";
 
+const EARLY_TRANSLATION_PRIORITY = -10;
+
 export class HierarchySyncSystem extends System {
     private _parentQuery = this.createEntityQuery([Children])
     private _childQuery = this.createEntityQuery([Parent])
@@ -16,7 +18,7 @@ export class HierarchySyncSystem extends System {
     }
 
     override priority(): number {
-        return -10;
+        return EARLY_TRANSLATION_PRIORITY;
     }
 
     protected onCreate() {
@@ -37,16 +39,12 @@ export class HierarchySyncSystem extends System {
             return buffer;
         }
 
-        // ensure children have this entity as parent
         this._parentQuery.stream({read: {children: Children}},
             {
                 includeEntity: true,
                 filterLastUpdated: this.lastUpdateTime,
             })
-            // consume: one reused row instead of one per entity; `entity` is
-            // read during the callback, never the row itself.
             .consume(({children, entity}) => {
-                // Indexed loop, not forEach: see Children's class comment.
                 const childEntities = children.children;
                 for (let i = 0; i < childEntities.length; i++) {
                     const child = childEntities[i];
@@ -61,7 +59,6 @@ export class HierarchySyncSystem extends System {
                 }
             })
 
-        // ensure parents have this entity as children
         this._childQuery.stream({read: {parent: Parent}},
             {
                 includeEntity: true,

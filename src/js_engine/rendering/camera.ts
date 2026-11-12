@@ -2,9 +2,12 @@
 import {EntityWriteOptions} from "../core/entityWriteOptions";
 import {ScreenSize} from "./screenSize";
 
+const DEFAULT_NEAR_PLANE_DISTANCE = 0.1;
+const DEFAULT_FAR_PLANE_DISTANCE = 100;
+
 export class Camera extends Component {
-    private _nearPlaneDistance: number = 0.1;
-    private _farPlaneDistance: number = 100;
+    private _nearPlaneDistance: number = DEFAULT_NEAR_PLANE_DISTANCE;
+    private _farPlaneDistance: number = DEFAULT_FAR_PLANE_DISTANCE;
 
     get nearPlaneDistance(): number {
         return this._nearPlaneDistance;
