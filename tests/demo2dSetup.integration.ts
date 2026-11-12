@@ -1,9 +1,9 @@
 import {DebugWorld} from "../src/engine/core";
-import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
+import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {consoleInput} from "../src/engine/input";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
-import {Ansi} from "../src/backends/cells";
+import {Ansi, CellSurfaceResource} from "../src/backends/cells";
 import {TerminalScreen} from "./support/terminalScreen";
 import {setupDemo2d} from "../demo/2d/game";
 
@@ -39,17 +39,19 @@ const errorRecorder: Console = Object.create(originalConsole);
 errorRecorder.error = (...data: unknown[]) => errors.push(data.map(String).join(" "));
 consoleOverride.addConsoleEventListener(errorRecorder);
 
-const platform = new MemoryPlatform(START);
+const platform = new MemoryPlatform();
+const gameTerminal = new MemoryTerminal(START);
 const terminal = new TerminalScreen(START.columns, START.rows);
 const world = new DebugWorld({platform});
+world.resources.insert(new CellSurfaceResource(gameTerminal));
 let quits = 0;
-setupDemo2d(world, {quit: () => quits++});
+setupDemo2d(world, {terminal: gameTerminal, quit: () => quits++});
 
 const tick = () => {
-    const before = platform.output.length;
+    const before = gameTerminal.length;
     world.time.deltaTime = FRAME_MS;
     (world as any).update();
-    terminal.write(platform.output.text().slice(before));
+    terminal.write(gameTerminal.text().slice(before));
 };
 
 function expectFramePainted(size: {columns: number, rows: number}, when: string) {
@@ -58,23 +60,23 @@ function expectFramePainted(size: {columns: number, rows: number}, when: string)
     expect(written === cells, `every frame cell painted ${when} (${written}/${cells})`);
 }
 
-expect(platform.input.started, "the game enabled input on the world's platform");
+expect(gameTerminal.started, "the game enabled input on the host's terminal");
 
 let framesWritten = 0;
 let entitiesBeforeSpace = 0;
 for (let frame = 0; frame < FRAMES; frame++) {
     if (frame === SPACE_FRAME) {
         entitiesBeforeSpace = world.entityCount;
-        platform.input.feed(" ");
+        gameTerminal.feed(" ");
     }
-    if (frame % ARROW_EVERY_FRAMES === 0) platform.input.feed(ARROW_UP);
+    if (frame % ARROW_EVERY_FRAMES === 0) gameTerminal.feed(ARROW_UP);
     if (frame === RESIZE_FRAME) {
-        platform.screen.resize(RESIZED.columns, RESIZED.rows);
+        gameTerminal.resize(RESIZED.columns, RESIZED.rows);
         terminal.resize(RESIZED.columns, RESIZED.rows);
     }
-    const before = platform.output.length;
+    const before = gameTerminal.length;
     tick();
-    if (platform.output.length > before) framesWritten++;
+    if (gameTerminal.length > before) framesWritten++;
     if (frame === START_CHECK_FRAME) {
         expectFramePainted(START, "on start");
         const crossCells = terminal.count("▀");
@@ -83,14 +85,14 @@ for (let frame = 0; frame < FRAMES; frame++) {
     if (frame === RESIZE_FRAME) expectFramePainted(RESIZED, "after a resize");
 }
 
-const screen = Ansi.strip(platform.output.text());
+const screen = Ansi.strip(gameTerminal.text());
 expect(framesWritten > FRAMES / 2, `frames written (${framesWritten}/${FRAMES})`);
 expect(screen.includes("FPS:"), "the FPS label rendered");
 expect(screen.includes("Entities:"), "the entity counter rendered");
 expect(world.entityCount === entitiesBeforeSpace + PIXELS_PER_SPACE, `Space spawned ${PIXELS_PER_SPACE} pixels (${entitiesBeforeSpace} -> ${world.entityCount})`);
 expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
-platform.input.feed(CTRL_C);
+gameTerminal.feed(CTRL_C);
 expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
 
 consoleInput.disable();

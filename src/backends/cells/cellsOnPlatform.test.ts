@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
+import {MemoryPlatform, MemoryTerminal} from "../../engine/testing/memoryPlatform";
 import {World} from "../../engine/core/world";
 import {RootSystemGroup} from "../../engine/core/rootSystemGroup";
 import {System} from "../../engine/core/system";
@@ -8,14 +8,39 @@ import {Camera} from "../../engine/rendering/camera";
 import {ScreenSize} from "../../engine/rendering/screenSize";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {CellCameraSizingSystem} from "./cellCameraSizingSystem";
+import {CellRenderSystemGroup} from "./cellRenderSystemGroup";
+import {CellSurfaceResource} from "./cellSurfaceResource";
 import {CellAspectRatio} from "./cellAspectRatio";
 import {MeshCellPassSettings} from "./3d/meshCellPassSettings";
 
+function worldDrawingOn(terminal: MemoryTerminal): World {
+    const world = new World({platform: new MemoryPlatform()});
+    world.resources.insert(new CellSurfaceResource(terminal));
+    return world;
+}
+
+describe("CellSurfaceResource", () => {
+    test("cell systems read the surface the host inserted", () => {
+        const terminal = new MemoryTerminal();
+        const world = worldDrawingOn(terminal);
+        expect(CellSurfaceResource.surfaceOf(world)).toBe(terminal);
+        const group = world.getOrCreateSystem(CellRenderSystemGroup);
+        expect(terminal.text().length).toBeGreaterThan(0);
+        group.enabled = false;
+    });
+
+    test("creating a cell system in a world without a surface throws, naming the resource", () => {
+        const sizingWorld = new World({platform: new MemoryPlatform()});
+        expect(() => sizingWorld.getOrCreateSystem(CellCameraSizingSystem)).toThrow("CellSurfaceResource");
+        const renderWorld = new World({platform: new MemoryPlatform()});
+        expect(() => renderWorld.getOrCreateSystem(CellRenderSystemGroup)).toThrow("CellSurfaceResource");
+    });
+});
+
 describe("CellCameraSizingSystem", () => {
-    test("sizes the camera from the platform and follows resizes", () => {
-        const platform = new MemoryPlatform({columns: 120, rows: 40});
-        const world = new World({platform});
-        expect(world.platform).toBe(platform);
+    test("sizes the camera from the surface and follows resizes", () => {
+        const terminal = new MemoryTerminal({columns: 120, rows: 40});
+        const world = worldDrawingOn(terminal);
         const sizing = world.getOrCreateSystem(CellCameraSizingSystem);
         const root = world.getOrCreateSystem(RootSystemGroup);
         const em = world.entityManager;
@@ -26,13 +51,13 @@ describe("CellCameraSizingSystem", () => {
         expect(size.x).toBe(120);
         expect(size.y).toBe(39);
 
-        platform.screen.resize(100, 30);
+        terminal.resize(100, 30);
         root.update();
         expect(size.x).toBe(100);
         expect(size.y).toBe(29);
 
         sizing.destroy();
-        expect(platform.screen.listenerCount).toBe(0);
+        expect(terminal.resizeListenerCount).toBe(0);
     });
 
     test("a camera gets no CellAspectRatio without the console sizing system", () => {
@@ -46,7 +71,7 @@ describe("CellCameraSizingSystem", () => {
     });
 
     test("adds exactly one CellAspectRatio, before the render passes of the same frame", () => {
-        const world = new World({platform: new MemoryPlatform()});
+        const world = worldDrawingOn(new MemoryTerminal());
         world.getOrCreateSystem(CellCameraSizingSystem);
         const probe = world.getOrCreateSystem(CellRatioProbeSystem);
         const root = world.getOrCreateSystem(RootSystemGroup);
@@ -61,7 +86,7 @@ describe("CellCameraSizingSystem", () => {
     });
 
     test("keeps a camera's existing CellAspectRatio", () => {
-        const world = new World({platform: new MemoryPlatform()});
+        const world = worldDrawingOn(new MemoryTerminal());
         world.getOrCreateSystem(CellCameraSizingSystem);
         const root = world.getOrCreateSystem(RootSystemGroup);
         const em = world.entityManager;

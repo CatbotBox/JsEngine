@@ -7,6 +7,7 @@ import {
     DebugWorld
 } from "../../src/engine/core";
 import {consoleInput, Key} from "../../src/engine/input";
+import type {TerminalInputSource} from "../../src/engine/input";
 
 import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor} from "../../src/engine/rendering";
 
@@ -27,6 +28,7 @@ import {AverageStat} from "../../src/engine/datatypes";
 import {createHudLabel} from "../_shared/hud";
 
 export interface Demo2dHost {
+    readonly terminal: TerminalInputSource;
     quit(): void;
 }
 
@@ -127,7 +129,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
 
     createHudCross();
 
-    consoleInput.enable({platform: world.platform})
+    consoleInput.enable({terminal: host.terminal, platform: world.platform})
     consoleInput.whenKey(Key.Up, () => {
         position.y -= PLAYER_STEP_ROWS;
     })

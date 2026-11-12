@@ -2,7 +2,7 @@
 import {AnsiKeyDecoder} from "../../hosts/terminal/ansi/ansiKeyDecoder";
 import type {DecodedKey} from "../../hosts/terminal/ansi/ansiKeyDecoder";
 import type {Platform} from "../platform/platform";
-import {nodePlatform} from "../../hosts/terminal/nodePlatform";
+import type {TerminalInputSource} from "./terminalInputSource";
 
 export type Listener<T> = (payload: T) => void;
 
@@ -104,11 +104,12 @@ export interface MouseEvent {
 }
 
 export interface InputOptions {
+    terminal: TerminalInputSource;
+    platform: Platform;
     mouse?: boolean;
     hideCursor?: boolean;
     keyReleaseDelayMs?: number;
     noTTY?: 'warn' | 'throw' | 'silent';
-    platform?: Platform;
 }
 
 export class ConsoleInput {
@@ -132,9 +133,9 @@ export class ConsoleInput {
     private readonly mouseReleasedFrame = new Set<MouseButton>();
     private _wheelDeltaFrame = 0;
 
-    private options!: Required<Omit<InputOptions, 'platform'>>;
+    private options!: Required<Omit<InputOptions, 'terminal' | 'platform'>>;
     private enabled = false;
-    private platform: Platform | undefined;
+    private terminal: TerminalInputSource | undefined;
     private stopWatchingExit: (() => void) | undefined;
     private readonly keyDecoder = new AnsiKeyDecoder((key) => this.handleKeypress(key));
     private readonly releaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -148,7 +149,7 @@ export class ConsoleInput {
     get mouseY(): number { return this._mouseY; }
     get isEnabled(): boolean { return this.enabled; }
 
-    enable(options: InputOptions = {}): this {
+    enable(options: InputOptions): this {
         if (this.enabled) return this;
 
         this.options = {
@@ -158,24 +159,24 @@ export class ConsoleInput {
             noTTY: options.noTTY ?? 'warn',
         };
 
-        const platform = options.platform ?? nodePlatform();
-        if (!platform.input.available()) {
+        const terminal = options.terminal;
+        if (!terminal.available()) {
             const msg = '[input] no interactive input (stdin is not a TTY) — keyboard/mouse input unavailable.';
             if (this.options.noTTY === 'throw') throw new Error(msg);
             if (this.options.noTTY === 'warn') console.error(msg);
             return this;
         }
 
-        this.platform = platform;
+        this.terminal = terminal;
         this.enabled = true;
-        this.stopWatchingExit = platform.onExit(this.onExit);
+        this.stopWatchingExit = options.platform.onExit(this.onExit);
 
-        platform.input.start(this.onInputData);
+        terminal.start(this.onInputData);
         const disabledByListenerDuringStart = !this.enabled;
         if (disabledByListenerDuringStart) return this;
 
-        if (this.options.mouse)      platform.output.write(ENABLE_MOUSE);
-        if (this.options.hideCursor) platform.output.write(HIDE_CURSOR);
+        if (this.options.mouse)      terminal.write(ENABLE_MOUSE);
+        if (this.options.hideCursor) terminal.write(HIDE_CURSOR);
         return this;
     }
 
@@ -186,17 +187,17 @@ export class ConsoleInput {
         for (const t of this.releaseTimers.values()) clearTimeout(t);
         this.releaseTimers.clear();
 
-        const platform = this.platform!;
-        platform.input.stop();
+        const terminal = this.terminal!;
+        terminal.stop();
 
-        if (this.options.mouse)      platform.output.write(DISABLE_MOUSE);
-        if (this.options.hideCursor) platform.output.write(SHOW_CURSOR);
+        if (this.options.mouse)      terminal.write(DISABLE_MOUSE);
+        if (this.options.hideCursor) terminal.write(SHOW_CURSOR);
 
         this.keyDecoder.reset();
 
         this.stopWatchingExit?.();
         this.stopWatchingExit = undefined;
-        this.platform = undefined;
+        this.terminal = undefined;
 
         this.clearFrame();
         this.keysDown.clear();

@@ -37,8 +37,8 @@ screenSize.x = WIDTH;
 screenSize.y = HEIGHT;
 const backgroundChar = Ansi.colors.bg.black + Ansi.colors.fg.black + " ";
 const mesh = existsSync(HEAVY_MESH_PATH)
-    ? Mesh.fromFile(HEAVY_MESH_PATH)
-    : Mesh.fromFile(FALLBACK_MESH_PATH);
+    ? Mesh.fromFile(HEAVY_MESH_PATH, nodePlatform())
+    : Mesh.fromFile(FALLBACK_MESH_PATH, nodePlatform());
 const invCam = LocalToWorld.invertAffine(new LocalToWorld().matrix);
 const focal = HEIGHT / (Math.tan(HALF_FOV_RAD) * 2);
 
@@ -52,7 +52,7 @@ vertexLighting.beginFrame(sceneLights, invCam);
 const viewSpaceMesh = new ViewSpaceMesh();
 const normalMatrix = new Float32Array(9);
 
-const checker = Texture.fromFile("./demo/3d/checker.png");
+const checker = Texture.fromFile("./demo/3d/checker.png", nodePlatform());
 for (const material of mesh.materials) material.diffuseTexture = checker;
 
 interface PassConfig {

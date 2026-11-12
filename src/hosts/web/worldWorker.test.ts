@@ -14,10 +14,10 @@ import {
     requestedRasterWorkersFromQuery,
 } from "./worldWorkerProtocol";
 import type {PageToWorldMessage, WorldToPageMessage} from "./worldWorkerProtocol";
-import {MemoryFileSource, MemoryOutput, MemoryPlatform} from "../../engine/testing/memoryPlatform";
+import {MemoryFileSource, MemoryPlatform, MemoryTerminal} from "../../engine/testing/memoryPlatform";
 import {WORKER_ENTRY_POINT} from "../../engine/platform/platform";
-import type {PlatformOutput} from "../../engine/platform/platform";
-import {nodePlatform} from "../terminal/nodePlatform";
+import type {CellSurface} from "../../backends/cells/cellSurface";
+import {CellSurfaceResource} from "../../backends/cells/cellSurfaceResource";
 import {inflate} from "../../engine/assets/image/inflate";
 import {World} from "../../engine/core/world";
 import {RootSystemGroup} from "../../engine/core/rootSystemGroup";
@@ -221,40 +221,40 @@ describe("PageConnection (the world worker's platform)", () => {
         expect(opened).toBe(false);
 
         scope.send(INIT);
-        const {platform} = await opening;
-        expect(platform.screen.size()).toEqual({columns: 100, rows: 30});
+        const {platform, terminal} = await opening;
+        expect(terminal.size()).toEqual({columns: 100, rows: 30});
         expect(platform.requestedRasterWorkers!()).toBe(2);
         expect(platform.hardwareConcurrency()).toBe(6);
         expect(platform.files).toBe(files);
         expect(platform.inflate).toBe(inflate);
-        expect(platform.input.available()).toBe(true);
+        expect(terminal.available()).toBe(true);
         expect(platform.now()).toBeGreaterThan(-1);
     });
 
     test("input reaches the reader only while it reads", async () => {
         const scope = new FakeScope();
-        const {platform} = await openConnection(scope);
+        const {terminal} = await openConnection(scope);
         const received: string[] = [];
         scope.send({type: "input", data: "early"});
-        platform.input.start(data => received.push(data));
+        terminal.start(data => received.push(data));
         scope.send({type: "input", data: "\x1b[A"});
-        platform.input.stop();
+        terminal.stop();
         scope.send({type: "input", data: "late"});
         expect(received).toEqual(["\x1b[A"]);
     });
 
     test("resize messages change the size and notify subscribers until they unsubscribe", async () => {
         const scope = new FakeScope();
-        const {platform} = await openConnection(scope);
+        const {terminal} = await openConnection(scope);
         let resizes = 0;
-        const stop = platform.screen.onResize(() => resizes++);
+        const stop = terminal.onResize(() => resizes++);
         scope.send({type: "resize", columns: 80, rows: 20});
-        expect(platform.screen.size()).toEqual({columns: 80, rows: 20});
+        expect(terminal.size()).toEqual({columns: 80, rows: 20});
         expect(resizes).toBe(1);
         stop();
         scope.send({type: "resize", columns: 90, rows: 25});
         expect(resizes).toBe(1);
-        expect(platform.screen.size()).toEqual({columns: 90, rows: 25});
+        expect(terminal.size()).toEqual({columns: 90, rows: 25});
     });
 
     test("pagehide runs each exit callback once; a cancelled one never", async () => {
@@ -271,16 +271,16 @@ describe("PageConnection (the world worker's platform)", () => {
 
     test("every write of one task goes out as one output message when the task ends", async () => {
         const scope = new FakeScope();
-        const {platform} = await openConnection(scope);
-        platform.output.write("\x1b[H");
-        platform.output.write("");
-        platform.output.write("row 1");
-        platform.output.write("row 2");
+        const {terminal} = await openConnection(scope);
+        terminal.write("\x1b[H");
+        terminal.write("");
+        terminal.write("row 1");
+        terminal.write("row 2");
         expect(scope.posted).toEqual([]);
         await nextTask();
         expect(scope.posted).toEqual([{type: "output", data: "\x1b[Hrow 1row 2"}]);
 
-        platform.output.write("next frame");
+        terminal.write("next frame");
         await nextTask();
         expect(scope.posted.length).toBe(2);
         expect(scope.posted[1]).toEqual({type: "output", data: "next frame"});
@@ -291,7 +291,7 @@ describe("PageConnection (the world worker's platform)", () => {
     test("quit and fail are posted after everything written before them", async () => {
         const scope = new FakeScope();
         const connection = await openConnection(scope);
-        connection.platform.output.write("last frame");
+        connection.terminal.write("last frame");
         connection.quit();
         expect(scope.posted).toEqual([{type: "output", data: "last frame"}, {type: "quit"}]);
         connection.fail(new Error("boom"));
@@ -300,26 +300,26 @@ describe("PageConnection (the world worker's platform)", () => {
         expect(scope.posted.slice(2)).toEqual([{type: "error", message: "boom"}, {type: "error", message: "plain"}]);
     });
 
-    test("output is backlogged while two messages wait for the page to parse them", async () => {
+    test("the terminal is backlogged while two messages wait for the page to parse them", async () => {
         const scope = new FakeScope();
         const connection = await openConnection(scope);
-        const output = connection.platform.output;
-        expect(output.backlogged!()).toBe(false);
-        output.write("a");
+        const terminal = connection.terminal;
+        expect(terminal.backlogged!()).toBe(false);
+        terminal.write("a");
         connection.flush();
-        expect(output.backlogged!()).toBe(false);
-        output.write("b");
+        expect(terminal.backlogged!()).toBe(false);
+        terminal.write("b");
         connection.flush();
-        expect(output.backlogged!()).toBe(true);
+        expect(terminal.backlogged!()).toBe(true);
         scope.send({type: "written"});
-        expect(output.backlogged!()).toBe(false);
+        expect(terminal.backlogged!()).toBe(false);
         scope.send({type: "written"});
         scope.send({type: "written"});
-        output.write("c");
+        terminal.write("c");
         connection.flush();
-        output.write("d");
+        terminal.write("d");
         connection.flush();
-        expect(output.backlogged!()).toBe(true);
+        expect(terminal.backlogged!()).toBe(true);
     });
 
     test("raster workers are the browser factory only in a cross-origin isolated worker", async () => {
@@ -496,10 +496,11 @@ class FrameProbeSystem extends System {
 
 describe("CellRenderSystemGroup on a backlogged host", () => {
     test("skips whole frames while the host is backlogged, then repaints everything", () => {
-        const platform = new MemoryPlatform({columns: 40, rows: 10});
+        const terminal = new MemoryTerminal({columns: 40, rows: 10});
         let backlogged = false;
-        (platform.output as MemoryOutput & {backlogged?: () => boolean}).backlogged = () => backlogged;
-        const world = new World({platform});
+        (terminal as MemoryTerminal & {backlogged?: () => boolean}).backlogged = () => backlogged;
+        const world = new World({platform: new MemoryPlatform()});
+        world.resources.insert(new CellSurfaceResource(terminal));
         const root = world.getOrCreateSystem(RootSystemGroup);
         world.entityManager.addComponent(world.entityManager.createEntity("camera"), new Camera());
         const group = world.getOrCreateSystem(CellRenderSystemGroup);
@@ -507,30 +508,30 @@ describe("CellRenderSystemGroup on a backlogged host", () => {
         try {
             root.update();
             root.update();
-            platform.output.clear();
+            terminal.clear();
             const framesBefore = probe.frames;
             root.update();
-            expect(platform.output.text()).toBe("");
+            expect(terminal.text()).toBe("");
             expect(probe.frames).toBe(framesBefore + 1);
 
             backlogged = true;
             root.update();
             root.update();
-            expect(platform.output.text()).toBe("");
+            expect(terminal.text()).toBe("");
             expect(probe.frames).toBe(framesBefore + 1);
 
             backlogged = false;
             root.update();
             expect(probe.frames).toBe(framesBefore + 2);
-            expect(platform.output.text().startsWith("\x1b[H")).toBe(true);
-            expect(platform.output.text().split("\r\n").length).toBe(10);
+            expect(terminal.text().startsWith("\x1b[H")).toBe(true);
+            expect(terminal.text().split("\r\n").length).toBe(10);
         } finally {
             group.enabled = false;
         }
     });
 
-    test("the memory and node hosts never report a backlog, so they never skip a frame", () => {
-        const outputs: PlatformOutput[] = [new MemoryPlatform().output, nodePlatform().output];
-        for (const output of outputs) expect(output.backlogged).toBeUndefined();
+    test("the memory terminal never reports a backlog, so it never skips a frame", () => {
+        const surface: CellSurface = new MemoryTerminal();
+        expect(surface.backlogged).toBeUndefined();
     });
 });

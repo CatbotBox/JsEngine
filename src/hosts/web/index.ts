@@ -1,5 +1,5 @@
-export {browserPlatform} from "./browserPlatform";
-export type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
+export {browserPlatform, worldTerminal} from "./browserPlatform";
+export type {BrowserTerminal, TerminalSubscription, WorldTerminal} from "./browserPlatform";
 export {browserWorkerFactory, browserWorkersIfIsolated} from "./browserWorkers";
 export type {BrowserWorker, BrowserWorkerHost} from "./browserWorkers";
 export {PageConnection} from "./worldWorkerPlatform";

@@ -1,4 +1,5 @@
 ﻿import {beforeEach, describe, expect, test} from "../testing/harness";
+import {MemoryPlatform} from "../testing/memoryPlatform";
 import {World} from "./world";
 import {Component} from "./component";
 import {trackComponent} from "./trackedComponent";
@@ -12,6 +13,7 @@ import {BLOCK_SIZE} from "./entityArchetype";
 import {ComponentType} from "./componentType";
 import {getOwner} from "./ownership";
 import {EntityCommandBufferSystem} from "./entityCommandBufferSystem";
+import {Resource} from "./resource";
 import {types} from "util";
 
 const isProxy = types.isProxy;
@@ -41,7 +43,7 @@ let world: World;
 let em: EntityManager;
 
 beforeEach(() => {
-    world = new World();
+    world = new World({platform: new MemoryPlatform()});
     em = world.entityManager;
 });
 
@@ -647,5 +649,23 @@ describe("Entity handles: generation counters", () => {
         expect(em.exists(a)).toBe(false);
         expect(em.exists(b)).toBe(false);
         expect(q.entityCount()).toBe(0);
+    });
+});
+
+class Greeting extends Resource {
+    constructor(public readonly text: string) {
+        super();
+    }
+}
+
+describe("ResourceManager", () => {
+    test("insert stores a constructed resource under its class and replaces an earlier one", () => {
+        expect(world.resources.tryGet(Greeting)).toBeUndefined();
+        const hello = world.resources.insert(new Greeting("hello"));
+        expect(world.resources.get(Greeting)).toBe(hello);
+        expect(world.resources.getOrCreate(Greeting).text).toBe("hello");
+        const bye = new Greeting("bye");
+        world.resources.insert(bye);
+        expect(world.resources.get(Greeting)).toBe(bye);
     });
 });

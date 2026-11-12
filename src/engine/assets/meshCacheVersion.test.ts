@@ -2,6 +2,7 @@ import {describe, expect, test} from "../testing/harness";
 import {Mesh} from "../rendering/3d/mesh";
 import {MESH_CACHE_FORMAT_VERSION, meshCachePathFor} from "./meshCache";
 import {MemoryFileSource} from "../testing/memoryPlatform";
+import {inflate} from "./image/inflate";
 import type * as Crypto from "crypto";
 
 const crypto = require("crypto") as typeof Crypto;
@@ -68,7 +69,7 @@ function meshCacheBytesForFixture(): {bytes: Uint8Array; lodLevels: number} {
     const files = new MemoryFileSource();
     files.set(OBJ_PATH, FIXTURE_OBJ, FIXED_MTIME_MS);
     files.set(MTL_PATH, MTL, FIXED_MTIME_MS);
-    const mesh = Mesh.fromFile(OBJ_PATH, {files, lod: LOD_OPTIONS});
+    const mesh = Mesh.fromFile(OBJ_PATH, {files, inflate, lod: LOD_OPTIONS});
     return {bytes: files.readBytes(meshCachePathFor(OBJ_PATH)), lodLevels: mesh.lods.length - 1};
 }
 

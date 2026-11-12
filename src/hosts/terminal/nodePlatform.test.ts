@@ -1,6 +1,7 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {WORKER_ENTRY_POINT} from "../../engine/platform/platform";
 import {nodePlatform} from "./nodePlatform";
+import {nodeTerminal} from "./nodeTerminal";
 
 describe("node worker factory", () => {
     test("runs a script that only uses its data and port", async () => {
@@ -26,5 +27,11 @@ function ${WORKER_ENTRY_POINT}(data, port) {
             clearTimeout(timeout);
             worker.terminate();
         }
+    });
+});
+
+describe("node terminal", () => {
+    test("never reports a backlog, so the cells renderer never skips a frame on it", () => {
+        expect(nodeTerminal().backlogged).toBeUndefined();
     });
 });

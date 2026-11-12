@@ -2,6 +2,11 @@ import {describe, expect, test} from "../../testing/harness";
 import {decodeJpeg, encodeJpeg, JpegEncodeOptions} from "./jpeg";
 import {decodeImageFile} from "./decodedImage";
 import {Texture} from "../../rendering/3d/texture";
+import {inflate} from "./inflate";
+import {fsFileSource} from "../../testing/fsFileSource";
+import type {SyncFileSystem} from "../../testing/fsFileSource";
+
+const disk = {files: fsFileSource(require("fs") as SyncFileSystem), inflate};
 
 function flatRgba(width: number, height: number, r: number, g: number, b: number): Uint8Array {
     const rgba = new Uint8Array(width * height * 4);
@@ -122,16 +127,16 @@ describe("decodeJpeg", () => {
     });
 
     test("decodes the demo cat textures (4:2:0, restart intervals, Adobe marker)", () => {
-        const diffuse = decodeImageFile("./demo/3d/Cat_diffuse.jpg");
+        const diffuse = decodeImageFile("./demo/3d/Cat_diffuse.jpg", disk);
         expect(diffuse.width).toBe(1024);
         expect(diffuse.height).toBe(1024);
         expect(distinctColorCount(diffuse.rgba, 4099)).toBeGreaterThan(16);
 
-        const bump = decodeImageFile("./demo/3d/Cat_bump.jpg");
+        const bump = decodeImageFile("./demo/3d/Cat_bump.jpg", disk);
         expect(bump.width).toBe(1024);
         expect(distinctColorCount(bump.rgba, 4099)).toBeGreaterThan(16);
 
-        const texture = Texture.fromFile("./demo/3d/Cat_diffuse.jpg");
+        const texture = Texture.fromFile("./demo/3d/Cat_diffuse.jpg", disk);
         expect(texture.width).toBe(512);
         expect(texture.levels.length).toBe(10);
     });

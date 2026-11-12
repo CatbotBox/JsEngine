@@ -6,6 +6,7 @@ import {Ansi} from "../src/backends/cells";
 import {TerminalScreen} from "./support/terminalScreen";
 import {buildDemo3dManifest} from "../demo/3d/assets";
 import type {Demo3dManifest} from "../demo/3d/assets";
+import {nodePlatform} from "../src/hosts/terminal";
 
 const ROOT = resolve(__dirname, "..");
 const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
@@ -32,7 +33,7 @@ function workerEntry(name: string): string {
 }
 
 function demo3dManifest(): Demo3dManifest {
-    if (DIST === undefined) return buildDemo3dManifest(ROOT);
+    if (DIST === undefined) return buildDemo3dManifest(ROOT, nodePlatform());
     return JSON.parse(readFileSync(join(DIST, "3d-manifest.json"), "utf8")) as Demo3dManifest;
 }
 

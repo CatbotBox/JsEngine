@@ -1,5 +1,10 @@
 import {describe, expect, test} from "../../testing/harness";
 import {SpriteImage} from "./spriteImage";
+import {inflate} from "../../assets/image/inflate";
+import {fsFileSource} from "../../testing/fsFileSource";
+import type {SyncFileSystem} from "../../testing/fsFileSource";
+
+const disk = {files: fsFileSource(require("fs") as SyncFileSystem), inflate};
 
 describe("SpriteImage", () => {
     test("instances are frozen", () => {
@@ -37,8 +42,8 @@ describe("SpriteImage", () => {
 
     test("fromFile decodes once per path and returns the cached instance", () => {
         const path = "./demo/3d/checker.png";
-        const first = SpriteImage.fromFile(path);
-        const second = SpriteImage.fromFile(path);
+        const first = SpriteImage.fromFile(path, disk);
+        const second = SpriteImage.fromFile(path, disk);
         expect(first === second).toBe(true);
         expect(first.sizeX > 0).toBe(true);
         expect(first.rgba.length).toBe(first.sizeX * first.sizeY * 4);

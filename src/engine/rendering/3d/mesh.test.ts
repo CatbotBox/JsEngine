@@ -3,6 +3,11 @@ import {Vec} from "../../math/types/vec";
 import {Mesh, MeshBuilder} from "./mesh";
 import {Material, multiplyPackedRgb, packRgb} from "./material";
 import {parseMtl} from "../../assets/mtlParser";
+import {inflate} from "../../assets/image/inflate";
+import {fsFileSource} from "../../testing/fsFileSource";
+import type {SyncFileSystem} from "../../testing/fsFileSource";
+
+const disk = {files: fsFileSource(require("fs") as SyncFileSystem), inflate};
 
 const CUBE_OBJ = `
 v -1 -1 -1
@@ -194,7 +199,7 @@ f 1//1 2 3//1
     });
 
     test("blender's flat-shaded cube.obj becomes 24 corners with axis-aligned normals and per-corner uvs", () => {
-        const mesh = Mesh.fromFile("./demo/3d/cube.obj");
+        const mesh = Mesh.fromFile("./demo/3d/cube.obj", disk);
         expect(mesh.vertCount).toBe(24);
         expect(mesh.triangleCount).toBe(12);
         expectOutwardNormals(mesh);

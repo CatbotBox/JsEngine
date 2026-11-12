@@ -1,5 +1,6 @@
 import {describe, expect, test} from "../../testing/harness";
 import {inflate, inflateRaw} from "./inflate";
+import {deflateStored} from "../../testing/storedDeflate";
 import type * as Zlib from "zlib";
 import type {ZlibOptions} from "zlib";
 
@@ -115,6 +116,13 @@ describe("inflate (zlib)", () => {
         const compressed = new Uint8Array(zlib.deflateSync(input, {level: 9}));
         expect(compressed.length).toBeLessThan(1000);
         expectBytesEqual(inflate(compressed), input);
+    });
+
+    test("the test-only stored encoder round-trips, empty and across several stored blocks", () => {
+        for (const input of [new Uint8Array(0), randomBytes(5, 3), randomBytes(150_000, 4)]) {
+            expectBytesEqual(inflate(deflateStored(input)), input);
+            expectBytesEqual(new Uint8Array(zlib.inflateSync(deflateStored(input))), input);
+        }
     });
 });
 

@@ -11,6 +11,7 @@ import {ScreenSize} from "../src/engine/rendering/screenSize";
 import {LocalToWorld} from "../src/engine/translation/localToWorld";
 import {Quaternions} from "../src/engine/math/quaternions";
 import {fromFloat32Array, Vec3} from "../src/engine/math/types/vec";
+import {nodePlatform} from "../src/hosts/terminal";
 
 const ROOT = resolve(__dirname, "..");
 const BASELINE_PATH = join(__dirname, "frameHashes.baseline.txt");
@@ -37,7 +38,7 @@ function renderFrameHashes(): FrameHash[] {
     const screenSize = new ScreenSize();
     screenSize.x = WIDTH;
     screenSize.y = HEIGHT;
-    const mesh = Mesh.fromFile(MESH_PATH);
+    const mesh = Mesh.fromFile(MESH_PATH, nodePlatform());
     const invCam = LocalToWorld.invertAffine(new LocalToWorld().matrix);
     const focal = HEIGHT / (Math.tan(HALF_FOV_RAD) * 2);
 

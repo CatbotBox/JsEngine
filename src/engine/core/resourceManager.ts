@@ -20,4 +20,9 @@ export class ResourceManager {
         this._map.set(ctor, newResult);
         return newResult;
     }
+
+    public insert<T extends Resource>(resource: T): T {
+        this._map.set(resource.constructor as ResourceCtor<T>, resource);
+        return resource;
+    }
 }

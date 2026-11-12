@@ -2,6 +2,11 @@ import {describe, expect, test} from "../../testing/harness";
 import {Texture} from "./texture";
 import {Material, loadMaterialTextures} from "./material";
 import {Mesh} from "./mesh";
+import {inflate} from "../../assets/image/inflate";
+import {fsFileSource} from "../../testing/fsFileSource";
+import type {SyncFileSystem} from "../../testing/fsFileSource";
+
+const disk = {files: fsFileSource(require("fs") as SyncFileSystem), inflate};
 
 function checkerRgba(width: number, height: number, checkSize = 1): Uint8Array {
     const rgba = new Uint8Array(width * height * 4);
@@ -59,7 +64,7 @@ describe("Texture", () => {
 describe("loadMaterialTextures", () => {
     test("loads the checker texture referenced by the demo cube material", () => {
         const material = new Material("Material", 0xFFFFFF, "./demo/3d/checker.png");
-        loadMaterialTextures([material]);
+        loadMaterialTextures([material], disk);
         expect(material.diffuseTexture).toBeDefined();
         expect(material.diffuseTexture!.width).toBe(64);
         expect(material.diffuseTexture!.levels.length).toBe(7);
@@ -68,26 +73,26 @@ describe("loadMaterialTextures", () => {
     test("shares one Texture between materials that name the same file", () => {
         const a = new Material("a", 0xFFFFFF, "./demo/3d/checker.png");
         const b = new Material("b", 0xFFFFFF, "./demo/3d/checker.png");
-        loadMaterialTextures([a, b]);
+        loadMaterialTextures([a, b], disk);
         expect(a.diffuseTexture).toBe(b.diffuseTexture);
     });
 
     test("fills the specular slot too and shares the file with the diffuse slot", () => {
         const material = new Material("m", 0xFFFFFF, "./demo/3d/checker.png");
         material.specularTexturePath = "./demo/3d/checker.png";
-        loadMaterialTextures([material]);
+        loadMaterialTextures([material], disk);
         expect(material.specularTexture).toBeDefined();
         expect(material.specularTexture).toBe(material.diffuseTexture);
     });
 
     test("a missing file leaves the material untextured instead of throwing", () => {
         const material = new Material("m", 0xFFFFFF, "./demo/3d/does-not-exist.png");
-        loadMaterialTextures([material]);
+        loadMaterialTextures([material], disk);
         expect(material.diffuseTexture).toBeUndefined();
     });
 
     test("Mesh.fromFile wires cube.mtl and its texture", () => {
-        const mesh = Mesh.fromFile("./demo/3d/cube.obj");
+        const mesh = Mesh.fromFile("./demo/3d/cube.obj", disk);
         expect(mesh.materials[0].diffuseTexture).toBeDefined();
         expect(mesh.materialOfTriangle(0).diffuseTexture!.height).toBe(64);
     });

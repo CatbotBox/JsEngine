@@ -1,4 +1,5 @@
 ﻿import {beforeEach, describe, expect, test} from "../testing/harness";
+import {MemoryPlatform} from "../testing/memoryPlatform";
 import {World} from "./world";
 import {Component} from "./component";
 import {ComponentType} from "./componentType";
@@ -34,7 +35,7 @@ let world: World;
 let em: EntityManager;
 
 beforeEach(() => {
-    world = new World();
+    world = new World({platform: new MemoryPlatform()});
     em = world.entityManager;
     CountedPosition.detaches = 0;
 });

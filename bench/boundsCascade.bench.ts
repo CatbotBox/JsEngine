@@ -13,6 +13,8 @@ import {
 import {WorldSpaceRenderBoundsComputeSystem} from "../src/engine/rendering/worldSpaceRenderBoundsComputeSystem";
 import {TextSpriteCellPassSystem} from "../src/backends/cells/2d/textSpriteCellPassSystem";
 import {CellGrid} from "../src/backends/cells/cellGrid";
+import {CellSurfaceResource} from "../src/backends/cells/cellSurfaceResource";
+import {nodePlatform, nodeTerminal} from "../src/hosts/terminal";
 import {formatMs, median} from "./_harness";
 
 const N = 40_000;
@@ -42,7 +44,7 @@ function spawn(world: World, count: number) {
 }
 
 function imageRewriteCascadeMs(mode: "colour-only" | "geometry") {
-    const world = new World();
+    const world = new World({platform: nodePlatform()});
     const modifier = world.getOrCreateSystem(TextSpriteBoundsSystem);
     const images = spawn(world, N);
 
@@ -60,7 +62,8 @@ function imageRewriteCascadeMs(mode: "colour-only" | "geometry") {
 }
 
 function archetypeArrivalCascadeMs(mode: "arrivals" | "quiet" | "moving") {
-    const world = new World();
+    const world = new World({platform: nodePlatform()});
+    world.resources.insert(new CellSurfaceResource(nodeTerminal()));
     const em = world.entityManager;
 
     const cam = em.createEntity("camera");

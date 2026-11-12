@@ -1,6 +1,7 @@
 import {DebugWorld} from "../../engine/core";
-import type {PlatformOutput} from "../../engine/platform";
+import {CellSurfaceResource} from "../../backends/cells";
 import type {PreloadedFileSource, PreloadProgress} from "./preloadedFileSource";
+import type {WorldTerminal} from "./browserPlatform";
 import {setupDemo3d} from "../../../demo/3d/game";
 import type {DemoModel, DemoModelFiles} from "../../../demo/3d/game";
 import type {Demo3dManifest} from "../../../demo/3d/assets";
@@ -17,13 +18,13 @@ function progressLine(progress: PreloadProgress): string {
     return `${RETURN_AND_CLEAR_LINE}Loading assets: ${progress.loadedFiles}/${progress.totalFiles} files, ${loaded}/${total} MB`;
 }
 
-function progressWriter(output: PlatformOutput): (progress: PreloadProgress) => void {
+function progressWriter(terminal: WorldTerminal): (progress: PreloadProgress) => void {
     let shown = "";
     return progress => {
         const line = progressLine(progress);
         if (line === shown) return;
         shown = line;
-        output.write(line);
+        terminal.write(line);
     };
 }
 
@@ -43,13 +44,15 @@ function manifestModelFiles(manifest: Demo3dManifest, files: PreloadedFileSource
 }
 
 runWorldWorker(async (page, files) => {
-    const output = page.platform.output;
+    const terminal = page.terminal;
     const manifest = await fetchManifest();
-    await files.preload(manifest.files, progressWriter(output));
-    output.write("\r\n");
+    await files.preload(manifest.files, progressWriter(terminal));
+    terminal.write("\r\n");
 
     const world = new DebugWorld({platform: page.platform});
+    world.resources.insert(new CellSurfaceResource(terminal));
     setupDemo3d(world, {
+        terminal,
         listModels: () => manifest.models,
         modelFiles: manifestModelFiles(manifest, files),
         quit: () => page.quit(),

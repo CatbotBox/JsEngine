@@ -2,3 +2,4 @@
 import {Key} from "./key"
 
 export {consoleInput, Key}
+export type {TerminalInputSource} from "./terminalInputSource"

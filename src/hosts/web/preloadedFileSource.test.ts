@@ -6,6 +6,7 @@ import {MemoryFileSource} from "../../engine/testing/memoryPlatform";
 import type {FetchedFile} from "./preloadedFileSource";
 import {Mesh} from "../../engine/rendering/3d/mesh";
 import {meshCachePathFor, readMeshCache} from "../../engine/assets/meshCache";
+import {inflate} from "../../engine/assets/image/inflate";
 
 function response(status: number, body: string | Uint8Array = ""): FetchedFile {
     const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;
@@ -129,7 +130,7 @@ describe("PreloadedFileSource", () => {
         const files = new PreloadedFileSource({fetch: stubFetch({"models/tri.obj": TRIANGLE_OBJ, "models/tri.obj.meshcache": "junk"})});
         await files.preload(["models/tri.obj", meshCachePathFor("models/tri.obj")]);
         expect(readMeshCache("models/tri.obj", files)).toBeUndefined();
-        const mesh = Mesh.fromFile("./models/tri.obj", {files});
+        const mesh = Mesh.fromFile("./models/tri.obj", {files, inflate});
         expect(mesh.triangleCount).toBe(1);
     });
 
@@ -180,7 +181,7 @@ describe("PreloadedFileSource", () => {
 
     test("a mesh cache validates against a stat-only obj with the obj's real size and mtime", async () => {
         const source = new MemoryFileSource({"m/tri.obj": TRIANGLE_OBJ});
-        const built = Mesh.fromFile("m/tri.obj", {files: source});
+        const built = Mesh.fromFile("m/tri.obj", {files: source, inflate});
         const cachePath = meshCachePathFor("m/tri.obj");
         const objStat = source.stat("m/tri.obj");
         const files = new PreloadedFileSource({fetch: stubFetch({[cachePath]: source.readBytes(cachePath)})});
@@ -189,7 +190,7 @@ describe("PreloadedFileSource", () => {
             {path: cachePath, size: source.stat(cachePath).size},
         ]);
         expect(readMeshCache("m/tri.obj", files)).toBeDefined();
-        expect(Mesh.fromFile("m/tri.obj", {files}).triangleCount).toBe(built.triangleCount);
+        expect(Mesh.fromFile("m/tri.obj", {files, inflate}).triangleCount).toBe(built.triangleCount);
     });
 });
 
@@ -279,7 +280,7 @@ describe("PreloadedFileSource lazy entries", () => {
 
     test("a lazy, gzip-compressed mesh cache loads through ensureLoaded and then Mesh.fromFile", async () => {
         const source = new MemoryFileSource({"m/tri.obj": TRIANGLE_OBJ});
-        const built = Mesh.fromFile("m/tri.obj", {files: source});
+        const built = Mesh.fromFile("m/tri.obj", {files: source, inflate});
         const cachePath = meshCachePathFor("m/tri.obj");
         const cache = source.readBytes(cachePath);
         const objStat = source.stat("m/tri.obj");
@@ -292,7 +293,7 @@ describe("PreloadedFileSource lazy entries", () => {
         expect(readMeshCache("m/tri.obj", files)).toBeUndefined();
         await files.ensureLoaded(["m/tri.obj", cachePath]);
         expect(readMeshCache("m/tri.obj", files)).toBeDefined();
-        expect(Mesh.fromFile("m/tri.obj", {files}).triangleCount).toBe(built.triangleCount);
+        expect(Mesh.fromFile("m/tri.obj", {files, inflate}).triangleCount).toBe(built.triangleCount);
     });
 });
 

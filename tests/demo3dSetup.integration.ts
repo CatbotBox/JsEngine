@@ -1,20 +1,21 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
 import {DebugWorld} from "../src/engine/core";
-import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
+import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {PreloadedFileSource} from "../src/hosts/web";
 import type {FileSource, FileStat} from "../src/engine/platform";
 import type {FetchedFile} from "../src/hosts/web";
 import {consoleInput} from "../src/engine/input";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
-import {Ansi} from "../src/backends/cells";
+import {Ansi, CellSurfaceResource} from "../src/backends/cells";
 import {MeshCellPassSystem} from "../src/backends/cells/3d";
 import {inflate, meshCachePathFor} from "../src/engine/rendering/3d";
 import {normalizePath} from "../src/engine/platform";
 import {TerminalScreen} from "./support/terminalScreen";
 import {setupDemo3d} from "../demo/3d/game";
 import {buildDemo3dManifest} from "../demo/3d/assets";
+import {nodePlatform} from "../src/hosts/terminal";
 
 const ROOT = resolve(__dirname, "..");
 const FRAMES = 30;
@@ -94,14 +95,13 @@ async function main(): Promise<void> {
     errorRecorder.error = (...data: unknown[]) => errors.push(data.map(String).join(" "));
     consoleOverride.addConsoleEventListener(errorRecorder);
 
-    const manifest = buildDemo3dManifest(ROOT);
+    const manifest = buildDemo3dManifest(ROOT, nodePlatform());
     const preloaded = new PreloadedFileSource({fetch: fetchFromDisk});
     await preloaded.preload(manifest.files);
     await preloaded.ensureLoaded(manifest.files.map(file => file.path));
     const files = new WatchedFiles(preloaded);
     let inflateCalls = 0;
     const platform = new MemoryPlatform({
-        ...SIZE,
         fileSource: files,
         inflate: bytes => {
             inflateCalls++;
@@ -116,13 +116,15 @@ async function main(): Promise<void> {
     log(`manifest: ${manifest.models.length} models, ${manifest.files.length} files, ${(fetchedBytes / BYTES_PER_MB).toFixed(1)} MB preloaded, stat-only: ${statOnly.join(", ")}, lazy: ${lazy.join(", ") || "none"}`);
 
     const terminal = new TerminalScreen(SIZE.columns, SIZE.rows);
+    const gameTerminal = new MemoryTerminal(SIZE);
     const world = new DebugWorld({platform});
+    world.resources.insert(new CellSurfaceResource(gameTerminal));
     let quits = 0;
     const loadStart = performance.now();
-    setupDemo3d(world, {listModels: () => manifest.models, quit: () => quits++});
+    setupDemo3d(world, {terminal: gameTerminal, listModels: () => manifest.models, quit: () => quits++});
     log(`models loaded in ${(performance.now() - loadStart).toFixed(0)} ms`);
 
-    expect(platform.input.started, "the game enabled input on the world's platform");
+    expect(gameTerminal.started, "the game enabled input on the host's terminal");
     expect(platform.workers === undefined, "the platform offers no workers, as in the browser");
 
     const pass = world.tryGetSystem(MeshCellPassSystem);
@@ -133,23 +135,23 @@ async function main(): Promise<void> {
     for (let frame = 0; frame < FRAMES; frame++) {
         if (frame >= FIRST_SPAWN_FRAME && (frame - FIRST_SPAWN_FRAME) % SPAWN_EVERY === 0 && spawned < manifest.models.length - 1) {
             await sleep(KEY_RELEASE_WAIT_MS);
-            platform.input.feed("n");
-            platform.input.feed(" ");
+            gameTerminal.feed("n");
+            gameTerminal.feed(" ");
             spawned++;
         }
-        platform.input.feed(ARROW_RIGHT);
-        const before = platform.output.length;
+        gameTerminal.feed(ARROW_RIGHT);
+        const before = gameTerminal.length;
         world.time.deltaTime = FRAME_MS;
         (world as any).update();
         platform.advance(FRAME_MS);
-        const written = platform.output.text().slice(before);
+        const written = gameTerminal.text().slice(before);
         terminal.write(written);
         if (written.length > 0) framesWritten++;
         maxTriangles = Math.max(maxTriangles, pass?.trianglesDrawn ?? 0);
         maxSceneCells = Math.max(maxSceneCells, terminal.truecolorCells());
     }
 
-    const screen = Ansi.strip(platform.output.text());
+    const screen = Ansi.strip(gameTerminal.text());
     const frameCells = SIZE.columns * (SIZE.rows - PROMPT_ROWS);
     expect(framesWritten > FRAMES / 2, `frames written (${framesWritten}/${FRAMES})`);
     expect(maxTriangles > 0, `the 3D pass drew triangles (up to ${maxTriangles} in one frame)`);
@@ -168,7 +170,7 @@ async function main(): Promise<void> {
     expect(sharedBuffersAllocated === 0, `no SharedArrayBuffer allocated: the raster stayed single-threaded (${sharedBuffersAllocated})`);
     expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
-    platform.input.feed(CTRL_C);
+    gameTerminal.feed(CTRL_C);
     expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
 
     consoleInput.disable();

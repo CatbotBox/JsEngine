@@ -1,4 +1,5 @@
 import {beforeEach, describe, expect, test} from "../testing/harness";
+import {MemoryPlatform} from "../testing/memoryPlatform";
 import {World} from "./world";
 import {Component} from "./component";
 import {ComponentType} from "./componentType";
@@ -51,7 +52,7 @@ let em: EntityManager;
 let created: EntityArchetype[];
 
 beforeEach(() => {
-    world = new World();
+    world = new World({platform: new MemoryPlatform()});
     em = world.entityManager;
     created = [];
     setupLog = [];

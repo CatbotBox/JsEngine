@@ -1,23 +1,35 @@
-import type {
-    FileSource,
-    FileStat,
-    Inflate,
-    Platform,
-    PlatformInput,
-    PlatformOutput,
-    PlatformScreen,
-    TerminalSize,
-    WorkerFactory,
-} from "../platform/platform";
+import type {FileSource, FileStat, Inflate, Platform, WorkerFactory} from "../platform/platform";
+import type {TerminalInputSource} from "../input/terminalInputSource";
 import {normalizePath} from "../platform/paths";
 
 const DEFAULT_COLUMNS = 80;
 const DEFAULT_ROWS = 24;
 const INTERACTIVE = true;
 
-export class MemoryOutput implements PlatformOutput {
+export interface MemoryTerminalOptions {
+    readonly columns?: number;
+    readonly rows?: number;
+    readonly input?: readonly string[];
+    readonly interactive?: boolean;
+}
+
+export class MemoryTerminal implements TerminalInputSource {
     public readonly chunks: string[] = [];
+    public interactive: boolean;
+
     private _length = 0;
+    private reader: ((data: string) => void) | undefined;
+    private readonly pending: string[];
+    private columns: number;
+    private rows: number;
+    private readonly resizeListeners = new Set<() => void>();
+
+    public constructor(options: MemoryTerminalOptions = {}) {
+        this.interactive = options.interactive ?? INTERACTIVE;
+        this.pending = [...(options.input ?? [])];
+        this.columns = options.columns ?? DEFAULT_COLUMNS;
+        this.rows = options.rows ?? DEFAULT_ROWS;
+    }
 
     public get length(): number {
         return this._length;
@@ -35,17 +47,6 @@ export class MemoryOutput implements PlatformOutput {
     public clear(): void {
         this.chunks.length = 0;
         this._length = 0;
-    }
-}
-
-export class MemoryInput implements PlatformInput {
-    public interactive: boolean;
-    private reader: ((data: string) => void) | undefined;
-    private readonly pending: string[];
-
-    public constructor(interactive: boolean = INTERACTIVE, scripted: readonly string[] = []) {
-        this.interactive = interactive;
-        this.pending = [...scripted];
     }
 
     public get started(): boolean {
@@ -69,34 +70,27 @@ export class MemoryInput implements PlatformInput {
         if (this.reader === undefined) this.pending.push(data);
         else this.reader(data);
     }
-}
 
-export class MemoryScreen implements PlatformScreen {
-    private readonly listeners = new Set<() => void>();
-
-    public constructor(private columns: number, private rows: number) {
-    }
-
-    public size(): TerminalSize {
+    public size(): {readonly columns: number, readonly rows: number} {
         return {columns: this.columns, rows: this.rows};
     }
 
     public onResize(callback: () => void): () => void {
         const listener = () => callback();
-        this.listeners.add(listener);
+        this.resizeListeners.add(listener);
         return () => {
-            this.listeners.delete(listener);
+            this.resizeListeners.delete(listener);
         };
     }
 
     public resize(columns: number, rows: number): void {
         this.columns = columns;
         this.rows = rows;
-        for (const listener of [...this.listeners]) listener();
+        for (const listener of [...this.resizeListeners]) listener();
     }
 
-    public get listenerCount(): number {
-        return this.listeners.size;
+    public get resizeListenerCount(): number {
+        return this.resizeListeners.size;
     }
 }
 
@@ -155,12 +149,8 @@ export class MemoryFileSource implements FileSource {
 }
 
 export interface MemoryPlatformOptions {
-    readonly columns?: number;
-    readonly rows?: number;
     readonly files?: Readonly<Record<string, string | Uint8Array>>;
     readonly fileSource?: FileSource;
-    readonly input?: readonly string[];
-    readonly interactive?: boolean;
     readonly inflate?: Inflate;
     readonly workers?: WorkerFactory;
     readonly hardwareConcurrency?: number;
@@ -169,9 +159,6 @@ export interface MemoryPlatformOptions {
 }
 
 export class MemoryPlatform implements Platform {
-    public readonly output = new MemoryOutput();
-    public readonly input: MemoryInput;
-    public readonly screen: MemoryScreen;
     public readonly files: FileSource;
     public readonly workers?: WorkerFactory;
 
@@ -182,8 +169,6 @@ export class MemoryPlatform implements Platform {
     private _now: number;
 
     public constructor(options: MemoryPlatformOptions = {}) {
-        this.input = new MemoryInput(options.interactive ?? INTERACTIVE, options.input ?? []);
-        this.screen = new MemoryScreen(options.columns ?? DEFAULT_COLUMNS, options.rows ?? DEFAULT_ROWS);
         this.files = options.fileSource ?? new MemoryFileSource(options.files ?? {});
         this.workers = options.workers;
         this._inflate = options.inflate;

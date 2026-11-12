@@ -1,5 +1,6 @@
 import type * as FileSystem from "fs";
 import {encodePng} from "../src/engine/assets/image/png";
+import {nodeDeflate} from "../src/hosts/terminal";
 
 const SIZE_PIXELS = 64;
 const CHECK_PIXELS = 8;
@@ -23,6 +24,6 @@ for (let y = 0; y < SIZE_PIXELS; y++) {
 }
 
 const fs = require("fs") as typeof FileSystem;
-fs.writeFileSync("demo/3d/checker.png", encodePng(SIZE_PIXELS, SIZE_PIXELS, rgba));
+fs.writeFileSync("demo/3d/checker.png", encodePng(SIZE_PIXELS, SIZE_PIXELS, rgba, nodeDeflate));
 fs.writeFileSync("demo/3d/cube.mtl", "newmtl Material\nKd 1.0 1.0 1.0\nKs 0.6 0.6 0.6\nNs 24\nmap_Kd checker.png\n");
 console.log(`wrote demo/3d/checker.png (${SIZE_PIXELS}x${SIZE_PIXELS}) and demo/3d/cube.mtl`);

@@ -5,6 +5,7 @@ import {
     Resource
 } from "../../src/engine/core";
 import {consoleInput as input, Key} from "../../src/engine/input";
+import type {TerminalInputSource} from "../../src/engine/input";
 
 import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextSprite} from "../../src/engine/rendering";
 
@@ -42,6 +43,7 @@ export interface DemoModelFiles {
 }
 
 export interface Demo3dHost {
+    readonly terminal: TerminalInputSource;
     listModels(): readonly DemoModel[];
     readonly modelFiles?: DemoModelFiles;
     quit(): void;
@@ -383,7 +385,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     }
 
     const enableInputAndQuitKeys = () => {
-        input.enable({platform, mouse: true, hideCursor: true})
+        input.enable({terminal: host.terminal, platform, mouse: true, hideCursor: true})
 
         const quit = () => {
             const renderer = world.tryGetSystem(RenderingSystemGroup);
