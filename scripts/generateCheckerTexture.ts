@@ -1,5 +1,5 @@
 import type * as FileSystem from "fs";
-import {encodePng} from "../src/js_engine/rendering/3d/image/png";
+import {encodePng} from "../src/engine/assets/image/png";
 
 const SIZE_PIXELS = 64;
 const CHECK_PIXELS = 8;

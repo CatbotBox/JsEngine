@@ -1,16 +1,16 @@
 import {createHash} from "crypto";
 import {existsSync, readFileSync, writeFileSync} from "fs";
 import {join, relative, resolve} from "path";
-import {Mesh} from "../src/js_engine/rendering/3d/mesh";
-import {ViewSpaceMesh} from "../src/js_engine/rendering/3d/viewSpaceMesh";
-import {SceneLights, VertexLighting} from "../src/js_engine/rendering/3d/lighting";
-import {MeshRasterizer} from "../src/js_engine/rendering/3d/software";
-import {ConsoleCellResolveTarget} from "../src/js_engine/rendering/console/3d/consoleCellResolveTarget";
-import {ScreenBuffer} from "../src/js_engine/rendering/console/consoleScreenBuffer";
-import {ScreenSize} from "../src/js_engine/rendering/screenSize";
-import {LocalToWorld} from "../src/js_engine/translation/localToWorld";
-import {Quaternions} from "../src/js_engine/math/quaternions";
-import {fromFloat32Array, Vec3} from "../src/js_engine/math/types/vec";
+import {Mesh} from "../src/engine/rendering/3d/mesh";
+import {ViewSpaceMesh} from "../src/engine/rendering/3d/viewSpaceMesh";
+import {SceneLights, VertexLighting} from "../src/engine/rendering/3d/lighting";
+import {MeshRasterizer} from "../src/engine/rendering/3d/software";
+import {CellResolveTarget} from "../src/backends/cells/3d/cellResolveTarget";
+import {ScreenBuffer} from "../src/backends/cells/cellGrid";
+import {ScreenSize} from "../src/engine/rendering/screenSize";
+import {LocalToWorld} from "../src/engine/translation/localToWorld";
+import {Quaternions} from "../src/engine/math/quaternions";
+import {fromFloat32Array, Vec3} from "../src/engine/math/types/vec";
 
 const ROOT = resolve(__dirname, "..");
 const BASELINE_PATH = join(__dirname, "frameHashes.baseline.txt");
@@ -55,7 +55,7 @@ function renderFrameHashes(): FrameHash[] {
     for (const [lit, halfBlock] of [[false, false], [true, false], [true, true]] as const) {
         for (const supersample of [1, 2]) {
             const rasterizer = new MeshRasterizer();
-            const target = new ConsoleCellResolveTarget();
+            const target = new CellResolveTarget();
             const hash = createHash("sha1");
             let bytes = 0;
             for (let f = 0; f < FRAMES; f++) {

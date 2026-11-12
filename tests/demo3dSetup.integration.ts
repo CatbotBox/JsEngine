@@ -1,16 +1,18 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
-import {DebugWorld} from "../src/js_engine/core";
-import {MemoryPlatform, PreloadedFileSource} from "../src/js_engine/platform";
-import type {FetchedFile, FileSource, FileStat} from "../src/js_engine/platform";
-import {consoleInput} from "../src/js_engine/input";
-import {consoleOverride} from "../src/js_engine/debugging";
-import {originalConsole} from "../src/js_engine/debugging/originalConsole";
-import {Ansi} from "../src/js_engine/rendering/console";
-import {Console3DRenderPassSystem} from "../src/js_engine/rendering/console/3d";
-import {inflate, meshCachePathFor} from "../src/js_engine/rendering/3d";
-import {normalizePath} from "../src/js_engine/platform";
-import {TerminalScreen} from "../src/js_engine/testing/terminalScreen";
+import {DebugWorld} from "../src/engine/core";
+import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
+import {PreloadedFileSource} from "../src/hosts/web";
+import type {FileSource, FileStat} from "../src/engine/platform";
+import type {FetchedFile} from "../src/hosts/web";
+import {consoleInput} from "../src/engine/input";
+import {consoleOverride} from "../src/engine/debugging";
+import {originalConsole} from "../src/engine/debugging/originalConsole";
+import {Ansi} from "../src/backends/cells";
+import {MeshCellPassSystem} from "../src/backends/cells/3d";
+import {inflate, meshCachePathFor} from "../src/engine/rendering/3d";
+import {normalizePath} from "../src/engine/platform";
+import {TerminalScreen} from "./support/terminalScreen";
 import {setupDemo3d} from "../demo/3d/game";
 import {buildDemo3dManifest} from "../demo/3d/assets";
 
@@ -123,7 +125,7 @@ async function main(): Promise<void> {
     expect(platform.input.started, "the game enabled input on the world's platform");
     expect(platform.workers === undefined, "the platform offers no workers, as in the browser");
 
-    const pass = world.tryGetSystem(Console3DRenderPassSystem);
+    const pass = world.tryGetSystem(MeshCellPassSystem);
     let framesWritten = 0;
     let maxTriangles = 0;
     let maxSceneCells = 0;

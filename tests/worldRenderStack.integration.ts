@@ -1,18 +1,19 @@
-﻿import {DebugWorld, EntityCommandBufferSystem} from "../src/js_engine";
-import {MemoryPlatform, nodePlatform} from "../src/js_engine/platform";
-import {Camera, HudElement, RenderBounds} from "../src/js_engine/rendering";
-import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../src/js_engine/translation";
-import {Ansi, ConsoleHudRenderPassSystem, ConsoleImage, ConsoleImageAnchor} from "../src/js_engine/rendering/console";
-import {Console2DRenderPassSystem} from "../src/js_engine/rendering/console/2d/console2DRenderPassSystem";
-import {Console3DRenderPassSystem} from "../src/js_engine/rendering/console/3d/console3DRenderPassSystem";
-import {Console3DRenderSettings} from "../src/js_engine/rendering/console/3d/console3DRenderSettings";
-import {ConsoleRenderSettings} from "../src/js_engine/rendering/console/consoleRenderSettings";
-import {RenderMesh} from "../src/js_engine/rendering/3d/renderMesh";
-import {Mesh} from "../src/js_engine/rendering/3d/mesh";
-import {FieldOfView} from "../src/js_engine/rendering/3d/fieldOfView";
-import {Quaternions} from "../src/js_engine/math/quaternions";
-import {Vec, Vec3} from "../src/js_engine/math/types/vec";
-import {AmbientLight, DirectionalLight, PointLight} from "../src/js_engine/rendering/3d/lighting";
+﻿import {DebugWorld, EntityCommandBufferSystem} from "../src/engine";
+import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
+import {nodePlatform} from "../src/hosts/terminal";
+import {Camera, HudElement, RenderBounds, TextSprite, ScreenAnchor} from "../src/engine/rendering";
+import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../src/engine/translation";
+import {Ansi, HudTextSpriteCellPassSystem} from "../src/backends/cells";
+import {TextSpriteCellPassSystem} from "../src/backends/cells/2d/textSpriteCellPassSystem";
+import {MeshCellPassSystem} from "../src/backends/cells/3d/meshCellPassSystem";
+import {MeshCellPassSettings} from "../src/backends/cells/3d/meshCellPassSettings";
+import {CellRenderSettings} from "../src/backends/cells/cellRenderSettings";
+import {RenderMesh} from "../src/engine/rendering/3d/renderMesh";
+import {Mesh} from "../src/engine/rendering/3d/mesh";
+import {FieldOfView} from "../src/engine/rendering/3d/fieldOfView";
+import {Quaternions} from "../src/engine/math/quaternions";
+import {Vec, Vec3} from "../src/engine/math/types/vec";
+import {AmbientLight, DirectionalLight, PointLight} from "../src/engine/rendering/3d/lighting";
 
 const SETTLE_TICKS = 4;
 const ADDED_ENTITY_SETTLE_TICKS = 3;
@@ -43,26 +44,26 @@ const meshEntity = buffer.createEntity("mesh", [new RenderMesh(Mesh.fromFile("./
 buffer.addTrackedComponent(meshEntity, new LocalPosition(0, 0, 8));
 const rotation = buffer.addTrackedComponent(meshEntity, new LocalRotation());
 
-const hudImage = new ConsoleImage();
+const hudImage = new TextSprite();
 hudImage.image = [Ansi.colors.fg.green + "HUDMARKER"];
 hudImage.transparentChar = undefined;
-const anchor = new ConsoleImageAnchor();
+const anchor = new ScreenAnchor();
 anchor.anchorPosition = "top-right";
 buffer.createEntity("hud", [hudImage, new HudElement(), anchor]);
 
-const spriteImage = new ConsoleImage();
+const spriteImage = new TextSprite();
 spriteImage.image = [Ansi.colors.fg.green + "SPRITEMARK"];
 spriteImage.transparentChar = undefined;
 buffer.createEntity("sprite", [spriteImage, new LocalToWorld(), new LocalPosition(0, 0, 0)]);
 
-const offscreenImage = new ConsoleImage();
+const offscreenImage = new TextSprite();
 offscreenImage.image = [Ansi.colors.fg.red + "OFFSCREENMARK"];
 offscreenImage.transparentChar = undefined;
 buffer.createEntity("offscreen-sprite", [offscreenImage, new LocalToWorld(), new LocalPosition(5000, 5000, 0)]);
 
-world.ensureSystemExists(Console3DRenderPassSystem);
-world.ensureSystemExists(Console2DRenderPassSystem);
-world.ensureSystemExists(ConsoleHudRenderPassSystem);
+world.ensureSystemExists(MeshCellPassSystem);
+world.ensureSystemExists(TextSpriteCellPassSystem);
+world.ensureSystemExists(HudTextSpriteCellPassSystem);
 
 const tick = () => (world as any).update();
 const tickTimes = (count: number) => {
@@ -70,10 +71,10 @@ const tickTimes = (count: number) => {
 };
 
 tickTimes(SETTLE_TICKS);
-expect(!output.text().includes(TRUECOLOR_BG), "3D pass is off while Console3DRenderSettings is absent");
+expect(!output.text().includes(TRUECOLOR_BG), "3D pass is off while MeshCellPassSettings is absent");
 expect(Ansi.strip(output.text()).includes("HUDMARKER"), "HUD still renders without 3D settings");
 
-buffer.createEntity("render-settings", [new Console3DRenderSettings(), new ConsoleRenderSettings()]);
+buffer.createEntity("render-settings", [new MeshCellPassSettings(), new CellRenderSettings()]);
 tickTimes(SETTLE_TICKS);
 
 expect(output.text().includes(TRUECOLOR_BG), "3D pass wrote truecolor cells");

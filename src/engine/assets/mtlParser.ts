@@ -1,0 +1,74 @@
+import {Material, packRgb} from "../rendering/3d/material";
+import {isAbsolutePath, joinPath} from "../platform";
+
+const MTL_COMMENT = '#';
+
+export type MaterialLibrary = Map<string, Material>;
+
+export function parseMtl(text: string, baseDirectory: string = ""): MaterialLibrary {
+    const library: MaterialLibrary = new Map();
+    let current: Material | undefined;
+
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (line.length === 0 || line[0] === MTL_COMMENT) continue;
+        const separator = line.search(/\s/);
+        const keyword = separator < 0 ? line : line.substring(0, separator);
+        const argument = separator < 0 ? "" : line.substring(separator + 1).trim();
+
+        if (keyword === "newmtl") {
+            current = new Material(argument);
+            library.set(argument, current);
+        } else if (current === undefined) {
+            continue;
+        } else if (keyword === "Kd") {
+            current.diffuseColor = parsePackedRgb(argument) ?? current.diffuseColor;
+        } else if (keyword === "Ks") {
+            current.specularColor = parsePackedRgb(argument) ?? current.specularColor;
+        } else if (keyword === "Ke") {
+            current.emissiveColor = parsePackedRgb(argument) ?? current.emissiveColor;
+        } else if (keyword === "Ns") {
+            const shininess = Number.parseFloat(argument);
+            if (Number.isFinite(shininess) && shininess >= 0) current.shininess = shininess;
+        } else if (keyword === "map_Kd") {
+            current.diffuseTexturePath = resolveTexturePath(argument, baseDirectory);
+        } else if (keyword === "map_Ks") {
+            current.specularTexturePath = resolveTexturePath(argument, baseDirectory);
+        }
+    }
+    return library;
+}
+
+function parsePackedRgb(argument: string): number | undefined {
+    const [r, g, b] = argument.split(/\s+/).map(Number.parseFloat);
+    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? packRgb(r, g, b) : undefined;
+}
+
+const textureMapOptionArgumentCounts: Record<string, number> = {
+    "-blendu": 1, "-blendv": 1, "-cc": 1, "-clamp": 1, "-mm": 2, "-o": 3, "-s": 3, "-t": 3,
+    "-texres": 1, "-bm": 1, "-imfchan": 1, "-boost": 1,
+};
+
+function resolveTexturePath(argument: string, baseDirectory: string): string {
+    const fileName = stripTextureMapOptions(argument).replace(/\\+/g, "/");
+    if (baseDirectory.length === 0 || isAbsolutePath(fileName)) return fileName;
+    return joinPath(baseDirectory, fileName);
+}
+
+function stripTextureMapOptions(argument: string): string {
+    const tokenPattern = /\S+/g;
+    let fileNameStart = 0;
+    let pendingArguments = 0;
+    for (let match = tokenPattern.exec(argument); match !== null; match = tokenPattern.exec(argument)) {
+        const token = match[0];
+        if (pendingArguments > 0) {
+            pendingArguments--;
+        } else if (token in textureMapOptionArgumentCounts) {
+            pendingArguments = textureMapOptionArgumentCounts[token];
+        } else {
+            return argument.substring(match.index);
+        }
+        fileNameStart = match.index + token.length;
+    }
+    return argument.substring(fileNameStart).trim();
+}

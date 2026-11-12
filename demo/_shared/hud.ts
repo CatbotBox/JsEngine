@@ -1,6 +1,6 @@
-import {EntityCommandBuffer} from "../../src/js_engine/core";
-import {HudElement} from "../../src/js_engine/rendering";
-import {AnchorPosition, ConsoleImage, ConsoleImageAnchor} from "../../src/js_engine/rendering/console";
+import {EntityCommandBuffer} from "../../src/engine/core";
+import {HudElement} from "../../src/engine/rendering";
+import {AnchorPosition, TextSprite, ScreenAnchor} from "../../src/engine/rendering";
 
 const OPAQUE: string | undefined = undefined;
 
@@ -9,12 +9,12 @@ export function createHudLabel(
     name: string,
     text: string,
     anchorPosition: AnchorPosition,
-): ConsoleImage {
-    const anchor = new ConsoleImageAnchor();
+): TextSprite {
+    const anchor = new ScreenAnchor();
     anchor.anchorPosition = anchorPosition;
     const entity = buffer.createEntity(name, [new HudElement(), anchor]);
 
-    const image = buffer.addTrackedComponent(entity, new ConsoleImage());
+    const image = buffer.addTrackedComponent(entity, new TextSprite());
     image.image = [text];
     image.transparentChar = OPAQUE;
 

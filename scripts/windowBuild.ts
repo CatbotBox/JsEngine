@@ -1,22 +1,11 @@
 import {join, resolve} from "path";
 
 export const ROOT = resolve(__dirname, "..");
-export const WEB_DIST = join(ROOT, "web", "dist");
-export const WINDOW_DIST = join(ROOT, "window", "dist");
-const PAGES: Readonly<Record<string, string>> = {"2d": "2d.html", "3d": "3d.html"};
+export const WEB_DIST = join(ROOT, "dist", "web");
+export const WINDOW_DIST = join(ROOT, "dist", "desktop");
 
 export function exitOnFailure(exitCode: number | null): void {
     if (exitCode !== 0) process.exit(exitCode ?? 1);
-}
-
-export function pageFromArguments(fallback: string): string {
-    const pageName = process.argv.slice(2).find(arg => !arg.startsWith("--")) ?? fallback;
-    const page = PAGES[pageName];
-    if (page === undefined) {
-        console.error(`unknown page "${pageName}", expected one of: ${Object.keys(PAGES).join(", ")}`);
-        process.exit(1);
-    }
-    return page;
 }
 
 export function buildWeb(): void {
@@ -28,7 +17,7 @@ export function buildWeb(): void {
 
 export async function bundleMainProcess(outdir = WINDOW_DIST): Promise<string> {
     const result = await Bun.build({
-        entrypoints: [join(ROOT, "window", "main.ts")],
+        entrypoints: [join(ROOT, "src", "hosts", "desktop", "main.ts")],
         outdir,
         target: "node",
         format: "cjs",

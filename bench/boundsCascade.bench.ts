@@ -1,18 +1,18 @@
 ﻿import * as fs from "fs";
-import {World} from "../src/js_engine/core/world";
-import {EntityQuery} from "../src/js_engine/core/entityQuery";
-import {Ansi} from "../src/js_engine/rendering/console/ansi";
-import {ConsoleImage} from "../src/js_engine/rendering/console/consoleImage";
-import {LocalPosition, LocalToWorld} from "../src/js_engine/translation";
-import {LocalToWorldSystem} from "../src/js_engine/translation/localToWorldSystem";
-import {Camera} from "../src/js_engine/rendering/camera";
-import {ScreenSize} from "../src/js_engine/rendering/screenSize";
+import {World} from "../src/engine/core/world";
+import {EntityQuery} from "../src/engine/core/entityQuery";
+import {Ansi} from "../src/backends/cells/ansiEncoding";
+import {TextSprite} from "../src/engine/rendering/textSprite";
+import {LocalPosition, LocalToWorld} from "../src/engine/translation";
+import {LocalToWorldSystem} from "../src/engine/translation/localToWorldSystem";
+import {Camera} from "../src/engine/rendering/camera";
+import {ScreenSize} from "../src/engine/rendering/screenSize";
 import {
-    RenderBounds2DApplyModifierSystem
-} from "../src/js_engine/rendering/console/2d/renderBounds2DApplyModifierSystem";
-import {WorldSpaceRenderBoundsComputeSystem} from "../src/js_engine/rendering/worldSpaceRenderBoundsComputeSystem";
-import {Console2DRenderPassSystem} from "../src/js_engine/rendering/console/2d/console2DRenderPassSystem";
-import {ConsoleScreenBuffer} from "../src/js_engine/rendering/console/consoleScreenBuffer";
+    TextSpriteBoundsSystem
+} from "../src/engine/rendering/textSpriteBoundsSystem";
+import {WorldSpaceRenderBoundsComputeSystem} from "../src/engine/rendering/worldSpaceRenderBoundsComputeSystem";
+import {TextSpriteCellPassSystem} from "../src/backends/cells/2d/textSpriteCellPassSystem";
+import {CellGrid} from "../src/backends/cells/cellGrid";
 import {formatMs, median} from "./_harness";
 
 const N = 40_000;
@@ -27,23 +27,23 @@ const REPORT_PATH = "bench/boundsCascade.out.txt";
 
 function spawn(world: World, count: number) {
     const em = world.entityManager;
-    const images: ConsoleImage[] = [];
+    const images: TextSprite[] = [];
     for (let i = 0; i < count; i++) {
         const e = em.createEntity();
-        const img = new ConsoleImage();
+        const img = new TextSprite();
         img.transparentChar = "0";
         img.image = [Ansi.bgRGB(1, 2, 3) + " "];
         em.addComponent(e, img);
         em.addComponent(e, new LocalToWorld());
         em.addComponent(e, new LocalPosition(i % GRID_COLUMNS, (i / GRID_COLUMNS) | 0, 0));
-        images.push(em.getComponent<ConsoleImage>(e, ConsoleImage)!);
+        images.push(em.getComponent<TextSprite>(e, TextSprite)!);
     }
     return images;
 }
 
 function imageRewriteCascadeMs(mode: "colour-only" | "geometry") {
     const world = new World();
-    const modifier = world.getOrCreateSystem(RenderBounds2DApplyModifierSystem);
+    const modifier = world.getOrCreateSystem(TextSpriteBoundsSystem);
     const images = spawn(world, N);
 
     const samples: number[] = [];
@@ -70,11 +70,11 @@ function archetypeArrivalCascadeMs(mode: "arrivals" | "quiet" | "moving") {
 
     const l2w = world.getOrCreateSystem(LocalToWorldSystem);
     const wsb = world.getOrCreateSystem(WorldSpaceRenderBoundsComputeSystem);
-    const screen = world.resources.getOrCreate(ConsoleScreenBuffer);
-    const pass = world.getOrCreateSystem(Console2DRenderPassSystem);
+    const screen = world.resources.getOrCreate(CellGrid);
+    const pass = world.getOrCreateSystem(TextSpriteCellPassSystem);
 
     spawn(world, N);
-    const moveQuery = new EntityQuery(world, [LocalPosition, ConsoleImage]);
+    const moveQuery = new EntityQuery(world, [LocalPosition, TextSprite]);
 
     const l2wS: number[] = [], wsbS: number[] = [], passS: number[] = [];
     for (let f = 0; f < FRAMES; f++) {
@@ -122,15 +122,15 @@ const totalMs = (r: { l2w: number; wsb: number; pass: number }) => r.l2w + r.wsb
 const report = [
     `N=${N}, mean ms/frame over ${FRAMES - WARMUP} frames`,
     ``,
-    `CASCADE 1 -- ConsoleImage rewritten every frame`,
+    `CASCADE 1 -- TextSprite rewritten every frame`,
     `                                 colour-only    geometry (control)`,
-    `RenderBounds2DApplyModifier      ${formatMs(c1Colour)} ms  ${formatMs(c1Geom)} ms`,
+    `TextSpriteBoundsSystem           ${formatMs(c1Colour)} ms  ${formatMs(c1Geom)} ms`,
     ``,
     `CASCADE 2 -- ${ARRIVALS_PER_FRAME} entities arriving per frame`,
     `                                     quiet      arrivals     moving (control)`,
     `LocalToWorldSystem               ${formatMs(c2Quiet.l2w)} ms  ${formatMs(c2Arrivals.l2w)} ms  ${formatMs(c2Moving.l2w)} ms`,
     `WorldSpaceRenderBoundsCompute    ${formatMs(c2Quiet.wsb)} ms  ${formatMs(c2Arrivals.wsb)} ms  ${formatMs(c2Moving.wsb)} ms`,
-    `Console2DRenderPass (cull+blit)  ${formatMs(c2Quiet.pass)} ms  ${formatMs(c2Arrivals.pass)} ms  ${formatMs(c2Moving.pass)} ms`,
+    `TextSpriteCellPass (cull+blit)   ${formatMs(c2Quiet.pass)} ms  ${formatMs(c2Arrivals.pass)} ms  ${formatMs(c2Moving.pass)} ms`,
     `                                 --------------------------------------------`,
     `total                            ${formatMs(totalMs(c2Quiet))} ms  ${formatMs(totalMs(c2Arrivals))} ms  ${formatMs(totalMs(c2Moving))} ms`,
     ``,

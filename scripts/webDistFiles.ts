@@ -32,3 +32,20 @@ export function distFileFor(distDirectory: string, urlPath: string): string | un
     if (inside.startsWith("..") || isAbsolute(inside)) return undefined;
     return existsSync(path) && statSync(path).isFile() ? path : undefined;
 }
+
+const PAGES: Readonly<Record<string, string>> = {"2d": "2d.html", "3d": "3d.html"};
+
+export function pageFromArgumentsOrUndefined(): string | undefined {
+    const pageName = process.argv.slice(2).find(arg => !arg.startsWith("--"));
+    if (pageName === undefined) return undefined;
+    const page = PAGES[pageName];
+    if (page === undefined) {
+        console.error(`unknown page "${pageName}", expected one of: ${Object.keys(PAGES).join(", ")}`);
+        process.exit(1);
+    }
+    return page;
+}
+
+export function pageFromArguments(fallback: string): string {
+    return pageFromArgumentsOrUndefined() ?? PAGES[fallback];
+}

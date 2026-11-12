@@ -13,7 +13,7 @@
     "resolveJsonModule": true,
     "sourceMap": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/js_engine/testing"]
+  "include": ["src/engine/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/engine/testing"]
 }
 

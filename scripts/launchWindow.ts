@@ -1,4 +1,5 @@
-import {buildWeb, bundleMainProcess, electronEnvironment, exitOnFailure, pageFromArguments, WEB_DIST} from "./windowBuild";
+import {pageFromArguments} from "./webDistFiles";
+import {buildWeb, bundleMainProcess, electronEnvironment, exitOnFailure, WEB_DIST} from "./windowBuild";
 
 async function main(): Promise<void> {
     const page = pageFromArguments("2d");

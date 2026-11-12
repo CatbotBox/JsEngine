@@ -3,24 +3,21 @@ import {
     System,
     DebugWorld,
     Resource
-} from "../../src/js_engine/core";
-import {consoleInput as input, Key} from "../../src/js_engine/input";
+} from "../../src/engine/core";
+import {consoleInput as input, Key} from "../../src/engine/input";
 
-import {Camera, HudElement, RenderBounds, RenderingSystemGroup} from "../../src/js_engine/rendering";
+import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextSprite} from "../../src/engine/rendering";
 
-import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../../src/js_engine/translation";
+import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../../src/engine/translation";
 
 import {
     Ansi,
-    ConsoleHudRenderPassSystem,
-    ConsoleImage,
-    ConsoleImageAnchor,
+    HudTextSpriteCellPassSystem,
+} from "../../src/backends/cells";
 
-} from "../../src/js_engine/rendering/console";
-
-import {AverageStat} from "../../src/js_engine/datatypes";
-import {Console3DRenderPassSystem, Console3DRenderSettings} from "../../src/js_engine/rendering/console/3d";
-import {ConsoleRenderSettings} from "../../src/js_engine/rendering/console";
+import {AverageStat} from "../../src/engine/datatypes";
+import {MeshCellPassSystem, MeshCellPassSettings} from "../../src/backends/cells/3d";
+import {CellRenderSettings} from "../../src/backends/cells";
 import {
     AmbientLight,
     DirectionalLight,
@@ -29,9 +26,9 @@ import {
     Mesh,
     PointLight,
     RenderMesh
-} from "../../src/js_engine/rendering/3d";
-import {ReadonlyVec3, ReadonlyVec4, Vec, Vec3} from "../../src/js_engine/math/types/vec";
-import {Quaternions} from "../../src/js_engine/math/quaternions";
+} from "../../src/engine/rendering/3d";
+import {ReadonlyVec3, ReadonlyVec4, Vec, Vec3} from "../../src/engine/math/types/vec";
+import {Quaternions} from "../../src/engine/math/quaternions";
 import {createHudLabel} from "../_shared/hud";
 
 export interface DemoModel {
@@ -110,8 +107,8 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
-    const settingsEntity = buffer.createEntity("renderSettings", [new ConsoleRenderSettings()]);
-    const renderSettings = buffer.addTrackedComponent(settingsEntity, new Console3DRenderSettings());
+    const settingsEntity = buffer.createEntity("renderSettings", [new CellRenderSettings()]);
+    const renderSettings = buffer.addTrackedComponent(settingsEntity, new MeshCellPassSettings());
 
     const sunEntity = buffer.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalToWorld(), new LocalPosition()]);
     const sunRotation = buffer.addTrackedComponent(sunEntity, new LocalRotation());
@@ -166,16 +163,16 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     const camEulerScratch: Vec3 = Vec.alloc3();
     let camQuat = Quaternions.eulerToQuat(Vec.alloc3(0, 0, 0));
 
-    const previewAnchor = new ConsoleImageAnchor();
+    const previewAnchor = new ScreenAnchor();
     previewAnchor.anchorPosition = 'bottom-right';
     const previewEntity = buffer.createEntity("spawnPreview", [new HudElement(), previewAnchor]);
-    const previewImage = buffer.addTrackedComponent(previewEntity, new ConsoleImage());
+    const previewImage = buffer.addTrackedComponent(previewEntity, new TextSprite());
     previewImage.transparentChar = undefined;
 
-    const controlsAnchor = new ConsoleImageAnchor();
+    const controlsAnchor = new ScreenAnchor();
     controlsAnchor.anchorPosition = 'top-left';
     const controlsEntity = buffer.createEntity("controls", [new HudElement(), controlsAnchor]);
-    const controlsImage = buffer.addTrackedComponent(controlsEntity, new ConsoleImage());
+    const controlsImage = buffer.addTrackedComponent(controlsEntity, new TextSprite());
     controlsImage.transparentChar = undefined;
     controlsImage.image = [
         Ansi.colors.fg.cyan + 'camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit',
@@ -465,11 +462,11 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
 
     const registerRenderToggleKeys = () => {
         input.whenKeyDown(Key.V, () => {
-            const renderer = world.tryGetSystem(Console3DRenderPassSystem);
+            const renderer = world.tryGetSystem(MeshCellPassSystem);
             if (renderer) renderer.enabled = !renderer.enabled;
         })
         input.whenKeyDown(Key.Tab, () => {
-            const renderer = world.tryGetSystem(ConsoleHudRenderPassSystem);
+            const renderer = world.tryGetSystem(HudTextSpriteCellPassSystem);
             if (renderer) renderer.enabled = !renderer.enabled;
         })
         input.whenKeyDown(Key.G, () => world.logSystemUpdateOrder())
@@ -570,8 +567,8 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     fetchModels();
     spawnSelected();
 
-    world.ensureSystemExists(Console3DRenderPassSystem);
-    world.ensureSystemExists(ConsoleHudRenderPassSystem);
+    world.ensureSystemExists(MeshCellPassSystem);
+    world.ensureSystemExists(HudTextSpriteCellPassSystem);
 
     world.ensureSystemExists(DebugSystem)
 }
@@ -579,8 +576,8 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
 class DebugSystem extends System {
     private _toggle = true;
     private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
-    private _entityCounterImage!: ConsoleImage;
-    private _fpsCounterImage!: ConsoleImage;
+    private _entityCounterImage!: TextSprite;
+    private _fpsCounterImage!: TextSprite;
 
     protected onCreate() {
         const buffer = this.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
@@ -597,7 +594,7 @@ class DebugSystem extends System {
             Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
         ]
 
-        const pass = this.world.tryGetSystem(Console3DRenderPassSystem);
+        const pass = this.world.tryGetSystem(MeshCellPassSystem);
         const drawn = pass === undefined ? 0 : pass.trianglesDrawn;
         const levels = pass === undefined ? '' : '  LOD levels: ' + Array.from(pass.lodLevelCounts.subarray(0, LOD_LEVELS_SHOWN)).join('/');
         const rasterWorkers = pass === undefined ? 0 : pass.rasterWorkers;

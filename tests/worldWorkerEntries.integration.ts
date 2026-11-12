@@ -1,15 +1,15 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
-import {connectWorldWorker} from "../src/js_engine/platform";
-import type {PageTerminal, TerminalSubscription, WorldWorker} from "../src/js_engine/platform";
-import {Ansi} from "../src/js_engine/rendering/console";
-import {TerminalScreen} from "../src/js_engine/testing/terminalScreen";
+import {connectWorldWorker} from "../src/hosts/web";
+import type {PageTerminal, TerminalSubscription, WorldWorker} from "../src/hosts/web";
+import {Ansi} from "../src/backends/cells";
+import {TerminalScreen} from "./support/terminalScreen";
 import {buildDemo3dManifest} from "../demo/3d/assets";
 import type {Demo3dManifest} from "../demo/3d/assets";
 
 const ROOT = resolve(__dirname, "..");
 const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
-const DEFAULT_DIST = "web/dist-prod";
+const DEFAULT_DIST = "dist/web-prod";
 const DIST_ARG = process.argv.indexOf("--dist");
 const DIST = DIST_ARG < 0 ? undefined : resolve(process.argv[DIST_ARG + 1] ?? DEFAULT_DIST);
 const CTRL_C = "\x03";
@@ -28,7 +28,7 @@ const ISOLATED = true;
 const NOT_ISOLATED = false;
 
 function workerEntry(name: string): string {
-    return DIST === undefined ? join(ROOT, "web", `${name}.worker.ts`) : join(DIST, `${name}.worker.js`);
+    return DIST === undefined ? join(ROOT, "src", "hosts", "web", `${name}.worker.ts`) : join(DIST, `${name}.worker.js`);
 }
 
 function demo3dManifest(): Demo3dManifest {

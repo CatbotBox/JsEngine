@@ -1,6 +1,6 @@
-import {DebugWorld} from "../../src/js_engine";
-import {consoleOverride} from "../../src/js_engine/debugging";
-import {fileLogger} from "../../src/js_engine/debugging/fileLogger";
+import {DebugWorld} from "../../src/engine";
+import {consoleOverride} from "../../src/engine/debugging";
+import {fileLogger} from "../../src/hosts/terminal/fileLogger";
 import {exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
 import {setupDemo2d} from "./game";
 

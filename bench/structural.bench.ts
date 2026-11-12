@@ -1,6 +1,6 @@
 import * as os from "node:os";
-import {Component, Entity, EntityCommandBufferSystem, EntityManager, World} from "../src/js_engine/core";
-import type {ComponentCtor} from "../src/js_engine/core";
+import {Component, Entity, EntityCommandBufferSystem, EntityManager, World} from "../src/engine/core";
+import type {ComponentCtor} from "../src/engine/core";
 import {
     Children,
     LocalPosition,
@@ -9,7 +9,7 @@ import {
     LocalToWorld,
     Parent,
     ParentTransform
-} from "../src/js_engine/translation";
+} from "../src/engine/translation";
 import {formatMs, median} from "./_harness";
 
 class Velocity extends Component {

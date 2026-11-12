@@ -27,11 +27,14 @@ to force a re-parse.
 Run the demo in a real terminal: `bun demo/3d/index.ts` (keys are listed in its top-left legend; `t` textures,
 `b` half-block, `1`-`4` anti-aliasing presets, `h`/`p` lights).
 
+Every demo runs on four runtimes: `bun run demo:3d:bun` / `demo:3d:node` (terminal), `demo:3d:web` (browser, served
+locally with cross-origin isolation) and `demo:3d:window` (Electron window); the same scripts exist for `2d`.
+
 2D sprites and HUD elements render alongside 3D through the same screen buffer.
 
 ## Credits
 
-- `web/coi-serviceworker.js` is [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) v0.1.7 by
+- `src/hosts/web/coi-serviceworker.js` is [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) v0.1.7 by
   Guido Zuidhof and contributors (MIT License), vendored unmodified with its license header.
-- `src/js_engine/input/ansiKeyDecoder.ts` is a port of Node.js's readline key decoder (`emitKeys`, behind
+- `src/hosts/terminal/ansi/ansiKeyDecoder.ts` is a port of Node.js's readline key decoder (`emitKeys`, behind
   `readline.emitKeypressEvents`), MIT License.

@@ -100,8 +100,6 @@ bench/*.out.txt
 
 .claude/worktrees/
 
-web/dist
-web/dist-prod
 
 *.meshcache
 
