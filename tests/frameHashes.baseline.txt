@@ -1,0 +1,6 @@
+unlit supersample=1 sha1=642887948e0955c8b6587f16207468872b7cd77c
+unlit supersample=2 sha1=a4552424859160033568723a12b29cc30f549284
+lit supersample=1 sha1=d2a895ed08bbbf618bc6bfbd6dd1b78bd7b2d498
+lit supersample=2 sha1=5e3ecc5cdf442d284a7347774d974ff8daefd836
+lit halfblock supersample=1 sha1=fadcee0faa98b6d774b3063b84c24f12ba135e5c
+lit halfblock supersample=2 sha1=058e1975ec67c909add96ae75e590c1ddac01441

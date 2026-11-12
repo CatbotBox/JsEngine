@@ -1,8 +1,11 @@
 import {DebugWorld} from "../../src/js_engine";
 import {consoleOverride} from "../../src/js_engine/debugging";
 import {fileLogger} from "../../src/js_engine/debugging/fileLogger";
+import {exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
 import {setupDemo3d} from "./game";
 import {findDemoModels} from "./models";
+
+exitUnlessInteractiveTerminal("The 3D demo");
 
 consoleOverride.addConsoleEventListener(fileLogger);
 
