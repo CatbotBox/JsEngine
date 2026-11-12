@@ -1,6 +1,8 @@
-import type {FileSource, FileStat, PreloadEntry} from "../../src/js_engine/platform";
-import {joinPath, nodePlatform, normalizePath} from "../../src/js_engine/platform";
-import {Mesh} from "../../src/js_engine/rendering/3d";
+import type {FileSource, FileStat} from "../../src/engine/platform";
+import type {PreloadEntry} from "../../src/hosts/web/preloadedFileSource";
+import {joinPath, normalizePath} from "../../src/engine/platform";
+import {nodePlatform} from "../../src/hosts/terminal/nodePlatform";
+import {Mesh} from "../../src/engine/rendering/3d";
 import type {DemoModel} from "./game";
 import {findDemoModels} from "./models";
 

@@ -2,8 +2,9 @@ import {FuseV1Options, FuseVersion, flipFuses} from "@electron/fuses";
 import {packager} from "@electron/packager";
 import {cpSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "fs";
 import {join} from "path";
-import type {PackagedLaunch} from "../window/main";
-import {buildWeb, bundleMainProcess, pageFromArguments, ROOT, WEB_DIST, WINDOW_DIST} from "./windowBuild";
+import type {PackagedLaunch} from "../src/hosts/desktop/main";
+import {buildWeb, bundleMainProcess, ROOT, WEB_DIST, WINDOW_DIST} from "./windowBuild";
+import {pageFromArguments} from "./webDistFiles";
 
 const APP_NAME = "JsEngine";
 const STAGING = join(WINDOW_DIST, "app");

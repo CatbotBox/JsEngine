@@ -1,30 +1,29 @@
-import {Vec} from "../../src/js_engine/math/types/vec";
+import {Vec} from "../../src/engine/math/types/vec";
 import {
     Component,
     Entity,
     EntityCommandBufferSystem,
     System,
     DebugWorld
-} from "../../src/js_engine/core";
-import {consoleInput, Key} from "../../src/js_engine/input";
+} from "../../src/engine/core";
+import {consoleInput, Key} from "../../src/engine/input";
 
-import {Camera, HudElement, RenderBounds, RenderingSystemGroup} from "../../src/js_engine/rendering";
-import {ConsoleImageAnchor} from "../../src/js_engine/rendering/console";
+import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor} from "../../src/engine/rendering";
 
-import {LocalPosition, LocalToWorld, Parent} from "../../src/js_engine/translation";
+import {LocalPosition, LocalToWorld, Parent} from "../../src/engine/translation";
 
 import {
     Ansi,
-    ConsoleHudRenderPassSystem,
-} from "../../src/js_engine/rendering/console";
+    HudTextSpriteCellPassSystem,
+} from "../../src/backends/cells";
 
 import {
-    Console2DRenderSettings,
-    ConsoleSpriteHudRenderPassSystem,
-    ConsoleSpriteRenderPassSystem,
-} from "../../src/js_engine/rendering/console/2d";
-import {Sprite, SpriteImage} from "../../src/js_engine/rendering/2d";
-import {AverageStat} from "../../src/js_engine/datatypes";
+    TextSpriteCellPassSettings,
+    HudSpriteCellPassSystem,
+    SpriteCellPassSystem,
+} from "../../src/backends/cells/2d";
+import {Sprite, SpriteImage} from "../../src/engine/rendering/2d";
+import {AverageStat} from "../../src/engine/datatypes";
 import {createHudLabel} from "../_shared/hud";
 
 export interface Demo2dHost {
@@ -78,7 +77,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
 
     const settingsEntity = buffer.createEntity("2dRenderSettings");
-    const renderSettings = buffer.addTrackedComponent(settingsEntity, new Console2DRenderSettings());
+    const renderSettings = buffer.addTrackedComponent(settingsEntity, new TextSpriteCellPassSettings());
 
     function createCross(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
         const r = Math.round(Math.random() * MAX_CHANNEL)
@@ -112,7 +111,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     }
 
     function createHudCross(): void {
-        const hudAnchor = new ConsoleImageAnchor();
+        const hudAnchor = new ScreenAnchor();
         hudAnchor.anchorPosition = 'bottom-right';
         buffer.createEntity("hudCross", [new Sprite(CROSS_IMAGE, HUD_CROSS_RGB), new HudElement(), hudAnchor]);
     }
@@ -176,7 +175,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         renderer.enabled = !renderer.enabled;
     })
     consoleInput.whenKey(Key.Backspace, () => {
-        const renderer = world.tryGetSystem(ConsoleSpriteRenderPassSystem);
+        const renderer = world.tryGetSystem(SpriteCellPassSystem);
         if (!renderer) return;
         renderer.enabled = !renderer.enabled;
     })
@@ -288,9 +287,9 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     }
 
 
-    world.ensureSystemExists(ConsoleSpriteRenderPassSystem);
-    world.ensureSystemExists(ConsoleSpriteHudRenderPassSystem);
-    world.ensureSystemExists(ConsoleHudRenderPassSystem);
+    world.ensureSystemExists(SpriteCellPassSystem);
+    world.ensureSystemExists(HudSpriteCellPassSystem);
+    world.ensureSystemExists(HudTextSpriteCellPassSystem);
 
 
     world.ensureSystemExists(DebugSystem)

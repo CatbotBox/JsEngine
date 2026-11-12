@@ -1,10 +1,10 @@
-import {DebugWorld} from "../src/js_engine/core";
-import {MemoryPlatform} from "../src/js_engine/platform";
-import {consoleInput} from "../src/js_engine/input";
-import {consoleOverride} from "../src/js_engine/debugging";
-import {originalConsole} from "../src/js_engine/debugging/originalConsole";
-import {Ansi} from "../src/js_engine/rendering/console";
-import {TerminalScreen} from "../src/js_engine/testing/terminalScreen";
+import {DebugWorld} from "../src/engine/core";
+import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
+import {consoleInput} from "../src/engine/input";
+import {consoleOverride} from "../src/engine/debugging";
+import {originalConsole} from "../src/engine/debugging/originalConsole";
+import {Ansi} from "../src/backends/cells";
+import {TerminalScreen} from "./support/terminalScreen";
 import {setupDemo2d} from "../demo/2d/game";
 
 const FRAMES = 60;

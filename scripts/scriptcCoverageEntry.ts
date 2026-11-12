@@ -1,7 +1,7 @@
-﻿import {World} from "../src/js_engine/core/world";
-import {System} from "../src/js_engine/core/system";
-import {Component} from "../src/js_engine/core/component";
-import {Vec} from "../src/js_engine/math/types/vec";
+﻿import {World} from "../src/engine/core/world";
+import {System} from "../src/engine/core/system";
+import {Component} from "../src/engine/core/component";
+import {Vec} from "../src/engine/math/types/vec";
 
 const ENTITY_COUNT = 100;
 const FRAME_COUNT = 10;

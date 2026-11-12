@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as zlib from "zlib";
-import {inflate} from "../src/js_engine/rendering/3d/image/inflate";
+import {inflate} from "../src/engine/assets/image/inflate";
 import {formatMs, median} from "./_harness";
 
 const MIN_SAMPLE_MS = 50;

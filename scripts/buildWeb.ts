@@ -6,9 +6,9 @@ import {buildDemo3dManifest} from "../demo/3d/assets";
 import type {Demo3dManifest, ManifestFile} from "../demo/3d/assets";
 
 const ROOT = resolve(__dirname, "..");
-const WEB = join(ROOT, "web");
+const WEB = join(ROOT, "src", "hosts", "web");
 const PROD = process.argv.includes("--prod");
-const OUT = join(WEB, PROD ? "dist-prod" : "dist");
+const OUT = join(ROOT, "dist", PROD ? "web-prod" : "web");
 const ENTRY_POINTS = ["2d.ts", "world2d.worker.ts", "3d.ts", "world3d.worker.ts"].map(name => join(WEB, name));
 const STATIC_FILES: readonly [from: string, to: string][] = [
     ...["index.html", "2d.html", "3d.html", "demo.css", "coi-serviceworker.js", "_headers"].map((name): [string, string] => [join(WEB, name), name]),
@@ -34,7 +34,7 @@ const GZIP_PART_BYTES = 20 * MB;
 const GZIP_LEVEL_MAX = 9;
 const GZIP_LEVEL_HOST_TRANSIT = 6;
 
-const NODE_PLATFORM = join(ROOT, "src", "js_engine", "platform", "nodePlatform");
+const NODE_PLATFORM = join(ROOT, "src", "hosts", "terminal", "nodePlatform");
 const NODE_PLATFORM_STUB = join(WEB, "nodePlatformStub.ts");
 
 const FORBIDDEN: readonly [label: string, pattern: RegExp][] = [

@@ -1,7 +1,7 @@
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "fs";
 import {tmpdir} from "os";
 import {join} from "path";
-import {describe, expect, test} from "../../src/js_engine/testing/harness";
+import {describe, expect, test} from "../../src/engine/testing/harness";
 import {buildDemo3dManifest} from "./assets";
 import type {Demo3dManifest, ManifestModel} from "./assets";
 

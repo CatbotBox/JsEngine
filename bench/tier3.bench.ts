@@ -1,5 +1,5 @@
-import {Entity} from "../src/js_engine/core/entity";
-import {Ansi} from "../src/js_engine/rendering/console/ansi";
+import {Entity} from "../src/engine/core/entity";
+import {Ansi} from "../src/backends/cells/ansiEncoding";
 
 const WARMUP_ITERS_MAX = 1000;
 const MIN_TOTAL_MS = 50;
@@ -139,8 +139,8 @@ function makeImage(w: number, h: number, ansiEvery: number): string[] {
     return rows;
 }
 
-function consoleImageBench() {
-    console.log("\nB. ConsoleImage.recalculatePixels: allocate rows vs reuse rows");
+function textSpriteBench() {
+    console.log("\nB. TextSprite.recalculatePixels: allocate rows vs reuse rows");
     console.log("   Runs on every `image` assignment — once per entity per frame for a");
     console.log("   colour fade, which is exactly CASCADE 1 in boundsCascade.bench.\n");
 
@@ -174,5 +174,5 @@ function consoleImageBench() {
 }
 
 childrenBench();
-consoleImageBench();
+textSpriteBench();
 console.log("sink=" + sink);

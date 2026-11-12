@@ -1,7 +1,7 @@
-﻿import {AABB} from "../src/js_engine/datatypes/aabb";
-import {LinearIndex} from "../src/js_engine/datatypes/spatial/linearIndex";
-import {ObjectOctree} from "../src/js_engine/datatypes/spatial/objectOctree";
-import {QueryHit, SpatialIndex} from "../src/js_engine/datatypes/spatial/spatialIndex";
+﻿import {AABB} from "../src/engine/datatypes/aabb";
+import {LinearIndex} from "../src/engine/datatypes/spatial/linearIndex";
+import {ObjectOctree} from "../src/engine/datatypes/spatial/objectOctree";
+import {QueryHit, SpatialIndex} from "../src/engine/datatypes/spatial/spatialIndex";
 
 const NS = [25, 1_000, 10_000, 100_000];
 const ARCHETYPE_BATCHES = 8;
