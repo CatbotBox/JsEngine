@@ -1,11 +1,12 @@
 import type {FileSource, FileStat} from "./platform";
 import {normalizePath} from "./paths";
 
+const HTTP_NOT_FOUND = 404;
+
 export interface ByteStreamReader {
     read(): Promise<{readonly done: boolean, readonly value?: Uint8Array}>;
 }
 
-/** What a fetch body or a DecompressionStream's readable side offers; a web `ReadableStream<Uint8Array>` satisfies it. */
 export interface ByteStream {
     getReader(): ByteStreamReader;
 }
@@ -14,62 +15,36 @@ export interface FetchedFile {
     readonly ok: boolean;
     readonly status: number;
     arrayBuffer(): Promise<ArrayBuffer>;
-    /** Read as it arrives where present, so progress moves within one file; absent: `arrayBuffer` at once. */
     readonly body?: ByteStream | null;
 }
 
 export type FetchFile = (url: string) => Promise<FetchedFile>;
 
-/**
- * A manifest entry. `mtimeMs` is the modification time of the file the asset was built from;
- * only entries that carry one can be `stat`ed, so a mesh cache is never validated against a
- * made-up time. `size`, when given, is checked against the bytes fetched, so a stale build fails
- * loudly instead of silently invalidating whatever is keyed on the file.
- */
 export interface PreloadEntry {
     readonly path: string;
     readonly mtimeMs?: number;
     readonly size?: number;
-    /**
-     * Not fetched: the file exists and `stat`s from `size` and `mtimeMs` (both required), but its
-     * bytes cannot be read. For an obj whose mesh cache replaces it, which only `stat`s the obj.
-     */
     readonly statOnly?: boolean;
-    /**
-     * Not fetched by `preload`: the file exists and `stat`s like any other, but its bytes arrive
-     * only through `ensureLoaded`. For a large file a page may never need. Needs `size`.
-     */
     readonly lazy?: boolean;
-    /**
-     * Shipped gzip-compressed and split into parts, fetched from `<url>.gz.part0`, `.gz.part1`...
-     * and decompressed as they arrive; each number is one part's size in bytes. `size` stays the
-     * decompressed size.
-     */
     readonly gzipParts?: readonly number[];
 }
 
-/** Bytes are transferred bytes: a gzip-compressed entry counts its parts, not what they decompress to. */
 export interface PreloadProgress {
     readonly loadedFiles: number;
     readonly totalFiles: number;
-    /** Of the entries that list a `size`; stat-only entries count as no bytes. */
     readonly loadedBytes: number;
     readonly totalBytes: number;
 }
 
 export interface PreloadedFileSourceOptions {
-    /** Prefixed to every normalized path to form its URL; default "" (relative to the page). */
     readonly baseUrl?: string;
-    /** Default: the host's global `fetch`. */
     readonly fetch?: FetchFile;
 }
 
 interface PreloadedFile {
-    /** Undefined for a stat-only entry, and for a lazy one until it is loaded. */
     readonly bytes: Uint8Array | undefined;
     readonly size: number;
     readonly mtimeMs: number | undefined;
-    /** The manifest entry of a lazy file whose bytes have not arrived yet. */
     readonly pending?: PreloadEntry;
 }
 
@@ -91,12 +66,6 @@ interface GunzipStream {
     readonly readable: ByteStream;
 }
 
-/**
- * Read-only files fetched into memory, so every loader stays synchronous: `preload` before the
- * world starts, `ensureLoaded` for lazy entries before the loader that reads them runs. Paths are
- * keyed normalized, as in `MemoryFileSource`. A path the server answers 404 for is recorded as
- * absent, exactly like a missing file on disk: `exists` is false and reads throw ENOENT.
- */
 export class PreloadedFileSource implements FileSource {
     private readonly entries = new Map<string, PreloadedFile>();
     private readonly lazyLoads = new Map<string, LazyLoad>();
@@ -112,11 +81,6 @@ export class PreloadedFileSource implements FileSource {
         return this.baseUrl + encodeURI(normalizePath(path));
     }
 
-    /**
-     * Fetches every entry except lazy ones, which are only registered. `onProgress` is called once
-     * at the start, as bytes arrive, and once per entry as it completes, in completion order; lazy
-     * entries are not part of it.
-     */
     public async preload(entries: readonly (string | PreloadEntry)[], onProgress?: (progress: PreloadProgress) => void): Promise<void> {
         const fetched: PreloadEntry[] = [];
         for (const listed of entries) {
@@ -145,18 +109,10 @@ export class PreloadedFileSource implements FileSource {
         }));
     }
 
-    /** True while `path` is a lazy entry whose bytes `ensureLoaded` has not fetched yet. */
     public isPending(path: string): boolean {
         return this.entries.get(normalizePath(path))?.pending !== undefined;
     }
 
-    /**
-     * Fetches whichever of `paths` are pending lazy entries; every other path is already as loaded
-     * as it will be. Resolves once all of them can be read. A path another call is already fetching
-     * is not fetched twice. `onProgress` covers this call's pending paths: it is called once at the
-     * start, as bytes arrive and as each file completes. On a failure the entry stays pending, so a
-     * later call fetches it again.
-     */
     public async ensureLoaded(paths: readonly string[], onProgress?: (progress: PreloadProgress) => void): Promise<void> {
         const pending = [...new Set(paths.map(normalizePath))].filter(path => this.isPending(path));
         if (pending.length === 0) return;
@@ -245,17 +201,16 @@ export class PreloadedFileSource implements FileSource {
             return;
         }
         const bytes = entry.gzipParts === undefined
-            ? await this.fetchPlain(entry, onBytes)
-            : await this.fetchGzipParts(entry, entry.gzipParts, onBytes);
+            ? await this.fetchPlainOrUndefined(entry, onBytes)
+            : await this.fetchGzipPartsOrUndefined(entry, entry.gzipParts, onBytes);
         if (bytes === undefined) this.entries.delete(path);
         else this.entries.set(path, {bytes, size: bytes.length, mtimeMs: entry.mtimeMs});
     }
 
-    /** Undefined when the server has no such file. */
-    private async fetchPlain(entry: PreloadEntry, onBytes: (count: number) => void): Promise<Uint8Array | undefined> {
+    private async fetchPlainOrUndefined(entry: PreloadEntry, onBytes: (count: number) => void): Promise<Uint8Array | undefined> {
         const url = this.urlFor(entry.path);
         const response = await this.fetchFile(url);
-        if (response.status === 404) return undefined;
+        if (response.status === HTTP_NOT_FOUND) return undefined;
         if (!response.ok) throw httpFailure(entry.path, url, response.status);
         if (response.body === undefined || response.body === null) {
             const bytes = new Uint8Array(await response.arrayBuffer());
@@ -265,8 +220,7 @@ export class PreloadedFileSource implements FileSource {
         return await readStream(response.body, entry.size, entry.path, onBytes);
     }
 
-    /** Undefined when the server has no first part; a later part missing is a broken build. */
-    private async fetchGzipParts(entry: PreloadEntry, parts: readonly number[], onBytes: (count: number) => void): Promise<Uint8Array | undefined> {
+    private async fetchGzipPartsOrUndefined(entry: PreloadEntry, parts: readonly number[], onBytes: (count: number) => void): Promise<Uint8Array | undefined> {
         const url = this.urlFor(entry.path);
         const gunzip = createGunzip(entry.path);
         const writer = gunzip.writable.getWriter();
@@ -276,7 +230,7 @@ export class PreloadedFileSource implements FileSource {
             for (let part = 0; part < parts.length; part++) {
                 const partUrl = `${url}.gz.part${part}`;
                 const response = await this.fetchFile(partUrl);
-                if (part === 0 && response.status === 404) {
+                if (part === 0 && response.status === HTTP_NOT_FOUND) {
                     await writer.abort().catch(() => undefined);
                     return undefined;
                 }
@@ -336,7 +290,6 @@ async function forEachChunk(response: FetchedFile, onChunk: (chunk: Uint8Array) 
     }
 }
 
-/** Reads `stream` to its end; with a `size` it fills one array of that size and fails on any other length. */
 async function readStream(stream: ByteStream, size: number | undefined, path: string, onBytes?: (count: number) => void): Promise<Uint8Array> {
     const reader = stream.getReader();
     const target = size === undefined ? undefined : new Uint8Array(size);

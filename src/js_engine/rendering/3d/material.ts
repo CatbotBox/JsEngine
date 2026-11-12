@@ -2,6 +2,9 @@ import {Texture} from "./texture";
 import type {AssetLoadOptions} from "../../platform";
 import {nodePlatform} from "../../platform";
 
+const WHITE = 0xFFFFFF;
+const CHANNEL_MAX = 255;
+
 export class Material {
     public static readonly DEFAULT_NAME = "default";
 
@@ -14,7 +17,7 @@ export class Material {
 
     public constructor(
         public readonly name: string = Material.DEFAULT_NAME,
-        public diffuseColor: number = 0xFFFFFF,
+        public diffuseColor: number = WHITE,
         public diffuseTexturePath?: string,
     ) {
     }
@@ -55,16 +58,16 @@ export function loadMaterialTextures(materials: readonly Material[], cache: Map<
 }
 
 export function packRgb(r: number, g: number, b: number): number {
-    return (clampToByte(r * 255) << 16) | (clampToByte(g * 255) << 8) | clampToByte(b * 255);
+    return (clampToByte(r * CHANNEL_MAX) << 16) | (clampToByte(g * CHANNEL_MAX) << 8) | clampToByte(b * CHANNEL_MAX);
 }
 
 export function multiplyPackedRgb(a: number, b: number): number {
-    const r = (((a >> 16) & 255) * ((b >> 16) & 255)) / 255;
-    const g = (((a >> 8) & 255) * ((b >> 8) & 255)) / 255;
-    const bl = ((a & 255) * (b & 255)) / 255;
+    const r = (((a >> 16) & 255) * ((b >> 16) & 255)) / CHANNEL_MAX;
+    const g = (((a >> 8) & 255) * ((b >> 8) & 255)) / CHANNEL_MAX;
+    const bl = ((a & 255) * (b & 255)) / CHANNEL_MAX;
     return (clampToByte(r) << 16) | (clampToByte(g) << 8) | clampToByte(bl);
 }
 
 function clampToByte(value: number): number {
-    return value <= 0 ? 0 : value >= 255 ? 255 : Math.round(value);
+    return value <= 0 ? 0 : value >= CHANNEL_MAX ? CHANNEL_MAX : Math.round(value);
 }

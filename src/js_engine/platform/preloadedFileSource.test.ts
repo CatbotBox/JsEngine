@@ -16,7 +16,6 @@ function response(status: number, body: string | Uint8Array = ""): FetchedFile {
     };
 }
 
-/** A fetch over a fixed set of URLs; anything else is a 404. Records every URL asked for. */
 function stubFetch(served: Readonly<Record<string, string | Uint8Array>>, requested: string[] = []) {
     return async (url: string): Promise<FetchedFile> => {
         requested.push(url);
@@ -25,7 +24,6 @@ function stubFetch(served: Readonly<Record<string, string | Uint8Array>>, reques
     };
 }
 
-/** Real `Response`s whose bodies arrive in `chunkBytes` pieces, one per task. Records every URL asked for. */
 function streamingFetch(served: Readonly<Record<string, string | Uint8Array>>, chunkBytes: number, requested: string[] = []) {
     return async (url: string): Promise<FetchedFile> => {
         requested.push(url);
@@ -47,7 +45,6 @@ function streamingFetch(served: Readonly<Record<string, string | Uint8Array>>, c
     };
 }
 
-/** `bytes` gzip-compressed and cut at `cuts` (offsets into the compressed bytes), served as `<path>.gz.partN`. */
 function gzipParts(path: string, bytes: Uint8Array, cuts: readonly number[]): {served: Record<string, Uint8Array>, parts: number[]} {
     const compressed = new Uint8Array(gzipSync(bytes, {level: 9}));
     const bounds = [0, ...cuts, compressed.length];
@@ -60,7 +57,6 @@ function gzipParts(path: string, bytes: Uint8Array, cuts: readonly number[]): {s
     return {served, parts};
 }
 
-/** Text that compresses well but not trivially. */
 function sampleText(length: number): Uint8Array {
     const words = ["vertex", "normal", "face", "texture", "mesh", "cache", "light", "camera"];
     let text = "";

@@ -1,46 +1,35 @@
-/**
- * Tier 3 candidates: two places where an older data shape survived the move to
- * the current allocation-free conventions. Both were deliberately left alone
- * until measured, because the repo's own history says shape rewrites usually
- * do not pay (see the ArenaOctree result reverted in commit 46b8ef0).
- *
- *   A. Children._children: Set<Entity>   -> dense array + swap-remove
- *   B. ConsoleImage.recalculatePixels()  -> reuse row arrays instead of
- *                                           allocating one per row per frame
- *
- * Run: bun bench/tier3.bench.ts
- */
 import {Entity} from "../src/js_engine/core/entity";
 import {Ansi} from "../src/js_engine/rendering/console/ansi";
 
-// performance.now(), not Date.now(): the Children workload is sub-microsecond per
-// iteration and Date.now()'s 1ms resolution turned the ratios into noise
-// (6.00x from 0.0001/0.0000, and one Infinity). Iterations are also scaled so
-// every measurement spans >=50ms of real work.
+const WARMUP_ITERS_MAX = 1000;
+const MIN_TOTAL_MS = 50;
+const MIN_RUNS = 3;
+const MAX_RUNS = 50;
+const US_PER_MS = 1000;
+const LABEL_COLUMN_WIDTH = 34;
+
 function bench(label: string, iters: number, fn: () => void): number {
-    for (let i = 0; i < Math.min(iters, 1000); i++) fn(); // warm
+    for (let i = 0; i < Math.min(iters, WARMUP_ITERS_MAX); i++) fn();
     let total = 0;
     let runs = 0;
-    // Repeat until the sample is long enough to be meaningful, then take the best
-    // of the batches (least disturbed by GC / scheduler).
     let best = Infinity;
-    while (total < 50 || runs < 3) {
+    while (total < MIN_TOTAL_MS || runs < MIN_RUNS) {
         const t0 = performance.now();
         for (let i = 0; i < iters; i++) fn();
         const ms = performance.now() - t0;
         total += ms;
         runs++;
         if (ms < best) best = ms;
-        if (runs > 50) break;
+        if (runs > MAX_RUNS) break;
     }
     const per = best / iters;
-    console.log("  " + label.padEnd(34) + (per * 1000).toFixed(4) + " us/iter");
+    console.log("  " + label.padEnd(LABEL_COLUMN_WIDTH) + (per * US_PER_MS).toFixed(4) + " us/iter");
     return per;
 }
 
-// ---------------------------------------------------------------- A. Children
+const MIN_CHILD_ITERS = 20_000;
+const CHILD_VISITS_PER_SAMPLE = 2_000_000;
 
-/** Dense array + swap-remove, mirroring EntityArchetype's own storage idiom. */
 class ArrayChildren {
     private readonly _children: Entity[] = [];
     public get children(): readonly Entity[] { return this._children; }
@@ -64,15 +53,13 @@ function childrenBench() {
 
     for (const n of [2, 4, 8, 32, 128]) {
         const ents: Entity[] = [];
-        // entities are branded integers now; distinct numbers preserve the
-        // identity-comparison workload this bench measures
         for (let i = 0; i < n; i++) ents.push((i + 1) as unknown as Entity);
 
         const asSet = new Set(ents);
         const asArr = new ArrayChildren();
         for (const e of ents) asArr.add(e);
 
-        const iters = Math.max(20_000, 2_000_000 / n | 0);
+        const iters = Math.max(MIN_CHILD_ITERS, CHILD_VISITS_PER_SAMPLE / n | 0);
         console.log(` n=${n}`);
         const s = bench("Set: forEach + has", iters, () => {
             asSet.forEach(c => { if (asSet.has(c)) sink++; });
@@ -93,11 +80,15 @@ function childrenBench() {
     }
 }
 
-// ------------------------------------------------------------ B. ConsoleImage
+const FULLSCREEN_MIN_PIXELS = 5000;
+const FULLSCREEN_ITERS = 300;
+const SPRITE_ITERS = 20000;
+const ANSI_COLOUR_CYCLE = 250;
+const CHAR_CODE_A = 65;
+const ALPHABET_LETTERS = 26;
 
 const CSI_RE = /\x1B\[[0-9;]*m/y;
 
-/** Current: allocates a fresh array per row, per call. */
 function splitAlloc(line: string, transparentChar: string | undefined): (string | undefined)[] {
     const ESC = "\x1b";
     const out: (string | undefined)[] = [];
@@ -117,7 +108,6 @@ function splitAlloc(line: string, transparentChar: string | undefined): (string 
     return out;
 }
 
-/** Candidate: fill a caller-owned row, matching the out-param convention. */
 function splitInto(out: (string | undefined)[], line: string, transparentChar: string | undefined): void {
     const ESC = "\x1b";
     let i = 0, carry = "", n = 0;
@@ -141,8 +131,8 @@ function makeImage(w: number, h: number, ansiEvery: number): string[] {
     for (let y = 0; y < h; y++) {
         let s = "";
         for (let x = 0; x < w; x++) {
-            if (ansiEvery > 0 && x % ansiEvery === 0) s += "\x1b[38;5;" + (x % 250) + "m";
-            s += String.fromCharCode(65 + ((x + y) % 26));
+            if (ansiEvery > 0 && x % ansiEvery === 0) s += "\x1b[38;5;" + (x % ANSI_COLOUR_CYCLE) + "m";
+            s += String.fromCharCode(CHAR_CODE_A + ((x + y) % ALPHABET_LETTERS));
         }
         rows.push(s);
     }
@@ -161,7 +151,7 @@ function consoleImageBench() {
         [240, 64, 8, "240x64 fullscreen, ansi-heavy"],
     ] as [number, number, number, string][]) {
         const img = makeImage(w, h, ansiEvery);
-        const iters = w * h > 5000 ? 300 : 20000;
+        const iters = w * h > FULLSCREEN_MIN_PIXELS ? FULLSCREEN_ITERS : SPRITE_ITERS;
         console.log(" " + label);
 
         const pixelsA: (string | undefined)[][] = [];

@@ -4,37 +4,27 @@ import {Mesh} from "../../src/js_engine/rendering/3d";
 import type {DemoModel} from "./game";
 import {findDemoModels} from "./models";
 
-/** A manifest file: always sized and timestamped from the file on disk. */
 export interface ManifestFile extends PreloadEntry {
     readonly size: number;
     readonly mtimeMs: number;
 }
 
 export interface ManifestModel extends DemoModel {
-    /** Every manifest path loading the model reads or stats. */
     readonly files: readonly string[];
 }
 
-/**
- * Everything a host without a file system needs to run the 3D demo: the models the terminal demo
- * would find, and every file loading them reads, at paths relative to the repository root.
- */
 export interface Demo3dManifest {
     readonly models: readonly ManifestModel[];
     readonly files: readonly ManifestFile[];
 }
 
 export interface Demo3dManifestOptions {
-    /**
-     * A model whose files to fetch add up to more than this is lazy: its files (those no other
-     * model reads) are fetched only when the game first wants it. Default DEFAULT_LAZY_MODEL_BYTES.
-     */
     readonly lazyModelBytes?: number;
 }
 
 export const DEFAULT_LAZY_MODEL_BYTES = 16 * 1024 * 1024;
+const WRITABLE = true;
 
-/** Node files under `root`, addressed by root-relative paths; records which paths are read and which only stat'ed. */
 export class RecordingFileSource implements FileSource {
     public readonly read = new Set<string>();
     public readonly statted = new Set<string>();
@@ -70,17 +60,10 @@ export class RecordingFileSource implements FileSource {
     }
 }
 
-/**
- * Loads every model twice through node's files: once allowed to write, so each `.meshcache` is
- * (re)built if it is missing or stale, then read-only, recording what that load touches. Files it
- * reads are fetched by the browser; an obj it only stat'ed (its mesh cache was valid) is listed
- * stat-only, so the page never downloads it. A file only lazy models read is listed lazy. The
- * loads use the game's options, so the caches hold the same detail levels the game asks for.
- */
 export function buildDemo3dManifest(root: string, options: Demo3dManifestOptions = {}): Demo3dManifest {
     const lazyModelBytes = options.lazyModelBytes ?? DEFAULT_LAZY_MODEL_BYTES;
     const inflate = nodePlatform().inflate;
-    const writable = new RecordingFileSource(root, true);
+    const writable = new RecordingFileSource(root, WRITABLE);
     const stats = new RecordingFileSource(root);
     const recorded = findDemoModels(root).map(found => {
         const model = {name: found.name, path: normalizePath(found.path)};

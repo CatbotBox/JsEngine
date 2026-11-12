@@ -1,20 +1,22 @@
 ﻿import {asFloat32Array, ReadonlyVec3, ReadonlyVec4, Vec, Vec3, Vec4} from "./types/vec";
 
 export namespace Quaternions {
-    // x,y,z,w convention
     export type Quaternion = Vec4;
     export type ReadonlyQuaternion = ReadonlyVec4;
 
     const raw = asFloat32Array;
+    const HALF_TURN_DEGREES = 180;
 
     function deg2rad(a: number) {
-        return a * Math.PI / 180;
+        return a * Math.PI / HALF_TURN_DEGREES;
     }
 
     export type EulerOrder =
         | "XYZ" | "XZY"
         | "YXZ" | "YZX"
-        | "ZXY" | "ZYX"; // default (yaw Z, pitch Y, roll X)
+        | "ZXY" | "ZYX";
+
+    const YAW_PITCH_ROLL: EulerOrder = "ZYX";
 
     export function qMulInto(out: Quaternion, a: ReadonlyQuaternion, b: ReadonlyQuaternion): Quaternion {
         const av = raw(a), bv = raw(b);
@@ -32,7 +34,6 @@ export namespace Quaternions {
         return out;
     }
 
-    /** Allocating convenience. Prefer qMulInto on per-frame paths. */
     export function qMul(a: ReadonlyQuaternion, b: ReadonlyQuaternion): Quaternion {
         return qMulInto(Vec.alloc4(), a, b);
     }
@@ -52,9 +53,8 @@ export namespace Quaternions {
         return qNormalizeInto(Vec.alloc4(), q);
     }
 
-    /** Axis-angle -> quat (axis must be unit length). */
-    export function qFromAxisAngleInto(out: Quaternion, axis: ReadonlyVec3, angle: number): Quaternion {
-        const a = raw(axis);
+    export function qFromAxisAngleInto(out: Quaternion, unitAxis: ReadonlyVec3, angle: number): Quaternion {
+        const a = raw(unitAxis);
         const h = angle * 0.5, s = Math.sin(h), c = Math.cos(h);
         const o = raw(out);
         o[0] = a[0] * s;
@@ -64,12 +64,10 @@ export namespace Quaternions {
         return out;
     }
 
-    export function qFromAxisAngle(axis: ReadonlyVec3, angle: number): Quaternion {
-        return qFromAxisAngleInto(Vec.alloc4(), axis, angle);
+    export function qFromAxisAngle(unitAxis: ReadonlyVec3, angle: number): Quaternion {
+        return qFromAxisAngleInto(Vec.alloc4(), unitAxis, angle);
     }
 
-    // Reused across eulerToQuat calls — the function is not re-entrant, but it is
-    // never called from one of its own arguments, and this keeps it allocation-free.
     const AXIS_X = Vec.alloc3(1, 0, 0);
     const AXIS_Y = Vec.alloc3(0, 1, 0);
     const AXIS_Z = Vec.alloc3(0, 0, 1);
@@ -78,22 +76,10 @@ export namespace Quaternions {
     const scratchQz = Vec.alloc4();
     const scratchAB = Vec.alloc4();
 
-    /**
-     * Euler -> Quaternion, written into `out`.
-     * @param out    destination quaternion
-     * @param euler  rotation angles (radians unless opts.deg)
-     * @param order  rotation order (applied right-to-left), default "ZYX"
-     * @param opts   {deg?: boolean} set deg=true if inputs are degrees
-     *
-     * Conventions:
-     * - Right-handed; positive angles use right-hand rule around +X,+Y,+Z.
-     * - Quaternion layout is [x,y,z,w].
-     * - Order "ZYX" means q = Rz(ez) ⊗ Ry(ey) ⊗ Rx(ex)
-     */
     export function eulerToQuatInto(
         out: Quaternion,
         euler: ReadonlyVec3,
-        order: EulerOrder = "ZYX",
+        order: EulerOrder = YAW_PITCH_ROLL,
         opts?: { deg?: boolean },
     ): Quaternion {
         const e = raw(euler);
@@ -105,7 +91,6 @@ export namespace Quaternions {
         const qy = qFromAxisAngleInto(scratchQy, AXIS_Y, ey);
         const qz = qFromAxisAngleInto(scratchQz, AXIS_Z, ez);
 
-        // compose according to order (right-to-left application)
         switch (order) {
             case "XYZ":
                 qMulInto(out, qMulInto(scratchAB, qx, qy), qz);
@@ -122,7 +107,7 @@ export namespace Quaternions {
             case "ZXY":
                 qMulInto(out, qMulInto(scratchAB, qz, qx), qy);
                 break;
-            case "ZYX": // yaw-pitch-roll (default)
+            case "ZYX":
             default:
                 qMulInto(out, qMulInto(scratchAB, qz, qy), qx);
                 break;
@@ -130,10 +115,9 @@ export namespace Quaternions {
         return qNormalizeInto(out, out);
     }
 
-    /** Allocating convenience. Prefer eulerToQuatInto on per-frame paths. */
     export function eulerToQuat(
         euler: ReadonlyVec3,
-        order: EulerOrder = "ZYX",
+        order: EulerOrder = YAW_PITCH_ROLL,
         opts?: { deg?: boolean },
     ): Quaternion {
         return eulerToQuatInto(Vec.alloc4(), euler, order, opts);

@@ -29,10 +29,10 @@ describe("SpriteImage", () => {
         const image = SpriteImage.fromPattern(["#.", "#"], {"#": 0xFF0000});
         expect(image.sizeX).toBe(2);
         expect(image.sizeY).toBe(2);
-        expect(image.rgba[3]).toBe(255);  // '#'
-        expect(image.rgba[7]).toBe(0);    // '.' not in palette
-        expect(image.rgba[11]).toBe(255); // '#'
-        expect(image.rgba[15]).toBe(0);   // padded past the short row
+        expect(image.rgba[3]).toBe(255);
+        expect(image.rgba[7]).toBe(0);
+        expect(image.rgba[11]).toBe(255);
+        expect(image.rgba[15]).toBe(0);
     });
 
     test("fromFile decodes once per path and returns the cached instance", () => {

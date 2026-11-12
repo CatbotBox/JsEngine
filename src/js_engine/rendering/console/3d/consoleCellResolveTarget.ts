@@ -1,25 +1,18 @@
 import {ScreenBuffer} from "../consoleScreenBuffer";
 import type {RasterTarget, SubsampleLayers} from "../../3d/software";
 
+const PACKED_RGB_MASK = 0xFFFFFF;
+const BLACK = 0x000000;
+
 export interface ConsoleCellResolveConfig {
-    /** ANDed onto resolved colors; dropping low bits lengthens ANSI color runs. */
     colorQuantMask: number;
-    /** Packed 0xRRGGBB that uncovered subsamples blend toward at silhouettes (default black). */
     backgroundColor?: number;
 }
 
-/**
- * Resolves the rasterizer's subsample layers to console cells and
- * depth-composites them into a ScreenBuffer: one sample per cell merges
- * directly, supersampled layers are averaged per cell first, and half-block
- * layers resolve each half separately into split cells.
- */
 export class ConsoleCellResolveTarget implements RasterTarget {
     private screenBuffer!: ScreenBuffer;
     private config!: ConsoleCellResolveConfig;
 
-    // Cell-resolution buffers the supersampled layers are resolved into before
-    // depth-compositing (unused when supersample == 1).
     private resolveDepth = new Float32Array(0);
     private resolveColor = new Int32Array(0);
     private resolveDepthBottom = new Float32Array(0);
@@ -54,21 +47,13 @@ export class ConsoleCellResolveTarget implements RasterTarget {
         }
     }
 
-    /**
-     * Collapse supersampleX × supersampleY subsamples per cell (starting at the
-     * given subsample row within each cell) down to cell resolution: a cell's
-     * color is the average of its subsamples with uncovered ones taking the
-     * background color (so silhouette edges blend toward the terminal
-     * background), its depth the closest covered subsample. Cells with no
-     * covered subsample stay +Infinity so the merge skips them.
-     */
     private resolveCells(layers: SubsampleLayers, outDepth: Float32Array, outColor: Int32Array, firstRow: number): void {
         const {width, height, supersampleX: sx, supersampleY: sy, rowsPerCell, rasterWidth} = layers;
         const ssArea = sx * sy;
         const srcDepth = layers.depth;
         const srcColor = layers.color;
-        const quantMask = this.config.colorQuantMask & 0xFFFFFF;
-        const background = (this.config.backgroundColor ?? 0) & 0xFFFFFF;
+        const quantMask = this.config.colorQuantMask & PACKED_RGB_MASK;
+        const background = (this.config.backgroundColor ?? BLACK) & PACKED_RGB_MASK;
         const bgR = (background >> 16) & 255, bgG = (background >> 8) & 255, bgB = background & 255;
 
         for (let cy = 0; cy < height; cy++) {

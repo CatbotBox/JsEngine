@@ -4,6 +4,12 @@ import {RenderMesh} from "./renderMesh";
 import {RenderBounds} from "../renderBounds";
 import {WorldSpaceRenderBounds} from "../worldSpaceRenderBounds";
 import {RenderingSystemGroup} from "../renderingSystemGroup";
+import {AABB_STRIDE} from "../../datatypes/aabb";
+
+const PRIORITY_BEFORE_WORLD_BOUNDS = -20;
+const TRANSLATION_X = 12;
+const TRANSLATION_Y = 13;
+const TRANSLATION_Z = 14;
 
 export class RenderMeshBoundsSystem extends System {
     private _query = this.createEntityQuery([RenderMesh, RenderBounds, WorldSpaceRenderBounds, LocalToWorld]);
@@ -13,7 +19,7 @@ export class RenderMeshBoundsSystem extends System {
     }
 
     override priority(): number {
-        return -20;
+        return PRIORITY_BEFORE_WORLD_BOUNDS;
     }
 
     protected onCreate() {
@@ -26,12 +32,8 @@ export class RenderMeshBoundsSystem extends System {
             write: {bounds: RenderBounds, worldBounds: WorldSpaceRenderBounds},
         }, {
             filterLastUpdated: this.lastUpdateTime,
-            // Derives each entity's output from its own components, so a removal
-            // leaves nothing to redo — see EntityFilterOptions.structuralFilter.
             structuralFilter: "additions",
             filterBlackList: [RenderBounds, WorldSpaceRenderBounds],
-            // consumeSpans: raw columns for the matrix and both AABBs; the mesh
-            // reference is object-backed, fetched per row from its store.
         }).consumeSpans(({start, end, cols, stores}) => {
             const l2w = cols.localToWorld!;
             const rb = cols.bounds!;
@@ -43,10 +45,8 @@ export class RenderMeshBoundsSystem extends System {
                 if (mesh === undefined) continue;
 
                 const mb = mesh.bounds;
-                const m = i << 4, b = i * 6;
+                const m = i << 4, b = i * AABB_STRIDE;
 
-                // Center/extents of the local AABB, pushed through the 3x3 part of
-                // the matrix (center exactly, extents via absolute values).
                 const cx = (mb[0] + mb[3]) / 2, cy = (mb[1] + mb[4]) / 2, cz = (mb[2] + mb[5]) / 2;
                 const ex = (mb[3] - mb[0]) / 2, ey = (mb[4] - mb[1]) / 2, ez = (mb[5] - mb[2]) / 2;
 
@@ -58,7 +58,6 @@ export class RenderMeshBoundsSystem extends System {
                 const wey = Math.abs(l2w[m + 1]) * ex + Math.abs(l2w[m + 5]) * ey + Math.abs(l2w[m + 9]) * ez;
                 const wez = Math.abs(l2w[m + 2]) * ex + Math.abs(l2w[m + 6]) * ey + Math.abs(l2w[m + 10]) * ez;
 
-                // AABB layout: [xMin, yMin, zMin, xMax, yMax, zMax]
                 rb[b] = wcx - wex;
                 rb[b + 1] = wcy - wey;
                 rb[b + 2] = wcz - wez;
@@ -66,12 +65,12 @@ export class RenderMeshBoundsSystem extends System {
                 rb[b + 4] = wcy + wey;
                 rb[b + 5] = wcz + wez;
 
-                wb[b] = l2w[m + 12] + wcx - wex;
-                wb[b + 1] = l2w[m + 13] + wcy - wey;
-                wb[b + 2] = l2w[m + 14] + wcz - wez;
-                wb[b + 3] = l2w[m + 12] + wcx + wex;
-                wb[b + 4] = l2w[m + 13] + wcy + wey;
-                wb[b + 5] = l2w[m + 14] + wcz + wez;
+                wb[b] = l2w[m + TRANSLATION_X] + wcx - wex;
+                wb[b + 1] = l2w[m + TRANSLATION_Y] + wcy - wey;
+                wb[b + 2] = l2w[m + TRANSLATION_Z] + wcz - wez;
+                wb[b + 3] = l2w[m + TRANSLATION_X] + wcx + wex;
+                wb[b + 4] = l2w[m + TRANSLATION_Y] + wcy + wey;
+                wb[b + 5] = l2w[m + TRANSLATION_Z] + wcz + wez;
             }
         });
     }

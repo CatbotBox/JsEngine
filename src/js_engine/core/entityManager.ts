@@ -10,6 +10,8 @@ import {EntityWriteOptions} from "./entityWriteOptions";
 import {allocEntityHandle, freeEntityHandle, getOwner, requireOwner, setOwner} from "./ownership";
 import {EntityReadOptions} from "./entityReadOptions";
 
+const PLACE_ENABLED = true;
+
 export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     constructor(
@@ -21,23 +23,16 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         return this._world;
     }
 
-    // creation / destruction
-
     private static emptyMap: Map<AnyCT, Component> = new Map();
     private static noTypes: readonly AnyCT[] = [];
 
-    /**
-     * Create an entity directly in the archetype of `components`, then run their
-     * setup() in array order. A type listed twice keeps its first instance; the
-     * later ones are dropped without setup(), as a duplicate addComponent is.
-     */
     public createEntity(name?: string, components?: readonly Component[]): Entity {
         const entity = allocEntityHandle(name);
         if (components === undefined || components.length === 0) return this.attachEntity(entity);
 
         const tokens = components.map(EntityManager.tokenOf);
         const arch = this._world.archetypes.getOrCreate(tokens);
-        arch.addEntityFromList(entity, tokens, components, true, this._world.time);
+        arch.addEntityFromList(entity, tokens, components, PLACE_ENABLED, this._world.time);
         setOwner(this._world, entity, arch);
         for (let i = 0; i < components.length; i++) {
             if (tokens.indexOf(tokens[i]) === i) components[i].setup(entity, this);
@@ -45,10 +40,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         return entity;
     }
 
-    /**
-     * Place an allocated handle holding exactly `components`, without running
-     * setup(): the command buffer ran those when it recorded them.
-     */
     public attachEntity(entity: Entity, components: Map<AnyCT, Component> = EntityManager.emptyMap, enabled: boolean = true): Entity {
         const arch = this._world.archetypes.getOrCreate(components.size === 0 ? EntityManager.noTypes : [...components.keys()]);
         arch.addEntity(entity, components, enabled, this._world.time);
@@ -56,11 +47,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         return entity;
     }
 
-    /**
-     * Destroy an entity: remove it from its archetype and retire the handle.
-     * The generation bump makes every outstanding copy of this handle stale, so
-     * a later create that recycles the slot cannot be aliased by it.
-     */
     public destroyEntity(entity: Entity): void {
         const arch = getOwner(this._world, entity);
         if (arch) {
@@ -71,9 +57,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     }
 
     public destroyQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>): void {
-        // Free handles BEFORE removeAll empties the archetypes — the old order
-        // iterated the query after clearing it, which visited nothing and left
-        // every destroyed entity still registered as owned.
         for (const archetype of entityQuery.archetypes) {
             const n = archetype.entityCountUnfiltered;
             for (let i = 0; i < n; i++) {
@@ -86,20 +69,15 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     }
 
     public addComponent<T extends Component>(entity: Entity, component: T): Readonly<T> {
-        this.addComponentInternal(entity, component);
+        this.addComponentUnlessPresent(entity, component);
         return component;
     }
 
     public addTrackedComponent<T extends Component>(entity: Entity, component: T): T {
-        this.addComponentInternal(entity, component);
+        this.addComponentUnlessPresent(entity, component);
         return persistentTrackComponent(entity, component);
     }
 
-    /**
-     * Add every component whose type the entity lacks in one move, then run their
-     * setup() in array order. Types already present, or listed twice, keep the
-     * first instance, as with addComponent.
-     */
     public addComponents(entity: Entity, components: readonly Component[]): void {
         const currentArch = requireOwner(this._world, entity);
         const tokens = components.map(EntityManager.tokenOf);
@@ -109,7 +87,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         }
         if (added.length === 0) return;
         if (added.length === 1) {
-            this.addComponentInternal(entity, components[added[0]]);
+            this.addComponentUnlessPresent(entity, components[added[0]]);
             return;
         }
 
@@ -135,19 +113,10 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         }
     }
 
-    private addComponentInternal<T extends Component>(entity: Entity, component: T): void {
+    private addComponentUnlessPresent<T extends Component>(entity: Entity, component: T): void {
         const token = ComponentType.of<T>(component.constructor as ComponentCtor<T>);
         const currentArch = requireOwner(this.world, entity);
         if (currentArch.getColumn(token) !== undefined) {
-            // Keep the existing one and discard the new instance — use setComponent()
-            // to replace.
-            //
-            // Deliberately silent. This is normal operation, not a mistake:
-            // Component.setup() routinely adds companions, so duplicates are
-            // expected. Parent.setup() adds Children *to the parent*, so every
-            // child after the first lands here; RenderMesh and ConsoleImage both
-            // add RenderBounds. Logging (which fans out to fileLogger, i.e. disk)
-            // on each was pure noise, and throwing would break the engine outright.
             return;
         }
         const edge = this._world.archetypes.withAdded(currentArch, token);
@@ -171,10 +140,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         component.setup(entity, this);
     }
 
-    /**
-     * Remove a component from an entity (no error if it didn't exist).
-     * Moves to the correct archetype in one step.
-     */
     public removeComponent(entity: Entity, key: TokenOrCtor): void {
         const token = this.toToken(key);
         const currentArch = requireOwner(this._world, entity);
@@ -183,8 +148,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         currentArch.moveRowTo(entity, edge.target, edge, undefined, this._world.time);
         setOwner(this._world, entity, edge.target);
     }
-
-    // simple queries (immediate)
 
     public hasComponent<T extends Component>(entity: Entity, key: TokenOrCtor): boolean {
         return requireOwner(this._world, entity).getColumn(this.toToken(key)) !== undefined;
@@ -215,8 +178,6 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         return arch !== undefined;
 
     }
-
-    // internals
 
     private static tokenOf(component: Component): AnyCT {
         return ComponentType.of(component.constructor as ComponentCtor<Component>);

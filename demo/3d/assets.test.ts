@@ -5,8 +5,10 @@ import {describe, expect, test} from "../../src/js_engine/testing/harness";
 import {buildDemo3dManifest} from "./assets";
 import type {Demo3dManifest, ManifestModel} from "./assets";
 
-/** A strip of `triangles` triangles using material `m` from shared.mtl. */
-function stripObj(triangles: number): string {
+const SMALL_STRIP_TRIANGLES = 1;
+const BIG_STRIP_TRIANGLES = 400;
+
+function triangleStripObj(triangles: number): string {
     const lines = ["mtllib shared.mtl", "usemtl m"];
     for (let i = 0; i < triangles + 2; i++) lines.push(`v ${i} ${i % 2} ${i * 0.5}`);
     for (let i = 1; i <= triangles; i++) lines.push(`f ${i} ${i + 1} ${i + 2}`);
@@ -24,8 +26,8 @@ describe("buildDemo3dManifest", () => {
         try {
             mkdirSync(join(root, "demo", "3d"), {recursive: true});
             writeFileSync(join(root, "demo", "3d", "shared.mtl"), "newmtl m\nKd 1 1 1\n");
-            writeFileSync(join(root, "demo", "3d", "small.obj"), stripObj(1));
-            writeFileSync(join(root, "demo", "3d", "big.obj"), stripObj(400));
+            writeFileSync(join(root, "demo", "3d", "small.obj"), triangleStripObj(SMALL_STRIP_TRIANGLES));
+            writeFileSync(join(root, "demo", "3d", "big.obj"), triangleStripObj(BIG_STRIP_TRIANGLES));
 
             const eager = buildDemo3dManifest(root, {lazyModelBytes: Number.POSITIVE_INFINITY});
             expect(eager.files.some(file => file.lazy === true)).toBe(false);

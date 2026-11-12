@@ -390,7 +390,6 @@ describe("loaders on a memory file source", () => {
         expect(mesh.materials[0].diffuseTexture!.width).toBe(2);
         expect(files.exists(meshCachePathFor("models/tri.obj"))).toBe(true);
 
-        // Same size and modification time: the cache is trusted and the obj text is never parsed.
         const objStat = files.stat("models/tri.obj");
         files.set("models/tri.obj", "#".repeat(objStat.size), objStat.mtimeMs);
         const fromCache = Mesh.fromFile("models/tri.obj", {files});

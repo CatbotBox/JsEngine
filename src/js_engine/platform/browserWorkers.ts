@@ -1,7 +1,6 @@
 import type {WorkerFactory, WorkerHandle} from "./platform";
 import {WORKER_ENTRY_POINT} from "./platform";
 
-/** What a Web Worker offers; a DOM `Worker` satisfies it. Listed rather than taken from the DOM typings so the src build needs no `dom` lib. */
 export interface BrowserWorker {
     postMessage(message: unknown, transfer?: readonly ArrayBuffer[]): void;
     addEventListener(type: "message", listener: (event: {readonly data: unknown}) => void): void;
@@ -9,7 +8,6 @@ export interface BrowserWorker {
     terminate(): void;
 }
 
-/** The globals a page or worker offers for spawning workers. */
 export interface BrowserWorkerHost {
     readonly Worker?: new (url: string) => BrowserWorker;
     readonly Blob?: new (parts: readonly string[], options: {readonly type: string}) => unknown;
@@ -18,11 +16,6 @@ export interface BrowserWorkerHost {
     readonly SharedArrayBuffer?: unknown;
 }
 
-/**
- * Appended to every worker script. The first message is the spawn data: it must be, because a
- * raster worker never returns from `workerMain` (it blocks in Atomics.wait), so nothing after it
- * could be received. Later messages go to the port's listeners.
- */
 const BROWSER_WORKER_BOOTSTRAP = `
 self.onmessage = function (first) {
     self.onmessage = null;
@@ -38,11 +31,6 @@ self.onmessage = function (first) {
 };
 `;
 
-/**
- * Web Workers from a blob URL of the script plus the bootstrap. One URL per distinct script,
- * reused by every worker spawned from it and never revoked (a pool respawns the same script).
- * SharedArrayBuffers in the spawn data are shared, which needs a cross-origin isolated page.
- */
 export function browserWorkerFactory(host: BrowserWorkerHost = globalThis as unknown as BrowserWorkerHost): WorkerFactory {
     const {Worker, Blob, URL} = host;
     if (Worker === undefined || Blob === undefined || URL === undefined) {
@@ -80,11 +68,6 @@ export function browserWorkerFactory(host: BrowserWorkerHost = globalThis as unk
     };
 }
 
-/**
- * The browser factory where shared memory works: a cross-origin isolated context with
- * SharedArrayBuffer and nested workers. Anywhere else undefined, and the rasterizer stays
- * single-threaded.
- */
 export function browserWorkersIfIsolated(host: BrowserWorkerHost = globalThis as unknown as BrowserWorkerHost): WorkerFactory | undefined {
     const shared = host.crossOriginIsolated === true && typeof host.SharedArrayBuffer === "function";
     if (!shared || typeof host.Worker !== "function") return undefined;

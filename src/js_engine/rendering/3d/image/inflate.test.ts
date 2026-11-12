@@ -1,7 +1,9 @@
 import {describe, expect, test} from "../../../testing/harness";
 import {inflate, inflateRaw} from "./inflate";
+import type * as Zlib from "zlib";
+import type {ZlibOptions} from "zlib";
 
-const zlib = require("zlib") as typeof import("zlib");
+const zlib = require("zlib") as typeof Zlib;
 
 function expectBytesEqual(actual: Uint8Array, expected: Uint8Array): void {
     expect(actual.length).toBe(expected.length);
@@ -88,7 +90,7 @@ const INPUTS: [string, Uint8Array][] = [
     ["over 1 MB", largeMixedBytes()],
 ];
 
-const OPTIONS: [string, import("zlib").ZlibOptions][] = [
+const OPTIONS: [string, ZlibOptions][] = [
     ["level 0 (stored)", {level: 0}],
     ["level 1", {level: 1}],
     ["level 6", {level: 6}],

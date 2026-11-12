@@ -9,6 +9,13 @@ import {ConsoleRenderSettings} from "./consoleRenderSettings";
 import {RenderingSystemGroup} from "../renderingSystemGroup";
 import {ScreenSize} from "../screenSize";
 
+const PRIORITY_AFTER_CAMERA_SIZING = 100;
+const CURSOR_HOME = "\x1b[H";
+const ERASE_BELOW_CURSOR = "\x1b[J";
+const AUTOWRAP_OFF = "\x1b[?7l";
+const AUTOWRAP_ON = "\x1b[?7h";
+const CRLF = "\r\n";
+
 export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
@@ -23,11 +30,11 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
     }
 
     override priority(): number {
-        return 100; // after camera sizing
+        return PRIORITY_AFTER_CAMERA_SIZING;
     }
 
     protected onCreate() {
-        this.requireAllForUpdate(this._cameraQuery) // always require a camera
+        this.requireAllForUpdate(this._cameraQuery)
         this.world.ensureSystemExists(ConsoleCameraSizingSystem);
     }
 
@@ -36,8 +43,6 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
     }
 
     onUpdate() {
-        // The host is still presenting earlier frames: drawing this one would only queue it, and
-        // a row diff cannot be dropped later, so skip it whole and repaint everything once it can.
         if (this.world.platform.output.backlogged?.() === true) {
             this._forceRedraw = true;
             return;
@@ -56,7 +61,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
         } catch (error) {
             const output = this.world.platform.output;
             const camCount = this._cameraQuery.entityCount();
-            output.write("\x1b[H");   // cursor to 1,1 (home)
+            output.write(CURSOR_HOME);
             if (camCount == 0) {
                 output.write("ERROR: NO CAMERA ENTITIES FOUND");
             } else if (camCount > 1) {
@@ -66,16 +71,12 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
                 output.write(String(error));
             }
 
-            output.write("\x1b[J");   // clear to end of screen (handles shorter frames)
-            this._forceRedraw = true;         // error text corrupted the tracked screen state
+            output.write(ERASE_BELOW_CURSOR);
+            this._forceRedraw = true;
         }
 
         super.onUpdate()
 
-        // Damage-tracked output: rows are self-contained ANSI strings, so only
-        // the rows that actually changed since the previous frame are written,
-        // each addressed with a cursor-move. This collapses a static scene to
-        // zero bytes and a HUD tick to a couple of rows instead of ~200KB.
         const rows = screenBuffer.flushRows();
         const prevRows = this._prevRows;
         const fullRedraw = this._forceRedraw
@@ -84,10 +85,7 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
 
         let out = "";
         if (fullRedraw) {
-            // CR LF, not LF: only a tty's line discipline turns a bare LF into a carriage
-            // return too, and a terminal emulator fed directly (xterm.js) has none. The
-            // trailing CR LF leaves the frame before erasing, so the erase only ever clears below it.
-            out = "\x1b[H" + rows.join("\r\n") + "\r\n\x1b[J";
+            out = CURSOR_HOME + rows.join(CRLF) + CRLF + ERASE_BELOW_CURSOR;
         } else {
             for (let y = 0; y < rows.length; y++) {
                 if (rows[y] !== prevRows[y]) {
@@ -103,7 +101,6 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
         this._prevRows = rows;
         this._prevWidth = screenBuffer.cellWidth;
         this._forceRedraw = false;
-        // swap buffers
         dualScreenBuffer.swapBuffer();
 
     }
@@ -112,19 +109,19 @@ export class ConsoleRenderPassSystemGroup extends SystemGroup {
         super.onEnable();
         consoleOverride.removeConsoleEventListener(display)
         const output = this.world.platform.output;
-        output.write(Ansi.modes.altScreenEnter); // alt buffer + save cursor
+        output.write(Ansi.modes.altScreenEnter);
         output.write(Ansi.cursor.hide);
-        output.write("\x1b[?7l");    // disable autowrap
-        this._forceRedraw = true;            // fresh alt screen, nothing on it yet
+        output.write(AUTOWRAP_OFF);
+        this._forceRedraw = true;
         this.update();
     }
 
     override onDisable(): void {
         consoleOverride.addConsoleEventListener(display)
         const output = this.world.platform.output;
-        output.write("\x1b[?7h");    // re-enable autowrap
+        output.write(AUTOWRAP_ON);
         output.write(Ansi.cursor.show);
-        output.write(Ansi.modes.altScreenExit); // back to main + restore cursor
+        output.write(Ansi.modes.altScreenExit);
         super.onDisable();
     }
 }

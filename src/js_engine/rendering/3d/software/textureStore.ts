@@ -1,19 +1,15 @@
 import {Texture} from "../texture";
 
-/**
- * Texel storage the raster kernel reads: one flat Int32Array holding every mip
- * level of every uploaded texture, plus a descriptor table the kernel indexes by
- * texture id. Both live in SharedArrayBuffers when a worker pool is in use, so
- * the layout constants below are mirrored as literals inside rasterizeTriangleBand.
- *
- * Descriptor layout per texture (DESCRIPTOR_STRIDE ints):
- *   [0] levelCount
- *   [1 + level * 3] texel offset, [2 + level * 3] width, [3 + level * 3] height
- */
+const LEVELS_OFFSET = 1;
+const LEVEL_TEXEL_OFFSET_SLOT = 0;
+const LEVEL_WIDTH_SLOT = 1;
+const LEVEL_HEIGHT_SLOT = 2;
+const GROWABLE = true;
+
 export class TextureStore {
     public static readonly MAX_LEVELS = 16;
     public static readonly LEVEL_STRIDE = 3;
-    public static readonly DESCRIPTOR_STRIDE = 1 + TextureStore.MAX_LEVELS * TextureStore.LEVEL_STRIDE;
+    public static readonly DESCRIPTOR_STRIDE = LEVELS_OFFSET + TextureStore.MAX_LEVELS * TextureStore.LEVEL_STRIDE;
     public static readonly NO_TEXTURE = -1;
 
     private readonly idByTexture = new WeakMap<Texture, number>();
@@ -28,7 +24,7 @@ export class TextureStore {
     }
 
     public static growable(): TextureStore {
-        return new TextureStore(new Int32Array(0), new Int32Array(0), true);
+        return new TextureStore(new Int32Array(0), new Int32Array(0), GROWABLE);
     }
 
     public get textureCapacity(): number {
@@ -57,7 +53,8 @@ export class TextureStore {
 
     public baseTexelAreaOf(id: number): number {
         const descriptor = id * TextureStore.DESCRIPTOR_STRIDE;
-        return this.table[descriptor + 2] * this.table[descriptor + 3];
+        const firstLevel = descriptor + LEVELS_OFFSET;
+        return this.table[firstLevel + LEVEL_WIDTH_SLOT] * this.table[firstLevel + LEVEL_HEIGHT_SLOT];
     }
 
     private upload(texture: Texture): number {
@@ -73,10 +70,10 @@ export class TextureStore {
         let offset = this.usedTexels;
         for (let i = 0; i < levels.length; i++) {
             const level = levels[i];
-            const entry = descriptor + 1 + i * TextureStore.LEVEL_STRIDE;
-            this.table[entry] = offset;
-            this.table[entry + 1] = level.width;
-            this.table[entry + 2] = level.height;
+            const entry = descriptor + LEVELS_OFFSET + i * TextureStore.LEVEL_STRIDE;
+            this.table[entry + LEVEL_TEXEL_OFFSET_SLOT] = offset;
+            this.table[entry + LEVEL_WIDTH_SLOT] = level.width;
+            this.table[entry + LEVEL_HEIGHT_SLOT] = level.height;
             this.texels.set(level.texels, offset);
             offset += level.width * level.height;
         }

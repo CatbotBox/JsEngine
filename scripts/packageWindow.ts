@@ -1,15 +1,3 @@
-/**
- * Packages a demo as a standalone desktop app for this machine's platform with @electron/packager:
- * builds web/, stages main.js + launch.json + the bundle (without source maps) in
- * window/dist/app, and writes `release/<name>-<platform>-<arch>/`, whose executable needs no
- * arguments. The app is an asar archive; window/main.ts reads it through Electron's fs. The
- * executable's fuses are flipped so it cannot be run as plain node (ELECTRON_RUN_AS_NODE, which
- * some editors' terminals set, would otherwise turn it into a node REPL) or given node options,
- * and loads only the asar.
- *
- * Run: bun scripts/packageWindow.ts [2d|3d] [--no-build]   (3d by default)
- * Check the result headless with: <executable> --smoke
- */
 import {FuseV1Options, FuseVersion, flipFuses} from "@electron/fuses";
 import {packager} from "@electron/packager";
 import {cpSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "fs";

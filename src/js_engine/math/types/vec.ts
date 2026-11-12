@@ -1,21 +1,8 @@
-﻿/**
- * Fixed-length numeric vectors. The runtime representation is Float32Array; the
- * types below are compile-time brands only, so none of this costs anything.
- *
- * MUTABILITY LIVES IN THE TYPE. `Readonly<SomeComponent>` alone cannot protect a
- * vector field, because Vec is opaque: `Vec.setX(row.pos.xyz, 5)` would still
- * mutate a "read-only" component. So there are two brands — every reader accepts
- * ReadonlyVec, every mutator demands Vec — and Vec widens to ReadonlyVec but not
- * the reverse. A read-only query row therefore rejects mutation at compile time.
- */
-
-declare const VecTag: unique symbol;
+﻿declare const VecTag: unique symbol;
 declare const VecMut: unique symbol;
 
-/** A vector you may read but not write. */
 export type ReadonlyVec<N extends number> = { readonly [VecTag]: N };
 
-/** A vector you may read and write. Assignable to ReadonlyVec<N>; not vice versa. */
 export type Vec<N extends number> = ReadonlyVec<N> & { readonly [VecMut]: true };
 
 export type Vec2 = Vec<2>;
@@ -27,27 +14,18 @@ export type ReadonlyVec3 = ReadonlyVec<3>;
 export type ReadonlyVec4 = ReadonlyVec<4>;
 export type ReadonlyVec16 = ReadonlyVec<16>;
 
-/** Boolean companion for the comparison helpers. */
 export type truthVec<N> = boolean[] & { length: N };
 
-/**
- * Escape hatch to the backing store, for serialisation, GPU upload, and the
- * index-heavy math in this folder. It erases readonly-ness — only reach for it
- * where you already know the vector is yours to write.
- */
 export function asFloat32Array<N extends number>(v: ReadonlyVec<N>): Float32Array {
     return v as unknown as Float32Array;
 }
 
-/** Adopt an existing Float32Array as a Vec without copying. The caller owns it. */
 export function fromFloat32Array<N extends number>(raw: Float32Array): Vec<N> {
     return raw as unknown as Vec<N>;
 }
 
 const castAsFloat32Array = <N extends number>(v: ReadonlyVec<N>): Float32Array => v as unknown as Float32Array;
 
-// Per-size namespaces, so a component writes `Vec3.alloc()` instead of allocating
-// a Float32Array and casting it. Type-alias + namespace merging, same as AABB.
 export namespace Vec2 {
     export function alloc(x = 0, y = 0): Vec2 {
         const v = new Float32Array(2);
@@ -86,8 +64,6 @@ export namespace Vec16 {
 
 export namespace Vec {
 
-    // create
-
     export function alloc<N extends number>(size: N): Vec<N> {
         return new Float32Array(size) as unknown as Vec<N>;
     }
@@ -103,14 +79,11 @@ export namespace Vec {
         return v as unknown as Vec<N>;
     }
 
-    /** Build from a plain array — for literals and config, not hot paths. */
     export function of<N extends number>(values: ArrayLike<number>): Vec<N> {
         const v = new Float32Array(values.length);
         v.set(values as never);
         return v as unknown as Vec<N>;
     }
-
-    // read
 
     export function size<N extends number>(v: ReadonlyVec<N>): number {
         return castAsFloat32Array(v).length;
@@ -136,12 +109,9 @@ export namespace Vec {
         return castAsFloat32Array(v)[3];
     }
 
-    /** Spread into a plain array. Debugging and serialisation only — allocates. */
     export function toArray<N extends number>(v: ReadonlyVec<N>): number[] {
         return Array.from(castAsFloat32Array(v));
     }
-
-    // write
 
     export function set<N extends number>(v: Vec<N>, index: number, value: number): void {
         castAsFloat32Array(v)[index] = value;
@@ -171,7 +141,6 @@ export namespace Vec {
         return v;
     }
 
-    /** Copy `src` into `out`. Accepts a plain array so callers can seed from literals. */
     export function copy<N extends number>(out: Vec<N>, src: ReadonlyVec<N> | ArrayLike<number>): Vec<N> {
         const s = src as unknown;
         castAsFloat32Array(out).set(s instanceof Float32Array ? s : (s as ArrayLike<number>) as never);
@@ -182,9 +151,6 @@ export namespace Vec {
         castAsFloat32Array(out).fill(value);
         return out;
     }
-
-    // arithmetic
-    // All write into `out` and return it. `out` may alias an input.
 
     export function addInto<N extends number>(out: Vec<N>, a: ReadonlyVec<N>, b: ReadonlyVec<N>): Vec<N> {
         const o = castAsFloat32Array(out), x = castAsFloat32Array(a), y = castAsFloat32Array(b);
@@ -228,8 +194,6 @@ export namespace Vec {
         return out;
     }
 
-    // reduce
-
     export function dot<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): number {
         const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
         let sum = 0;
@@ -256,13 +220,11 @@ export namespace Vec {
         const cy = x[2] * y[0] - x[0] * y[2];
         const cz = x[0] * y[1] - x[1] * y[0];
         const o = castAsFloat32Array(out);
-        o[0] = cx;  // via locals, so out may alias a or b
+        o[0] = cx;
         o[1] = cy;
         o[2] = cz;
         return out;
     }
-
-    // comparison
 
     export function equals<N extends number>(a: ReadonlyVec<N>, b: ReadonlyVec<N>): boolean {
         if (a === b) return true;

@@ -1,11 +1,3 @@
-/**
- * Opens a demo in a native window: builds web/ (scripts/buildWeb.ts), bundles the Electron main
- * process (window/main.ts) and starts Electron on the bundle.
- *
- * Run: bun scripts/window.ts [2d|3d] [--no-build] [--smoke [--screenshot=<file.png>]]
- *      2d by default; --no-build reuses web/dist; --smoke loads the page hidden, checks it and
- *      exits (see window/main.ts).
- */
 import {buildWeb, bundleMainProcess, electronEnvironment, exitOnFailure, pageFromArguments, WEB_DIST} from "./windowBuild";
 
 async function main(): Promise<void> {

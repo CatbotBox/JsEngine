@@ -3,12 +3,9 @@ import {asFloat32Array, fromFloat32Array, Vec, Vec3} from "../math/types/vec";
 import type {F32Backed} from "../core/componentType";
 
 export class LocalPosition extends Component implements F32Backed {
-    /** SoA column width: this component's floats live in its archetype's column. */
     static readonly f32Width = 3;
 
     private _values: Vec3 = Vec3.alloc();
-
-    // [x, y, z]
 
     constructor(x: number = 0, y: number = 0, z: number = 0) {
         super();
@@ -49,18 +46,16 @@ export class LocalPosition extends Component implements F32Backed {
         Vec.copy(this._values, value);
     }
 
-    // F32Backed (store-driven; see core/componentType.ts)
-
     writeF32(dst: Float32Array, offset: number): void {
         dst.set(asFloat32Array(this._values), offset);
     }
 
     bindF32(src: Float32Array, offset: number): void {
-        this._values = fromFloat32Array<3>(src.subarray(offset, offset + 3));
+        this._values = fromFloat32Array<3>(src.subarray(offset, offset + LocalPosition.f32Width));
     }
 
     detachF32(): void {
-        const own = new Float32Array(3);
+        const own = new Float32Array(LocalPosition.f32Width);
         own.set(asFloat32Array(this._values));
         this._values = fromFloat32Array<3>(own);
     }

@@ -1,6 +1,8 @@
 import {Material, packRgb} from "./material";
 import {isAbsolutePath, joinPath} from "../../platform";
 
+const MTL_COMMENT = '#';
+
 export type MaterialLibrary = Map<string, Material>;
 
 export function parseMtl(text: string, baseDirectory: string = ""): MaterialLibrary {
@@ -9,7 +11,7 @@ export function parseMtl(text: string, baseDirectory: string = ""): MaterialLibr
 
     for (const rawLine of text.split(/\r?\n/)) {
         const line = rawLine.trim();
-        if (line.length === 0 || line[0] === '#') continue;
+        if (line.length === 0 || line[0] === MTL_COMMENT) continue;
         const separator = line.search(/\s/);
         const keyword = separator < 0 ? line : line.substring(0, separator);
         const argument = separator < 0 ? "" : line.substring(separator + 1).trim();

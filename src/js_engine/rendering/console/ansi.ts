@@ -20,7 +20,6 @@
             magenta: "\x1b[35m",
             cyan: "\x1b[36m",
             white: "\x1b[37m",
-            // bright
             brightBlack: "\x1b[90m",
             brightRed: "\x1b[91m",
             brightGreen: "\x1b[92m",
@@ -39,7 +38,6 @@
             magenta: "\x1b[45m",
             cyan: "\x1b[46m",
             white: "\x1b[47m",
-            // bright
             brightBlack: "\x1b[100m",
             brightRed: "\x1b[101m",
             brightGreen: "\x1b[102m",
@@ -51,11 +49,9 @@
         },
     },
 
-    // 256-color (xterm)
     fg256: (n: number) => `\x1b[38;5;${n}m`,
     bg256: (n: number) => `\x1b[48;5;${n}m`,
 
-    // Truecolor (24-bit RGB)
     fgRGB: (r: number, g: number, b: number) => `\x1b[38;2;${r};${g};${b}m`,
     bgRGB: (r: number, g: number, b: number) => `\x1b[48;2;${r};${g};${b}m`,
 
@@ -88,7 +84,6 @@
 
     strip(str: string): string {
         return str.replace(
-            // matches CSI sequences like \x1B[31m, \x1B[0m, etc.
             /\x1B\[[0-9;]*m/g,
             ''
         );

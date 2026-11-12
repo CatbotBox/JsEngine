@@ -1,26 +1,12 @@
-/**
- * Runtime-agnostic test harness.
- *
- * The suites in this repo were written against `bun:test`, which node cannot
- * resolve. Importing from here instead keeps a single source of truth for both
- * runtimes:
- *
- *   bun test                                     -> delegates to `bun:test`
- *   node --test -r ts-node/register/transpile-only  -> `node:test` + the small
- *                                                      jest-style `expect`
- *                                                      implemented below
- *
- * Only the matchers the suites actually use are implemented. Adding one is
- * cheap — write it here rather than reaching for `bun:test` directly, or the
- * node path silently loses coverage.
- */
+import type * as NodeTestModule from "node:test";
+import type * as StrictAssertModule from "node:assert/strict";
 
 export type TestBody = () => void | Promise<void>;
 
+const DEFAULT_CLOSE_TO_DIGITS = 2;
+
 export interface Matchers<T> {
-    /** Object.is identity, like jest/bun `toBe`. */
     toBe(expected: unknown): void;
-    /** Structural (deep) equality. */
     toEqual(expected: unknown): void;
     toBeCloseTo(expected: number, digits?: number): void;
     toBeGreaterThan(expected: number): void;
@@ -28,7 +14,6 @@ export interface Matchers<T> {
     toBeDefined(): void;
     toBeUndefined(): void;
     toBeInstanceOf(ctor: abstract new (...args: never[]) => unknown): void;
-    /** Only meaningful when the value under test is a function. */
     toThrow(expected?: string | RegExp | (abstract new (...args: never[]) => unknown)): void;
     readonly not: Matchers<T>;
 }
@@ -47,10 +32,8 @@ export interface Harness {
 const isBun = typeof (globalThis as {Bun?: unknown}).Bun !== "undefined";
 
 function nodeHarness(): Harness {
-    // Explicit annotations (rather than `as`) because `assert.fail` is a
-    // never-returning call target — TS2775 rejects it off an inferred binding.
-    const nodeTest: typeof import("node:test") = require("node:test");
-    const assert: typeof import("node:assert/strict") = require("node:assert/strict");
+    const nodeTest: typeof NodeTestModule = require("node:test");
+    const assert: typeof StrictAssertModule = require("node:assert/strict");
 
     const deepEqual = (a: unknown, b: unknown): boolean => {
         try {
@@ -91,7 +74,7 @@ function nodeHarness(): Harness {
             this.check(deepEqual(this.actual, expected), `to equal ${show(expected)}`);
         }
 
-        public toBeCloseTo(expected: number, digits: number = 2): void {
+        public toBeCloseTo(expected: number, digits: number = DEFAULT_CLOSE_TO_DIGITS): void {
             const diff = Math.abs((this.actual as unknown as number) - expected);
             this.check(diff < Math.pow(10, -digits) / 2, `to be close to ${expected} (${digits} digits)`);
         }
@@ -127,7 +110,7 @@ function nodeHarness(): Harness {
             }
 
             if (!didThrow) {
-                this.check(false, "to throw");
+                this.check(didThrow, "to throw");
                 return;
             }
 
@@ -137,8 +120,6 @@ function nodeHarness(): Harness {
             else if (expected instanceof RegExp) matched = expected.test(message);
             else if (typeof expected === "function") matched = thrown instanceof (expected as Function);
 
-            // `.not.toThrow(matcher)` means "did not throw a matching error", so the
-            // negation applies to the match, not to the fact that something threw.
             this.check(matched, `to throw ${expected === undefined ? "" : show(String(expected))}`.trim());
         }
     }

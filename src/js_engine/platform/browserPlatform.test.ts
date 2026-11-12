@@ -41,7 +41,6 @@ class FakeTerminal implements BrowserTerminal {
 
 type Listeners = Map<string, Set<() => void>>;
 
-/** Gives globalThis add/removeEventListener for the duration of `body`, recording listeners per event. */
 function withPageEvents(body: (listeners: Listeners) => void): void {
     const host = globalThis as {addEventListener?: unknown, removeEventListener?: unknown};
     const saved = {add: host.addEventListener, remove: host.removeEventListener};

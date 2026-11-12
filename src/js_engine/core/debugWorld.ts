@@ -6,13 +6,17 @@ import type {WorldOptions} from "./world";
 import {RootSystemGroup} from "./rootSystemGroup";
 import {GcSystem} from "./gcSystem";
 
+const PERF_STAT_WINDOW_FRAMES = 60;
+const PARTIAL_WINDOW_AVERAGE = false;
+const ROOT_GROUP_RUNNING = true;
+
 export class DebugWorld extends World {
 
-    private _systemPerfStat?: Map<System, AverageStat>;// cannot be init here :(
+    private _systemPerfStat?: Map<System, AverageStat>;
 
     constructor(options: WorldOptions = {}) {
         super(options);
-        this._rootSystemGroup.destroy(); // delete all systems and recreate them
+        this._rootSystemGroup.destroy();
         this._rootSystemGroup = this.createSystem(RootSystemGroup);
         this.ensureSystemExists(GcSystem)
     }
@@ -27,7 +31,7 @@ export class DebugWorld extends World {
         const existing = this._systems.get(systemClass);
         if (existing !== undefined) throw new Error("System already exists");
         const systemInstance = new systemClass();
-        const statTracker = new AverageStat(60)
+        const statTracker = new AverageStat(PERF_STAT_WINDOW_FRAMES)
         if (!this._systemPerfStat) this._systemPerfStat = new Map<System, AverageStat>()
         const world = this;
         const orig = systemInstance['onUpdate'];
@@ -54,14 +58,6 @@ export class DebugWorld extends World {
         return systemInstance;
     }
 
-    /**
-     * Dump the system tree with per-system mean update times.
-     *
-     * The header line matters as much as the timings: a system's cost is mostly a
-     * function of how many entities it sees, so two dumps are only comparable at a
-     * comparable entity count. Without it, a heavier run reads as a regression --
-     * which is exactly the wrong conclusion to reach twice.
-     */
     public logSystemUpdateOrder() {
         let archetypes = 0, occupied = 0, disabled = 0;
         for (const archetype of this.archetypes.values()) {
@@ -75,20 +71,20 @@ export class DebugWorld extends World {
             ` | archetypes: ${occupied} occupied / ${archetypes} total` +
             ` | frame budget: ${this.targetDeltaTime.toFixed(2)}ms`
         );
-        this.debug(this._rootSystemGroup, true);
+        this.logGroupTree(this._rootSystemGroup, ROOT_GROUP_RUNNING);
     }
 
-    private debug(systemGroup: SystemGroup, running: boolean) {
+    private logGroupTree(systemGroup: SystemGroup, parentRunning: boolean) {
         if (!this._systemPerfStat) this._systemPerfStat = new Map<System, AverageStat>();
-        const timing = this._systemPerfStat.get(systemGroup)?.getAvg(false);
+        const timing = this._systemPerfStat.get(systemGroup)?.getAvg(PARTIAL_WINDOW_AVERAGE);
         const timingString = timing === undefined ? "[-]" : `[${timing.toFixed(2)}ms]`;
-        const isRunning = running && systemGroup.enabled;
+        const isRunning = parentRunning && systemGroup.enabled;
         console.group("SystemGroup", systemGroup.constructor.name, isRunning ? "" : "⏸", timingString);
         for (const system of systemGroup.systems) {
             if (system instanceof SystemGroup) {
-                this.debug(system, isRunning)
+                this.logGroupTree(system, isRunning)
             } else {
-                const timing = this._systemPerfStat.get(system)?.getAvg(false);
+                const timing = this._systemPerfStat.get(system)?.getAvg(PARTIAL_WINDOW_AVERAGE);
                 const timingString = timing === undefined ? "[-]" : `[${timing.toFixed(2)}ms]`;
                 console.log("System", system.constructor.name, isRunning && system.enabled ? "" : "⏸", timingString);
             }

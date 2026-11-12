@@ -18,8 +18,7 @@ export class Parent extends Component {
 }
 
 export class ParentTransform extends Component implements F32Backed {
-    /** SoA: delegates to the inner LocalToWorld's 16-float matrix. */
-    static readonly f32Width = 16;
+    static readonly f32Width = LocalToWorld.f32Width;
 
     private _transform: LocalToWorld = new LocalToWorld();
 
@@ -27,8 +26,6 @@ export class ParentTransform extends Component implements F32Backed {
         return this._transform.matrix;
     }
 
-    // Accepts ReadonlyVec16 because the setter copies rather than aliasing, so a
-    // read-only matrix off a query row is a legitimate source.
     public set transform(transform: ReadonlyVec16) {
         this._transform.matrix = transform;
     }
@@ -36,8 +33,6 @@ export class ParentTransform extends Component implements F32Backed {
     public constructor() {
         super();
     }
-
-    // F32Backed (store-driven; see core/componentType.ts)
 
     writeF32(dst: Float32Array, offset: number): void {
         this._transform.writeF32(dst, offset);

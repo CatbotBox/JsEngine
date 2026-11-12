@@ -8,6 +8,13 @@ import {AmbientLight} from "./ambientLight";
 import {SceneLights} from "./sceneLights";
 
 const scratchRgb = new Float32Array(3);
+const PRIORITY_BEFORE_RENDER_PASSES = -10;
+const LOCAL_Z_AXIS_X = 8;
+const LOCAL_Z_AXIS_Y = 9;
+const LOCAL_Z_AXIS_Z = 10;
+const TRANSLATION_X = 12;
+const TRANSLATION_Y = 13;
+const TRANSLATION_Z = 14;
 
 export class SceneLightsGatherSystem extends System {
     private _directionalQuery = this.createEntityQuery([DirectionalLight, LocalToWorld]);
@@ -19,7 +26,7 @@ export class SceneLightsGatherSystem extends System {
     }
 
     override priority(): number {
-        return -10;
+        return PRIORITY_BEFORE_RENDER_PASSES;
     }
 
     onUpdate() {
@@ -34,13 +41,13 @@ export class SceneLightsGatherSystem extends System {
         this._directionalQuery.stream({read: {light: DirectionalLight, localToWorld: LocalToWorld}}).consume(({light, localToWorld}) => {
             const m = asFloat32Array(localToWorld.matrix);
             light.writeScaledRgb(scratchRgb, 0);
-            lights.addDirectional(m[8], m[9], m[10], scratchRgb[0], scratchRgb[1], scratchRgb[2]);
+            lights.addDirectional(m[LOCAL_Z_AXIS_X], m[LOCAL_Z_AXIS_Y], m[LOCAL_Z_AXIS_Z], scratchRgb[0], scratchRgb[1], scratchRgb[2]);
         });
 
         this._pointQuery.stream({read: {light: PointLight, localToWorld: LocalToWorld}}).consume(({light, localToWorld}) => {
             const m = asFloat32Array(localToWorld.matrix);
             light.writeScaledRgb(scratchRgb, 0);
-            lights.addPoint(m[12], m[13], m[14], scratchRgb[0], scratchRgb[1], scratchRgb[2], light.range);
+            lights.addPoint(m[TRANSLATION_X], m[TRANSLATION_Y], m[TRANSLATION_Z], scratchRgb[0], scratchRgb[1], scratchRgb[2], light.range);
         });
     }
 }

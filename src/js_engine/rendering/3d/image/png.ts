@@ -16,6 +16,37 @@ const FILTER_UP = 2;
 const FILTER_AVERAGE = 3;
 const FILTER_PAETH = 4;
 
+const CHUNK_LENGTH_OFFSET = 0;
+const CHUNK_TYPE_OFFSET = 4;
+const CHUNK_TYPE_BYTES = 4;
+const CHUNK_HEADER_BYTES = 8;
+const CHUNK_OVERHEAD_BYTES = 12;
+
+const IHDR_BYTES = 13;
+const IHDR_WIDTH_OFFSET = 0;
+const IHDR_HEIGHT_OFFSET = 4;
+const IHDR_BIT_DEPTH_OFFSET = 8;
+const IHDR_COLOR_TYPE_OFFSET = 9;
+const IHDR_INTERLACE_OFFSET = 12;
+const INTERLACE_NONE = 0;
+const VALID_BIT_DEPTHS = [1, 2, 4, 8, 16];
+const BIT_DEPTH_8 = 8;
+const BIT_DEPTH_16 = 16;
+const SAMPLE_16_BYTES = 2;
+
+const BITS_PER_BYTE = 8;
+const BYTE_MAX = 255;
+const RGBA_BYTES = 4;
+const OPAQUE_ALPHA = 255;
+const TRANSPARENT_ALPHA = 0;
+const PALETTE_ENTRY_BYTES = 3;
+const RGB_SAMPLES = 3;
+
+const CRC32_TABLE_SIZE = 256;
+const CRC32_POLYNOMIAL = 0xEDB88320;
+const CRC32_INITIAL = 0xFFFFFFFF;
+const CRC32_FINAL_XOR = 0xFFFFFFFF;
+
 const channelsByColorType: Record<number, number> = {
     [COLOR_GREY]: 1,
     [COLOR_RGB]: 3,
@@ -40,18 +71,18 @@ export function decodePng(bytes: Uint8Array, options: Pick<AssetLoadOptions, "in
 }
 
 export function encodePng(width: number, height: number, rgba: Uint8Array, deflate: (bytes: Uint8Array) => Uint8Array = nodeDeflate): Uint8Array {
-    const rowStride = width * 4;
+    const rowStride = width * RGBA_BYTES;
     const filtered = new Uint8Array((rowStride + 1) * height);
     for (let y = 0; y < height; y++) {
         filtered[y * (rowStride + 1)] = FILTER_NONE;
         filtered.set(rgba.subarray(y * rowStride, (y + 1) * rowStride), y * (rowStride + 1) + 1);
     }
-    const header = new Uint8Array(13);
+    const header = new Uint8Array(IHDR_BYTES);
     const view = new DataView(header.buffer);
-    view.setUint32(0, width);
-    view.setUint32(4, height);
-    header[8] = 8;
-    header[9] = COLOR_RGBA;
+    view.setUint32(IHDR_WIDTH_OFFSET, width);
+    view.setUint32(IHDR_HEIGHT_OFFSET, height);
+    header[IHDR_BIT_DEPTH_OFFSET] = BIT_DEPTH_8;
+    header[IHDR_COLOR_TYPE_OFFSET] = COLOR_RGBA;
     return concatenate([
         new Uint8Array(PNG_SIGNATURE),
         pngChunk("IHDR", header),
@@ -92,16 +123,17 @@ function readChunks(bytes: Uint8Array): PngChunks {
     let transparency: Uint8Array | null = null;
     const imageData: Uint8Array[] = [];
     let offset = PNG_SIGNATURE.length;
-    while (offset + 8 <= bytes.length) {
-        const length = view.getUint32(offset);
-        const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
-        const data = bytes.subarray(offset + 8, offset + 8 + length);
+    while (offset + CHUNK_HEADER_BYTES <= bytes.length) {
+        const length = view.getUint32(offset + CHUNK_LENGTH_OFFSET);
+        const typeStart = offset + CHUNK_TYPE_OFFSET;
+        const type = String.fromCharCode(bytes[typeStart], bytes[typeStart + 1], bytes[typeStart + 2], bytes[typeStart + 3]);
+        const data = bytes.subarray(offset + CHUNK_HEADER_BYTES, offset + CHUNK_HEADER_BYTES + length);
         if (type === "IHDR") header = data;
         else if (type === "PLTE") palette = data;
         else if (type === "tRNS") transparency = data;
         else if (type === "IDAT") imageData.push(data);
         else if (type === "IEND") break;
-        offset += 12 + length;
+        offset += CHUNK_OVERHEAD_BYTES + length;
     }
     if (header === null) throw new Error("PNG has no IHDR chunk");
     if (imageData.length === 0) throw new Error("PNG has no IDAT chunk");
@@ -110,15 +142,15 @@ function readChunks(bytes: Uint8Array): PngChunks {
 
 function parseHeader(data: Uint8Array): PngHeader {
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    const width = view.getUint32(0);
-    const height = view.getUint32(4);
-    const bitDepth = data[8];
-    const colorType = data[9];
-    const interlace = data[12];
+    const width = view.getUint32(IHDR_WIDTH_OFFSET);
+    const height = view.getUint32(IHDR_HEIGHT_OFFSET);
+    const bitDepth = data[IHDR_BIT_DEPTH_OFFSET];
+    const colorType = data[IHDR_COLOR_TYPE_OFFSET];
+    const interlace = data[IHDR_INTERLACE_OFFSET];
     const channels = channelsByColorType[colorType];
     if (channels === undefined) throw new Error(`PNG color type ${colorType} is not supported`);
-    if (interlace !== 0) throw new Error("Interlaced (Adam7) PNGs are not supported; re-export without interlacing");
-    if (![1, 2, 4, 8, 16].includes(bitDepth)) throw new Error(`PNG bit depth ${bitDepth} is not valid`);
+    if (interlace !== INTERLACE_NONE) throw new Error("Interlaced (Adam7) PNGs are not supported; re-export without interlacing");
+    if (!VALID_BIT_DEPTHS.includes(bitDepth)) throw new Error(`PNG bit depth ${bitDepth} is not valid`);
     const bitsPerPixel = channels * bitDepth;
     return {
         width, height, bitDepth, colorType, channels,
@@ -167,34 +199,34 @@ function paeth(left: number, up: number, upLeft: number): number {
 
 function toRgba(scanlines: Uint8Array, header: PngHeader, palette: Uint8Array | null, transparency: Uint8Array | null): Uint8Array {
     const {width, height, colorType, bitDepth, scanlineBytes} = header;
-    const rgba = new Uint8Array(width * height * 4);
+    const rgba = new Uint8Array(width * height * RGBA_BYTES);
     const maxSample = (1 << bitDepth) - 1;
-    const sampleAt = bitDepth === 16
-        ? (row: number, index: number) => scanlines[row * scanlineBytes + index * 2]
-        : bitDepth === 8
+    const sampleAt = bitDepth === BIT_DEPTH_16
+        ? (row: number, index: number) => scanlines[row * scanlineBytes + index * SAMPLE_16_BYTES]
+        : bitDepth === BIT_DEPTH_8
             ? (row: number, index: number) => scanlines[row * scanlineBytes + index]
             : (row: number, index: number) => readSubByteSample(scanlines, row * scanlineBytes, index, bitDepth);
-    const toByte = bitDepth === 8 || bitDepth === 16
+    const toByte = bitDepth === BIT_DEPTH_8 || bitDepth === BIT_DEPTH_16
         ? (sample: number) => sample
-        : (sample: number) => Math.round(sample * 255 / maxSample);
+        : (sample: number) => Math.round(sample * BYTE_MAX / maxSample);
     const transparentKey = transparency !== null && colorType !== COLOR_PALETTE ? readTransparentKey(transparency, colorType, bitDepth) : null;
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const out = (y * width + x) * 4;
-            let r: number, g: number, b: number, a = 255;
+            const out = (y * width + x) * RGBA_BYTES;
+            let r: number, g: number, b: number, a = OPAQUE_ALPHA;
             if (colorType === COLOR_PALETTE) {
                 const index = sampleAt(y, x);
-                if (palette === null || index * 3 + 2 >= palette.length) throw new Error(`PNG palette index ${index} is out of range`);
-                r = palette[index * 3];
-                g = palette[index * 3 + 1];
-                b = palette[index * 3 + 2];
+                if (palette === null || index * PALETTE_ENTRY_BYTES + 2 >= palette.length) throw new Error(`PNG palette index ${index} is out of range`);
+                r = palette[index * PALETTE_ENTRY_BYTES];
+                g = palette[index * PALETTE_ENTRY_BYTES + 1];
+                b = palette[index * PALETTE_ENTRY_BYTES + 2];
                 if (transparency !== null && index < transparency.length) a = transparency[index];
             } else if (colorType === COLOR_GREY || colorType === COLOR_GREY_ALPHA) {
                 const grey = sampleAt(y, x * header.channels);
                 r = g = b = toByte(grey);
                 if (colorType === COLOR_GREY_ALPHA) a = toByte(sampleAt(y, x * 2 + 1));
-                else if (transparentKey !== null && grey === transparentKey[0]) a = 0;
+                else if (transparentKey !== null && grey === transparentKey[0]) a = TRANSPARENT_ALPHA;
             } else {
                 const base = x * header.channels;
                 const rs = sampleAt(y, base), gs = sampleAt(y, base + 1), bs = sampleAt(y, base + 2);
@@ -202,7 +234,7 @@ function toRgba(scanlines: Uint8Array, header: PngHeader, palette: Uint8Array | 
                 g = toByte(gs);
                 b = toByte(bs);
                 if (colorType === COLOR_RGBA) a = toByte(sampleAt(y, base + 3));
-                else if (transparentKey !== null && rs === transparentKey[0] && gs === transparentKey[1] && bs === transparentKey[2]) a = 0;
+                else if (transparentKey !== null && rs === transparentKey[0] && gs === transparentKey[1] && bs === transparentKey[2]) a = TRANSPARENT_ALPHA;
             }
             rgba[out] = r;
             rgba[out + 1] = g;
@@ -216,17 +248,17 @@ function toRgba(scanlines: Uint8Array, header: PngHeader, palette: Uint8Array | 
 function readSubByteSample(scanlines: Uint8Array, rowOffset: number, index: number, bitDepth: number): number {
     const bitOffset = index * bitDepth;
     const byte = scanlines[rowOffset + (bitOffset >> 3)];
-    const shift = 8 - bitDepth - (bitOffset & 7);
+    const shift = BITS_PER_BYTE - bitDepth - (bitOffset & 7);
     return (byte >> shift) & ((1 << bitDepth) - 1);
 }
 
 function readTransparentKey(transparency: Uint8Array, colorType: number, bitDepth: number): number[] {
     const view = new DataView(transparency.buffer, transparency.byteOffset, transparency.byteLength);
-    const sampleCount = colorType === COLOR_RGB ? 3 : 1;
+    const sampleCount = colorType === COLOR_RGB ? RGB_SAMPLES : 1;
     const key: number[] = [];
-    for (let i = 0; i < sampleCount && i * 2 + 1 < transparency.length; i++) {
-        const sample16 = view.getUint16(i * 2);
-        key.push(bitDepth === 16 ? sample16 >> 8 : sample16);
+    for (let i = 0; i < sampleCount && i * SAMPLE_16_BYTES + 1 < transparency.length; i++) {
+        const sample16 = view.getUint16(i * SAMPLE_16_BYTES);
+        key.push(bitDepth === BIT_DEPTH_16 ? sample16 >> BITS_PER_BYTE : sample16);
     }
     return key;
 }
@@ -244,27 +276,27 @@ function concatenate(parts: Uint8Array[]): Uint8Array {
 }
 
 export function pngChunk(type: string, data: Uint8Array): Uint8Array {
-    const chunk = new Uint8Array(12 + data.length);
+    const chunk = new Uint8Array(CHUNK_OVERHEAD_BYTES + data.length);
     const view = new DataView(chunk.buffer);
-    view.setUint32(0, data.length);
-    for (let i = 0; i < 4; i++) chunk[4 + i] = type.charCodeAt(i);
-    chunk.set(data, 8);
-    view.setUint32(8 + data.length, crc32(chunk.subarray(4, 8 + data.length)));
+    view.setUint32(CHUNK_LENGTH_OFFSET, data.length);
+    for (let i = 0; i < CHUNK_TYPE_BYTES; i++) chunk[CHUNK_TYPE_OFFSET + i] = type.charCodeAt(i);
+    chunk.set(data, CHUNK_HEADER_BYTES);
+    view.setUint32(CHUNK_HEADER_BYTES + data.length, crc32(chunk.subarray(CHUNK_TYPE_OFFSET, CHUNK_HEADER_BYTES + data.length)));
     return chunk;
 }
 
 const crcTable = (() => {
-    const table = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
+    const table = new Uint32Array(CRC32_TABLE_SIZE);
+    for (let n = 0; n < CRC32_TABLE_SIZE; n++) {
         let c = n;
-        for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        for (let k = 0; k < BITS_PER_BYTE; k++) c = c & 1 ? CRC32_POLYNOMIAL ^ (c >>> 1) : c >>> 1;
         table[n] = c >>> 0;
     }
     return table;
 })();
 
 function crc32(bytes: Uint8Array): number {
-    let crc = 0xFFFFFFFF;
-    for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 255] ^ (crc >>> 8);
-    return (crc ^ 0xFFFFFFFF) >>> 0;
+    let crc = CRC32_INITIAL;
+    for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 255] ^ (crc >>> BITS_PER_BYTE);
+    return (crc ^ CRC32_FINAL_XOR) >>> 0;
 }

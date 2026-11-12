@@ -1,16 +1,4 @@
-﻿/**
- * Confirms the raster worker pool actually spins up on this runtime, that
- * threaded output is bit-identical to single-threaded output, and how the two
- * compare on time for a heavy mesh.
- *
- * Runs once through the node platform's workers (worker_threads), then again
- * through the browser's WorkerFactory (Web Workers from blob URLs, the factory a
- * cross-origin isolated page uses) where the runtime has a Web Worker global, as
- * bun does. Every threaded run waits for its workers to boot first, so its frames
- * are rasterized by the workers and not by the synchronous boot fallback.
- *
- * Run: bun tests/verifyThreading.ts
- */
+﻿import {existsSync} from "fs";
 import {MeshRasterizer, RasterWorkerPool} from "../src/js_engine/rendering/3d/software";
 import {ConsoleCellResolveTarget} from "../src/js_engine/rendering/console/3d/consoleCellResolveTarget";
 import {ScreenBuffer} from "../src/js_engine/rendering/console/consoleScreenBuffer";
@@ -29,18 +17,29 @@ import type {WorkerFactory} from "../src/js_engine/platform";
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
 const WORKERS = 3;
 const BOOT_TIMEOUT_MS = 5000;
+const POLL_INTERVAL_MS = 5;
+const HEAVY_MESH_PATH = "./demo/3d/indoor plant_02.obj";
+const FALLBACK_MESH_PATH = "./demo/3d/blender_monkey.obj";
+const HALF_FOV_RAD = Math.PI / 6;
+const CELL_ASPECT_RATIO = 2;
+const FULL_COLOR_MASK = 0xFFFFFF;
+const WHITE_RGB = 0xFFFFFF;
+const SHADE_RGB = 0xF7A44F;
+const NO_SUPERSAMPLING = 1;
+const MESH_Z = 8;
+const MESH_SCALE = 3;
+const PITCH_RAD_PER_FRAME = 0.05, YAW_RAD_PER_FRAME = 0.03;
 const resolveTarget = new ConsoleCellResolveTarget();
 
 const screenSize = new ScreenSize();
 screenSize.x = WIDTH;
 screenSize.y = HEIGHT;
 const backgroundChar = Ansi.colors.bg.black + Ansi.colors.fg.black + " ";
-// Prefer the heavy plant mesh when present (not checked into the repo).
-const mesh = require("fs").existsSync("./demo/3d/indoor plant_02.obj")
-    ? Mesh.fromFile("./demo/3d/indoor plant_02.obj")
-    : Mesh.fromFile("./demo/3d/blender_monkey.obj");
+const mesh = existsSync(HEAVY_MESH_PATH)
+    ? Mesh.fromFile(HEAVY_MESH_PATH)
+    : Mesh.fromFile(FALLBACK_MESH_PATH);
 const invCam = LocalToWorld.invertAffine(new LocalToWorld().matrix);
-const focal = HEIGHT / (Math.tan(Math.PI / 6) * 2);
+const focal = HEIGHT / (Math.tan(HALF_FOV_RAD) * 2);
 
 const sceneLights = new SceneLights();
 sceneLights.beginGather();
@@ -67,7 +66,6 @@ interface PassResult {
     readonly ms: number;
     readonly frames: string[];
     readonly poolUsable: boolean;
-    /** Every worker had booted before the first measured frame (always true for a synchronous run). */
     readonly booted: boolean;
 }
 
@@ -77,24 +75,24 @@ async function waitUntil(condition: () => boolean, timeoutMs: number): Promise<b
     const deadline = performance.now() + timeoutMs;
     while (!condition()) {
         if (performance.now() > deadline) return false;
-        await sleep(5);
+        await sleep(POLL_INTERVAL_MS);
     }
     return true;
 }
 
 function renderFrame(rasterizer: MeshRasterizer, frame: number, config: PassConfig): string {
     const transform = new LocalToWorld();
-    const quat = Quaternions.eulerToQuat(Vec3.alloc(frame * 0.05, frame * 0.03, 0));
-    LocalToWorld.fromTRS(transform.matrix, Vec3.alloc(0, 0, 8), quat, Vec3.alloc(3, 3, 3));
+    const quat = Quaternions.eulerToQuat(Vec3.alloc(frame * PITCH_RAD_PER_FRAME, frame * YAW_RAD_PER_FRAME, 0));
+    LocalToWorld.fromTRS(transform.matrix, Vec3.alloc(0, 0, MESH_Z), quat, Vec3.alloc(MESH_SCALE, MESH_SCALE, MESH_SCALE));
     const modelView = LocalToWorld.mul(invCam, transform.matrix) as unknown as Float32Array;
 
     const buffer = new ScreenBuffer();
     buffer.beginFrame({screenSize} as any, backgroundChar);
-    resolveTarget.begin(buffer, {colorQuantMask: 0xFFFFFF});
+    resolveTarget.begin(buffer, {colorQuantMask: FULL_COLOR_MASK});
     rasterizer.beginFrame(resolveTarget, WIDTH, HEIGHT, {
         maxDepthFade: 15,
-        colorQuantMask: 0xFFFFFF,
-        supersample: 1, // AA off: this test compares threaded vs single-threaded output bit for bit
+        colorQuantMask: FULL_COLOR_MASK,
+        supersample: NO_SUPERSAMPLING,
         workerCount: config.workerCount,
         threadTriangleThreshold: config.threadTriangleThreshold,
         threadAreaThreshold: Number.POSITIVE_INFINITY,
@@ -103,9 +101,9 @@ function renderFrame(rasterizer: MeshRasterizer, frame: number, config: PassConf
     });
     if (config.lit) {
         const viewMesh = viewSpaceMesh.transformFrom(mesh, modelView, LocalToWorld.normalMatrix3(fromFloat32Array<16>(modelView), normalMatrix));
-        rasterizer.addViewSpaceMesh(mesh, viewMesh, focal, 2, 0xFFFFFF, vertexLighting.shade(viewMesh, 0xF7A44F));
+        rasterizer.addViewSpaceMesh(mesh, viewMesh, focal, CELL_ASPECT_RATIO, WHITE_RGB, vertexLighting.shade(viewMesh, SHADE_RGB));
     } else {
-        rasterizer.addMesh(mesh, modelView, focal, 2, 0xFFFFFF);
+        rasterizer.addMesh(mesh, modelView, focal, CELL_ASPECT_RATIO, WHITE_RGB);
     }
     rasterizer.endFrame();
     return buffer.flush();
@@ -115,7 +113,6 @@ async function renderAll(workers: WorkerFactory, config: PassConfig): Promise<Pa
     const rasterizer = new MeshRasterizer(workers);
     let booted = true;
     if (config.workerCount > 0) {
-        // The first frame creates the pool; its workers boot while we wait.
         renderFrame(rasterizer, 0, config);
         booted = await waitUntil(() => rasterizer.activeWorkerCount === config.workerCount, BOOT_TIMEOUT_MS);
     }
@@ -135,17 +132,20 @@ const passes = [
     ["lit+textured+halfblock", true, true, true],
 ] as const;
 
-/** Every pass threaded through `workers` and synchronously; true when all match. `name` prefixes the labels. */
-async function verifyFactory(workers: WorkerFactory, name?: string): Promise<boolean> {
-    const prefix = name === undefined ? "" : name + " ";
-    // Direct pool sanity check first.
-    let pool: RasterWorkerPool | undefined;
+function constructPoolOrUndefined(workers: WorkerFactory, prefix: string): RasterWorkerPool | undefined {
     try {
-        pool = new RasterWorkerPool(WORKERS, workers);
+        const pool = new RasterWorkerPool(WORKERS, workers);
         console.log(`${prefix}pool constructed: workers=${pool.workerCount} usable=${pool.usable}`);
+        return pool;
     } catch (error) {
         console.log(`${prefix}pool construction FAILED:`, error);
+        return undefined;
     }
+}
+
+async function allPassesMatch(workers: WorkerFactory, labelOrUndefined?: string): Promise<boolean> {
+    const prefix = labelOrUndefined === undefined ? "" : labelOrUndefined + " ";
+    const pool = constructPoolOrUndefined(workers, prefix);
 
     let failed = false;
     for (const [pass, lit, textured, halfBlock] of passes) {
@@ -181,14 +181,14 @@ async function verifyFactory(workers: WorkerFactory, name?: string): Promise<boo
 }
 
 async function main(): Promise<void> {
-    if (!await verifyFactory(nodePlatform().workers!)) process.exit(1);
+    if (!await allPassesMatch(nodePlatform().workers!)) process.exit(1);
     console.log("threading OK");
 
     if (typeof (globalThis as {Worker?: unknown}).Worker !== "function") {
         console.log("browser worker factory: skipped, this runtime has no Web Worker global");
         return;
     }
-    if (!await verifyFactory(browserWorkerFactory(), "browser workers")) process.exit(1);
+    if (!await allPassesMatch(browserWorkerFactory(), "browser workers")) process.exit(1);
     console.log("browser worker factory OK");
 }
 

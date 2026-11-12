@@ -1,7 +1,4 @@
-﻿/**
- * resources are singletons tied to each world
- */
-export abstract class Resource {
+﻿export abstract class Resource {
 
 }
 

@@ -15,23 +15,12 @@ import {getOwner} from "./ownership";
 import {EntityCommandBuffer} from "./entityCommandBuffer";
 import type {ComponentCtor} from "./componentType";
 
-/**
- * Pins the SoA column storage invariants.
- *
- * The dangerous behaviours here are the rebinding ones: an instance's typed-array
- * fields are views into the archetype column, and every operation that moves a
- * row (swap-remove of a *sibling*, column growth, archetype moves) must re-point
- * outstanding handles. A regression shows up as a handle silently reading another
- * entity's data — exactly what these tests fail on.
- */
-
 class ObjectBacked extends Component {
     constructor(public n = 0) {
         super();
     }
 }
 
-/** Counts store-driven detaches, which is what tells "re-bound" apart from "detached, then re-bound". */
 class CountedPosition extends LocalPosition {
     static detaches = 0;
 
@@ -54,7 +43,6 @@ function ownerOf(e: Entity): EntityArchetype {
     return getOwner(world, e) as EntityArchetype;
 }
 
-/** `values` is a live view of `e`'s row in its current archetype's column for `ctor`. */
 function expectViewsOwnRow(e: Entity, ctor: ComponentCtor<Component>, values: Float32Array) {
     const arch = ownerOf(e);
     const col = arch.getColumn(ComponentType.of(ctor))!;
@@ -62,10 +50,9 @@ function expectViewsOwnRow(e: Entity, ctor: ComponentCtor<Component>, values: Fl
     expect(values.byteOffset).toBe(arch.getIndexOfEntity(e)! * col.f32Width * Float32Array.BYTES_PER_ELEMENT);
 }
 
-/** A timestamp strictly after every stamp made so far. */
-function freshMark(): number {
-    const t = performance.now();
-    while (performance.now() === t) { /* spin past the clock's resolution */ }
+function timestampAfterPriorStamps(): number {
+    const clockReadingBefore = performance.now();
+    while (performance.now() === clockReadingBefore) {}
     return performance.now();
 }
 
@@ -86,7 +73,6 @@ describe("SoA column storage", () => {
         expect(col.f32Data![i * 3]).toBe(1);
         expect(col.f32Data![i * 3 + 1]).toBe(2);
         expect(col.f32Data![i * 3 + 2]).toBe(3);
-        // and mutation through the instance writes the column
         (pos as LocalPosition & { x: number }).x = 9;
         expect(col.f32Data![i * 3]).toBe(9);
     });
@@ -100,7 +86,6 @@ describe("SoA column storage", () => {
         em.addComponent(c, new LocalPosition(3, 0, 0));
         const posC = em.getComponent<LocalPosition>(c, LocalPosition)!;
 
-        // destroying a swap-moves c's row; the handle must follow it
         em.destroyEntity(a);
         expect(posC.x).toBe(3);
         posC.y = 7;
@@ -124,14 +109,11 @@ describe("SoA column storage", () => {
         const e = em.createEntity();
         em.addComponent(e, new LocalPosition(4, 5, 6));
         const pos = em.getComponent<LocalPosition>(e, LocalPosition)!;
-        em.addComponent(e, new ObjectBacked(1)); // moves e to a new archetype
+        em.addComponent(e, new ObjectBacked(1));
         expect(pos.x).toBe(4);
         expect(pos.y).toBe(5);
         pos.x = 11;
         expect(em.getComponent<LocalPosition>(e, LocalPosition)!.x).toBe(11);
-        // (no identity assertion: getComponent has always wrapped each call in a
-        // fresh tracking Proxy, so two calls never compared equal — the contract
-        // is that every proxy reaches the same underlying storage, tested above)
     });
 
     test("a destroyed entity's instance detaches and mutating it is harmless", () => {
@@ -143,9 +125,9 @@ describe("SoA column storage", () => {
         const alive = em.createEntity();
         em.addComponent(alive, new LocalPosition(8, 8, 8));
 
-        handle.x = 999; // orphan write must not scribble on the recycled slot
+        handle.x = 999;
         expect(em.getComponent<LocalPosition>(alive, LocalPosition)!.x).toBe(8);
-        expect(handle.x).toBe(999); // the orphan itself keeps working
+        expect(handle.x).toBe(999);
     });
 
     test("enable/disable swaps rebind both moved instances", () => {
@@ -167,8 +149,7 @@ describe("SoA column storage", () => {
         const l2w = em.getComponent<LocalToWorld>(e, LocalToWorld)!;
         const before = l2w.matrix;
         Vec.setX(l2w.position, 12);
-        em.addComponent(e, new ObjectBacked()); // archetype move
-        // the matrix getter re-reads the (re-bound) view; the translation survives
+        em.addComponent(e, new ObjectBacked());
         expect(Vec.x(l2w.position)).toBe(12);
         void before;
     });
@@ -191,7 +172,6 @@ describe("consumeSpans (column query path)", () => {
             }
         });
         expect(seen).toBe(10);
-        // writes through the column are visible through the instances
         q.stream({read: {pos: LocalPosition}}).consume(({pos}) => {
             expect(pos.y).toBe(pos.x * 2);
         });
@@ -209,7 +189,7 @@ describe("consumeSpans (column query path)", () => {
         let visited = 0;
         q.stream({read: {pos: LocalPosition}}, {filterLastUpdated: before, structuralFilter: "additions"})
             .consumeSpans(({start, end}) => void (visited += end - start));
-        expect(visited).toBe(0); // Unchanged left the column unstamped
+        expect(visited).toBe(0);
 
         q.stream({write: {pos: LocalPosition}}).consumeSpans(({start, end, cols}) => {
             const p = cols.pos!;
@@ -218,7 +198,7 @@ describe("consumeSpans (column query path)", () => {
         visited = 0;
         q.stream({read: {pos: LocalPosition}}, {filterLastUpdated: before, structuralFilter: "additions"})
             .consumeSpans(({start, end}) => void (visited += end - start));
-        expect(visited).toBe(5); // the stamp woke the block
+        expect(visited).toBe(5);
     });
 
     test("object-backed components come through stores, entities line up", () => {
@@ -231,7 +211,7 @@ describe("consumeSpans (column query path)", () => {
         }
         const q = new EntityQuery(world, [LocalPosition, ObjectBacked]);
         q.stream({read: {pos: LocalPosition}, optional: {tag: ObjectBacked}}).consumeSpans(({start, end, cols, stores, entities}) => {
-            expect(cols.tag).toBe(undefined); // object-backed: no f32 column
+            expect(cols.tag).toBe(undefined);
             const p = cols.pos!;
             for (let i = start; i < end; i++) {
                 const tag = stores.tag!.get(i) as ObjectBacked;
@@ -334,12 +314,10 @@ describe("column-mapped moves (moveRowTo)", () => {
             }
         };
 
-        // enabled row with disabled rows behind it, into a target holding a disabled row
         em.addComponent(es[0], new ObjectBacked());
         expectIntact();
         em.addComponent(lastEnabledOf(source), new ObjectBacked());
         expectIntact();
-        // disabled row with a disabled row behind it, while enabled rows exist on both sides
         em.addComponent(firstDisabledOf(source), new ObjectBacked());
         expectIntact();
 
@@ -388,14 +366,14 @@ describe("column-mapped moves (moveRowTo)", () => {
         };
         const moved = stayers[150];
 
-        let mark = freshMark();
+        let mark = timestampAfterPriorStamps();
         em.addComponent(moved, new ObjectBacked());
         let woken = visitedSince(mark, [LocalPosition, ObjectBacked]);
         expect(woken.includes(moved)).toBe(true);
         expect(woken.length).toBeLessThan(BLOCK_SIZE);
         expect(visitedSince(mark, [LocalPosition], [ObjectBacked]).length).toBe(0);
 
-        mark = freshMark();
+        mark = timestampAfterPriorStamps();
         em.removeComponent(moved, ObjectBacked);
         woken = visitedSince(mark, [LocalPosition], [ObjectBacked]);
         expect(woken.includes(moved)).toBe(true);
@@ -422,7 +400,7 @@ describe("column-mapped moves (moveRowTo)", () => {
         const targetColumn = ownerOf(es[0]).getColumn(CountedPosition.type())!;
         const firstBuffer = targetColumn.f32Data;
         for (let i = 1; i < es.length; i++) em.addComponent(es[i], new ObjectBacked());
-        expect(targetColumn.f32Data === firstBuffer).toBe(false); // grew 8 -> 64 rows on the way
+        expect(targetColumn.f32Data === firstBuffer).toBe(false);
         expectAllBound();
 
         for (const e of es) em.removeComponent(e, ObjectBacked);
@@ -440,16 +418,16 @@ describe("column-mapped moves (moveRowTo)", () => {
         em.addComponent(neighbour, new LocalScale());
         em.addComponent(neighbour, new CountedPosition(7, 8, 9));
 
-        em.removeComponent(e, CountedPosition); // the neighbour's row fills e's old one
+        em.removeComponent(e, CountedPosition);
 
         expect(CountedPosition.detaches).toBe(1);
         expect([pos.x, pos.y, pos.z]).toEqual([4, 5, 6]);
-        pos.x = 999; // an orphan write must not reach the neighbour now in that row
+        pos.x = 999;
         expect(em.getComponent<CountedPosition>(neighbour, CountedPosition)!.x).toBe(7);
         expectViewsOwnRow(e, LocalScale, asFloat32Array(scale.xyz));
         expect([scale.x, scale.y, scale.z]).toEqual([2, 3, 4]);
 
-        em.addComponent(e, pos); // a detached instance re-adds like a fresh one
+        em.addComponent(e, pos);
         expectViewsOwnRow(e, CountedPosition, asFloat32Array(pos.xyz));
         expect(em.getComponent<CountedPosition>(e, CountedPosition)!.x).toBe(999);
     });
@@ -573,7 +551,7 @@ describe("command-buffer moves (moveRowWith)", () => {
         };
         const moved = stayers[150];
 
-        const mark = freshMark();
+        const mark = timestampAfterPriorStamps();
         const ecb = new EntityCommandBuffer();
         ecb.addComponent(moved, new ObjectBacked());
         ecb.addComponent(moved, new OtherObjectBacked());

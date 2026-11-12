@@ -2,10 +2,16 @@
 
 declare const AABBTag: unique symbol;
 
-/** Runtime representation: Float32Array(6), [xMin,yMin,zMin,xMax,yMax,zMax]. */
 export type AABB = { readonly [AABBTag]: true };
 
 export const AABB_STRIDE = 6;
+const X_MIN = 0;
+const Y_MIN = 1;
+const Z_MIN = 2;
+const X_MAX = 3;
+const Y_MAX = 4;
+const Z_MAX = 5;
+const MIN_INFLATED_HALF_EXTENT = 0.5;
 
 const castAsFloat32Array = (b: AABB): Float32Array => b as unknown as Float32Array;
 
@@ -17,7 +23,6 @@ export namespace AABB {
         return raw as unknown as AABB;
     }
 
-    /** Escape hatch for code that must touch the backing store. */
     export function asFloat32Array(b: AABB): Float32Array {
         return castAsFloat32Array(b);
     }
@@ -26,18 +31,17 @@ export namespace AABB {
         return new Float32Array(AABB_STRIDE) as unknown as AABB;
     }
 
-    /** Allocate and fill. Prefer `writeInto` where an `out` already exists. */
     export function of(
         xMin: number, yMin: number, zMin: number,
         xMax: number, yMax: number, zMax: number,
     ): AABB {
         const b = new Float32Array(AABB_STRIDE);
-        b[0] = xMin;
-        b[1] = yMin;
-        b[2] = zMin;
-        b[3] = xMax;
-        b[4] = yMax;
-        b[5] = zMax;
+        b[X_MIN] = xMin;
+        b[Y_MIN] = yMin;
+        b[Z_MIN] = zMin;
+        b[X_MAX] = xMax;
+        b[Y_MAX] = yMax;
+        b[Z_MAX] = zMax;
         return b as unknown as AABB;
     }
 
@@ -47,12 +51,12 @@ export namespace AABB {
         xMax: number, yMax: number, zMax: number,
     ): AABB {
         const o = castAsFloat32Array(out);
-        o[0] = xMin;
-        o[1] = yMin;
-        o[2] = zMin;
-        o[3] = xMax;
-        o[4] = yMax;
-        o[5] = zMax;
+        o[X_MIN] = xMin;
+        o[Y_MIN] = yMin;
+        o[Z_MIN] = zMin;
+        o[X_MAX] = xMax;
+        o[Y_MAX] = yMax;
+        o[Z_MAX] = zMax;
         return out;
     }
 
@@ -72,96 +76,94 @@ export namespace AABB {
         return b as unknown as AABB;
     }
 
-    // access
-
     export function xMin(b: AABB): number {
-        return castAsFloat32Array(b)[0];
+        return castAsFloat32Array(b)[X_MIN];
     }
 
     export function yMin(b: AABB): number {
-        return castAsFloat32Array(b)[1];
+        return castAsFloat32Array(b)[Y_MIN];
     }
 
     export function zMin(b: AABB): number {
-        return castAsFloat32Array(b)[2];
+        return castAsFloat32Array(b)[Z_MIN];
     }
 
     export function xMax(b: AABB): number {
-        return castAsFloat32Array(b)[3];
+        return castAsFloat32Array(b)[X_MAX];
     }
 
     export function yMax(b: AABB): number {
-        return castAsFloat32Array(b)[4];
+        return castAsFloat32Array(b)[Y_MAX];
     }
 
     export function zMax(b: AABB): number {
-        return castAsFloat32Array(b)[5];
+        return castAsFloat32Array(b)[Z_MAX];
     }
 
     export function min(b: AABB): Vec3 {
-        return fromFloat32Array<3>(castAsFloat32Array(b).subarray(0, 3));
+        return fromFloat32Array<3>(castAsFloat32Array(b).subarray(X_MIN, X_MAX));
     }
 
     export function max(b: AABB): Vec3 {
-        return fromFloat32Array<3>(castAsFloat32Array(b).subarray(3, 6));
+        return fromFloat32Array<3>(castAsFloat32Array(b).subarray(X_MAX, AABB_STRIDE));
     }
 
     export function equals(a: AABB, b: AABB): boolean {
         const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
-        return x[0] === y[0] && x[1] === y[1] && x[2] === y[2]
-            && x[3] === y[3] && x[4] === y[4] && x[5] === y[5];
+        return x[X_MIN] === y[X_MIN] && x[Y_MIN] === y[Y_MIN] && x[Z_MIN] === y[Z_MIN]
+            && x[X_MAX] === y[X_MAX] && x[Y_MAX] === y[Y_MAX] && x[Z_MAX] === y[Z_MAX];
     }
 
     export function intersects(a: AABB, b: AABB): boolean {
         const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
         return !(
-            y[3] < x[0] || y[0] > x[3] ||
-            y[4] < x[1] || y[1] > x[4] ||
-            y[5] < x[2] || y[2] > x[5]
+            y[X_MAX] < x[X_MIN] || y[X_MIN] > x[X_MAX] ||
+            y[Y_MAX] < x[Y_MIN] || y[Y_MIN] > x[Y_MAX] ||
+            y[Z_MAX] < x[Z_MIN] || y[Z_MIN] > x[Z_MAX]
         );
     }
 
     export function contains(a: AABB, b: AABB): boolean {
         const x = castAsFloat32Array(a), y = castAsFloat32Array(b);
         return (
-            y[0] >= x[0] && y[3] <= x[3] &&
-            y[1] >= x[1] && y[4] <= x[4] &&
-            y[2] >= x[2] && y[5] <= x[5]
+            y[X_MIN] >= x[X_MIN] && y[X_MAX] <= x[X_MAX] &&
+            y[Y_MIN] >= x[Y_MIN] && y[Y_MAX] <= x[Y_MAX] &&
+            y[Z_MIN] >= x[Z_MIN] && y[Z_MAX] <= x[Z_MAX]
         );
     }
 
     export function unionInto(out: AABB, a: AABB, b: AABB): AABB {
         const o = castAsFloat32Array(out), x = castAsFloat32Array(a), y = castAsFloat32Array(b);
-        const xMin = x[0] < y[0] ? x[0] : y[0];
-        const yMin = x[1] < y[1] ? x[1] : y[1];
-        const zMin = x[2] < y[2] ? x[2] : y[2];
-        const xMax = x[3] > y[3] ? x[3] : y[3];
-        const yMax = x[4] > y[4] ? x[4] : y[4];
-        const zMax = x[5] > y[5] ? x[5] : y[5];
-        o[0] = xMin;
-        o[1] = yMin;
-        o[2] = zMin;
-        o[3] = xMax;
-        o[4] = yMax;
-        o[5] = zMax;
+        const xMin = x[X_MIN] < y[X_MIN] ? x[X_MIN] : y[X_MIN];
+        const yMin = x[Y_MIN] < y[Y_MIN] ? x[Y_MIN] : y[Y_MIN];
+        const zMin = x[Z_MIN] < y[Z_MIN] ? x[Z_MIN] : y[Z_MIN];
+        const xMax = x[X_MAX] > y[X_MAX] ? x[X_MAX] : y[X_MAX];
+        const yMax = x[Y_MAX] > y[Y_MAX] ? x[Y_MAX] : y[Y_MAX];
+        const zMax = x[Z_MAX] > y[Z_MAX] ? x[Z_MAX] : y[Z_MAX];
+        o[X_MIN] = xMin;
+        o[Y_MIN] = yMin;
+        o[Z_MIN] = zMin;
+        o[X_MAX] = xMax;
+        o[Y_MAX] = yMax;
+        o[Z_MAX] = zMax;
         return out;
     }
 
     export function inflateInto(out: AABB, b: AABB, factor: number): AABB {
         const s = castAsFloat32Array(b);
-        const cx = (s[0] + s[3]) * 0.5;
-        const cy = (s[1] + s[4]) * 0.5;
-        const cz = (s[2] + s[5]) * 0.5;
-        const hx = Math.max(0.5, (s[3] - s[0]) * 0.5 * factor);
-        const hy = Math.max(0.5, (s[4] - s[1]) * 0.5 * factor);
-        const hz = Math.max(0.5, (s[5] - s[2]) * 0.5 * factor);
+        const cx = (s[X_MIN] + s[X_MAX]) * 0.5;
+        const cy = (s[Y_MIN] + s[Y_MAX]) * 0.5;
+        const cz = (s[Z_MIN] + s[Z_MAX]) * 0.5;
+        const hx = Math.max(MIN_INFLATED_HALF_EXTENT, (s[X_MAX] - s[X_MIN]) * 0.5 * factor);
+        const hy = Math.max(MIN_INFLATED_HALF_EXTENT, (s[Y_MAX] - s[Y_MIN]) * 0.5 * factor);
+        const hz = Math.max(MIN_INFLATED_HALF_EXTENT, (s[Z_MAX] - s[Z_MIN]) * 0.5 * factor);
         const o = castAsFloat32Array(out);
-        o[0] = cx - hx;
-        o[1] = cy - hy;
-        o[2] = cz - hz;
-        o[3] = cx + hx;
-        o[4] = cy + hy;
-        o[5] = cz + hz;
+        o[X_MIN] = cx - hx;
+        o[Y_MIN] = cy - hy;
+        o[Z_MIN] = cz - hz;
+        o[X_MAX] = cx + hx;
+        o[Y_MAX] = cy + hy;
+        o[Z_MAX] = cz + hz;
         return out;
     }
 }

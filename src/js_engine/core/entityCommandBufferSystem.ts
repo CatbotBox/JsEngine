@@ -1,6 +1,8 @@
 ﻿import {System} from "./system";
 import {EntityCommandBuffer} from "./entityCommandBuffer";
 
+const UPDATE_LAST_PRIORITY = Number.POSITIVE_INFINITY;
+
 export class EntityCommandBufferSystem extends System {
   private _buffer: EntityCommandBuffer = new EntityCommandBuffer();
 
@@ -9,8 +11,7 @@ export class EntityCommandBufferSystem extends System {
   }
 
   priority(): number {
-    // always update last
-    return Number.POSITIVE_INFINITY
+    return UPDATE_LAST_PRIORITY
   }
 
   public onUpdate(): void {

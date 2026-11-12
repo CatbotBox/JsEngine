@@ -3,13 +3,8 @@ import {FitAddon} from "@xterm/addon-fit";
 import {WebglAddon} from "@xterm/addon-webgl";
 import type {FixedTerminalSize} from "../src/js_engine/platform/worldWorkerProtocol";
 
-/** Set on `<body>` while the terminal does not have keyboard focus; the page's CSS shows a hint for it. */
 const UNFOCUSED_CLASS = "terminal-unfocused";
 
-/**
- * An xterm.js terminal in `container`, focused on click. A dimension `fixed` gives stays that
- * size; any other fits the container and refits on window resize.
- */
 export function createTerminal(container: HTMLElement, fixed: FixedTerminalSize = {}): Terminal {
     const terminal = new Terminal({
         scrollback: 0,
@@ -49,14 +44,8 @@ function trackFocus(terminal: Terminal): void {
     update();
 }
 
-/**
- * xterm's WebGL glyph atlas caches one glyph per (char, fg, bg) and never evicts, so truecolor
- * half-block frames (a fading pixel is a new colour pair every few frames) keep adding pages. At
- * MAX_TEXTURE_IMAGE_UNITS pages (16 under WebGL2) it merges pages in the middle of a frame, and
- * cells already placed sample stale texture coordinates: sprites vanish or smear across the row.
- * Swapping in a fresh atlas between frames once it holds this many pages keeps it from merging.
- */
 const ATLAS_RESET_PAGES = 8;
+const BOLD_AS_NUMBER = 700;
 
 function loadWebglRenderer(terminal: Terminal): void {
     try {
@@ -77,7 +66,6 @@ function boundGlyphAtlas(terminal: Terminal, webgl: WebglAddon): void {
     webgl.onAddTextureAtlasCanvas(() => {
         if (++pages < ATLAS_RESET_PAGES || resetPending) return;
         resetPending = true;
-        // Pages are added while a frame renders; replace the atlas after it, not under it.
         setTimeout(() => {
             resetPending = false;
             replaceGlyphAtlas(terminal, webgl);
@@ -85,14 +73,7 @@ function boundGlyphAtlas(terminal: Terminal, webgl: WebglAddon): void {
     });
 }
 
-/**
- * clearTextureAtlas() keeps every page (and skips the clear whenever page 0 happens to be
- * empty), so it cannot shrink the atlas. Atlases are cached by the options they render with and a
- * terminal's old one is disposed when its options stop matching, so alternating fontWeightBold
- * between two spellings of the same weight yields a fresh one-page atlas; clearTextureAtlas()
- * then drops the render model's references into the old one.
- */
 function replaceGlyphAtlas(terminal: Terminal, webgl: WebglAddon): void {
-    terminal.options.fontWeightBold = terminal.options.fontWeightBold === 700 ? "bold" : 700;
+    terminal.options.fontWeightBold = terminal.options.fontWeightBold === BOLD_AS_NUMBER ? "bold" : BOLD_AS_NUMBER;
     webgl.clearTextureAtlas();
 }

@@ -27,9 +27,7 @@ import {Sprite, SpriteImage} from "../../src/js_engine/rendering/2d";
 import {AverageStat} from "../../src/js_engine/datatypes";
 import {createHudLabel} from "../_shared/hud";
 
-/** What differs between the terminal and the browser. */
 export interface Demo2dHost {
-    /** Ctrl+C, after the world has stopped. */
     quit(): void;
 }
 
@@ -37,15 +35,24 @@ function packRgb(r: number, g: number, b: number): number {
     return (r << 16) | (g << 8) | b;
 }
 
-// Immutable shared pixel data: every cross references CROSS_IMAGE and every
-// pixel references PIXEL_IMAGE — one buffer each no matter how many entities —
-// and gets its own color through the component's tint.
+const WHITE_RGB = 0xFFFFFF;
+const HUD_CROSS_RGB = 0x00FFCC;
+const MAX_CHANNEL = 255;
+const FADE_TARGET_RGB: readonly [number, number, number] = [255, 183, 206];
+const FADE_MIN_MS = 5000, FADE_JITTER_MS = 5000;
+const PIXELS_PER_SPAWN = 1_000;
+const SPAWN_AREA_CELLS = 100;
+const PLAYER_STEP_ROWS = 0.5;
+const PLAYER_STEP_COLUMNS = 1;
+const FPS_AVERAGE_FRAMES = 10;
+const MS_PER_SECOND = 1000;
+
 const CROSS_IMAGE = SpriteImage.fromPattern([
     ' # ',
     '###',
     ' # ',
-], {'#': 0xFFFFFF});
-const PIXEL_IMAGE = SpriteImage.solid(1, 1, 0xFFFFFF);
+], {'#': WHITE_RGB});
+const PIXEL_IMAGE = SpriteImage.solid(1, 1, WHITE_RGB);
 
 class FadeToColor extends Component {
     public color: [number, number, number] = [255, 255, 255];
@@ -61,13 +68,8 @@ class PlayerTag extends Component {
 
 }
 
-/** Reused by FadeSystem.interpolate; never escapes the caller that reads it. */
 const FADE_SCRATCH: [number, number, number] = [0, 0, 0];
 
-/**
- * Builds the 2D demo into `world`, enables input on the world's platform and registers its
- * systems. The host starts the loop.
- */
 export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
@@ -75,17 +77,13 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     const cameraEntity = buffer.createEntity("cameraEntity", [new Camera(), new LocalToWorld(), new RenderBounds()]);
     const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
 
-    // The sprite pass only runs while a singleton Console2DRenderSettings exists;
-    // keep a tracked handle so keybinds can retune it live.
     const settingsEntity = buffer.createEntity("2dRenderSettings");
     const renderSettings = buffer.addTrackedComponent(settingsEntity, new Console2DRenderSettings());
 
-    // Plus-shaped pixel sprite; sprite pixels are half a cell tall, so 3x3 pixels
-    // cover 3 cells x 1.5 cells on screen.
     function createCross(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const r = Math.round(Math.random() * 255)
-        const g = Math.round(Math.random() * 255)
-        const b = Math.round(Math.random() * 255)
+        const r = Math.round(Math.random() * MAX_CHANNEL)
+        const g = Math.round(Math.random() * MAX_CHANNEL)
+        const b = Math.round(Math.random() * MAX_CHANNEL)
         const localToWorld = new LocalToWorld();
         const components: Component[] = [new Sprite(CROSS_IMAGE, packRgb(r, g, b)), localToWorld];
         if (parent) {
@@ -98,15 +96,12 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     }
 
     function createPixel(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const r = Math.round(Math.random() * 255)
-        const g = Math.round(Math.random() * 255)
-        const b = Math.round(Math.random() * 255)
+        const r = Math.round(Math.random() * MAX_CHANNEL)
+        const g = Math.round(Math.random() * MAX_CHANNEL)
+        const b = Math.round(Math.random() * MAX_CHANNEL)
         const originalColor = new OriginalColor()
         originalColor.color = [r, g, b];
         const localToWorld = new LocalToWorld();
-        // A shared white pixel colored through its tint: fading it is a tint
-        // write, no pixel-data rebuild (the ANSI pipeline had to re-split an
-        // escape string per entity per frame here).
         const components: Component[] = [originalColor, new Sprite(PIXEL_IMAGE, packRgb(r, g, b)), localToWorld];
         if (parent) {
             components.push(new Parent(parent));
@@ -116,8 +111,12 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
     }
 
-    // as this entity updates at a different frequency compared to the others in the same archetype, add a component to force it to be in a different archetype
-    // causing only this specific entity to be updated instead of other cross entities
+    function createHudCross(): void {
+        const hudAnchor = new ConsoleImageAnchor();
+        hudAnchor.anchorPosition = 'bottom-right';
+        buffer.createEntity("hudCross", [new Sprite(CROSS_IMAGE, HUD_CROSS_RGB), new HudElement(), hudAnchor]);
+    }
+
     const [entity, position, localToWorld] = createCross(new LocalPosition(), cameraEntity, "cross1", new PlayerTag())
     createCross(new LocalPosition(-5, -5), entity, "cross2")
     createCross(new LocalPosition(-5, +5), entity, "cross3")
@@ -127,28 +126,20 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     const entityCounterImage = createHudLabel(buffer, "entityCounter", Ansi.colors.fg.green + 'HUD element', 'bottom-left');
     const fpsCounterImage = createHudLabel(buffer, "fpsCounter", Ansi.colors.fg.green + 'FPS: 0', 'top-right');
 
-    // A pixel HUD widget: the shared cross image, teal-tinted, anchored bottom-right
-    // and drawn through ConsoleSpriteHudRenderPassSystem in screen space.
-    {
-        const hudAnchor = new ConsoleImageAnchor();
-        hudAnchor.anchorPosition = 'bottom-right';
-        buffer.createEntity("hudCross", [new Sprite(CROSS_IMAGE, 0x00FFCC), new HudElement(), hudAnchor]);
-    }
+    createHudCross();
 
     consoleInput.enable({platform: world.platform})
-    // Half-block cells double the vertical resolution, so the player moves in
-    // half-cell steps and lands on either half of a cell.
     consoleInput.whenKey(Key.Up, () => {
-        position.y -= 0.5;
+        position.y -= PLAYER_STEP_ROWS;
     })
     consoleInput.whenKey(Key.Down, () => {
-        position.y += 0.5;
+        position.y += PLAYER_STEP_ROWS;
     })
     consoleInput.whenKey(Key.Left, () => {
-        position.x -= 1;
+        position.x -= PLAYER_STEP_COLUMNS;
     })
     consoleInput.whenKey(Key.Right, () => {
-        position.x += 1;
+        position.x += PLAYER_STEP_COLUMNS;
     })
 
     consoleInput.whenKey(Key.W, () => {
@@ -166,23 +157,16 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
 
 
     consoleInput.whenKey(Key.Space, () => {
-        for (let i = 0; i < 1_000; i++) {
-            const x = (Math.random() - 0.5) * 100
-            const y = (Math.random() - 0.5) * 100
+        for (let i = 0; i < PIXELS_PER_SPAWN; i++) {
+            const x = (Math.random() - 0.5) * SPAWN_AREA_CELLS
+            const y = (Math.random() - 0.5) * SPAWN_AREA_CELLS
             const newPos = new LocalPosition();
             newPos.x = x + Vec.x(localToWorld.position)
             newPos.y = y + Vec.y(localToWorld.position)
-            // Distinct depth per pixel. Left at 0, every pixel shares a depth, and
-            // the rasterizer's depth test breaks ties by blit order -- which is index
-            // batch order, which changes the moment an entity changes archetype. A fade
-            // completing removes two components, so the winner of a shared cell flips and
-            // the pink pixel appears to hop one tile. Pixels spawn into a 100x100 area, so
-            // at 100k+ entities roughly a dozen are stacked on every terminal cell and this
-            // happens constantly. Must stay inside the pass's [-1000, 1000] camera z range.
             newPos.z = Math.random()
             const fadeToColor = new FadeToColor();
-            fadeToColor.color = [255, 183, 206]
-            fadeToColor.fadeTime = Math.random() * 5000 + 5000;
+            fadeToColor.color = [...FADE_TARGET_RGB]
+            fadeToColor.fadeTime = Math.random() * FADE_JITTER_MS + FADE_MIN_MS;
             createPixel(newPos, undefined, undefined, fadeToColor);
         }
     })
@@ -197,7 +181,6 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         renderer.enabled = !renderer.enabled;
     })
     consoleInput.whenKey(Key.H, () => {
-        // Live retune: drop to whole-cell resolution (pixel rows averaged) and back.
         renderSettings.halfBlockCells = !renderSettings.halfBlockCells;
     })
     consoleInput.whenKey(Key.G, () => {
@@ -222,10 +205,6 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
             return this._query.entityCount()
         }
 
-        /**
-         * Writes into a module-scope scratch tuple rather than returning a fresh array: this runs
-         * per fading entity per frame inside a consume(), and the demo spawns 1,000 at a time.
-         */
         private interpolate(color1: readonly [number, number, number], color2: readonly [number, number, number], scale: number): [number, number, number] {
             const out = FADE_SCRATCH;
             if (scale >= 1) {
@@ -250,8 +229,6 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         onUpdate(): void {
             const deltaTime = this.world.time.deltaTime;
             this._query.stream({
-                // All three are written: the fade advances its own timer, retints the
-                // sprite, and on completion snaps originalColor to the target colour.
                 write: {originalColor: OriginalColor, fadeToColor: FadeToColor, sprite: Sprite},
             }, {
                 includeEntity: true
@@ -260,14 +237,9 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
 
                 const scale = fadeToColor.currentFadeTime / fadeToColor.fadeTime;
                 const finalColor = this.interpolate(originalColor.color, fadeToColor.color, scale)
-                // The pixel data stays white; the fade only moves the tint.
                 sprite.tint = packRgb(finalColor[0], finalColor[1], finalColor[2]);
                 if (fadeToColor.currentFadeTime >= fadeToColor.fadeTime) {
                     originalColor.color = fadeToColor.color;
-                    // fade is done: stop touching this entity's Sprite every frame and move it
-                    // out of the shared "fading pixel" archetype so it no longer contributes to the
-                    // per-archetype change-tracking cascade (bounds recompute + octree rebatch) that
-                    // every other still-fading pixel triggers each frame.
                     buffer.removeComponent(entity, FadeToColor);
                     buffer.removeComponent(entity, OriginalColor);
                 }
@@ -279,11 +251,9 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         private _query = this.createEntityQuery([LocalToWorld])
         private _hudQuery = this.createEntityQuery([HudElement])
         private _toggle = true;
-        private _fpsCounter = new AverageStat(10)
+        private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
 
         protected onCreate() {
-            // this.requireAnyForUpdate(this._query);
-            // this.enabled = false;
             consoleInput.whenKeyDown(Key.Tab, () => {
                 this._toggle = !this._toggle;
                 buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
@@ -293,7 +263,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         onUpdate() {
             if (!this._toggle) return;
             this._query.entityCount();
-            this._fpsCounter.add(1000 / this.world.time.deltaTime)
+            this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTime)
             fpsCounterImage.image = [
                 Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
             ]
@@ -302,7 +272,6 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
                 const fadeSystemCount = fadeSystem.count();
                 entityCounterImage.image = [
                     Ansi.colors.fg.green + 'Entities: ' +
-                    // (this.world.entityCount),
                     fadeSystemCount.toFixed(2),
                 ]
             } else {

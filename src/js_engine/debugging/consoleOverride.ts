@@ -1,10 +1,9 @@
 ﻿import {originalConsole} from "./originalConsole";
 
 const ConsoleEventListeners: Console[] = [originalConsole]
-// A member the loop below cannot enumerate on some host falls through to the real console.
-const ConsoleEventSource = Object.create(originalConsole);
+const ConsoleFallingBackToOriginal = Object.create(originalConsole);
 for (let key in console) {
-    ConsoleEventSource[key] = (...args: unknown[]) => ConsoleEventListeners.forEach(listener => (listener as any)[key](...args));
+    ConsoleFallingBackToOriginal[key] = (...args: unknown[]) => ConsoleEventListeners.forEach(listener => (listener as any)[key](...args));
 }
 
 function removeConsoleEventListener(listener: Console) {
@@ -17,7 +16,7 @@ function addConsoleEventListener(listener: Console) {
     if (index === -1) ConsoleEventListeners.push(listener);
 }
 
-console = Object.freeze(ConsoleEventSource);
+console = Object.freeze(ConsoleFallingBackToOriginal);
 
 export const consoleOverride = {
     removeConsoleEventListener,

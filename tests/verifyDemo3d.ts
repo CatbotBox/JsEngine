@@ -1,13 +1,3 @@
-/**
- * Runs the shared 3D demo (demo/3d/game.ts) the way the browser page does: on a MemoryPlatform
- * whose files are a PreloadedFileSource filled from the manifest scripts/buildWeb.ts writes (so
- * objs with a mesh cache are stat-only and nothing is read from disk by the game), with the
- * hand-written inflate and no workers. Checks that the scene renders through a model of xterm.js,
- * that every model loads from its mesh cache rather than a full obj parse, that PNG textures go
- * through the hand-written inflate, and that the raster stays single-threaded.
- *
- * Run: bun tests/verifyDemo3d.ts
- */
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
 import {DebugWorld} from "../src/js_engine/core";
@@ -28,14 +18,14 @@ const ROOT = resolve(__dirname, "..");
 const FRAMES = 30;
 const FRAME_MS = 1000 / 60;
 const CTRL_C = "\x03";
-/** Held every frame: rotates the models, so every frame differs and damage tracking cannot skip it. */
 const ARROW_RIGHT = "\x1b[C";
 const SIZE = {columns: 120, rows: 40};
-/** From this frame on, one model per step is selected (n) and spawned (space). */
 const FIRST_SPAWN_FRAME = 5;
 const SPAWN_EVERY = 4;
-/** Longer than the input's synthetic key-release delay, so the next n and space are fresh presses. */
 const KEY_RELEASE_WAIT_MS = 150;
+const BYTES_PER_MB = 1024 * 1024;
+const PROMPT_ROWS = 1;
+const MIN_SCENE_CELL_DIVISOR = 50;
 
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 
@@ -52,7 +42,6 @@ function expect(condition: boolean, label: string) {
     }
 }
 
-/** Serves the repository like the dev server serves web/dist: the URL is the encoded relative path. */
 async function fetchFromDisk(url: string): Promise<FetchedFile> {
     let bytes: Uint8Array;
     try {
@@ -63,7 +52,6 @@ async function fetchFromDisk(url: string): Promise<FetchedFile> {
     return {ok: true, status: 200, arrayBuffer: async () => bytes.slice().buffer};
 }
 
-/** The page's file source, with every read recorded. */
 class WatchedFiles implements FileSource {
     public readonly read = new Set<string>();
 
@@ -89,7 +77,6 @@ class WatchedFiles implements FileSource {
     }
 }
 
-/** Counts SharedArrayBuffer allocations, which only the raster worker pool makes. */
 let sharedBuffersAllocated = 0;
 const RealSharedArrayBuffer = globalThis.SharedArrayBuffer;
 (globalThis as {SharedArrayBuffer: unknown}).SharedArrayBuffer = new Proxy(RealSharedArrayBuffer, {
@@ -108,7 +95,6 @@ async function main(): Promise<void> {
     const manifest = buildDemo3dManifest(ROOT);
     const preloaded = new PreloadedFileSource({fetch: fetchFromDisk});
     await preloaded.preload(manifest.files);
-    // Every model is spawned from synchronous key presses below, so the lazy ones are fetched up front.
     await preloaded.ensureLoaded(manifest.files.map(file => file.path));
     const files = new WatchedFiles(preloaded);
     let inflateCalls = 0;
@@ -125,7 +111,7 @@ async function main(): Promise<void> {
     const cached = manifest.models.filter(model => manifest.files.some(file => file.path === meshCachePathFor(model.path)));
     const fetchedBytes = manifest.files.reduce((sum, file) => sum + (file.statOnly === true ? 0 : file.size), 0);
     const lazy = manifest.files.filter(file => file.lazy === true).map(file => file.path);
-    log(`manifest: ${manifest.models.length} models, ${manifest.files.length} files, ${(fetchedBytes / 1024 / 1024).toFixed(1)} MB preloaded, stat-only: ${statOnly.join(", ")}, lazy: ${lazy.join(", ") || "none"}`);
+    log(`manifest: ${manifest.models.length} models, ${manifest.files.length} files, ${(fetchedBytes / BYTES_PER_MB).toFixed(1)} MB preloaded, stat-only: ${statOnly.join(", ")}, lazy: ${lazy.join(", ") || "none"}`);
 
     const terminal = new TerminalScreen(SIZE.columns, SIZE.rows);
     const world = new DebugWorld({platform});
@@ -162,10 +148,10 @@ async function main(): Promise<void> {
     }
 
     const screen = Ansi.strip(platform.output.text());
-    const frameCells = SIZE.columns * (SIZE.rows - 1);
+    const frameCells = SIZE.columns * (SIZE.rows - PROMPT_ROWS);
     expect(framesWritten > FRAMES / 2, `frames written (${framesWritten}/${FRAMES})`);
     expect(maxTriangles > 0, `the 3D pass drew triangles (up to ${maxTriangles} in one frame)`);
-    expect(maxSceneCells > frameCells / 50, `scene cells painted in 24-bit colour (up to ${maxSceneCells}/${frameCells})`);
+    expect(maxSceneCells > frameCells / MIN_SCENE_CELL_DIVISOR, `scene cells painted in 24-bit colour (up to ${maxSceneCells}/${frameCells})`);
     expect(screen.includes("FPS:"), "the FPS label rendered");
     expect(screen.includes("Next: "), "the spawn preview rendered");
     expect(world.entityCount > 0 && spawned === manifest.models.length - 1, `every model was spawned once (${spawned + 1} models)`);

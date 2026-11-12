@@ -4,20 +4,16 @@ import type {DecodedKey} from "./ansiKeyDecoder";
 import type {Platform} from "../platform/platform";
 import {nodePlatform} from "../platform/nodePlatform";
 
-// Signal — tiny typed event emitter (replaces ./util/event)
-
 export type Listener<T> = (payload: T) => void;
 
 export class Signal<T = void> {
     private readonly listeners = new Set<Listener<T>>();
 
-    /** Subscribe. Returns an unsubscribe function. */
     add(fn: Listener<T>): () => void {
         this.listeners.add(fn);
         return () => this.listeners.delete(fn);
     }
 
-    /** Subscribe for exactly one invocation. */
     once(fn: Listener<T>): () => void {
         const off = this.add((p) => { off(); fn(p); });
         return off;
@@ -27,8 +23,8 @@ export class Signal<T = void> {
     clear(): void { this.listeners.clear(); }
 
     invoke(payload: T): void {
-        // iterate a copy so a listener may unsubscribe mid-dispatch safely
-        for (const fn of [...this.listeners]) {
+        const listenersAtDispatch = [...this.listeners];
+        for (const fn of listenersAtDispatch) {
             try { fn(payload); }
             catch (err) { console.error('[input] listener threw:', err); }
         }
@@ -37,33 +33,39 @@ export class Signal<T = void> {
     get size(): number { return this.listeners.size; }
 }
 
-// Terminal control sequences
+const CSI = '\x1b[';
+const REPORT_ALL_MOTION_MODE = '?1003';
+const SGR_EXTENDED_COORDINATES_MODE = '?1006';
+const CURSOR_VISIBLE_MODE = '?25';
+const ENABLE_MOUSE  = `${CSI}${REPORT_ALL_MOTION_MODE}h${CSI}${SGR_EXTENDED_COORDINATES_MODE}h`;
+const DISABLE_MOUSE = `${CSI}${REPORT_ALL_MOTION_MODE}l${CSI}${SGR_EXTENDED_COORDINATES_MODE}l`;
+const HIDE_CURSOR   = `${CSI}${CURSOR_VISIBLE_MODE}l`;
+const SHOW_CURSOR   = `${CSI}${CURSOR_VISIBLE_MODE}h`;
 
-// 1003 = report ALL motion, 1006 = SGR extended coordinates (needed for x/y > 223)
-const ENABLE_MOUSE  = '\x1b[?1003h\x1b[?1006h';
-const DISABLE_MOUSE = '\x1b[?1003l\x1b[?1006l'; // disable the SAME modes we enabled
-const HIDE_CURSOR   = '\x1b[?25l';
-const SHOW_CURSOR   = '\x1b[?25h';
+const DEFAULT_KEY_RELEASE_DELAY_MS = 120;
 
-// Public types
+const SGR_RELEASE_SUFFIX = 'm';
+const SGR_SHIFT_BIT = 4;
+const SGR_META_BIT = 8;
+const SGR_CTRL_BIT = 16;
+const SGR_MOTION_BIT = 32;
+const SGR_WHEEL_BIT = 64;
+const SGR_WHEEL_DOWN_BIT = 1;
+const SGR_BUTTON_MASK = 3;
 
 export interface KeyEvent {
-    /** canonical id used by keyDown()/keyPressed(): key.name, else raw sequence */
     id: string;
     name?: string;
     sequence: string;
     ctrl: boolean;
-    meta: boolean;   // Alt / Option
+    meta: boolean;
     shift: boolean;
-    /** true when produced by OS key-repeat rather than the initial press */
     repeat: boolean;
 }
 
-/** Any Key enum member, or any raw key string (e.g. a single character like '/'). */
 export type KeyName = Key | (string & {});
 
-/** Friendly spellings normalised to their canonical Key value. */
-const KEY_ALIASES: Readonly<Record<string, string>> = {
+const CANONICAL_KEY_BY_ALIAS: Readonly<Record<string, string>> = {
     control: 'ctrl',
     ctl: 'ctrl',
     option: 'alt',
@@ -80,7 +82,7 @@ const KEY_ALIASES: Readonly<Record<string, string>> = {
 
 function normalizeKey(name: string): string {
     const lower = name.toLowerCase();
-    return KEY_ALIASES[lower] ?? lower;
+    return CANONICAL_KEY_BY_ALIAS[lower] ?? lower;
 }
 
 export type MouseButton =
@@ -93,54 +95,43 @@ export type MouseEventType = 'press' | 'release' | 'move' | 'drag' | 'wheel';
 export interface MouseEvent {
     type: MouseEventType;
     button: MouseButton;
-    x: number; // 1-based column
-    y: number; // 1-based row
+    x: number;
+    y: number;
     ctrl: boolean;
     meta: boolean;
     shift: boolean;
-    raw: number; // the decoded SGR button byte, for advanced use
+    raw: number;
 }
 
 export interface InputOptions {
-    /** enable mouse reporting. default true */
     mouse?: boolean;
-    /** hide the terminal cursor while active. default false */
     hideCursor?: boolean;
-    /** ms of silence after the last key event before a key is treated as released. default 120 */
     keyReleaseDelayMs?: number;
-    /** behaviour when the platform has no interactive input (stdin is not a TTY). default 'warn' */
     noTTY?: 'warn' | 'throw' | 'silent';
-    /** host to read input from and write terminal modes to. default: the node platform */
     platform?: Platform;
 }
 
-// InputSystem
-
 export class ConsoleInput {
-    // events
-    readonly onKey       = new Signal<KeyEvent>();   // every key event, incl. repeats
-    readonly onKeyDown   = new Signal<KeyEvent>();   // transition to pressed only
-    readonly onKeyUp     = new Signal<KeyEvent>();   // synthetic; see class docstring
-    readonly onMouse     = new Signal<MouseEvent>(); // every mouse event
+    readonly onKey       = new Signal<KeyEvent>();
+    readonly onKeyDown   = new Signal<KeyEvent>();
+    readonly onKeyUp     = new Signal<KeyEvent>();
+    readonly onMouse     = new Signal<MouseEvent>();
     readonly onMouseDown = new Signal<MouseEvent>();
     readonly onMouseUp   = new Signal<MouseEvent>();
-    readonly onMouseMove = new Signal<MouseEvent>(); // move + drag
+    readonly onMouseMove = new Signal<MouseEvent>();
     readonly onWheel     = new Signal<MouseEvent>();
 
-    // persistent state
     private readonly keysDown    = new Set<string>();
     private readonly buttonsDown = new Set<MouseButton>();
     private _mouseX = 0;
     private _mouseY = 0;
 
-    // per-frame edge state
     private readonly keyPressedFrame    = new Set<string>();
     private readonly keyReleasedFrame   = new Set<string>();
     private readonly mousePressedFrame  = new Set<MouseButton>();
     private readonly mouseReleasedFrame = new Set<MouseButton>();
     private _wheelDeltaFrame = 0;
 
-    // internals
     private options!: Required<Omit<InputOptions, 'platform'>>;
     private enabled = false;
     private platform: Platform | undefined;
@@ -148,18 +139,14 @@ export class ConsoleInput {
     private readonly keyDecoder = new AnsiKeyDecoder((key) => this.handleKeypress(key));
     private readonly releaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-    // bound handlers (stable refs so we can remove them on disable)
     private readonly onInputData = (data: string) => this.handleData(data);
     private readonly onExit      = () => this.disable();
 
-    // SGR mouse: ESC [ < btn ; x ; y (M=press/motion | m=release)
-    private static readonly MOUSE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+    private static readonly SGR_MOUSE_REPORT = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
 
     get mouseX(): number { return this._mouseX; }
     get mouseY(): number { return this._mouseY; }
     get isEnabled(): boolean { return this.enabled; }
-
-    // lifecycle
 
     enable(options: InputOptions = {}): this {
         if (this.enabled) return this;
@@ -167,7 +154,7 @@ export class ConsoleInput {
         this.options = {
             mouse: options.mouse ?? true,
             hideCursor: options.hideCursor ?? false,
-            keyReleaseDelayMs: options.keyReleaseDelayMs ?? 120,
+            keyReleaseDelayMs: options.keyReleaseDelayMs ?? DEFAULT_KEY_RELEASE_DELAY_MS,
             noTTY: options.noTTY ?? 'warn',
         };
 
@@ -176,17 +163,16 @@ export class ConsoleInput {
             const msg = '[input] no interactive input (stdin is not a TTY) — keyboard/mouse input unavailable.';
             if (this.options.noTTY === 'throw') throw new Error(msg);
             if (this.options.noTTY === 'warn') console.error(msg);
-            return this; // stay disabled rather than crash (safe in CI / piped runs)
+            return this;
         }
 
         this.platform = platform;
         this.enabled = true;
-        // best-effort terminal restore on host teardown
         this.stopWatchingExit = platform.onExit(this.onExit);
 
         platform.input.start(this.onInputData);
-        // A host may deliver buffered bytes inside start(), and a listener may disable input.
-        if (!this.enabled) return this;
+        const disabledByListenerDuringStart = !this.enabled;
+        if (disabledByListenerDuringStart) return this;
 
         if (this.options.mouse)      platform.output.write(ENABLE_MOUSE);
         if (this.options.hideCursor) platform.output.write(HIDE_CURSOR);
@@ -218,22 +204,15 @@ export class ConsoleInput {
         return this;
     }
 
-    // frame polling API
-
-    /** Held down right now (best-effort for keys — see docstring). */
     keyDown(id: string): boolean { return this.keysDown.has(id); }
-    /** Went down during this frame (edge). */
     keyPressed(id: string): boolean { return this.keyPressedFrame.has(id); }
-    /** Went up during this frame (edge, synthetic for keys). */
     keyReleased(id: string): boolean { return this.keyReleasedFrame.has(id); }
 
     mouseButtonDown(b: MouseButton): boolean { return this.buttonsDown.has(b); }
     mousePressed(b: MouseButton): boolean { return this.mousePressedFrame.has(b); }
     mouseReleased(b: MouseButton): boolean { return this.mouseReleasedFrame.has(b); }
-    /** Net wheel this frame: +1 per notch up, -1 per notch down. */
     get wheelDelta(): number { return this._wheelDeltaFrame; }
 
-    /** Call once at the END of every game-loop iteration to reset per-frame edges. */
     endFrame(): void { this.clearFrame(); }
 
     private clearFrame(): void {
@@ -244,9 +223,6 @@ export class ConsoleInput {
         this._wheelDeltaFrame = 0;
     }
 
-    // filtered subscription
-
-    /** Subscribe to key events matching every provided field. Returns unsubscribe. */
     onKeyMatch(
         match: Partial<Pick<KeyEvent, 'name' | 'ctrl' | 'meta' | 'shift'>>,
         cb: Listener<KeyEvent>,
@@ -259,38 +235,16 @@ export class ConsoleInput {
         });
     }
 
-    // named key subscription
-
-    /**
-     * Fire `cb` when `key` transitions to pressed.
-     * `key` accepts any Key / character, plus the modifiers 'shift' | 'ctrl' | 'alt'
-     * (aliases: 'control', 'option', 'meta'). Matching is case-insensitive.
-     * Modifiers match while held during another key event — a terminal cannot report
-     * a bare modifier tap. Returns an unsubscribe function.
-     *
-     *   input.whenKeyDown(Key.Space, () => jump());
-     *   input.whenKeyDown('w', () => moveUp());
-     *   input.whenKeyDown('ctrl', (e) => console.log('ctrl held on', e.id));
-     */
     whenKeyDown(key: KeyName, cb: Listener<KeyEvent>): () => void {
         const target = normalizeKey(key);
         return this.onKeyDown.add((e) => { if (this.matchesKey(target, e)) cb(e); });
     }
 
-    /**
-     * Fire `cb` on the (synthetic) release of `key`. See the class docstring —
-     * terminals fake key-up via a silence timeout, and modifier flags are not
-     * carried on release, so modifier targets won't match here.
-     */
     whenKeyUp(key: KeyName, cb: Listener<KeyEvent>): () => void {
         const target = normalizeKey(key);
         return this.onKeyUp.add((e) => { if (this.matchesKey(target, e)) cb(e); });
     }
 
-    /**
-     * Fire on EVERY matching key event, including OS key-repeat while held.
-     * Use this for hold-to-repeat behaviour (e.g. holding an arrow to keep moving).
-     */
     whenKey(key: KeyName, cb: Listener<KeyEvent>): () => void {
         const target = normalizeKey(key);
         return this.onKey.add((e) => { if (this.matchesKey(target, e)) cb(e); });
@@ -299,39 +253,28 @@ export class ConsoleInput {
     private matchesKey(target: string, e: KeyEvent): boolean {
         switch (target) {
             case 'ctrl':   return e.ctrl;
-            case 'alt':    return e.meta;                             // readline reports Alt as `meta`
+            case 'alt':    return e.meta;
             case 'shift':  return e.shift;
-            case 'return': return e.id === 'return' || e.id === 'enter'; // \r or \n
+            case 'return': return e.id === 'return' || e.id === 'enter';
             default:       return e.id === target;
         }
     }
 
-    // raw stream handling
-
     private handleData(data: string): void {
-        const re = ConsoleInput.MOUSE;
+        const re = ConsoleInput.SGR_MOUSE_REPORT;
         re.lastIndex = 0;
-        let last = 0;
+        let textStart = 0;
         let m: RegExpExecArray | null;
 
-        // Split the chunk into [text][mouse][text][mouse]... preserving order,
-        // forwarding text to the keyboard decoder and handling mouse inline.
         while ((m = re.exec(data)) !== null) {
-            if (m.index > last) this.keyDecoder.write(data.slice(last, m.index));
+            if (m.index > textStart) this.keyDecoder.write(data.slice(textStart, m.index));
             this.handleMouse(m);
-            last = re.lastIndex;
+            textStart = re.lastIndex;
         }
-        if (last < data.length) this.keyDecoder.write(data.slice(last));
+        if (textStart < data.length) this.keyDecoder.write(data.slice(textStart));
     }
 
-    // keyboard
-
     private handleKeypress(key: DecodedKey): void {
-        // NOTE: Ctrl+C arrives as an ordinary key event ({ name: 'c', ctrl: true }).
-        // Raw mode disables the automatic SIGINT, and this system intentionally does
-        // NOT exit on its own — subscribe to control shutdown yourself, e.g.:
-        //   input.onKeyMatch({ name: 'c', ctrl: true }, () => { cleanup(); process.exit(0); });
-
         const id = key.name ?? key.sequence;
         if (!id) return;
 
@@ -353,9 +296,12 @@ export class ConsoleInput {
         }
         this.onKey.invoke(ev);
 
-        // (re)arm the synthetic-release timer: no repeat within the window => "up"
-        const prev = this.releaseTimers.get(id);
-        if (prev) clearTimeout(prev);
+        this.rearmSyntheticRelease(id);
+    }
+
+    private rearmSyntheticRelease(id: string): void {
+        const pendingRelease = this.releaseTimers.get(id);
+        if (pendingRelease) clearTimeout(pendingRelease);
         this.releaseTimers.set(
             id,
             setTimeout(() => this.releaseKey(id), this.options.keyReleaseDelayMs),
@@ -372,19 +318,17 @@ export class ConsoleInput {
         });
     }
 
-    // mouse (SGR 1006)
-
     private handleMouse(m: RegExpExecArray): void {
         const sgrButton = parseInt(m[1], 10);
         const x  = parseInt(m[2], 10);
         const y  = parseInt(m[3], 10);
-        const released = m[4] === 'm';
+        const released = m[4] === SGR_RELEASE_SUFFIX;
 
-        const shift  = !!(sgrButton & 4);
-        const meta   = !!(sgrButton & 8);
-        const ctrl   = !!(sgrButton & 16);
-        const motion = !!(sgrButton & 32);
-        const wheel  = !!(sgrButton & 64);
+        const shift  = !!(sgrButton & SGR_SHIFT_BIT);
+        const meta   = !!(sgrButton & SGR_META_BIT);
+        const ctrl   = !!(sgrButton & SGR_CTRL_BIT);
+        const motion = !!(sgrButton & SGR_MOTION_BIT);
+        const wheel  = !!(sgrButton & SGR_WHEEL_BIT);
 
         this._mouseX = x;
         this._mouseY = y;
@@ -393,10 +337,10 @@ export class ConsoleInput {
         let type: MouseEventType;
 
         if (wheel) {
-            button = (sgrButton & 1) ? 'wheelDown' : 'wheelUp';
+            button = (sgrButton & SGR_WHEEL_DOWN_BIT) ? 'wheelDown' : 'wheelUp';
             type = 'wheel';
         } else {
-            const low = sgrButton & 3;
+            const low = sgrButton & SGR_BUTTON_MASK;
             button =
                 low === 0 ? 'left' :
                     low === 1 ? 'middle' :
@@ -431,7 +375,5 @@ export class ConsoleInput {
         this.onMouse.invoke(ev);
     }
 }
-
-// Singleton — import { input } from './input'
 
 export const input = new ConsoleInput();

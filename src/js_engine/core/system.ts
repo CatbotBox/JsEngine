@@ -5,18 +5,14 @@ import {
     toTokens,
 } from "../util/tokenUtils";
 import {EntityManager} from "./entityManager";
-// `import type`, not a value import: SystemGroup is only ever a type here, and
-// `class SystemGroup extends System` reads System at systemGroup.ts's top level.
-// A value import would make that a real runtime cycle whose base-class read
-// happens during the init window; the type-only form erases the edge entirely.
 import type {SystemGroup} from "./systemGroup";
 import {WorldSource} from "./worldSource";
 
 export type SystemCtor<T extends System> = new () => T;
 
-/**
- * Unity-like base System with OnCreate/OnUpdate and a fluent Entities API.
- */
+const CREATE_GROUP_IF_MISSING = true;
+const EXISTING_GROUP_ONLY = false;
+
 export abstract class System extends WorldSource {
     private _enabled = true;
     private _requiredAnyForUpdate: EntityQuery[] | undefined;
@@ -40,26 +36,14 @@ export abstract class System extends WorldSource {
         return 0;
     }
 
-    /**
-     * Which group this system updates in. `undefined` means the world's root
-     * group.
-     *
-     * Deliberately not `return RootSystemGroup`: that would make system.ts
-     * import rootSystemGroup.ts, closing the
-     * `system -> systemGroup -> rootSystemGroup -> system` cycle at load time,
-     * and `SystemGroup extends System` means whichever module is entered first
-     * crashes with `System is undefined`. Letting the World supply the default
-     * removes the edge entirely.
-     */
     protected systemGroup(): (new () => SystemGroup) | undefined {
         return undefined;
     }
 
-    /** Resolves `systemGroup()` against the world; see the note above. */
-    private resolveUpdateGroup(create: boolean): SystemGroup | undefined {
+    private resolveUpdateGroup(createIfMissing: boolean): SystemGroup | undefined {
         const group = this.systemGroup();
         if (group === undefined) return this.world.rootSystemGroup;
-        return create ? this.world.getOrCreateSystem(group) : this.world.tryGetSystem(group);
+        return createIfMissing ? this.world.getOrCreateSystem(group) : this.world.tryGetSystem(group);
     }
 
     protected get entityManager(): EntityManager {
@@ -112,10 +96,9 @@ export abstract class System extends WorldSource {
 
     public create(): void {
         if (this._isCreated) return;
-        const updateGroup = this.resolveUpdateGroup(true);
-        // Both guards are the root group creating itself: the world has no root
-        // yet, and the root group is not its own child.
-        if (updateGroup !== undefined && (updateGroup as System) !== this) updateGroup.addSystemInstance(this);
+        const updateGroup = this.resolveUpdateGroup(CREATE_GROUP_IF_MISSING);
+        const isRootGroupCreatingItself = updateGroup === undefined || (updateGroup as System) === this;
+        if (!isRootGroupCreatingItself) updateGroup.addSystemInstance(this);
         this._isCreated = true;
         this.onCreate();
         if (this.enabled) this.onEnable();
@@ -129,20 +112,17 @@ export abstract class System extends WorldSource {
         if (this.enabled) this.onDisable();
         this._isCreated = false;
         this.onDestroy();
-        const updateGroup = this.resolveUpdateGroup(false);
+        const updateGroup = this.resolveUpdateGroup(EXISTING_GROUP_ONLY);
         if (!updateGroup) return;
         updateGroup.removeSystemInstance(this);
         this.world.removeSystem(this.constructor as SystemCtor<this>);
     }
 
     protected onDestroy(): void {
-        // override to clean up resources
     }
 
-    /** Your per-frame logic goes here */
     public abstract onUpdate(): void;
 
-    /** Called by World each frame */
     public update(): void {
         if (!this._enabled) return;
         if (this._requiredAnyForUpdate) {
@@ -162,7 +142,7 @@ export abstract class System extends WorldSource {
     }
 
     public set enabled(v: boolean) {
-        if (v === this.enabled) return; // no change
+        if (v === this.enabled) return;
         if (v) {
             this._enabled = true;
             this.onEnable();
@@ -180,10 +160,6 @@ export abstract class System extends WorldSource {
 
     }
 
-    // Simple, immediate iteration
-
-
-    /** Build an EntityQuery from an array of tokens *or* constructors (no labels). */
     protected createEntityQuery<
         IncSpec extends readonly TokenOrCtor[],
         ExcSpec extends readonly TokenOrCtor[] = []

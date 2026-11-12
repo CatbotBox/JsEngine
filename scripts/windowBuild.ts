@@ -1,4 +1,3 @@
-/** The build steps scripts/window.ts and scripts/packageWindow.ts share. */
 import {join, resolve} from "path";
 
 export const ROOT = resolve(__dirname, "..");
@@ -10,7 +9,6 @@ export function exitOnFailure(exitCode: number | null): void {
     if (exitCode !== 0) process.exit(exitCode ?? 1);
 }
 
-/** The first non-flag argument (`2d` or `3d`, `fallback` if absent) as the page file it names. */
 export function pageFromArguments(fallback: string): string {
     const pageName = process.argv.slice(2).find(arg => !arg.startsWith("--")) ?? fallback;
     const page = PAGES[pageName];
@@ -28,7 +26,6 @@ export function buildWeb(): void {
     exitOnFailure(result.exitCode);
 }
 
-/** Bundles window/main.ts into `outdir` and returns the bundle's path. */
 export async function bundleMainProcess(outdir = WINDOW_DIST): Promise<string> {
     const result = await Bun.build({
         entrypoints: [join(ROOT, "window", "main.ts")],
@@ -44,10 +41,6 @@ export async function bundleMainProcess(outdir = WINDOW_DIST): Promise<string> {
     return join(outdir, "main.js");
 }
 
-/**
- * The environment minus ELECTRON_RUN_AS_NODE: some editors' terminals set it, and then electron
- * runs as plain node, where `require("electron")` returns the npm stub's path instead of the API.
- */
 export function electronEnvironment(): Record<string, string | undefined> {
     const {ELECTRON_RUN_AS_NODE: _, ...environment} = process.env;
     return environment;

@@ -1,16 +1,6 @@
 import type {FileSource, Platform, PlatformInput, PlatformScreen, TerminalSize, WorkerFactory} from "./platform";
 import {WORKER_ENTRY_POINT} from "./platform";
 
-/*
- * The only engine module that touches node's API. Modules are required inside function
- * bodies, never at load time, so importing this file costs nothing on a host without them.
- *
- * Node is reached through the Node* interfaces below, which list exactly what is used,
- * rather than through @types/node: World imports this file, and scriptc typechecks it
- * against narrower node typings that lack half of these members, which would stop its
- * analysis of the whole engine before it starts.
- */
-
 interface NodeTtyReadStream {
     readonly isTTY?: boolean;
     setRawMode(raw: boolean): void;
@@ -85,12 +75,10 @@ function nodeProcess(): NodeProcess {
 }
 
 const FALLBACK_SIZE: TerminalSize = {columns: 80, rows: 24};
-/** bun emits no tty resize event, so its size is polled at this interval instead. */
 const BUN_RESIZE_POLL_MS = 50;
 
 let sharedPlatform: Platform | undefined;
 
-/** Node or bun with a terminal on stdin/stdout. One per process: they share a single stdin and stdout. */
 export function nodePlatform(): Platform {
     return sharedPlatform ??= createNodePlatform();
 }
@@ -130,9 +118,7 @@ function createTerminalInput(): PlatformInput {
         start(onData: (data: string) => void): void {
             stop();
             const stdin = nodeProcess().stdin;
-            // setEncoding("utf8") makes every chunk a string, split multi-byte characters included.
             listener = chunk => onData(String(chunk));
-            // Raw mode: byte by byte, no echo, and no automatic SIGINT on Ctrl+C.
             if (stdin.isTTY) stdin.setRawMode(true);
             stdin.resume();
             stdin.setEncoding("utf8");
@@ -145,7 +131,6 @@ function createTerminalInput(): PlatformInput {
 function createTerminalScreen(onBun: boolean): PlatformScreen {
     const size = (): TerminalSize => {
         const {stdout, stderr, env} = nodeProcess();
-        // bun's tty stream keeps stale columns/rows after a resize unless asked to re-query.
         if (onBun) stdout._refreshSize?.();
         if (stdout?.isTTY) return {columns: stdout.columns, rows: stdout.rows};
         if (stderr?.isTTY) return {columns: stderr.columns, rows: stderr.rows};
@@ -208,12 +193,10 @@ function nodeInflate(bytes: Uint8Array): Uint8Array {
     return new Uint8Array(inflated.buffer, inflated.byteOffset, inflated.byteLength);
 }
 
-/** zlib deflate, for tools that write PNGs (`encodePng`); no running engine path compresses anything. */
 export function nodeDeflate(bytes: Uint8Array): Uint8Array {
     return new Uint8Array((require("zlib") as NodeZlib).deflateSync(bytes));
 }
 
-/** Appended to every worker script: hands worker_threads' data and parent port to the entry point. */
 const NODE_WORKER_BOOTSTRAP = `
 {
     const host = require("worker_threads");
@@ -281,11 +264,9 @@ export interface AppendStream {
     end(): void;
 }
 
-/** What the opt-in file logger needs from node. Not part of Platform: no other host has a log directory. */
 export interface NodeLogHost {
     format(...data: unknown[]): string;
     inspect(value: unknown, options?: object): string;
-    /** Creates the file's directory if needed; `truncate` empties an existing file first. */
     openAppendStream(path: string, truncate: boolean): AppendStream;
 }
 

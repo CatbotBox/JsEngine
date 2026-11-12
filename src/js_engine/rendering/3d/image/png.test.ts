@@ -2,6 +2,7 @@ import {describe, expect, test} from "../../../testing/harness";
 import {decodePng, encodePng, PNG_SIGNATURE, pngChunk} from "./png";
 import {decodePpm, encodePpm} from "./ppm";
 import {decodeImageFile} from "./decodedImage";
+import type * as Zlib from "zlib";
 
 interface PngSpec {
     width: number;
@@ -16,7 +17,7 @@ interface PngSpec {
 }
 
 function buildPng(spec: PngSpec): Uint8Array {
-    const zlib = require("zlib") as typeof import("zlib");
+    const zlib = require("zlib") as typeof Zlib;
     const channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[spec.colorType]!;
     const bytesPerPixel = Math.max(1, (channels * spec.bitDepth) >> 3);
     const filtered: number[] = [];

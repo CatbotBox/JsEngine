@@ -28,3 +28,10 @@ Run the demo in a real terminal: `bun demo/3d/index.ts` (keys are listed in its 
 `b` half-block, `1`-`4` anti-aliasing presets, `h`/`p` lights).
 
 2D sprites and HUD elements render alongside 3D through the same screen buffer.
+
+## Credits
+
+- `web/coi-serviceworker.js` is [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) v0.1.7 by
+  Guido Zuidhof and contributors (MIT License), vendored unmodified with its license header.
+- `src/js_engine/input/ansiKeyDecoder.ts` is a port of Node.js's readline key decoder (`emitKeys`, behind
+  `readline.emitKeypressEvents`), MIT License.

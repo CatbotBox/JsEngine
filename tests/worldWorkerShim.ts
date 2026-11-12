@@ -1,14 +1,3 @@
-/**
- * Preloaded into the world workers tests/verifyWorldWorker.ts spawns. It supplies what a browser
- * gives a page's worker and bun's does not: a base for relative fetches and, when the test asks,
- * a cross-origin isolated context. bun already has SharedArrayBuffer and nested Web Workers, so
- * only the `crossOriginIsolated` flag is missing.
- *
- * Fetches are served from the repository (the 3D manifest built as scripts/buildWeb.ts would
- * write it), or from a built site when JSENGINE_VERIFY_DIST names one. Bodies stream in small
- * chunks at a network-like pace, so a download is still in progress for several frames, and each
- * fetched URL is posted to the page as `{type: "verify-fetch", url}`.
- */
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
 import {buildDemo3dManifest} from "../demo/3d/assets";

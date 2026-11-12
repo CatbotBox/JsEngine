@@ -4,7 +4,6 @@ export class AverageStat {
     private _samples: RingQueue<number>
     private _sum: number;
 
-    /** Samples currently held, not the window capacity: getAvg() divides by this. */
     public get sampleSize(): number {
         return this._samples.count;
     }

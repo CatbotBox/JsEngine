@@ -2,16 +2,11 @@ import type {MeshParts} from "./mesh";
 import type {Material} from "./material";
 
 export interface LodBuildOptions {
-    /** Meshes with fewer triangles get no coarser levels. */
     minTriangles: number;
-    /** Triangle count each level aims to divide the previous one by. */
     levelReduction: number;
     maxLevels: number;
-    /** The chain ends once a level falls under this many triangles. */
     minLevelTriangles: number;
-    /** A level that shrinks the previous one by less than this factor is dropped and ends the chain. */
     minReduction: number;
-    /** Upper bound on grid cells along the mesh's longest axis. */
     maxResolution: number;
 }
 
@@ -28,7 +23,6 @@ const PROBE_RESOLUTION = 256;
 const TARGET_TOLERANCE = 1.4;
 const MAX_RESOLUTION_CORRECTIONS = 8;
 
-/** What vertex clustering reads from a mesh; `Mesh` satisfies it structurally. */
 export interface LodSourceMesh {
     readonly vertCount: number;
     readonly triangleCount: number;
@@ -41,15 +35,6 @@ export interface LodSourceMesh {
     readonly bounds: Float32Array;
 }
 
-/**
- * Coarser versions of a mesh, finest first, each built from the source by vertex
- * clustering: vertices sharing a grid cell and a material merge into one vertex at
- * their average position, with averaged normal and uv; triangles whose corners
- * collapse together are dropped. Each level aims at `levelReduction` x fewer
- * triangles than the previous one; the grid resolution that gets there is found
- * from a probe, since a surface's triangle count grows with the square of the
- * resolution. Levels that do not reduce enough end the chain.
- */
 export function buildLodParts(source: LodSourceMesh, options: Partial<LodBuildOptions> = {}): MeshParts[] {
     const settings = {...DEFAULT_LOD_BUILD_OPTIONS, ...options};
     const levels: MeshParts[] = [];
@@ -88,11 +73,6 @@ function resolutionToward(resolution: number, triangleCount: number, target: num
     return Math.max(1, Math.min(maxResolution, scaled));
 }
 
-/**
- * Finest level whose triangle count fits `trianglesPerSample` x the projected
- * area (in samples of the target), or the coarsest level when none fits;
- * `bias` shifts the choice by whole levels (positive = coarser).
- */
 export function selectLodLevel(lods: readonly {readonly triangleCount: number}[], projectedWidth: number, projectedHeight: number, trianglesPerSample: number, bias = 0): number {
     const last = lods.length - 1;
     if (last <= 0) return 0;

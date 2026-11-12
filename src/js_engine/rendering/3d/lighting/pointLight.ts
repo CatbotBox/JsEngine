@@ -1,9 +1,11 @@
 import {Light} from "./light";
 
-export class PointLight extends Light {
-    private _range: number = 10;
+const DEFAULT_RANGE = 10;
 
-    public constructor(range: number = 10, color?: number, intensity?: number) {
+export class PointLight extends Light {
+    private _range: number = DEFAULT_RANGE;
+
+    public constructor(range: number = DEFAULT_RANGE, color?: number, intensity?: number) {
         super(color, intensity);
         this.range = range;
     }

@@ -8,14 +8,18 @@ import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
 import {EntityWriteOptions} from "./entityWriteOptions";
 import {EntityQuery} from "./entityQuery";
 import {World} from "./world";
+import {NO_SOURCE_COLUMN} from "./entityArchetype";
 import type {EntityArchetype} from "./entityArchetype";
 import {allocEntityHandle, requireOwner, setOwner} from "./ownership";
 
+const INITIAL_MOVE_COLUMN_CAPACITY = 16;
+const ENABLED_BY_DEFAULT = true;
+
 type Pending = {
-    set: Map<AnyCT, Component>; // upserts
+    set: Map<AnyCT, Component>;
     add: Map<AnyCT, Component>;
     remove: Set<AnyCT>;
-    enabled?: boolean; // optional enable/disable
+    enabled?: boolean;
 };
 
 export class EntityCommandBuffer implements EntityWriteOptions {
@@ -28,7 +32,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
     }> = [];
     private perEntity: Map<Entity, Pending> = new Map();
     private moveTypes: AnyCT[] = [];
-    private moveColumnMap: Int32Array = new Int32Array(16);
+    private moveColumnMap: Int32Array = new Int32Array(INITIAL_MOVE_COLUMN_CAPACITY);
     private moveSupplied: (Component | undefined)[] = [];
 
     public get isEmpty(): boolean {
@@ -41,11 +45,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
 
     }
 
-    /**
-     * Queue entity creation. The handle is allocated immediately (so it can be
-     * referenced by other queued commands); the entity joins an archetype at
-     * playback, placed once in its final archetype.
-     */
     public createEntity(name?: string, components?: readonly Component[]): Entity {
         const entity = allocEntityHandle(name);
         this.createOps.add(entity);
@@ -53,7 +52,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         return entity;
     }
 
-    /** Queue entity destruction. */
     public destroyEntity(entity: Entity): void {
         this.destroyOps.add(entity);
     }
@@ -74,12 +72,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         return persistentTrackComponent(entity, component);
     }
 
-    /**
-     * Record every component, then run their setup() in array order. A type listed
-     * twice keeps its first instance, and a listed type beats one a setup() adds
-     * (as EntityManager.addComponents does); against earlier commands, the later
-     * add wins as with addComponent.
-     */
     public addComponents(entity: Entity, components: readonly Component[]): void {
         if (components.length === 0) return;
         const pending = this.pendingFor(entity);
@@ -114,7 +106,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         this.enabledQueries.push({query: entityQuery, enabled});
     }
 
-    /** Remove a component (token or ctor). */
     public removeComponent(entity: Entity, key: TokenOrCtor): void {
         const pending = this.pendingFor(entity);
         const token = this.toToken(key);
@@ -123,12 +114,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         pending.remove.add(token);
     }
 
-    /**
-     * Apply everything in one shot. An entity created by this buffer is placed once,
-     * straight into the archetype of its recorded components; an existing one gets
-     * the final set of tokens = (current - removes) ∪ addOrSet and moves once.
-     * Entities also destroyed by this buffer are never placed.
-     */
     public playback(em: EntityManager): void {
         for (const entity of this.createOps) {
             if (!this.perEntity.has(entity) && !this.destroyOps.has(entity)) em.attachEntity(entity);
@@ -138,7 +123,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         for (const [entity, pending] of this.perEntity) {
             if (this.destroyOps.has(entity)) continue;
             if (this.createOps.has(entity)) {
-                em.attachEntity(entity, this.createdComponents(pending), pending.enabled ?? true);
+                em.attachEntity(entity, this.createdComponents(pending), pending.enabled ?? ENABLED_BY_DEFAULT);
                 continue;
             }
 
@@ -155,7 +140,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         this.reset()
     }
 
-    // internals
     private playbackDestroy(entityManager: EntityManager) {
         for (const e of this.destroyOps) {
             entityManager.destroyEntity(e);
@@ -166,11 +150,6 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         }
     }
 
-    /**
-     * What a created entity holds: every add, then each set of a type not also
-     * added. An add wins over a set of the same type, as in the move path, where
-     * `provided` lets add entries override set entries.
-     */
     private createdComponents(pending: Pending): Map<AnyCT, Component> {
         if (pending.set.size === 0) return pending.add;
         const components = new Map(pending.add);
@@ -197,15 +176,9 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         this.enabledQueries = [];
     }
 
-    /**
-     * Give an existing entity its final types, (current - removes) ∪ adds ∪ sets: an
-     * add of a type it already has keeps the existing instance, a set replaces it,
-     * and an add wins over a set of the same new type. A type change is one
-     * column-mapped move; without one every column is rewritten in place.
-     */
     private applyToExisting(world: World, entity: Entity, pending: Pending) {
         const arch = requireOwner(world, entity);
-        const target = world.archetypes.getOrCreate(this.finalTypes(arch, pending));
+        const target = world.archetypes.getOrCreate(this.finalTypesInColumnOrder(arch, pending));
         if (target === arch) {
             this.rewriteInPlace(world, entity, arch, pending);
             return;
@@ -217,7 +190,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         for (let i = 0; i < types.length; i++) {
             const from = arch.columnIndexOf(types[i]);
             const given = from >= 0 ? pending.set.get(types[i]) : pending.add.get(types[i]) ?? pending.set.get(types[i]);
-            columnMap[i] = given === undefined ? from : -1;
+            columnMap[i] = given === undefined ? from : NO_SOURCE_COLUMN;
             supplied[i] = given;
         }
         arch.moveRowWith(entity, target, columnMap, supplied, world.time);
@@ -225,8 +198,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         for (let i = 0; i < types.length; i++) supplied[i] = undefined;
     }
 
-    /** In the order a new archetype would take them: kept current types, then new adds, then new sets. */
-    private finalTypes(arch: EntityArchetype<AnyCT>, pending: Pending): readonly AnyCT[] {
+    private finalTypesInColumnOrder(arch: EntityArchetype<AnyCT>, pending: Pending): readonly AnyCT[] {
         const types = this.moveTypes;
         types.length = 0;
         for (const t of arch.componentTypes) if (!pending.remove.has(t)) types.push(t);

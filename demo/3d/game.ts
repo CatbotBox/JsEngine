@@ -34,34 +34,40 @@ import {ReadonlyVec3, ReadonlyVec4, Vec, Vec3} from "../../src/js_engine/math/ty
 import {Quaternions} from "../../src/js_engine/math/quaternions";
 import {createHudLabel} from "../_shared/hud";
 
-/** A model the demo can spawn: an obj path the world's platform files can read. */
 export interface DemoModel {
     readonly name: string;
     readonly path: string;
 }
 
-/** For a host whose model files are not all readable up front (a page fetching large models on demand). */
 export interface DemoModelFiles {
-    /** True once every file loading `model` reads can be read synchronously. */
     ready(model: DemoModel): boolean;
-    /** Fetches `model`'s files, reporting transferred bytes as they arrive; resolves once `ready(model)`. */
     fetch(model: DemoModel, onProgress: (loadedBytes: number, totalBytes: number) => void): Promise<void>;
 }
 
-/** What differs between the terminal and the browser. */
 export interface Demo3dHost {
-    /** The models to offer; asked again on every reload (r). */
     listModels(): readonly DemoModel[];
-    /**
-     * Absent: every listed model loads straight away, as from disk. Present: a model that is not
-     * ready is fetched when it is selected or spawned, and spawns once it has arrived.
-     */
     readonly modelFiles?: DemoModelFiles;
-    /** Ctrl+C or Escape, after the world has stopped and input is disabled. */
     quit(): void;
 }
 
-const MB = 1024 * 1024;
+const BYTES_PER_MB = 1024 * 1024;
+const COMPACT_DIGITS = 3;
+const UNIT_STEP = 1000;
+const FPS_AVERAGE_FRAMES = 10;
+const MS_PER_SECOND = 1000;
+const LOD_LEVELS_SHOWN = 5;
+const MOVE_STEP = 0.05;
+const MODEL_ROTATE_STEP_RAD = 0.1;
+const SUN_ROTATE_STEP_RAD = 0.05;
+const SCALE_STEP = 1.02;
+const FOV_KEY_STEP = 1.01;
+const FOV_WHEEL_STEP = 1.05;
+const MIN_FOV_DEG = 10, MAX_FOV_DEG = 120;
+const PITCH_MARGIN_RAD = 0.01;
+const PITCH_LIMIT_RAD = Math.PI / 2 - PITCH_MARGIN_RAD;
+const LOOK_RAD_PER_CELL = 0.03;
+const CELL_WIDTH_PER_HEIGHT = 0.5;
+const GRID_SPACING = 5;
 
 const formatCompact = (num: number): string => {
     const abs = Math.abs(num);
@@ -76,12 +82,11 @@ const formatCompact = (num: number): string => {
     for (let i = 0; i < units.length; i++) {
         const [value, suffix] = units[i];
         if (abs >= value) {
-            let scaled = Number((abs / value).toPrecision(3));
+            let scaled = Number((abs / value).toPrecision(COMPACT_DIGITS));
 
-            // rounding can push e.g. 999.5k -> 1000k; bump to next unit up
-            if (scaled >= 1000 && i > 0) {
+            if (scaled >= UNIT_STEP && i > 0) {
                 const [nextValue, nextSuffix] = units[i - 1];
-                scaled = Number((abs / nextValue).toPrecision(3));
+                scaled = Number((abs / nextValue).toPrecision(COMPACT_DIGITS));
                 return `${sign}${scaled}${nextSuffix}`;
             }
             return `${sign}${scaled}${suffix}`;
@@ -90,32 +95,24 @@ const formatCompact = (num: number): string => {
     return `${sign}${abs}`;
 }
 
-/** Source geometry currently in the scene, kept by the spawn/despawn code; the HUD shows it against what the pass drew. */
 class SceneStats extends Resource {
     public sourceTriangles = 0;
 }
 
-/**
- * Builds the 3D demo into `world`: loads the host's models through the world's platform files,
- * enables input on its platform and registers the demo's systems. The host starts the loop.
- */
 export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     const sceneStats = world.resources.getOrCreate(SceneStats);
     const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
     const platform = world.platform;
 
 
-    //Camera
     const cameraEntity = buffer.createEntity("cameraEntity", [new Camera(), new LocalToWorld(), new RenderBounds()]);
     const camPos = buffer.addTrackedComponent(cameraEntity, new LocalPosition(0, 0, -10));
     const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
-    //Render settings (singleton entities; the 3D pass is off until this exists)
     const settingsEntity = buffer.createEntity("renderSettings", [new ConsoleRenderSettings()]);
     const renderSettings = buffer.addTrackedComponent(settingsEntity, new Console3DRenderSettings());
 
-    //Lights
     const sunEntity = buffer.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalToWorld(), new LocalPosition()]);
     const sunRotation = buffer.addTrackedComponent(sunEntity, new LocalRotation());
     const sunEuler: Vec3 = Vec.alloc3(0.7, -0.6, 0);
@@ -127,7 +124,6 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     let lightsEnabled = true;
     let lampEnabled = true;
 
-    //Meshes
     interface LoadedModel {
         mesh: Mesh;
         color: number;
@@ -137,11 +133,9 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     interface ModelSlot {
         model: DemoModel;
         index: number;
-        /** Undefined while the host is still fetching the model's files. */
         loaded?: LoadedModel;
     }
 
-    /** A model the host is fetching, or failed to; kept by path across reloads (r). */
     interface ModelDownload {
         loadedBytes: number;
         totalBytes: number;
@@ -164,28 +158,20 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
 
     const spawned: SpawnedModel[] = [];
 
-    // Rendering Transforms
-    // Shared transform state so new spawns match the rest of the group
-    const euler: Vec3 = Vec.alloc3(0, 0, 0);
-    let currentScale: Vec3 = Vec.alloc3(1, 1, 1);
-    const spacing = 5;
+    const groupEuler: Vec3 = Vec.alloc3(0, 0, 0);
+    let groupScale: Vec3 = Vec.alloc3(1, 1, 1);
 
-    // Camera look state (driven by the mouse — see registerInputs)
     let camYaw = 0;
     let camPitch = 0;
     const camEulerScratch: Vec3 = Vec.alloc3();
-    // Current look orientation as a quaternion; movement is rotated by this so
-    // "forward" follows where the camera is pointing.
     let camQuat = Quaternions.eulerToQuat(Vec.alloc3(0, 0, 0));
 
-    // Preview HUD (bottom-right corner) showing the model that will be spawned next
     const previewAnchor = new ConsoleImageAnchor();
     previewAnchor.anchorPosition = 'bottom-right';
     const previewEntity = buffer.createEntity("spawnPreview", [new HudElement(), previewAnchor]);
     const previewImage = buffer.addTrackedComponent(previewEntity, new ConsoleImage());
     previewImage.transparentChar = undefined;
 
-    // Controls legend (top-left corner)
     const controlsAnchor = new ConsoleImageAnchor();
     controlsAnchor.anchorPosition = 'top-left';
     const controlsEntity = buffer.createEntity("controls", [new HudElement(), controlsAnchor]);
@@ -198,17 +184,14 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         Ansi.colors.fg.cyan + 'lights  h all  p lamp  i/k j/l sun',
     ];
 
-    // Functions
-    // Packed 0xRRGGBB base colors; models not listed here cycle the palette.
     const namedColors: Record<string, number> = {
-        "bugatti": 0x4FA3F7,           // blue
-        "cube": 0xF7F14F,              // yellow
-        "blender_monkey": 0xF7A44F,    // orange
-        "indoor plant_02": 0x66C96A,   // green
+        "bugatti": 0x4FA3F7,
+        "cube": 0xF7F14F,
+        "blender_monkey": 0xF7A44F,
+        "indoor plant_02": 0x66C96A,
     };
     const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
     const untintedWhite = 0xFFFFFF;
-    // Models whose faces are not consistently wound; drawn double-sided.
     const doubleSidedModels = new Set(["bugatti"]);
 
     const loadModel = (model: DemoModel, index: number): LoadedModel => {
@@ -229,14 +212,12 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             index,
             loaded: isReady(model) ? loadModel(model, index) : undefined,
         }));
-        // keep the selection valid if the list shrank
         if (selectedMeshIndex >= models.length) selectedMeshIndex = 0;
-        if (models.length > 0) download(models[selectedMeshIndex]);
+        if (models.length > 0) downloadUnlessLoaded(models[selectedMeshIndex]);
         updatePreview();
     }
 
-    /** Starts fetching a slot's model unless it is loaded or already on its way; undefined when loaded. */
-    const download = (slot: ModelSlot): ModelDownload | undefined => {
+    const downloadUnlessLoaded = (slot: ModelSlot): ModelDownload | undefined => {
         const modelFiles = host.modelFiles;
         if (slot.loaded !== undefined || modelFiles === undefined) return undefined;
         const path = slot.model.path;
@@ -264,7 +245,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         return started;
     }
 
-    const megabytes = (bytes: number) => (bytes / MB).toFixed(1);
+    const megabytes = (bytes: number) => (bytes / BYTES_PER_MB).toFixed(1);
 
     const downloadLine = (name: string, progress: ModelDownload) => {
         if (progress.failure !== undefined) return `Could not load ${name}: ${progress.failure}`;
@@ -277,10 +258,10 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             downloadLine(models.find(slot => slot.model.path === path)?.model.name ?? path, progress) + ' ');
         if (models.length == 0) {
             lines.push('no meshes found, add an obj file in the same folder as this file and press r'
-                + '  [spawned: ' + spawned.length + '] '); //add space for padding
+                + '  [spawned: ' + spawned.length + '] ');
         } else {
             lines.push('Next: ' + models[selectedMeshIndex].model.name
-                + '  [spawned: ' + spawned.length + '] '); //add space for padding
+                + '  [spawned: ' + spawned.length + '] ');
         }
         const text = lines.join('\n');
         if (text === previewText) return;
@@ -288,12 +269,10 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         previewImage.image = lines.map(line => Ansi.colors.fg.cyan + line);
     }
 
-// Re-space all spawned models in a 3D grid, centered on the group offset
-    const relayout = () => {
+    const relayoutInGrid = () => {
         const n = spawned.length;
         if (n === 0) return;
 
-        // Roughly cubic dimensions
         const sx = Math.ceil(Math.cbrt(n));
         const sy = Math.ceil(Math.sqrt(n / sx));
         const sz = Math.ceil(n / (sx * sy));
@@ -303,13 +282,12 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             const y = Math.floor(i / sx) % sy;
             const z = Math.floor(i / (sx * sy));
 
-            s.position.x = (x - (sx - 1) / 2) * spacing;
-            s.position.y = (y - (sy - 1) / 2) * spacing;
-            s.position.z = (z - (sz - 1) / 2) * spacing;
+            s.position.x = (x - (sx - 1) / 2) * GRID_SPACING;
+            s.position.y = (y - (sy - 1) / 2) * GRID_SPACING;
+            s.position.z = (z - (sz - 1) / 2) * GRID_SPACING;
         });
     }
 
-    // A model still on its way spawns when it arrives.
     const spawnSelected = () => {
         const slot = models[selectedMeshIndex];
         if (slot === undefined) return;
@@ -317,7 +295,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             spawn(slot.loaded);
             return;
         }
-        const pending = download(slot);
+        const pending = downloadUnlessLoaded(slot);
         if (pending !== undefined) pending.queuedSpawns++;
         updatePreview();
     }
@@ -330,12 +308,12 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         const rotation = buffer.addTrackedComponent(entity, new LocalRotation());
         const scale = buffer.addTrackedComponent(entity, new LocalScale());
 
-        rotation.xyzw = Quaternions.eulerToQuat(euler);
-        scale.xyz = currentScale;
+        rotation.xyzw = Quaternions.eulerToQuat(groupEuler);
+        scale.xyz = groupScale;
 
         spawned.push({entity, position, rotation, scale});
         sceneStats.sourceTriangles += model.mesh.triangleCount;
-        relayout();
+        relayoutInGrid();
         updatePreview();
     }
 
@@ -345,14 +323,13 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         buffer.destroyEntity(last.entity);
         const renderMesh = world.entityManager.getComponent(last.entity, RenderMesh) as RenderMesh;
         sceneStats.sourceTriangles -= renderMesh.mesh!.triangleCount;
-        relayout();
+        relayoutInGrid();
         updatePreview();
     }
 
 
-    // arrows: rotate all spawned models together
-    const applyRotation = () => {
-        const quat = Quaternions.eulerToQuat(euler);
+    const applyGroupRotation = () => {
+        const quat = Quaternions.eulerToQuat(groupEuler);
         for (const s of spawned) {
             s.rotation.xyzw = quat;
         }
@@ -369,26 +346,20 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         buffer.setEnabledState(lampEntity, lightsEnabled && lampEnabled);
     }
 
-    // i/o: scale all spawned models together
-    const scaleFactor: Vec3 = Vec.alloc3(1.02, 1.02, 1.02);
+    const scaleFactor: Vec3 = Vec.alloc3(SCALE_STEP, SCALE_STEP, SCALE_STEP);
 
-    const applyScale = () => {
+    const applyGroupScale = () => {
         for (const s of spawned) {
-            s.scale.xyz = currentScale;
+            s.scale.xyz = groupScale;
         }
     }
 
-    // mouse: rotate the CAMERA (FPS-style look). Pitch is clamped to avoid flipping.
     const applyCameraLook = () => {
-        const limit = Math.PI / 2 - 0.01;
-        camPitch = Math.max(-limit, Math.min(limit, camPitch));
+        camPitch = Math.max(-PITCH_LIMIT_RAD, Math.min(PITCH_LIMIT_RAD, camPitch));
         camQuat = Quaternions.eulerToQuat(Vec.set3(camEulerScratch, camPitch, camYaw, 0));
         camRot.xyzw = camQuat;
     }
 
-    // Rotate a vector by a quaternion [x,y,z,w] (standard v + 2w(q×v) + 2q×(q×v)).
-    // Convention-agnostic: uses the exact quat the engine built, so movement always
-    // lines up with the view regardless of eulerToQuat's internal axis order.
     const DIR_FWD: ReadonlyVec3 = Vec.alloc3(0, 0, 1);
     const DIR_RIGHT: ReadonlyVec3 = Vec.alloc3(1, 0, 0);
     const rotateScratch: Vec3 = Vec.alloc3();
@@ -406,9 +377,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         );
     }
 
-    // Move the camera along a look-relative axis (forward = +Z, right = +X at rest).
-    const moveSpeed = 0.05;
-    const moveLocal = (localDir: ReadonlyVec3, amount: number) => {
+    const moveCameraLocal = (localDir: ReadonlyVec3, amount: number) => {
         const d = rotateByQuat(camQuat, localDir);
         const dx = Vec.x(d), dy = Vec.y(d), dz = Vec.z(d);
         camPos.x += dx * amount;
@@ -416,12 +385,9 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         camPos.z += dz * amount;
     }
 
-    const registerInputs = () => {
+    const enableInputAndQuitKeys = () => {
         input.enable({platform, mouse: true, hideCursor: true})
 
-        // Ctrl+C / Escape: the input system no longer force-quits, so we own shutdown here.
-        // (Raw mode has no auto-SIGINT — without a handler like this, Ctrl+C does
-        //  nothing, so keep some exit path registered.)
         const quit = () => {
             const renderer = world.tryGetSystem(RenderingSystemGroup);
             if (renderer) renderer.enabled = false;
@@ -431,75 +397,73 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         }
         input.onKeyMatch({name: 'c', ctrl: true}, quit)
         input.whenKeyDown(Key.Escape, quit)
+    }
 
-        // ---- spawning ----
-        // space: spawn a new model | backspace: remove the last one
-        // n: cycle which model spawns next | r: reload model list
+    const registerSpawnKeys = () => {
         input.whenKeyDown(Key.Space, () => spawnSelected())
         input.whenKeyDown(Key.Backspace, () => despawnLast())
         input.whenKeyDown(Key.N, () => {
             if (models.length === 0) return;
             selectedMeshIndex = (selectedMeshIndex + 1) % models.length;
-            download(models[selectedMeshIndex]);
+            downloadUnlessLoaded(models[selectedMeshIndex]);
             updatePreview();
         })
         input.whenKeyDown(Key.R, () => fetchModels())
+    }
 
-        // ---- movement (whenKey = repeats while held) ----
-        // wasd moves relative to where the camera is looking; q/e are world up/down
-        // w/s: forward/back | a/d: strafe left/right | q/e: down/up
-        input.whenKey(Key.W, () => moveLocal(DIR_FWD, moveSpeed))
-        input.whenKey(Key.S, () => moveLocal(DIR_FWD, -moveSpeed))
-        input.whenKey(Key.D, () => moveLocal(DIR_RIGHT, moveSpeed))
-        input.whenKey(Key.A, () => moveLocal(DIR_RIGHT, -moveSpeed))
+    const registerMovementKeys = () => {
+        input.whenKey(Key.W, () => moveCameraLocal(DIR_FWD, MOVE_STEP))
+        input.whenKey(Key.S, () => moveCameraLocal(DIR_FWD, -MOVE_STEP))
+        input.whenKey(Key.D, () => moveCameraLocal(DIR_RIGHT, MOVE_STEP))
+        input.whenKey(Key.A, () => moveCameraLocal(DIR_RIGHT, -MOVE_STEP))
         input.whenKey(Key.Q, () => {
-            camPos.y -= moveSpeed;
+            camPos.y -= MOVE_STEP;
         })
         input.whenKey(Key.E, () => {
-            camPos.y += moveSpeed;
+            camPos.y += MOVE_STEP;
         })
+    }
 
-        // ---- model rotation (arrow keys) ----
-        // up/down = pitch, left/right = yaw
+    const registerModelRotationKeys = () => {
         input.whenKey(Key.Up, () => {
-            Vec.setX(euler, Vec.x(euler) + 0.1);
-            applyRotation();
+            Vec.setX(groupEuler, Vec.x(groupEuler) + MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
         })
         input.whenKey(Key.Down, () => {
-            Vec.setX(euler, Vec.x(euler) - 0.1);
-            applyRotation();
+            Vec.setX(groupEuler, Vec.x(groupEuler) - MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
         })
         input.whenKey(Key.Left, () => {
-            Vec.setY(euler, Vec.y(euler) - 0.1);
-            applyRotation();
+            Vec.setY(groupEuler, Vec.y(groupEuler) - MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
         })
         input.whenKey(Key.Right, () => {
-            Vec.setY(euler, Vec.y(euler) + 0.1);
-            applyRotation();
+            Vec.setY(groupEuler, Vec.y(groupEuler) + MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
         })
+    }
 
-        // ---- model scale ([ smaller, ] larger) ----
+    const registerModelScaleKeys = () => {
         input.whenKey('[', () => {
-            Vec.divInto(currentScale, currentScale, scaleFactor);
-            applyScale();
+            Vec.divInto(groupScale, groupScale, scaleFactor);
+            applyGroupScale();
         })
         input.whenKey(']', () => {
-            Vec.mulInto(currentScale, currentScale, scaleFactor);
-            applyScale();
+            Vec.mulInto(groupScale, groupScale, scaleFactor);
+            applyGroupScale();
         })
+    }
 
-        // ---- field of view (z/x) ----
+    const registerFovKeys = () => {
         input.whenKey(Key.Z, () => {
-            fov.degrees /= 1.01;
+            fov.degrees /= FOV_KEY_STEP;
         })
         input.whenKey(Key.X, () => {
-            fov.degrees *= 1.01;
+            fov.degrees *= FOV_KEY_STEP;
         })
+    }
 
-        // ---- render toggles (once per press) ----
-        // 1-4: anti-aliasing presets | b: half-block cells | t: textures
-        // f: detail levels on/off | -/=: coarser/finer detail bias
-        // v: 3D pass | tab: HUD | g: log system order
+    const registerRenderToggleKeys = () => {
         input.whenKeyDown(Key.V, () => {
             const renderer = world.tryGetSystem(Console3DRenderPassSystem);
             if (renderer) renderer.enabled = !renderer.enabled;
@@ -531,24 +495,23 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
                 renderSettings.supersampleY = y;
             })
         }
+    }
 
-        // ---- lighting ----
-        // i/k: sun pitch | j/l: sun yaw (the arrow cluster, as arrows rotate the models)
-        // h: all lights on/off | p: point light on/off
+    const registerLightingKeys = () => {
         input.whenKey(Key.I, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) + 0.05);
+            Vec.setX(sunEuler, Vec.x(sunEuler) + SUN_ROTATE_STEP_RAD);
             applySunRotation();
         })
         input.whenKey(Key.K, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) - 0.05);
+            Vec.setX(sunEuler, Vec.x(sunEuler) - SUN_ROTATE_STEP_RAD);
             applySunRotation();
         })
         input.whenKey(Key.J, () => {
-            Vec.setY(sunEuler, Vec.y(sunEuler) - 0.05);
+            Vec.setY(sunEuler, Vec.y(sunEuler) - SUN_ROTATE_STEP_RAD);
             applySunRotation();
         })
         input.whenKey(Key.L, () => {
-            Vec.setY(sunEuler, Vec.y(sunEuler) + 0.05);
+            Vec.setY(sunEuler, Vec.y(sunEuler) + SUN_ROTATE_STEP_RAD);
             applySunRotation();
         })
         input.whenKeyDown(Key.H, () => {
@@ -559,20 +522,12 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             lampEnabled = !lampEnabled;
             applyLightEnabledState();
         })
+    }
 
-        // input.whenKeyDown(Key.Enter, () => {
-        //     const renderer = world.tryGetSystem(RenderingSystemGroup);
-        //     if (renderer) renderer.enabled = !renderer.enabled;
-        // })
-
-        // ---- MOUSE: hold LEFT and drag to rotate the camera ----
-        // Terminal coords are absolute cells, so we accumulate deltas ourselves.
-        // (Flip the += signs below for inverted look. * 0.5 on pitch compensates
-        //  for the ~2:1 height:width aspect of terminal cells.)
+    const registerMouseLook = () => {
         let lastX = 0;
         let lastY = 0;
         let looking = false;
-        const sensitivity = 0.03; // radians per cell
 
         input.onMouseDown.add((e) => {
             if (e.button !== 'left') return;
@@ -589,21 +544,30 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             const dy = e.y - lastY;
             lastX = e.x;
             lastY = e.y;
-            camYaw += dx * sensitivity;
-            camPitch += dy * sensitivity * 0.5;
+            camYaw += dx * LOOK_RAD_PER_CELL;
+            camPitch += dy * LOOK_RAD_PER_CELL * CELL_WIDTH_PER_HEIGHT;
             applyCameraLook();
-        })
-
-        // ---- MOUSE WHEEL: zoom via field of view ----
-        input.onWheel.add((e) => {
-            const factor = e.button === 'wheelUp' ? 1 / 1.05 : 1.05;
-            fov.degrees = Math.max(10, Math.min(120, fov.degrees * factor));
         })
     }
 
-    registerInputs();
+    const registerWheelZoom = () => {
+        input.onWheel.add((e) => {
+            const factor = e.button === 'wheelUp' ? 1 / FOV_WHEEL_STEP : FOV_WHEEL_STEP;
+            fov.degrees = Math.max(MIN_FOV_DEG, Math.min(MAX_FOV_DEG, fov.degrees * factor));
+        })
+    }
+
+    enableInputAndQuitKeys();
+    registerSpawnKeys();
+    registerMovementKeys();
+    registerModelRotationKeys();
+    registerModelScaleKeys();
+    registerFovKeys();
+    registerRenderToggleKeys();
+    registerLightingKeys();
+    registerMouseLook();
+    registerWheelZoom();
     fetchModels();
-    // start with one model on screen
     spawnSelected();
 
     world.ensureSystemExists(Console3DRenderPassSystem);
@@ -612,10 +576,9 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     world.ensureSystemExists(DebugSystem)
 }
 
-//systems
 class DebugSystem extends System {
     private _toggle = true;
-    private _fpsCounter = new AverageStat(10)
+    private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
     private _entityCounterImage!: ConsoleImage;
     private _fpsCounterImage!: ConsoleImage;
 
@@ -629,14 +592,14 @@ class DebugSystem extends System {
 
     onUpdate() {
         if (!this._toggle) return;
-        this._fpsCounter.add(1000 / this.world.time.deltaTime)
+        this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTime)
         this._fpsCounterImage.image = [
             Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
         ]
 
         const pass = this.world.tryGetSystem(Console3DRenderPassSystem);
         const drawn = pass === undefined ? 0 : pass.trianglesDrawn;
-        const levels = pass === undefined ? '' : '  LOD levels: ' + Array.from(pass.lodLevelCounts.subarray(0, 5)).join('/');
+        const levels = pass === undefined ? '' : '  LOD levels: ' + Array.from(pass.lodLevelCounts.subarray(0, LOD_LEVELS_SHOWN)).join('/');
         const rasterWorkers = pass === undefined ? 0 : pass.rasterWorkers;
         this._entityCounterImage.image = [
             Ansi.colors.fg.green + 'Entities: ' + (this.world.entityCount),

@@ -2,8 +2,6 @@
 import {Vec, Vec2} from "../math/types/vec";
 
 export class ScreenSize extends Component {
-    // Float32Array, not a plain array literal: `xy` hands this out as a Vec2 view,
-    // so callers writing through it land here rather than in a detached copy.
     private _values: Vec2 = Vec2.alloc();
 
     get xy(): Vec2 {

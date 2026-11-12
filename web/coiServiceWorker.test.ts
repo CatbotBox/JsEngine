@@ -2,10 +2,8 @@ import {readFileSync} from "fs";
 import {join} from "path";
 import {describe, expect, test} from "../src/js_engine/testing/harness";
 
-/** The vendored script, run unmodified: as a page script (`window` defined) or as the service worker. */
 const SOURCE = readFileSync(join(__dirname, "coi-serviceworker.js"), "utf8");
 const SCRIPT_URL = "https://catbotbox.example/jsengine/coi-serviceworker.js";
-/** Most loads one navigation may take before the script stops reloading. */
 const MAX_LOADS_PER_NAVIGATION = 3;
 
 type Run = (window: unknown, navigator: unknown, self: unknown, fetch: unknown, console: unknown) => void;
@@ -14,20 +12,15 @@ const quiet = {log: () => undefined, error: () => undefined};
 
 const settle = () => new Promise<void>(done => setTimeout(done, 0));
 
-/** One browser tab's state across loads; what isolates a load depends on the host and what the browser supports. */
 interface Browser {
-    /** The host sends COOP/COEP itself (Cloudflare Pages / Netlify reading `_headers`). */
     readonly headers: boolean;
     readonly secure: boolean;
     readonly serviceWorkers: boolean;
-    /** Isolates a page whose response carries COEP credentialless / require-corp. */
     readonly credentialless: boolean;
     readonly requireCorp: boolean;
-    /** Browsers too old to know `crossOriginIsolated` leave it undefined. */
     readonly knowsIsolation?: boolean;
     readonly session: Map<string, string>;
     workerActive: boolean;
-    /** The worker's own `coepCredentialless`, set by the pages it controls; it starts false. */
     workerCredentialless: boolean;
     registrations: number;
 }
@@ -52,7 +45,6 @@ interface Load {
     readonly reloaded: boolean;
 }
 
-/** One page load: the response is isolated by the host's headers or by the worker controlling it. */
 async function load(tab: Browser): Promise<Load> {
     const controlled = tab.serviceWorkers && tab.workerActive;
     const isolatedByWorker = controlled && (tab.workerCredentialless ? tab.credentialless : tab.requireCorp);
@@ -101,7 +93,6 @@ async function load(tab: Browser): Promise<Load> {
     return {isolated, reloaded};
 }
 
-/** Follows the script's reloads until a load does not reload; fails past MAX_LOADS_PER_NAVIGATION. */
 async function navigate(tab: Browser): Promise<Load[]> {
     const loads: Load[] = [];
     for (;;) {

@@ -6,6 +6,17 @@ import {readMeshCache, writeMeshCache} from "./meshCache";
 import {buildLodParts, LodBuildOptions} from "./meshLod";
 import type {AssetLoadOptions, FileSource} from "../../platform";
 import {dirname, joinPath, nodePlatform} from "../../platform";
+import {AABB_STRIDE} from "../../datatypes/aabb";
+
+const OBJ_VERTEX = "v ";
+const OBJ_UV = "vt ";
+const OBJ_NORMAL = "vn ";
+const OBJ_FACE = "f ";
+const OBJ_USE_MATERIAL = "usemtl ";
+const OBJ_MATERIAL_LIBRARY = "mtllib ";
+const OBJ_COMMENT = '#';
+const MIN_FACE_CORNERS = 3;
+const DECIMAL = 10;
 
 export class Mesh {
     public readonly data: Vec3Array;
@@ -17,7 +28,6 @@ export class Mesh {
     private _bounds?: Float32Array;
     private _lods: Mesh[] = [this];
 
-    /** Detail levels, finest first; level 0 is this mesh. A mesh without coarser levels has length 1. */
     public get lods(): readonly Mesh[] {
         return this._lods;
     }
@@ -26,13 +36,9 @@ export class Mesh {
         this._lods = [this, ...coarserLevels];
     }
 
-    /**
-     * Mesh-local AABB as [xMin, yMin, zMin, xMax, yMax, zMax], computed from
-     * the vertices on first access and cached (vertex data is immutable).
-     */
     public get bounds(): Float32Array {
         if (this._bounds === undefined) {
-            const bounds = new Float32Array(6);
+            const bounds = new Float32Array(AABB_STRIDE);
             const raw = this.vertices.raw;
             const count = this.vertCount * 3;
             let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY, zMin = Number.POSITIVE_INFINITY;
@@ -145,7 +151,6 @@ export class Mesh {
         return mesh;
     }
 
-    /** Coarser levels of `mesh` by vertex clustering (see meshLod.ts); empty below the triangle threshold. */
     public static buildLods(mesh: Mesh, options: Partial<LodBuildOptions> = {}): Mesh[] {
         return buildLodParts(mesh, options).map(parts => new Mesh(parts));
     }
@@ -166,14 +171,7 @@ export interface MeshParts {
 }
 
 export interface MeshLoadOptions extends AssetLoadOptions {
-    /** Read and write `<file>.obj.meshcache`; only possible where `files` can `stat` (and `write`, to create one). */
     cache?: boolean;
-    /**
-     * Build (or load from the cache) coarser detail levels; on by default with
-     * DEFAULT_LOD_BUILD_OPTIONS, an object overrides them, false skips them. The
-     * cache stores whatever levels the writing load built, so a file first loaded
-     * with `lod: false` has none until its cache is regenerated.
-     */
     lod?: boolean | Partial<LodBuildOptions>;
 }
 
@@ -222,46 +220,46 @@ class ObjParser {
     }
 
     private parseLine(line: string): void {
-        if (line.length === 0 || line[0] === '#') return;
-        if (line.startsWith("v ")) {
+        if (line.length === 0 || line[0] === OBJ_COMMENT) return;
+        if (line.startsWith(OBJ_VERTEX)) {
             this.parseVertex(line);
-        } else if (line.startsWith("vt ")) {
+        } else if (line.startsWith(OBJ_UV)) {
             this.parseUv(line);
-        } else if (line.startsWith("vn ")) {
+        } else if (line.startsWith(OBJ_NORMAL)) {
             this.parseNormal(line);
-        } else if (line.startsWith("f ")) {
+        } else if (line.startsWith(OBJ_FACE)) {
             this.parseFace(line);
-        } else if (line.startsWith("usemtl ")) {
-            this.currentMaterialIndex = this.materialIndexFor(line.substring(7).trim());
-        } else if (line.startsWith("mtllib ")) {
-            this.materialLibraryNames.push(line.substring(7).trim());
+        } else if (line.startsWith(OBJ_USE_MATERIAL)) {
+            this.currentMaterialIndex = this.materialIndexFor(line.substring(OBJ_USE_MATERIAL.length).trim());
+        } else if (line.startsWith(OBJ_MATERIAL_LIBRARY)) {
+            this.materialLibraryNames.push(line.substring(OBJ_MATERIAL_LIBRARY.length).trim());
         }
     }
 
     private parseVertex(line: string): void {
-        const components = parseNumberList(line, 2);
+        const components = parseNumberList(line, OBJ_VERTEX.length);
         if (components.length >= 3) {
             this.filePositions.push(Vec.alloc3(components[0], components[1], components[2]));
         }
     }
 
     private parseUv(line: string): void {
-        const components = parseNumberList(line, 3);
+        const components = parseNumberList(line, OBJ_UV.length);
         if (components.length >= 2) {
             this.fileUvs.push(Vec.alloc2(components[0], components[1]));
         }
     }
 
     private parseNormal(line: string): void {
-        const components = parseNumberList(line, 3);
+        const components = parseNumberList(line, OBJ_NORMAL.length);
         if (components.length >= 3) {
             this.fileNormals.push(Vec.alloc3(components[0], components[1], components[2]));
         }
     }
 
     private parseFace(line: string): void {
-        const corners = line.substring(2).trim().split(/\s+/);
-        if (corners.length < 3) return;
+        const corners = line.substring(OBJ_FACE.length).trim().split(/\s+/);
+        if (corners.length < MIN_FACE_CORNERS) return;
         if (this.currentMaterialIndex === UNASSIGNED_INDEX) {
             this.currentMaterialIndex = this.materialIndexFor(Material.DEFAULT_NAME);
         }
@@ -316,7 +314,7 @@ function parseNumberList(line: string, prefixLength: number): number[] {
 
 function parseObjIndex(token: string | undefined, definedCount: number): number {
     if (token === undefined || token.length === 0) return UNASSIGNED_INDEX;
-    const oneBased = Number.parseInt(token, 10);
+    const oneBased = Number.parseInt(token, DECIMAL);
     if (Number.isNaN(oneBased)) return UNASSIGNED_INDEX;
     return oneBased > 0 ? oneBased - 1 : definedCount + oneBased;
 }

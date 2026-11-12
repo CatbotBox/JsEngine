@@ -1,15 +1,17 @@
 ﻿export function table(): string;
-export function table<T extends ReadonlyArray<unknown>>(tabularData: ReadonlyArray<T>, properties?: ReadonlyArray<number | string>): string; // array of arrays/tuples
-export function table<T extends Record<PropertyKey, unknown>>(tabularData: ReadonlyArray<T>, properties?: ReadonlyArray<Extract<keyof T, string | number>>): string; // array of objects
-export function table<T extends Record<PropertyKey, unknown>>(tabularData: Readonly<Record<string, T>>, properties?: ReadonlyArray<Extract<keyof T, string | number>>): string; // object of rows
-export function table<K, V>(tabularData: ReadonlyMap<K, V>): string; // Map
-export function table<V>(tabularData: ReadonlySet<V>): string;       // Set
-export function table<T>(tabularData: ArrayLike<T>): string;         // typed arrays, array-like
+export function table<T extends ReadonlyArray<unknown>>(tabularData: ReadonlyArray<T>, properties?: ReadonlyArray<number | string>): string;
+export function table<T extends Record<PropertyKey, unknown>>(tabularData: ReadonlyArray<T>, properties?: ReadonlyArray<Extract<keyof T, string | number>>): string;
+export function table<T extends Record<PropertyKey, unknown>>(tabularData: Readonly<Record<string, T>>, properties?: ReadonlyArray<Extract<keyof T, string | number>>): string;
+export function table<K, V>(tabularData: ReadonlyMap<K, V>): string;
+export function table<V>(tabularData: ReadonlySet<V>): string;
+export function table<T>(tabularData: ArrayLike<T>): string;
 export function table(tabularData?: unknown, properties?: ReadonlyArray<string | number>): string {
   type Row = Record<string, unknown>;
   type Rows = Array<Row>;
 
   const INDEX_COL = "(index)";
+  const MIN_COLUMN_WIDTH = 3;
+  const CELL_PADDING = " ";
 
   const isMap = (v: unknown): v is ReadonlyMap<unknown, unknown> =>
     typeof v === "object" && v !== null && v instanceof Map;
@@ -44,7 +46,6 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
       for (let i = 0; i < a.length; i++) r[String(i)] = a[i];
       return r;
     }
-    // enumerable own props only
     const r: Row = {};
     for (const k of Object.keys(value)) {
       r[k] = (value as Record<string, unknown>)[k];
@@ -80,12 +81,10 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
     return `[${typeof v}]`;
   };
 
-  // Normalize input into rows + index labels
   let rows: Rows = [];
   let indexLabels: string[] = [];
 
   if (tabularData === undefined) {
-    // nothing to print
     return "┌─┐\n└─┘";
   } else if (isMap(tabularData)) {
     let i = 0;
@@ -114,7 +113,6 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
     indexLabels = ["0"];
   }
 
-// Determine columns
   const providedCols = properties?.map((p) => String(p));
   const colSet: string[] = [];
 
@@ -128,7 +126,6 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
     }
   }
 
-// Build printable matrix (headers + rows as strings)
   const headers = [INDEX_COL, ...colSet];
   const matrix: string[][] = [];
   matrix.push(headers);
@@ -142,7 +139,6 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
     matrix.push(line);
   }
 
-// Compute column widths
   const widths: number[] = new Array(headers.length).fill(0);
   for (let j = 0; j < headers.length; j++) {
     let maxLen = 0;
@@ -151,7 +147,7 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
       const len = cell.length;
       if (len > maxLen) maxLen = len;
     }
-    widths[j] = Math.max(3, maxLen); // minimum width
+    widths[j] = Math.max(MIN_COLUMN_WIDTH, maxLen);
   }
 
   const pad = (s: string, w: number): string =>
@@ -160,7 +156,7 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
   const lineOf = (left: string, mid: string, right: string): string => {
     const parts: string[] = [];
     for (let i = 0; i < widths.length; i++) {
-      parts.push("".padEnd(widths[i] + 2, "─")); // 1 space padding on each side
+      parts.push("".padEnd(widths[i] + 2 * CELL_PADDING.length, "─"));
     }
     return left + parts.join(mid) + right;
   };
@@ -170,13 +166,13 @@ export function table(tabularData?: unknown, properties?: ReadonlyArray<string |
   const bot = lineOf("└", "┴", "┘");
 
   const renderRow = (cells: string[]): string => {
-    const padded = cells.map((c, i) => " " + pad(c, widths[i]) + " ");
+    const padded = cells.map((c, i) => CELL_PADDING + pad(c, widths[i]) + CELL_PADDING);
     return "│" + padded.join("│") + "│";
   };
 
   const out: string[] = [];
   out.push(top);
-  out.push(renderRow(matrix[0])); // header
+  out.push(renderRow(headers));
   out.push(sep);
   for (let i = 1; i < matrix.length; i++) out.push(renderRow(matrix[i]));
   out.push(bot);

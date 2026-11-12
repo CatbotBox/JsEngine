@@ -31,7 +31,6 @@ function hasNone<CT extends AnyCT>(arch: EntityArchetype<CT>, excluded: readonly
     return true;
 }
 
-/** Sentinel for "more than one entity matched", which the two callers treat differently. */
 const AMBIGUOUS = Symbol("ambiguous singleton");
 
 export class EntityQuery<
@@ -103,12 +102,7 @@ export class EntityQuery<
         this._lazyLoaded.cachedArchetypes = next;
     }
 
-    /**
-     * Shared body of getSingleton/tryGetSingleton, which differ only in whether "none" and
-     * "more than one" return or throw. Cold path -- once per frame per camera at most.
-     * Returns AMBIGUOUS if more than one entity matched, undefined if none did.
-     */
-    private findSingletonRow(
+    private findSingletonRowOrAmbiguous(
         specOrConstructors: Record<string, TokenOrCtor>,
         options?: EntityStreamOptions<boolean>,
     ): any {
@@ -135,7 +129,7 @@ export class EntityQuery<
     >(specOrConstructors: S,
       options?: EntityStreamOptions<IncludeEntity>): (RowFromSpec<TokensFrom<S>, IncU<Inc>> &
         (IncludeEntity extends true ? { entity: Entity } : {})) | undefined {
-        const row = this.findSingletonRow(specOrConstructors, options);
+        const row = this.findSingletonRowOrAmbiguous(specOrConstructors, options);
         if (row === AMBIGUOUS || row === undefined) return undefined;
         return row;
     }
@@ -146,7 +140,7 @@ export class EntityQuery<
     >(specOrConstructors: S,
       options?: EntityStreamOptions<IncludeEntity>): RowFromSpec<TokensFrom<S>, IncU<Inc>> &
         (IncludeEntity extends true ? { entity: Entity } : {}) {
-        const row = this.findSingletonRow(specOrConstructors, options);
+        const row = this.findSingletonRowOrAmbiguous(specOrConstructors, options);
         if (row === AMBIGUOUS) throw new Error("More than 1 singleton entity found");
         if (row === undefined) throw new Error("No entity found");
         return row;
@@ -177,7 +171,6 @@ export class EntityQuery<
         return count;
     }
 
-    /** for loop over entities */
     public* [Symbol.iterator](): IterableIterator<Entity> {
         for (const arch of this.archetypes) {
             const n = arch.entityCount;
@@ -185,19 +178,6 @@ export class EntityQuery<
         }
     }
 
-    /**
-     * Iterate matching entities, declaring which components are read and which
-     * are written:
-     *
-     *     query.stream({
-     *         read:  {pos: LocalPosition},
-     *         write: {bounds: WorldSpaceRenderBounds},
-     *     }).consume(({pos, bounds}) => { ... });
-     *
-     * Reads come back deeply readonly; writes come back mutable and have their
-     * columns stamped once per archetype. See EntityQueryStream for why this
-     * replaced the per-component Proxy.
-     */
     public stream<
         R extends CompMap = {},
         W extends CompMap = {},
