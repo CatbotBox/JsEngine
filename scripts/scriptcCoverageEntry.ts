@@ -2,6 +2,7 @@
 import {System} from "../src/engine/core/system";
 import {Component} from "../src/engine/core/component";
 import {Vec} from "../src/engine/math/types/vec";
+import {nodePlatform} from "../src/hosts/terminal/nodePlatform";
 
 const ENTITY_COUNT = 100;
 const FRAME_COUNT = 10;
@@ -20,7 +21,7 @@ class Mover extends System {
     }
 }
 
-const world = new World();
+const world = new World({platform: nodePlatform()});
 const em = world.entityManager;
 for (let i = 0; i < ENTITY_COUNT; i++) em.addComponent(em.createEntity(), new Pos());
 const mover = world.getOrCreateSystem(Mover);

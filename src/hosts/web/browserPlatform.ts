@@ -1,4 +1,6 @@
-import type {FileSource, Platform, PlatformInput, PlatformScreen} from "../../engine/platform/platform";
+import type {FileSource, Platform} from "../../engine/platform/platform";
+import type {TerminalInputSource} from "../../engine/input/terminalInputSource";
+import type {CellSurface} from "../../backends/cells/cellSurface";
 import {inflate} from "../../engine/assets/image/inflate";
 
 export interface TerminalSubscription {
@@ -13,6 +15,8 @@ export interface BrowserTerminal {
     onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription;
 }
 
+export type WorldTerminal = CellSurface & TerminalInputSource;
+
 interface BrowserHost {
     readonly navigator?: {readonly hardwareConcurrency?: number};
     addEventListener?(type: string, listener: () => void): void;
@@ -21,16 +25,9 @@ interface BrowserHost {
 
 const EXIT_EVENTS = ["pagehide", "beforeunload"] as const;
 
-export function browserPlatform(terminal: BrowserTerminal, files: FileSource): Platform {
+export function browserPlatform(files: FileSource): Platform {
     const host = globalThis as unknown as BrowserHost;
     return {
-        output: {
-            write(chunk: string): void {
-                terminal.write(chunk);
-            },
-        },
-        input: createTerminalInput(terminal),
-        screen: createTerminalScreen(terminal),
         files,
         inflate,
         hardwareConcurrency: () => host.navigator?.hardwareConcurrency ?? 1,
@@ -39,7 +36,17 @@ export function browserPlatform(terminal: BrowserTerminal, files: FileSource): P
     };
 }
 
-function createTerminalInput(terminal: BrowserTerminal): PlatformInput {
+export function worldTerminal(terminal: BrowserTerminal): WorldTerminal {
+    return {
+        write(chunk: string): void {
+            terminal.write(chunk);
+        },
+        ...createTerminalInput(terminal),
+        ...createTerminalScreen(terminal),
+    };
+}
+
+function createTerminalInput(terminal: BrowserTerminal): Omit<TerminalInputSource, "write"> {
     let subscription: TerminalSubscription | undefined;
     const stop = (): void => {
         subscription?.dispose();
@@ -55,7 +62,7 @@ function createTerminalInput(terminal: BrowserTerminal): PlatformInput {
     };
 }
 
-function createTerminalScreen(terminal: BrowserTerminal): PlatformScreen {
+function createTerminalScreen(terminal: BrowserTerminal): Pick<CellSurface, "size" | "onResize"> {
     return {
         size: () => ({columns: terminal.cols, rows: terminal.rows}),
         onResize(callback: () => void): () => void {

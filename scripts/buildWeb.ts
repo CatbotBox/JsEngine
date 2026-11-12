@@ -1,9 +1,9 @@
-import type {BunPlugin} from "bun";
 import {copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from "fs";
 import {dirname, extname, join, relative, resolve} from "path";
 import {gzipSync} from "zlib";
 import {buildDemo3dManifest} from "../demo/3d/assets";
 import type {Demo3dManifest, ManifestFile} from "../demo/3d/assets";
+import {nodePlatform} from "../src/hosts/terminal";
 
 const ROOT = resolve(__dirname, "..");
 const WEB = join(ROOT, "src", "hosts", "web");
@@ -34,30 +34,12 @@ const GZIP_PART_BYTES = 20 * MB;
 const GZIP_LEVEL_MAX = 9;
 const GZIP_LEVEL_HOST_TRANSIT = 6;
 
-const NODE_PLATFORM = join(ROOT, "src", "hosts", "terminal", "nodePlatform");
-const NODE_PLATFORM_STUB = join(WEB, "nodePlatformStub.ts");
-
 const FORBIDDEN: readonly [label: string, pattern: RegExp][] = [
     ["node module require", /require\(\s*["'](node:)?(fs|path|os|zlib|worker_threads|util)["']\s*\)/],
     ["node: specifier", /["']node:[\w/]+["']/],
     ["process stdio", /process\.(stdout|stdin)/],
     ["fileLogger", /crash-logs/],
 ];
-
-function sameModule(a: string, b: string): boolean {
-    const strip = (path: string) => path.replace(/\.ts$/, "").toLowerCase();
-    return strip(resolve(a)) === strip(resolve(b));
-}
-
-const replaceNodePlatform: BunPlugin = {
-    name: "replace-node-platform",
-    setup(build) {
-        build.onResolve({filter: /(^|[\\/])nodePlatform$/}, args => {
-            if (!sameModule(resolve(dirname(args.importer), args.path), NODE_PLATFORM)) return undefined;
-            return {path: NODE_PLATFORM_STUB};
-        });
-    },
-};
 
 function outputFiles(directory: string): string[] {
     return readdirSync(directory).flatMap(name => {
@@ -102,7 +84,7 @@ function transferBytes(file: ManifestFile): number {
 }
 
 function writeDemo3dAssets(): Demo3dManifest {
-    const built = buildDemo3dManifest(ROOT);
+    const built = buildDemo3dManifest(ROOT, nodePlatform());
     const files = built.files.map((file): ManifestFile => {
         if (file.statOnly === true) return file;
         const target = join(OUT, file.path);
@@ -168,7 +150,6 @@ async function buildEachEntrySeparately(): Promise<void> {
             target: "browser",
             sourcemap: "linked",
             minify: PROD,
-            plugins: [replaceNodePlatform],
         });
         if (!result.success) {
             for (const message of result.logs) console.error(message);

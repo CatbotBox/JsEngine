@@ -1,6 +1,5 @@
 import type {Mesh} from "../rendering/3d/mesh";
 import type {FileSource} from "../platform";
-import {nodePlatform} from "../../hosts/terminal/nodePlatform";
 
 export const MESH_CACHE_FORMAT_VERSION = 3;
 export const MESH_CACHE_EXTENSION = ".meshcache";
@@ -44,7 +43,7 @@ export function meshCachePathFor(objPath: string): string {
     return objPath + MESH_CACHE_EXTENSION;
 }
 
-export function readMeshCache(objPath: string, files: FileSource = nodePlatform().files): CachedMesh | undefined {
+export function readMeshCache(objPath: string, files: FileSource): CachedMesh | undefined {
     if (files.stat === undefined) return undefined;
     const cachePath = meshCachePathFor(objPath);
     if (!files.exists(cachePath)) return undefined;
@@ -56,7 +55,7 @@ export function readMeshCache(objPath: string, files: FileSource = nodePlatform(
     }
 }
 
-export function writeMeshCache(objPath: string, mesh: Mesh, materialLibraryNames: readonly string[], files: FileSource = nodePlatform().files): void {
+export function writeMeshCache(objPath: string, mesh: Mesh, materialLibraryNames: readonly string[], files: FileSource): void {
     if (files.write === undefined || files.stat === undefined) return;
     const cachePath = meshCachePathFor(objPath);
     try {

@@ -1,6 +1,7 @@
 import {describe, expect, test} from "../testing/harness";
 import {dirname, isAbsolutePath, joinPath, normalizePath} from "./paths";
-import {MemoryFileSource, MemoryPlatform} from "../testing/memoryPlatform";
+import {MemoryFileSource, MemoryPlatform, MemoryTerminal} from "../testing/memoryPlatform";
+import {deflateStored} from "../testing/storedDeflate";
 import type {FileSource} from "./platform";
 import {ConsoleInput} from "../input/consoleInput";
 import type {KeyEvent, MouseEvent} from "../input/consoleInput";
@@ -50,52 +51,54 @@ describe("path helpers", () => {
     });
 });
 
-describe("MemoryPlatform", () => {
-    test("output collects every chunk in order", () => {
-        const platform = new MemoryPlatform();
-        platform.output.write("ab");
-        platform.output.write("c");
-        expect(platform.output.chunks).toEqual(["ab", "c"]);
-        expect(platform.output.text()).toBe("abc");
-        expect(platform.output.length).toBe(3);
-        platform.output.clear();
-        expect(platform.output.text()).toBe("");
-        expect(platform.output.length).toBe(0);
+describe("MemoryTerminal", () => {
+    test("writes collect every chunk in order", () => {
+        const terminal = new MemoryTerminal();
+        terminal.write("ab");
+        terminal.write("c");
+        expect(terminal.chunks).toEqual(["ab", "c"]);
+        expect(terminal.text()).toBe("abc");
+        expect(terminal.length).toBe(3);
+        terminal.clear();
+        expect(terminal.text()).toBe("");
+        expect(terminal.length).toBe(0);
     });
 
     test("scripted input waits for a reader, later input goes straight to it", () => {
-        const platform = new MemoryPlatform({input: ["a", "b"]});
-        platform.input.feed("c");
+        const terminal = new MemoryTerminal({input: ["a", "b"]});
+        terminal.feed("c");
         const received: string[] = [];
-        platform.input.start(data => received.push(data));
+        terminal.start(data => received.push(data));
         expect(received).toEqual(["a", "b", "c"]);
-        platform.input.feed("d");
+        terminal.feed("d");
         expect(received).toEqual(["a", "b", "c", "d"]);
-        platform.input.stop();
-        platform.input.feed("e");
+        terminal.stop();
+        terminal.feed("e");
         expect(received).toEqual(["a", "b", "c", "d"]);
-        expect(platform.input.started).toBe(false);
+        expect(terminal.started).toBe(false);
     });
 
     test("input availability follows the interactive option", () => {
-        expect(new MemoryPlatform().input.available()).toBe(true);
-        expect(new MemoryPlatform({interactive: false}).input.available()).toBe(false);
+        expect(new MemoryTerminal().available()).toBe(true);
+        expect(new MemoryTerminal({interactive: false}).available()).toBe(false);
     });
 
     test("resize changes the size and notifies subscribers until they unsubscribe", () => {
-        const platform = new MemoryPlatform({columns: 100, rows: 30});
-        expect(platform.screen.size()).toEqual({columns: 100, rows: 30});
+        const terminal = new MemoryTerminal({columns: 100, rows: 30});
+        expect(terminal.size()).toEqual({columns: 100, rows: 30});
         let notified = 0;
-        const unsubscribe = platform.screen.onResize(() => notified++);
-        platform.screen.resize(120, 40);
-        expect(platform.screen.size()).toEqual({columns: 120, rows: 40});
+        const unsubscribe = terminal.onResize(() => notified++);
+        terminal.resize(120, 40);
+        expect(terminal.size()).toEqual({columns: 120, rows: 40});
         expect(notified).toBe(1);
         unsubscribe();
-        platform.screen.resize(80, 24);
+        terminal.resize(80, 24);
         expect(notified).toBe(1);
-        expect(platform.screen.listenerCount).toBe(0);
+        expect(terminal.resizeListenerCount).toBe(0);
     });
+});
 
+describe("MemoryPlatform", () => {
     test("files are keyed by normalized path and writes move the modification time forward", () => {
         const files = new MemoryFileSource({"./models\\a.txt": "hello"});
         expect(files.exists("models/a.txt")).toBe(true);
@@ -137,19 +140,20 @@ describe("MemoryPlatform", () => {
     });
 });
 
-describe("ConsoleInput on a platform", () => {
-    test("terminal bytes from the platform become key events", () => {
+describe("ConsoleInput on a terminal input source", () => {
+    test("terminal bytes become key events", () => {
         const platform = new MemoryPlatform();
+        const terminal = new MemoryTerminal();
         const input = new ConsoleInput();
         const events: KeyEvent[] = [];
         input.onKeyDown.add(event => events.push(event));
         let upPressed = 0;
         input.whenKeyDown(Key.Up, () => upPressed++);
-        input.enable({platform, mouse: false});
+        input.enable({terminal, platform, mouse: false});
         try {
-            platform.input.feed("\x1b[A");
-            platform.input.feed("W");
-            platform.input.feed("\x1b[1;5C");
+            terminal.feed("\x1b[A");
+            terminal.feed("W");
+            terminal.feed("\x1b[1;5C");
             expect(upPressed).toBe(1);
             expect(input.keyDown("up")).toBe(true);
             expect(input.keyPressed("w")).toBe(true);
@@ -162,41 +166,44 @@ describe("ConsoleInput on a platform", () => {
     });
 
     test("scripted bytes reach listeners registered before enable", () => {
-        const platform = new MemoryPlatform({input: ["\x03"]});
+        const platform = new MemoryPlatform();
+        const terminal = new MemoryTerminal({input: ["\x03"]});
         const input = new ConsoleInput();
         let interrupted = false;
         input.onKeyMatch({name: "c", ctrl: true}, () => interrupted = true);
-        input.enable({platform, mouse: false});
+        input.enable({terminal, platform, mouse: false});
         input.disable();
         expect(interrupted).toBe(true);
     });
 
     test("a listener that disables input while scripted bytes arrive leaves it disabled", () => {
-        const platform = new MemoryPlatform({input: ["\x03", "x"]});
+        const platform = new MemoryPlatform();
+        const terminal = new MemoryTerminal({input: ["\x03", "x"]});
         const input = new ConsoleInput();
         const seen: string[] = [];
         input.onKey.add(event => seen.push(event.id));
         input.onKeyMatch({name: "c", ctrl: true}, () => input.disable());
-        input.enable({platform});
+        input.enable({terminal, platform});
         expect(input.isEnabled).toBe(false);
-        expect(platform.input.started).toBe(false);
+        expect(terminal.started).toBe(false);
         expect(seen).toEqual(["c"]);
-        expect(platform.output.text().includes("\x1b[?1003h")).toBe(false);
+        expect(terminal.text().includes("\x1b[?1003h")).toBe(false);
         platform.exit();
         expect(input.isEnabled).toBe(false);
     });
 
     test("mouse reports are split from key bytes in arrival order", () => {
         const platform = new MemoryPlatform();
+        const terminal = new MemoryTerminal();
         const input = new ConsoleInput();
         const order: string[] = [];
         let press: MouseEvent | undefined;
         input.onKey.add(event => order.push("key " + event.id));
         input.onMouse.add(event => order.push("mouse " + event.type));
         input.onMouseDown.add(event => press = event);
-        input.enable({platform});
+        input.enable({terminal, platform});
         try {
-            platform.input.feed("a\x1b[<0;10;5Mb");
+            terminal.feed("a\x1b[<0;10;5Mb");
             expect(order).toEqual(["key a", "mouse press", "key b"]);
             expect(press!.button).toBe("left");
             expect(press!.x).toBe(10);
@@ -206,34 +213,37 @@ describe("ConsoleInput on a platform", () => {
         }
     });
 
-    test("terminal modes go to the platform's output and are undone on disable", () => {
+    test("terminal modes are written to the input source and undone on disable", () => {
         const platform = new MemoryPlatform();
+        const terminal = new MemoryTerminal();
         const input = new ConsoleInput();
-        input.enable({platform, mouse: true, hideCursor: true});
-        expect(platform.input.started).toBe(true);
-        expect(platform.output.text()).toBe("\x1b[?1003h\x1b[?1006h\x1b[?25l");
+        input.enable({terminal, platform, mouse: true, hideCursor: true});
+        expect(terminal.started).toBe(true);
+        expect(terminal.text()).toBe("\x1b[?1003h\x1b[?1006h\x1b[?25l");
         input.disable();
-        expect(platform.input.started).toBe(false);
-        expect(platform.output.text()).toBe("\x1b[?1003h\x1b[?1006h\x1b[?25l\x1b[?1003l\x1b[?1006l\x1b[?25h");
+        expect(terminal.started).toBe(false);
+        expect(terminal.text()).toBe("\x1b[?1003h\x1b[?1006h\x1b[?25l\x1b[?1003l\x1b[?1006l\x1b[?25h");
     });
 
     test("host exit restores the terminal through the platform's exit hook", () => {
         const platform = new MemoryPlatform();
+        const terminal = new MemoryTerminal();
         const input = new ConsoleInput();
-        input.enable({platform, mouse: false});
+        input.enable({terminal, platform, mouse: false});
         platform.exit();
         expect(input.isEnabled).toBe(false);
-        expect(platform.input.started).toBe(false);
+        expect(terminal.started).toBe(false);
     });
 
-    test("a non-interactive platform leaves input disabled", () => {
-        const platform = new MemoryPlatform({interactive: false});
+    test("a non-interactive terminal leaves input disabled", () => {
+        const platform = new MemoryPlatform();
+        const terminal = new MemoryTerminal({interactive: false});
         const input = new ConsoleInput();
-        input.enable({platform, noTTY: "silent"});
+        input.enable({terminal, platform, noTTY: "silent"});
         expect(input.isEnabled).toBe(false);
-        expect(platform.input.started).toBe(false);
-        expect(platform.output.text()).toBe("");
-        expect(() => input.enable({platform, noTTY: "throw"})).toThrow("not a TTY");
+        expect(terminal.started).toBe(false);
+        expect(terminal.text()).toBe("");
+        expect(() => input.enable({terminal, platform, noTTY: "throw"})).toThrow("not a TTY");
     });
 });
 
@@ -257,14 +267,14 @@ function triangleFiles(texture: "ppm" | "png"): Record<string, string | Uint8Arr
     return {
         "models/tri.obj": TRIANGLE_OBJ,
         "models/tri.mtl": `newmtl Checker\nKd 1 0 0\nmap_Kd textures\\checker.${texture}\n`,
-        [texturePath]: texture === "ppm" ? encodePpm(2, 2, checkerRgba()) : encodePng(2, 2, checkerRgba()),
+        [texturePath]: texture === "ppm" ? encodePpm(2, 2, checkerRgba()) : encodePng(2, 2, checkerRgba(), deflateStored),
     };
 }
 
 describe("loaders on a memory file source", () => {
     test("an obj loads with its mtl and texture, and caches beside itself", () => {
         const files = new MemoryFileSource(triangleFiles("ppm"));
-        const mesh = Mesh.fromFile("./models/tri.obj", {files});
+        const mesh = Mesh.fromFile("./models/tri.obj", {files, inflate});
         expect(mesh.triangleCount).toBe(1);
         expect(mesh.materials[0].diffuseColor).toBe(0xFF0000);
         expect(mesh.materials[0].diffuseTexture!.width).toBe(2);
@@ -272,7 +282,7 @@ describe("loaders on a memory file source", () => {
 
         const objStat = files.stat("models/tri.obj");
         files.set("models/tri.obj", "#".repeat(objStat.size), objStat.mtimeMs);
-        const fromCache = Mesh.fromFile("models/tri.obj", {files});
+        const fromCache = Mesh.fromFile("models/tri.obj", {files, inflate});
         expect(fromCache.triangleCount).toBe(1);
         expect(fromCache.materials[0].diffuseTexture!.width).toBe(2);
     });
@@ -284,7 +294,7 @@ describe("loaders on a memory file source", () => {
             readText: path => backing.readText(path),
             exists: path => backing.exists(path),
         };
-        const mesh = Mesh.fromFile("models/tri.obj", {files: readOnly});
+        const mesh = Mesh.fromFile("models/tri.obj", {files: readOnly, inflate});
         expect(mesh.triangleCount).toBe(1);
         expect(mesh.materials[0].diffuseTexture).toBeDefined();
         expect(backing.exists(meshCachePathFor("models/tri.obj"))).toBe(false);
@@ -305,7 +315,7 @@ describe("loaders on a memory file source", () => {
     });
 
     test("decodeImageFile reads through the given files and inflate", () => {
-        const files = new MemoryFileSource({"sprite.png": encodePng(2, 2, checkerRgba())});
+        const files = new MemoryFileSource({"sprite.png": encodePng(2, 2, checkerRgba(), deflateStored)});
         let inflated = 0;
         const image = decodeImageFile("sprite.png", {
             files,
@@ -321,9 +331,9 @@ describe("loaders on a memory file source", () => {
     test("SpriteImage.fromFile caches per file source", () => {
         const red = new MemoryFileSource({"s.ppm": encodePpm(1, 1, new Uint8Array([255, 0, 0, 255]))});
         const blue = new MemoryFileSource({"s.ppm": encodePpm(1, 1, new Uint8Array([0, 0, 255, 255]))});
-        const fromRed = SpriteImage.fromFile("s.ppm", {files: red});
-        const fromBlue = SpriteImage.fromFile("s.ppm", {files: blue});
-        expect(SpriteImage.fromFile("s.ppm", {files: red})).toBe(fromRed);
+        const fromRed = SpriteImage.fromFile("s.ppm", {files: red, inflate});
+        const fromBlue = SpriteImage.fromFile("s.ppm", {files: blue, inflate});
+        expect(SpriteImage.fromFile("s.ppm", {files: red, inflate})).toBe(fromRed);
         expect(fromBlue).not.toBe(fromRed);
         expect(fromRed.rgba[0]).toBe(255);
         expect(fromBlue.rgba[2]).toBe(255);

@@ -6,7 +6,6 @@ import {readMeshCache, writeMeshCache} from "../../assets/meshCache";
 import {buildLodParts, LodBuildOptions} from "./meshLod";
 import type {AssetLoadOptions, FileSource} from "../../platform";
 import {dirname, joinPath} from "../../platform";
-import {nodePlatform} from "../../../hosts/terminal/nodePlatform";
 import {AABB_STRIDE} from "../../datatypes/aabb";
 
 const OBJ_VERTEX = "v ";
@@ -125,12 +124,12 @@ export class Mesh {
         }
     }
 
-    public static fromFile(filePath: string, options: MeshLoadOptions = {}): Mesh {
+    public static fromFile(filePath: string, options: MeshLoadOptions): Mesh {
         const fileType = filePath.slice(filePath.lastIndexOf("."));
         if (fileType !== '.obj') {
             throw Error(`Unable to parse file: ${filePath}. Reason ${fileType} not supported`);
         }
-        const files = options.files ?? nodePlatform().files;
+        const files = options.files;
         const directory = dirname(filePath);
         const useCache = options.cache ?? true;
         const lodOptions = options.lod === false ? undefined : options.lod === true || options.lod === undefined ? {} : options.lod;
@@ -148,7 +147,7 @@ export class Mesh {
             if (lodOptions !== undefined) mesh.attachLods(Mesh.buildLods(mesh, lodOptions));
             if (useCache) writeMeshCache(filePath, mesh, parser.materialLibraryNames, files);
         }
-        loadMaterialTextures(mesh.materials, new Map(), {files, inflate: options.inflate});
+        loadMaterialTextures(mesh.materials, {files, inflate: options.inflate});
         return mesh;
     }
 

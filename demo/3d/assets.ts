@@ -1,14 +1,16 @@
-import type {FileSource, FileStat} from "../../src/engine/platform";
-import type {PreloadEntry} from "../../src/hosts/web/preloadedFileSource";
+import type {AssetLoadOptions, FileSource, FileStat} from "../../src/engine/platform";
 import {joinPath, normalizePath} from "../../src/engine/platform";
-import {nodePlatform} from "../../src/hosts/terminal/nodePlatform";
 import {Mesh} from "../../src/engine/rendering/3d";
 import type {DemoModel} from "./game";
 import {findDemoModels} from "./models";
 
-export interface ManifestFile extends PreloadEntry {
+export interface ManifestFile {
+    readonly path: string;
     readonly size: number;
     readonly mtimeMs: number;
+    readonly statOnly?: boolean;
+    readonly lazy?: boolean;
+    readonly gzipParts?: readonly number[];
 }
 
 export interface ManifestModel extends DemoModel {
@@ -30,9 +32,8 @@ const WRITABLE = true;
 export class RecordingFileSource implements FileSource {
     public readonly read = new Set<string>();
     public readonly statted = new Set<string>();
-    private readonly files = nodePlatform().files;
 
-    public constructor(private readonly root: string, private readonly writable: boolean = false) {
+    public constructor(private readonly root: string, private readonly files: FileSource, private readonly writable: boolean = false) {
         if (writable) this.write = (path, bytes) => this.files.write!(this.resolve(path), bytes);
     }
 
@@ -62,15 +63,15 @@ export class RecordingFileSource implements FileSource {
     }
 }
 
-export function buildDemo3dManifest(root: string, options: Demo3dManifestOptions = {}): Demo3dManifest {
+export function buildDemo3dManifest(root: string, base: AssetLoadOptions, options: Demo3dManifestOptions = {}): Demo3dManifest {
     const lazyModelBytes = options.lazyModelBytes ?? DEFAULT_LAZY_MODEL_BYTES;
-    const inflate = nodePlatform().inflate;
-    const writable = new RecordingFileSource(root, WRITABLE);
-    const stats = new RecordingFileSource(root);
+    const inflate = base.inflate;
+    const writable = new RecordingFileSource(root, base.files, WRITABLE);
+    const stats = new RecordingFileSource(root, base.files);
     const recorded = findDemoModels(root).map(found => {
         const model = {name: found.name, path: normalizePath(found.path)};
         Mesh.fromFile(model.path, {files: writable, inflate});
-        const recorder = new RecordingFileSource(root);
+        const recorder = new RecordingFileSource(root, base.files);
         Mesh.fromFile(model.path, {files: recorder, inflate});
         const readBytes = [...recorder.read].reduce((sum, path) => sum + stats.stat(path).size, 0);
         return {model, recorder, lazy: readBytes > lazyModelBytes};

@@ -1,9 +1,9 @@
 ﻿import {DebugWorld, EntityCommandBufferSystem} from "../src/engine";
-import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
+import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {nodePlatform} from "../src/hosts/terminal";
 import {Camera, HudElement, RenderBounds, TextSprite, ScreenAnchor} from "../src/engine/rendering";
 import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../src/engine/translation";
-import {Ansi, HudTextSpriteCellPassSystem} from "../src/backends/cells";
+import {Ansi, CellSurfaceResource, HudTextSpriteCellPassSystem} from "../src/backends/cells";
 import {TextSpriteCellPassSystem} from "../src/backends/cells/2d/textSpriteCellPassSystem";
 import {MeshCellPassSystem} from "../src/backends/cells/3d/meshCellPassSystem";
 import {MeshCellPassSettings} from "../src/backends/cells/3d/meshCellPassSettings";
@@ -18,9 +18,10 @@ import {AmbientLight, DirectionalLight, PointLight} from "../src/engine/renderin
 const SETTLE_TICKS = 4;
 const ADDED_ENTITY_SETTLE_TICKS = 3;
 const TRUECOLOR_BG = "\x1b[48;2;";
-const threadedRasterWorkers = nodePlatform().workers;
-const platform = new MemoryPlatform({columns: 200, rows: 60, workers: threadedRasterWorkers});
-const output = platform.output;
+const nodeHost = nodePlatform();
+const threadedRasterWorkers = nodeHost.workers;
+const platform = new MemoryPlatform({workers: threadedRasterWorkers});
+const output = new MemoryTerminal({columns: 200, rows: 60});
 
 function log(message: string) {
     process.stdout.write(message + "\n");
@@ -36,11 +37,12 @@ function expect(condition: boolean, label: string) {
 }
 
 const world = new DebugWorld({platform});
+world.resources.insert(new CellSurfaceResource(output));
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
 
 buffer.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new RenderBounds(), new LocalRotation(), new FieldOfView()]);
 
-const meshEntity = buffer.createEntity("mesh", [new RenderMesh(Mesh.fromFile("./demo/3d/blender_monkey.obj")), new LocalToWorld(), new LocalScale()]);
+const meshEntity = buffer.createEntity("mesh", [new RenderMesh(Mesh.fromFile("./demo/3d/blender_monkey.obj", nodeHost)), new LocalToWorld(), new LocalScale()]);
 buffer.addTrackedComponent(meshEntity, new LocalPosition(0, 0, 8));
 const rotation = buffer.addTrackedComponent(meshEntity, new LocalRotation());
 
@@ -126,7 +128,7 @@ expect(litRotDelta > 0, `rotating a lit mesh produced output (${litRotDelta} byt
 
 tick();
 const lenBeforeCube = output.length;
-const cubeMesh = Mesh.fromFile("./demo/3d/cube.obj");
+const cubeMesh = Mesh.fromFile("./demo/3d/cube.obj", nodeHost);
 expect(cubeMesh.materials[0].diffuseTexture !== undefined, "cube.obj loaded its checker texture");
 buffer.createEntity("textured-cube", [
     new RenderMesh(cubeMesh),

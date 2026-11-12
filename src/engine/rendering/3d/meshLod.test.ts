@@ -4,6 +4,8 @@ import {Mesh, MeshBuilder} from "./mesh";
 import {Material} from "./material";
 import {buildLodParts, selectLodLevel} from "./meshLod";
 import {meshCachePathFor} from "../../assets/meshCache";
+import {inflate} from "../../assets/image/inflate";
+import {fsFileSource} from "../../testing/fsFileSource";
 import type * as Fs from "fs";
 import type * as Os from "os";
 import type * as Path from "path";
@@ -11,6 +13,7 @@ import type * as Path from "path";
 const fs = require("fs") as typeof Fs;
 const os = require("os") as typeof Os;
 const path = require("path") as typeof Path;
+const disk = {files: fsFileSource(fs), inflate};
 
 function tessellatedPlane(n: number, materialCount = 1): Mesh {
     const builder = new MeshBuilder();
@@ -150,11 +153,11 @@ describe("mesh detail levels", () => {
         fs.writeFileSync(objPath, planeObj(16));
         const lod = {minTriangles: 0, maxLevels: 3, minLevelTriangles: 0};
 
-        const parsed = Mesh.fromFile(objPath, {lod});
+        const parsed = Mesh.fromFile(objPath, {...disk, lod});
         expect(fs.existsSync(meshCachePathFor(objPath))).toBe(true);
         expect(parsed.lods.length).toBeGreaterThan(1);
 
-        const fromCache = Mesh.fromFile(objPath, {lod});
+        const fromCache = Mesh.fromFile(objPath, {...disk, lod});
         expect(fromCache.lods.length).toBe(parsed.lods.length);
         for (let i = 1; i < parsed.lods.length; i++) {
             expect(Array.from(fromCache.lods[i].data.raw)).toEqual(Array.from(parsed.lods[i].data.raw));
@@ -162,6 +165,6 @@ describe("mesh detail levels", () => {
             expect(fromCache.lods[i].materials[0]).toBe(fromCache.materials[0]);
         }
 
-        expect(Mesh.fromFile(objPath, {lod: false}).lods.length).toBe(1);
+        expect(Mesh.fromFile(objPath, {...disk, lod: false}).lods.length).toBe(1);
     });
 });

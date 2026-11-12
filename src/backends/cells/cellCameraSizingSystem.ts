@@ -3,6 +3,7 @@ import {Camera} from "../../engine/rendering/camera";
 import {CellAspectRatio} from "./cellAspectRatio";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {ScreenSize} from "../../engine/rendering/screenSize";
+import {CellSurfaceResource} from "./cellSurfaceResource";
 
 const PROMPT_ROWS = 1;
 
@@ -19,7 +20,7 @@ export class CellCameraSizingSystem extends System {
 
     protected onCreate() {
         this.requireAnyForUpdate(this._cameraQuery)
-        this._stopWatchingResize = this.world.platform.screen.onResize(() => {
+        this._stopWatchingResize = CellSurfaceResource.surfaceOf(this.world).onResize(() => {
             this._sizeStale = true;
         });
     }
@@ -49,7 +50,7 @@ export class CellCameraSizingSystem extends System {
     }
 
     public refreshSize() {
-        const {columns, rows} = this.world.platform.screen.size();
+        const {columns, rows} = CellSurfaceResource.surfaceOf(this.world).size();
         const height = rows - PROMPT_ROWS;
 
         const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})

@@ -8,6 +8,7 @@ import {CellGrid} from "./cellGrid";
 import {CellRenderSettings} from "./cellRenderSettings";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {ScreenSize} from "../../engine/rendering/screenSize";
+import {CellSurfaceResource} from "./cellSurfaceResource";
 
 const PRIORITY_AFTER_CAMERA_SIZING = 100;
 const CURSOR_HOME = "\x1b[H";
@@ -43,7 +44,8 @@ export class CellRenderSystemGroup extends SystemGroup {
     }
 
     onUpdate() {
-        if (this.world.platform.output.backlogged?.() === true) {
+        const surface = CellSurfaceResource.surfaceOf(this.world);
+        if (surface.backlogged?.() === true) {
             this._forceRedraw = true;
             return;
         }
@@ -59,19 +61,18 @@ export class CellRenderSystemGroup extends SystemGroup {
             const backgroundChar = settings?.settings.backgroundChar ?? CellRenderSettings.DEFAULT_BACKGROUND_CHAR;
             screenBuffer.beginFrame(cameraEntity, backgroundChar);
         } catch (error) {
-            const output = this.world.platform.output;
             const camCount = this._cameraQuery.entityCount();
-            output.write(CURSOR_HOME);
+            surface.write(CURSOR_HOME);
             if (camCount == 0) {
-                output.write("ERROR: NO CAMERA ENTITIES FOUND");
+                surface.write("ERROR: NO CAMERA ENTITIES FOUND");
             } else if (camCount > 1) {
-                output.write("ERROR: MULTIPLE CAMERA ENTITIES FOUND (" + camCount + ")");
+                surface.write("ERROR: MULTIPLE CAMERA ENTITIES FOUND (" + camCount + ")");
             } else {
-                output.write("ERROR: UNEXPECTED ERROR HAPPENED WITH CAMERA SYSTEM");
-                output.write(String(error));
+                surface.write("ERROR: UNEXPECTED ERROR HAPPENED WITH CAMERA SYSTEM");
+                surface.write(String(error));
             }
 
-            output.write(ERASE_BELOW_CURSOR);
+            surface.write(ERASE_BELOW_CURSOR);
             this._forceRedraw = true;
         }
 
@@ -95,7 +96,7 @@ export class CellRenderSystemGroup extends SystemGroup {
         }
 
         if (out.length > 0) {
-            this.world.platform.output.write(out);
+            surface.write(out);
         }
 
         this._prevRows = rows;
@@ -107,21 +108,21 @@ export class CellRenderSystemGroup extends SystemGroup {
 
     override onEnable(): void {
         super.onEnable();
+        const surface = CellSurfaceResource.surfaceOf(this.world);
         consoleOverride.removeConsoleEventListener(display)
-        const output = this.world.platform.output;
-        output.write(Ansi.modes.altScreenEnter);
-        output.write(Ansi.cursor.hide);
-        output.write(AUTOWRAP_OFF);
+        surface.write(Ansi.modes.altScreenEnter);
+        surface.write(Ansi.cursor.hide);
+        surface.write(AUTOWRAP_OFF);
         this._forceRedraw = true;
         this.update();
     }
 
     override onDisable(): void {
         consoleOverride.addConsoleEventListener(display)
-        const output = this.world.platform.output;
-        output.write(AUTOWRAP_ON);
-        output.write(Ansi.cursor.show);
-        output.write(Ansi.modes.altScreenExit);
+        const surface = CellSurfaceResource.surfaceOf(this.world);
+        surface.write(AUTOWRAP_ON);
+        surface.write(Ansi.cursor.show);
+        surface.write(Ansi.modes.altScreenExit);
         super.onDisable();
     }
 }

@@ -11,6 +11,7 @@ import {
     ParentTransform
 } from "../src/engine/translation";
 import {formatMs, median} from "./_harness";
+import {nodePlatform} from "../src/hosts/terminal";
 
 class Velocity extends Component {
     constructor(public dx: number = 0, public dy: number = 0) {
@@ -73,7 +74,7 @@ interface Scenario {
 }
 
 function newFixture(): Fixture {
-    const world = new World();
+    const world = new World({platform: nodePlatform()});
     return {world, em: world.entityManager, entities: []};
 }
 

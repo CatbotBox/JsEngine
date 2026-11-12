@@ -14,7 +14,7 @@ export class DebugWorld extends World {
 
     private _systemPerfStat?: Map<System, AverageStat>;
 
-    constructor(options: WorldOptions = {}) {
+    constructor(options: WorldOptions) {
         super(options);
         this._rootSystemGroup.destroy();
         this._rootSystemGroup = this.createSystem(RootSystemGroup);

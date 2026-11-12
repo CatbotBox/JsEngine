@@ -1,9 +1,5 @@
 export type {
     Platform,
-    PlatformOutput,
-    PlatformInput,
-    PlatformScreen,
-    TerminalSize,
     FileSource,
     FileStat,
     Inflate,

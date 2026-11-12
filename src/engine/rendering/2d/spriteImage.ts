@@ -1,7 +1,6 @@
 import {decodeImageFile} from "../../assets/image/decodedImage";
 import "../../assets/image/builtinDecoders";
 import type {AssetLoadOptions, FileSource} from "../../platform";
-import {nodePlatform} from "../../../hosts/terminal/nodePlatform";
 
 const RGBA_BYTES = 4;
 const OPAQUE_ALPHA = 255;
@@ -27,8 +26,8 @@ export class SpriteImage {
         return new SpriteImage(width, height, rgba.slice());
     }
 
-    public static fromFile(filePath: string, options: AssetLoadOptions = {}): SpriteImage {
-        const files = options.files ?? nodePlatform().files;
+    public static fromFile(filePath: string, options: AssetLoadOptions): SpriteImage {
+        const files = options.files;
         let cache = SpriteImage.fileCaches.get(files);
         if (cache === undefined) {
             cache = new Map();
@@ -36,7 +35,7 @@ export class SpriteImage {
         }
         let image = cache.get(filePath);
         if (image === undefined) {
-            const decoded = decodeImageFile(filePath, {files, inflate: options.inflate});
+            const decoded = decodeImageFile(filePath, options);
             image = new SpriteImage(decoded.width, decoded.height, decoded.rgba);
             cache.set(filePath, image);
         }

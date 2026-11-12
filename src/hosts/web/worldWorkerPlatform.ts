@@ -1,8 +1,10 @@
-import type {FileSource, Platform, TerminalSize} from "../../engine/platform/platform";
+import type {FileSource, Platform} from "../../engine/platform/platform";
+import type {CellSurfaceSize} from "../../backends/cells/cellSurface";
 import type {InitMessage, PageToWorldMessage, WorldToPageMessage} from "./worldWorkerProtocol";
 import {isPageToWorldMessage} from "./worldWorkerProtocol";
 import {browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorkerHost} from "./browserWorkers";
+import type {WorldTerminal} from "./browserPlatform";
 import {inflate} from "../../engine/assets/image/inflate";
 
 export interface WorldWorkerScope extends BrowserWorkerHost {
@@ -15,8 +17,9 @@ const MAX_OUTPUT_IN_FLIGHT = 2;
 
 export class PageConnection {
     public readonly platform: Platform;
+    public readonly terminal: WorldTerminal;
 
-    private size: TerminalSize;
+    private size: CellSurfaceSize;
     private reader: ((data: string) => void) | undefined;
     private readonly resizeListeners = new Set<() => void>();
     private readonly exitCallbacks = new Set<() => void>();
@@ -27,30 +30,26 @@ export class PageConnection {
     private constructor(private readonly scope: WorldWorkerScope, init: InitMessage, files: FileSource) {
         this.size = {columns: init.columns, rows: init.rows};
         const requestedRasterWorkers = init.requestedRasterWorkers;
+        this.terminal = {
+            write: chunk => this.write(chunk),
+            backlogged: () => this.outputInFlight >= MAX_OUTPUT_IN_FLIGHT,
+            available: () => true,
+            start: onData => {
+                this.reader = onData;
+            },
+            stop: () => {
+                this.reader = undefined;
+            },
+            size: () => this.size,
+            onResize: callback => {
+                const listener = () => callback();
+                this.resizeListeners.add(listener);
+                return () => {
+                    this.resizeListeners.delete(listener);
+                };
+            },
+        };
         this.platform = {
-            output: {
-                write: chunk => this.write(chunk),
-                backlogged: () => this.outputInFlight >= MAX_OUTPUT_IN_FLIGHT,
-            },
-            input: {
-                available: () => true,
-                start: onData => {
-                    this.reader = onData;
-                },
-                stop: () => {
-                    this.reader = undefined;
-                },
-            },
-            screen: {
-                size: () => this.size,
-                onResize: callback => {
-                    const listener = () => callback();
-                    this.resizeListeners.add(listener);
-                    return () => {
-                        this.resizeListeners.delete(listener);
-                    };
-                },
-            },
             files,
             inflate,
             workers: browserWorkersIfIsolated(scope),

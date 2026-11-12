@@ -1,30 +1,7 @@
-import type {FileSource, Platform, PlatformInput, PlatformScreen, TerminalSize, WorkerFactory} from "../../engine/platform/platform";
+import type {FileSource, Platform, WorkerFactory} from "../../engine/platform/platform";
 import {WORKER_ENTRY_POINT} from "../../engine/platform/platform";
 
-interface NodeTtyReadStream {
-    readonly isTTY?: boolean;
-    setRawMode(raw: boolean): void;
-    setEncoding(encoding: "utf8"): void;
-    resume(): void;
-    pause(): void;
-    on(event: "data", listener: (chunk: string) => void): void;
-    removeListener(event: "data", listener: (chunk: string) => void): void;
-}
-
-interface NodeTtyWriteStream {
-    readonly isTTY?: boolean;
-    readonly columns: number;
-    readonly rows: number;
-    write(chunk: string): unknown;
-    on(event: "resize", listener: () => void): void;
-    removeListener(event: "resize", listener: () => void): void;
-    _refreshSize?(): void;
-}
-
 interface NodeProcess {
-    readonly stdin: NodeTtyReadStream;
-    readonly stdout: NodeTtyWriteStream;
-    readonly stderr: NodeTtyWriteStream;
     readonly env: Readonly<Record<string, string | undefined>>;
     once(event: "exit" | "SIGTERM", listener: () => void): void;
     removeListener(event: "exit" | "SIGTERM", listener: () => void): void;
@@ -74,9 +51,6 @@ function nodeProcess(): NodeProcess {
     return process as unknown as NodeProcess;
 }
 
-const FALLBACK_SIZE: TerminalSize = {columns: 80, rows: 24};
-const BUN_RESIZE_POLL_MS = 50;
-
 let sharedPlatform: Platform | undefined;
 
 export function nodePlatform(): Platform {
@@ -84,15 +58,7 @@ export function nodePlatform(): Platform {
 }
 
 function createNodePlatform(): Platform {
-    const onBun = typeof (globalThis as {Bun?: unknown}).Bun !== "undefined";
     return {
-        output: {
-            write(chunk: string): void {
-                nodeProcess().stdout.write(chunk);
-            },
-        },
-        input: createTerminalInput(),
-        screen: createTerminalScreen(onBun),
         files: createNodeFiles(),
         inflate: nodeInflate,
         workers: createNodeWorkers(),
@@ -101,68 +67,6 @@ function createNodePlatform(): Platform {
         now: () => performance.now(),
         onExit,
     };
-}
-
-function createTerminalInput(): PlatformInput {
-    let listener: ((chunk: string) => void) | undefined;
-    const stop = (): void => {
-        if (listener === undefined) return;
-        const stdin = nodeProcess().stdin;
-        stdin.removeListener("data", listener);
-        listener = undefined;
-        if (stdin.isTTY) stdin.setRawMode(false);
-        stdin.pause();
-    };
-    return {
-        available: () => nodeProcess().stdin.isTTY === true,
-        start(onData: (data: string) => void): void {
-            stop();
-            const stdin = nodeProcess().stdin;
-            listener = chunk => onData(String(chunk));
-            if (stdin.isTTY) stdin.setRawMode(true);
-            stdin.resume();
-            stdin.setEncoding("utf8");
-            stdin.on("data", listener);
-        },
-        stop,
-    };
-}
-
-function createTerminalScreen(onBun: boolean): PlatformScreen {
-    const size = (): TerminalSize => {
-        const {stdout, stderr, env} = nodeProcess();
-        if (onBun) stdout._refreshSize?.();
-        if (stdout?.isTTY) return {columns: stdout.columns, rows: stdout.rows};
-        if (stderr?.isTTY) return {columns: stderr.columns, rows: stderr.rows};
-        const columns = Number(env.COLUMNS);
-        const rows = Number(env.LINES || env.ROWS);
-        return {
-            columns: Number.isFinite(columns) ? columns : FALLBACK_SIZE.columns,
-            rows: Number.isFinite(rows) ? rows : FALLBACK_SIZE.rows,
-        };
-    };
-
-    const onResize = (callback: () => void): () => void => {
-        if (onBun) {
-            let last = size();
-            const timer = setInterval(() => {
-                const next = size();
-                if (next.columns === last.columns && next.rows === last.rows) return;
-                last = next;
-                callback();
-            }, BUN_RESIZE_POLL_MS);
-            (timer as {unref?: () => void}).unref?.();
-            return () => clearInterval(timer);
-        }
-        const stdout = nodeProcess().stdout;
-        if (!stdout.isTTY) return () => {};
-        stdout.on("resize", callback);
-        return () => {
-            stdout.removeListener("resize", callback);
-        };
-    };
-
-    return {size, onResize};
 }
 
 function createNodeFiles(): FileSource {

@@ -1,4 +1,5 @@
 ﻿import {describe, expect, test} from "../testing/harness";
+import {MemoryPlatform} from "../testing/memoryPlatform";
 import {World} from "../core/world";
 import {RootSystemGroup} from "../core/rootSystemGroup";
 import {Vec, Vec4} from "../math/types/vec";
@@ -12,7 +13,7 @@ import {LocalToWorldSystem} from "./localToWorldSystem";
 import type {Entity} from "../core/entity";
 
 function makeWorld() {
-    const world = new World();
+    const world = new World({platform: new MemoryPlatform()});
     world.getOrCreateSystem(TranslationSystemGroup);
     world.getOrCreateSystem(LocalToWorldSystem);
     const root = world.getOrCreateSystem(RootSystemGroup);

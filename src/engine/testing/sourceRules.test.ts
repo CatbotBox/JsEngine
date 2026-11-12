@@ -36,18 +36,6 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
 const UNSCHEDULED = "unscheduled";
 
 const STEP_1_ALLOWLIST_REMOVED_IN_STEP: Readonly<Record<string, number | typeof UNSCHEDULED>> = {
-    "src/engine/core/world.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/engine/rendering/3d/mesh.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/engine/rendering/3d/material.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/engine/assets/image/decodedImage.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/engine/assets/image/png.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/engine/assets/meshCache.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/engine/rendering/2d/spriteImage.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/hosts/web/nodePlatformStub.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "src/hosts/web/worldWorker.test.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "demo/3d/assets.ts -> src/hosts/terminal/nodePlatform.ts": 2,
-    "demo/3d/assets.ts -> src/hosts/web/preloadedFileSource.ts": 2,
-    "src/engine/input/consoleInput.ts -> src/hosts/terminal/nodePlatform.ts": 3,
     "src/engine/input/consoleInput.ts -> src/hosts/terminal/ansi/ansiKeyDecoder.ts": 3,
     "src/engine/rendering/textSprite.ts -> src/backends/cells/ansiEncoding.ts": 4,
     "src/engine/rendering/textSprite.test.ts -> src/backends/cells/ansiEncoding.ts": 4,

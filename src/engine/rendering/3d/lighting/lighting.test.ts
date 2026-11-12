@@ -1,4 +1,5 @@
 import {describe, expect, test} from "../../../testing/harness";
+import {MemoryPlatform} from "../../../testing/memoryPlatform";
 import {World} from "../../../core/world";
 import {RootSystemGroup} from "../../../core/rootSystemGroup";
 import {TranslationSystemGroup} from "../../../translation/translationSystemGroup";
@@ -16,7 +17,7 @@ import {LIGHT_KIND_DIRECTIONAL, LIGHT_KIND_POINT, SceneLights} from "./sceneLigh
 import {SceneLightsGatherSystem} from "./sceneLightsGatherSystem";
 
 function makeWorld() {
-    const world = new World();
+    const world = new World({platform: new MemoryPlatform()});
     world.getOrCreateSystem(TranslationSystemGroup);
     world.getOrCreateSystem(LocalToWorldSystem);
     world.getOrCreateSystem(SceneLightsGatherSystem);

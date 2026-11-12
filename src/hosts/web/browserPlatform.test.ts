@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {browserPlatform} from "./browserPlatform";
+import {browserPlatform, worldTerminal} from "./browserPlatform";
 import type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
 import {MemoryFileSource} from "../../engine/testing/memoryPlatform";
 import {ConsoleInput} from "../../engine/input/consoleInput";
@@ -62,19 +62,20 @@ function fire(listeners: Listeners, type: string): void {
     for (const listener of [...(listeners.get(type) ?? [])]) listener();
 }
 
-describe("browserPlatform", () => {
-    test("output writes to the terminal and size follows it", () => {
+describe("worldTerminal", () => {
+    test("writes go to the terminal and size follows it", () => {
         const terminal = new FakeTerminal();
-        const platform = browserPlatform(terminal, new MemoryFileSource());
-        platform.output.write("frame");
+        const world = worldTerminal(terminal);
+        world.write("frame");
         expect(terminal.written).toEqual(["frame"]);
-        expect(platform.screen.size()).toEqual({columns: 80, rows: 24});
+        expect(world.size()).toEqual({columns: 80, rows: 24});
+        expect(world.backlogged).toBeUndefined();
 
         let resizes = 0;
-        const stop = platform.screen.onResize(() => resizes++);
+        const stop = world.onResize(() => resizes++);
         terminal.resize(100, 30);
         expect(resizes).toBe(1);
-        expect(platform.screen.size()).toEqual({columns: 100, rows: 30});
+        expect(world.size()).toEqual({columns: 100, rows: 30});
         stop();
         terminal.resize(90, 20);
         expect(resizes).toBe(1);
@@ -83,12 +84,12 @@ describe("browserPlatform", () => {
 
     test("terminal bytes reach the console input's key decoder", () => {
         const terminal = new FakeTerminal();
-        const platform = browserPlatform(terminal, new MemoryFileSource());
+        const platform = browserPlatform(new MemoryFileSource());
         const input = new ConsoleInput();
         const keys: KeyEvent[] = [];
         input.onKeyDown.add(key => keys.push(key));
         withPageEvents(() => {
-            input.enable({platform});
+            input.enable({terminal: worldTerminal(terminal), platform});
             expect(terminal.written.join("").includes("\x1b[?1003h")).toBe(true);
             terminal.type("\x1b[A");
             terminal.type("\x03");
@@ -98,10 +99,12 @@ describe("browserPlatform", () => {
         });
         expect(terminal.dataListeners.size).toBe(0);
     });
+});
 
+describe("browserPlatform", () => {
     test("files are the page's, there are no workers and inflate is the hand-written one", () => {
         const files = new MemoryFileSource({"a.txt": "x"});
-        const platform = browserPlatform(new FakeTerminal(), files);
+        const platform = browserPlatform(files);
         expect(platform.files).toBe(files);
         expect(platform.workers).toBeUndefined();
         expect(platform.requestedRasterWorkers).toBeUndefined();
@@ -111,7 +114,7 @@ describe("browserPlatform", () => {
     });
 
     test("onExit runs once on pagehide or beforeunload, and cancels", () => {
-        const platform = browserPlatform(new FakeTerminal(), new MemoryFileSource());
+        const platform = browserPlatform(new MemoryFileSource());
         withPageEvents(listeners => {
             let exits = 0;
             platform.onExit(() => exits++);

@@ -2,6 +2,8 @@ import {describe, expect, test} from "../testing/harness";
 import {Mesh} from "../rendering/3d/mesh";
 import {meshCachePathFor, readMeshCache} from "./meshCache";
 import {packRgb} from "../rendering/3d/material";
+import {inflate} from "./image/inflate";
+import {fsFileSource} from "../testing/fsFileSource";
 import type * as Fs from "fs";
 import type * as Os from "os";
 import type * as Path from "path";
@@ -9,6 +11,7 @@ import type * as Path from "path";
 const fs = require("fs") as typeof Fs;
 const os = require("os") as typeof Os;
 const path = require("path") as typeof Path;
+const disk = {files: fsFileSource(fs), inflate};
 
 const OBJ = `mtllib model.mtl
 v 0 0 0
@@ -59,11 +62,11 @@ function describeMesh(mesh: Mesh) {
 
 describe("mesh cache", () => {
     test("the first load writes the cache and the second load reproduces the mesh from it", () => withFreshModel(model => {
-        const parsed = Mesh.fromFile(model.objPath);
+        const parsed = Mesh.fromFile(model.objPath, disk);
         expect(fs.existsSync(model.cachePath)).toBe(true);
         const cachedWriteTime = fs.statSync(model.cachePath).mtimeMs;
 
-        const fromCache = Mesh.fromFile(model.objPath);
+        const fromCache = Mesh.fromFile(model.objPath, disk);
         expect(fs.statSync(model.cachePath).mtimeMs).toBe(cachedWriteTime);
         expect(describeMesh(fromCache)).toEqual(describeMesh(parsed));
         expect(fromCache.vertCount).toBe(9);
@@ -73,8 +76,8 @@ describe("mesh cache", () => {
     }));
 
     test("readMeshCache rejects stale, truncated and corrupt files", () => withFreshModel(model => {
-        Mesh.fromFile(model.objPath);
-        const valid = readMeshCache(model.objPath)!;
+        Mesh.fromFile(model.objPath, disk);
+        const valid = readMeshCache(model.objPath, disk.files)!;
         expect(valid.vertCount).toBe(9);
         expect(valid.triangleCount).toBe(3);
         expect(valid.materialNames).toEqual(["red", "blue", "unlisted"]);
@@ -82,34 +85,34 @@ describe("mesh cache", () => {
 
         const future = new Date(Date.now() + 5000);
         fs.utimesSync(model.objPath, future, future);
-        expect(readMeshCache(model.objPath)).toBeUndefined();
+        expect(readMeshCache(model.objPath, disk.files)).toBeUndefined();
 
-        Mesh.fromFile(model.objPath);
-        expect(readMeshCache(model.objPath)).toBeDefined();
+        Mesh.fromFile(model.objPath, disk);
+        expect(readMeshCache(model.objPath, disk.files)).toBeDefined();
         fs.appendFileSync(model.objPath, "\n");
-        expect(readMeshCache(model.objPath)).toBeUndefined();
+        expect(readMeshCache(model.objPath, disk.files)).toBeUndefined();
 
-        Mesh.fromFile(model.objPath);
+        Mesh.fromFile(model.objPath, disk);
         fs.truncateSync(model.cachePath, fs.statSync(model.cachePath).size - 10);
-        expect(readMeshCache(model.objPath)).toBeUndefined();
+        expect(readMeshCache(model.objPath, disk.files)).toBeUndefined();
 
-        Mesh.fromFile(model.objPath);
+        Mesh.fromFile(model.objPath, disk);
         const bytes = fs.readFileSync(model.cachePath);
         bytes[0] = 0;
         fs.writeFileSync(model.cachePath, bytes);
-        expect(readMeshCache(model.objPath)).toBeUndefined();
+        expect(readMeshCache(model.objPath, disk.files)).toBeUndefined();
     }));
 
     test("materials come from the live .mtl on a cache hit", () => withFreshModel(model => {
-        Mesh.fromFile(model.objPath);
+        Mesh.fromFile(model.objPath, disk);
         fs.writeFileSync(model.mtlPath, "newmtl red\nKd 0 1 0\nnewmtl blue\nKd 0 0 1\n");
-        const reloaded = Mesh.fromFile(model.objPath);
+        const reloaded = Mesh.fromFile(model.objPath, disk);
         expect(reloaded.materials[0].diffuseColor).toBe(packRgb(0, 1, 0));
-        expect(readMeshCache(model.objPath)).toBeDefined();
+        expect(readMeshCache(model.objPath, disk.files)).toBeDefined();
     }));
 
     test("cache: false loads without touching the disk cache", () => withFreshModel(model => {
-        const mesh = Mesh.fromFile(model.objPath, {cache: false});
+        const mesh = Mesh.fromFile(model.objPath, {...disk, cache: false});
         expect(mesh.triangleCount).toBe(3);
         expect(fs.existsSync(model.cachePath)).toBe(false);
     }));

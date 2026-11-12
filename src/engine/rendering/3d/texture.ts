@@ -30,7 +30,7 @@ export class Texture {
         return total;
     }
 
-    public static fromFile(filePath: string, maxDimension: number = Texture.maxDimension, options: AssetLoadOptions = {}): Texture {
+    public static fromFile(filePath: string, options: AssetLoadOptions, maxDimension: number = Texture.maxDimension): Texture {
         return Texture.fromImage(decodeImageFile(filePath, options), maxDimension);
     }
 

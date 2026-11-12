@@ -1,6 +1,5 @@
 import {Texture} from "./texture";
 import type {AssetLoadOptions} from "../../platform";
-import {nodePlatform} from "../../../hosts/terminal/nodePlatform";
 
 const WHITE = 0xFFFFFF;
 const CHANNEL_MAX = 255;
@@ -37,8 +36,8 @@ const TEXTURE_SLOTS: readonly TextureSlot[] = [
     {path: "specularTexturePath", texture: "specularTexture"},
 ];
 
-export function loadMaterialTextures(materials: readonly Material[], cache: Map<string, Texture> = new Map(), options: AssetLoadOptions = {}): void {
-    const files = options.files ?? nodePlatform().files;
+export function loadMaterialTextures(materials: readonly Material[], options: AssetLoadOptions, cache: Map<string, Texture> = new Map()): void {
+    const files = options.files;
     for (const material of materials) {
         for (const slot of TEXTURE_SLOTS) {
             const path = material[slot.path];
@@ -49,7 +48,7 @@ export function loadMaterialTextures(materials: readonly Material[], cache: Map<
                     console.warn(`Texture ${path} for material ${material.name} not found; rendering it untextured`);
                     continue;
                 }
-                texture = Texture.fromFile(path, Texture.maxDimension, {files, inflate: options.inflate});
+                texture = Texture.fromFile(path, options);
                 cache.set(path, texture);
             }
             material[slot.texture] = texture;

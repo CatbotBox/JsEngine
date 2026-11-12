@@ -4,9 +4,13 @@ import {join} from "path";
 import {describe, expect, test} from "../../src/engine/testing/harness";
 import {buildDemo3dManifest} from "./assets";
 import type {Demo3dManifest, ManifestModel} from "./assets";
+import {inflate} from "../../src/engine/rendering/3d";
+import {fsFileSource} from "../../src/engine/testing/fsFileSource";
+import type {SyncFileSystem} from "../../src/engine/testing/fsFileSource";
 
 const SMALL_STRIP_TRIANGLES = 1;
 const BIG_STRIP_TRIANGLES = 400;
+const disk = {files: fsFileSource(require("fs") as SyncFileSystem), inflate};
 
 function triangleStripObj(triangles: number): string {
     const lines = ["mtllib shared.mtl", "usemtl m"];
@@ -29,7 +33,7 @@ describe("buildDemo3dManifest", () => {
             writeFileSync(join(root, "demo", "3d", "small.obj"), triangleStripObj(SMALL_STRIP_TRIANGLES));
             writeFileSync(join(root, "demo", "3d", "big.obj"), triangleStripObj(BIG_STRIP_TRIANGLES));
 
-            const eager = buildDemo3dManifest(root, {lazyModelBytes: Number.POSITIVE_INFINITY});
+            const eager = buildDemo3dManifest(root, disk, {lazyModelBytes: Number.POSITIVE_INFINITY});
             expect(eager.files.some(file => file.lazy === true)).toBe(false);
             const [big, small] = eager.models;
             expect(eager.models.map(model => model.name)).toEqual(["big", "small"]);
@@ -37,7 +41,7 @@ describe("buildDemo3dManifest", () => {
             const threshold = (fetchedBytes(eager, small) + fetchedBytes(eager, big)) / 2;
             expect(fetchedBytes(eager, big)).toBeGreaterThan(threshold);
 
-            const manifest = buildDemo3dManifest(root, {lazyModelBytes: threshold});
+            const manifest = buildDemo3dManifest(root, disk, {lazyModelBytes: threshold});
             const flags = Object.fromEntries(manifest.files.map(file => [file.path, file.statOnly === true ? "stat-only" : file.lazy === true ? "lazy" : "eager"]));
             expect(flags).toEqual({
                 "demo/3d/big.obj": "stat-only",

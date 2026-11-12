@@ -2,6 +2,9 @@ import {describe, expect, test} from "../../testing/harness";
 import {decodePng, encodePng, PNG_SIGNATURE, pngChunk} from "./png";
 import {decodePpm, encodePpm} from "./ppm";
 import {decodeImageFile} from "./decodedImage";
+import {inflate} from "./inflate";
+import {deflateStored} from "../../testing/storedDeflate";
+import {MemoryFileSource} from "../../testing/memoryPlatform";
 import type * as Zlib from "zlib";
 
 interface PngSpec {
@@ -74,7 +77,7 @@ describe("decodePng", () => {
         const width = 5, height = 3;
         const rgba = new Uint8Array(width * height * 4);
         for (let i = 0; i < rgba.length; i++) rgba[i] = (i * 37 + 11) & 255;
-        const decoded = decodePng(encodePng(width, height, rgba));
+        const decoded = decodePng(encodePng(width, height, rgba, deflateStored), {inflate});
         expect(decoded.width).toBe(width);
         expect(decoded.height).toBe(height);
         expect(Array.from(decoded.rgba)).toEqual(Array.from(rgba));
@@ -88,7 +91,7 @@ describe("decodePng", () => {
             [1, 2, 3, 4, 5, 6, 7, 8, 9],
             [255, 254, 253, 0, 1, 2, 100, 101, 102],
         ];
-        const decoded = decodePng(buildPng({width: 3, height: 5, bitDepth: 8, colorType: 2, rows, filters: [0, 1, 2, 3, 4]}));
+        const decoded = decodePng(buildPng({width: 3, height: 5, bitDepth: 8, colorType: 2, rows, filters: [0, 1, 2, 3, 4]}), {inflate});
         for (let y = 0; y < 5; y++) {
             for (let x = 0; x < 3; x++) {
                 expect(pixel(decoded.rgba, 3, x, y)).toEqual([rows[y][x * 3], rows[y][x * 3 + 1], rows[y][x * 3 + 2], 255]);
@@ -102,7 +105,7 @@ describe("decodePng", () => {
             rows: [[0b00011011]],
             palette: [255, 0, 0, 0, 255, 0, 0, 0, 255, 9, 9, 9],
             transparency: [255, 128],
-        }));
+        }), {inflate});
         expect(pixel(decoded.rgba, 4, 0, 0)).toEqual([255, 0, 0, 255]);
         expect(pixel(decoded.rgba, 4, 1, 0)).toEqual([0, 255, 0, 128]);
         expect(pixel(decoded.rgba, 4, 2, 0)).toEqual([0, 0, 255, 255]);
@@ -110,14 +113,14 @@ describe("decodePng", () => {
     });
 
     test("scales 1-bit greyscale to full range", () => {
-        const decoded = decodePng(buildPng({width: 3, height: 1, bitDepth: 1, colorType: 0, rows: [[0b10100000]]}));
+        const decoded = decodePng(buildPng({width: 3, height: 1, bitDepth: 1, colorType: 0, rows: [[0b10100000]]}), {inflate});
         expect(pixel(decoded.rgba, 3, 0, 0)).toEqual([255, 255, 255, 255]);
         expect(pixel(decoded.rgba, 3, 1, 0)).toEqual([0, 0, 0, 255]);
         expect(pixel(decoded.rgba, 3, 2, 0)).toEqual([255, 255, 255, 255]);
     });
 
     test("takes the high byte of 16-bit grey+alpha samples", () => {
-        const decoded = decodePng(buildPng({width: 1, height: 1, bitDepth: 16, colorType: 4, rows: [[0xAB, 0xCD, 0x12, 0x34]]}));
+        const decoded = decodePng(buildPng({width: 1, height: 1, bitDepth: 16, colorType: 4, rows: [[0xAB, 0xCD, 0x12, 0x34]]}), {inflate});
         expect(pixel(decoded.rgba, 1, 0, 0)).toEqual([0xAB, 0xAB, 0xAB, 0x12]);
     });
 
@@ -126,14 +129,14 @@ describe("decodePng", () => {
             width: 2, height: 1, bitDepth: 8, colorType: 2,
             rows: [[1, 2, 3, 4, 5, 6]],
             transparency: [0, 1, 0, 2, 0, 3],
-        }));
+        }), {inflate});
         expect(pixel(decoded.rgba, 2, 0, 0)).toEqual([1, 2, 3, 0]);
         expect(pixel(decoded.rgba, 2, 1, 0)).toEqual([4, 5, 6, 255]);
     });
 
     test("rejects interlaced images and non-PNG data with clear messages", () => {
-        expect(() => decodePng(buildPng({width: 1, height: 1, bitDepth: 8, colorType: 0, rows: [[7]], interlace: 1}))).toThrow("Interlaced");
-        expect(() => decodePng(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).toThrow("signature");
+        expect(() => decodePng(buildPng({width: 1, height: 1, bitDepth: 8, colorType: 0, rows: [[7]], interlace: 1}), {inflate})).toThrow("Interlaced");
+        expect(() => decodePng(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]), {inflate})).toThrow("signature");
     });
 });
 
@@ -156,6 +159,6 @@ describe("ppm", () => {
 
 describe("decodeImageFile", () => {
     test("rejects unknown extensions and names the supported ones", () => {
-        expect(() => decodeImageFile("texture.gif")).toThrow(".png");
+        expect(() => decodeImageFile("texture.gif", {files: new MemoryFileSource(), inflate})).toThrow(".png");
     });
 });

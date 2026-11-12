@@ -8,7 +8,6 @@ import {GcSystem} from "./gcSystem";
 import {WorldSource} from "./worldSource";
 import {ResourceManager} from "./resourceManager";
 import type {Platform} from "../platform/platform";
-import {nodePlatform} from "../../hosts/terminal/nodePlatform";
 
 const MS_PER_SECOND = 1000;
 const DEFAULT_TARGET_FPS = 60;
@@ -24,7 +23,7 @@ class Time {
 }
 
 export interface WorldOptions {
-    readonly platform?: Platform;
+    readonly platform: Platform;
 }
 
 export class World extends WorldSource {
@@ -55,10 +54,10 @@ export class World extends WorldSource {
     private _loopHandle: ReturnType<typeof setInterval> | null = null;
     protected _targetDeltaTime: number = MS_PER_SECOND / DEFAULT_TARGET_FPS;
 
-    constructor(options: WorldOptions = {}) {
+    constructor(options: WorldOptions) {
         super(undefined!);
         this.world = this;
-        this.platform = options.platform ?? nodePlatform();
+        this.platform = options.platform;
         this._rootSystemGroup = this.createSystem(RootSystemGroup)
         this.ensureSystemExists(GcSystem)
     }
