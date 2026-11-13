@@ -36,7 +36,6 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
 const UNSCHEDULED = "unscheduled";
 
 const STEP_1_ALLOWLIST_REMOVED_IN_STEP: Readonly<Record<string, number | typeof UNSCHEDULED>> = {
-    "src/engine/input/consoleInput.ts -> src/hosts/terminal/ansi/ansiKeyDecoder.ts": 3,
     "src/engine/rendering/textSprite.ts -> src/backends/cells/ansiEncoding.ts": 4,
     "src/engine/rendering/textSprite.test.ts -> src/backends/cells/ansiEncoding.ts": 4,
     "demo/2d/game.ts -> src/backends/cells/index.ts": 4,

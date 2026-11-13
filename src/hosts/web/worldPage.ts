@@ -1,6 +1,7 @@
 import {connectWorldWorker} from "./worldWorkerPage";
 import {fixedTerminalSizeFromQuery, requestedRasterWorkersFromQuery} from "./worldWorkerProtocol";
-import {createTerminal} from "./terminal";
+import {createTerminal, terminalCellArea} from "./terminal";
+import {installDomInput} from "./domInput";
 
 export function startWorldPage(workerUrl: string, name: string): void {
     const play = document.getElementById("play")!;
@@ -11,7 +12,8 @@ export function startWorldPage(workerUrl: string, name: string): void {
 }
 
 function start(workerUrl: string, name: string): void {
-    const terminal = createTerminal(document.getElementById("terminal")!, fixedTerminalSizeFromQuery(location.search));
+    const container = document.getElementById("terminal")!;
+    const terminal = createTerminal(container, fixedTerminalSizeFromQuery(location.search));
     terminal.write(`Starting ${name}...\r\n`);
     const worker = new Worker(workerUrl, {type: "module"});
     const page = connectWorldWorker(terminal, worker, {
@@ -19,5 +21,6 @@ function start(workerUrl: string, name: string): void {
         requestedRasterWorkers: requestedRasterWorkersFromQuery(location.search),
         onQuit: () => window.close(),
     });
+    installDomInput(container, {sink: page.input, cellArea: () => terminalCellArea(terminal, container)});
     window.addEventListener("pagehide", () => page.exit());
 }

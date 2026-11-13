@@ -2,34 +2,21 @@ import {describe, expect, test} from "../../engine/testing/harness";
 import {browserPlatform, worldTerminal} from "./browserPlatform";
 import type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
 import {MemoryFileSource} from "../../engine/testing/memoryPlatform";
-import {ConsoleInput} from "../../engine/input/consoleInput";
-import type {KeyEvent} from "../../engine/input/consoleInput";
-import {Key} from "../../engine/input/key";
 import {inflate} from "../../engine/assets/image/inflate";
 
 class FakeTerminal implements BrowserTerminal {
     public cols = 80;
     public rows = 24;
     public readonly written: string[] = [];
-    public readonly dataListeners = new Set<(data: string) => void>();
     public readonly resizeListeners = new Set<(size: {cols: number, rows: number}) => void>();
 
     public write(data: string): void {
         this.written.push(data);
     }
 
-    public onData(listener: (data: string) => void): TerminalSubscription {
-        this.dataListeners.add(listener);
-        return {dispose: () => this.dataListeners.delete(listener)};
-    }
-
     public onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription {
         this.resizeListeners.add(listener);
         return {dispose: () => this.resizeListeners.delete(listener)};
-    }
-
-    public type(data: string): void {
-        for (const listener of [...this.dataListeners]) listener(data);
     }
 
     public resize(cols: number, rows: number): void {
@@ -63,13 +50,14 @@ function fire(listeners: Listeners, type: string): void {
 }
 
 describe("worldTerminal", () => {
-    test("writes go to the terminal and size follows it", () => {
+    test("writes go to the terminal and size follows it; it is only a surface, input comes from the DOM adapter", () => {
         const terminal = new FakeTerminal();
         const world = worldTerminal(terminal);
         world.write("frame");
         expect(terminal.written).toEqual(["frame"]);
         expect(world.size()).toEqual({columns: 80, rows: 24});
         expect(world.backlogged).toBeUndefined();
+        expect(Object.keys(world).sort()).toEqual(["onResize", "size", "write"]);
 
         let resizes = 0;
         const stop = world.onResize(() => resizes++);
@@ -80,24 +68,6 @@ describe("worldTerminal", () => {
         terminal.resize(90, 20);
         expect(resizes).toBe(1);
         expect(terminal.resizeListeners.size).toBe(0);
-    });
-
-    test("terminal bytes reach the console input's key decoder", () => {
-        const terminal = new FakeTerminal();
-        const platform = browserPlatform(new MemoryFileSource());
-        const input = new ConsoleInput();
-        const keys: KeyEvent[] = [];
-        input.onKeyDown.add(key => keys.push(key));
-        withPageEvents(() => {
-            input.enable({terminal: worldTerminal(terminal), platform});
-            expect(terminal.written.join("").includes("\x1b[?1003h")).toBe(true);
-            terminal.type("\x1b[A");
-            terminal.type("\x03");
-            expect(keys.map(key => key.id)).toEqual([Key.Up, "c"]);
-            expect(keys[1].ctrl).toBe(true);
-            input.disable();
-        });
-        expect(terminal.dataListeners.size).toBe(0);
     });
 });
 

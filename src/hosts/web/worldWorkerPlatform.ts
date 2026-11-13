@@ -1,10 +1,10 @@
 import type {FileSource, Platform} from "../../engine/platform/platform";
-import type {CellSurfaceSize} from "../../backends/cells/cellSurface";
+import type {CellSurface, CellSurfaceSize} from "../../backends/cells/cellSurface";
+import type {InputEventSink} from "../../engine/input";
 import type {InitMessage, PageToWorldMessage, WorldToPageMessage} from "./worldWorkerProtocol";
 import {isPageToWorldMessage} from "./worldWorkerProtocol";
 import {browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorkerHost} from "./browserWorkers";
-import type {WorldTerminal} from "./browserPlatform";
 import {inflate} from "../../engine/assets/image/inflate";
 
 export interface WorldWorkerScope extends BrowserWorkerHost {
@@ -17,10 +17,10 @@ const MAX_OUTPUT_IN_FLIGHT = 2;
 
 export class PageConnection {
     public readonly platform: Platform;
-    public readonly terminal: WorldTerminal;
+    public readonly terminal: CellSurface;
 
     private size: CellSurfaceSize;
-    private reader: ((data: string) => void) | undefined;
+    private inputSink: InputEventSink | undefined;
     private readonly resizeListeners = new Set<() => void>();
     private readonly exitCallbacks = new Set<() => void>();
     private pendingOutput = "";
@@ -33,13 +33,6 @@ export class PageConnection {
         this.terminal = {
             write: chunk => this.write(chunk),
             backlogged: () => this.outputInFlight >= MAX_OUTPUT_IN_FLIGHT,
-            available: () => true,
-            start: onData => {
-                this.reader = onData;
-            },
-            stop: () => {
-                this.reader = undefined;
-            },
             size: () => this.size,
             onResize: callback => {
                 const listener = () => callback();
@@ -78,6 +71,13 @@ export class PageConnection {
         });
     }
 
+    public connectInput(sink: InputEventSink): () => void {
+        this.inputSink = sink;
+        return () => {
+            if (this.inputSink === sink) this.inputSink = undefined;
+        };
+    }
+
     public quit(): void {
         this.post({type: "quit"});
     }
@@ -112,9 +112,11 @@ export class PageConnection {
 
     private receive(message: PageToWorldMessage): void {
         switch (message.type) {
-            case "input":
-                this.reader?.(message.data);
+            case "inputEvents": {
+                const sink = this.inputSink;
+                if (sink !== undefined) for (const event of message.events) sink.enqueue(event);
                 break;
+            }
             case "resize":
                 this.size = {columns: message.columns, rows: message.rows};
                 for (const listener of [...this.resizeListeners]) listener();

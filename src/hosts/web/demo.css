@@ -12,6 +12,10 @@ html, body {
     inset: 0;
 }
 
+#terminal .xterm {
+    cursor: default;
+}
+
 #play {
     position: fixed;
     inset: 0;

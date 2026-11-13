@@ -4,8 +4,8 @@ import {
     DebugWorld,
     Resource
 } from "../../src/engine/core";
-import {consoleInput as input, Key} from "../../src/engine/input";
-import type {TerminalInputSource} from "../../src/engine/input";
+import {Input, Key, PointerButton} from "../../src/engine/input";
+import type {InputEvent} from "../../src/engine/input";
 
 import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextSprite} from "../../src/engine/rendering";
 
@@ -43,7 +43,6 @@ export interface DemoModelFiles {
 }
 
 export interface Demo3dHost {
-    readonly terminal: TerminalInputSource;
     listModels(): readonly DemoModel[];
     readonly modelFiles?: DemoModelFiles;
     quit(): void;
@@ -67,6 +66,14 @@ const PITCH_LIMIT_RAD = Math.PI / 2 - PITCH_MARGIN_RAD;
 const LOOK_RAD_PER_CELL = 0.03;
 const CELL_WIDTH_PER_HEIGHT = 0.5;
 const GRID_SPACING = 5;
+const BEFORE_SIMULATION_PRIORITY = -1;
+const QUIT_ACTION = "quit";
+
+interface Command {
+    readonly action: string;
+    readonly keys: readonly Key[];
+    readonly run: () => void;
+}
 
 const formatCompact = (num: number): string => {
     const abs = Math.abs(num);
@@ -384,191 +391,176 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         camPos.z += dz * amount;
     }
 
-    const enableInputAndQuitKeys = () => {
-        input.enable({terminal: host.terminal, platform, mouse: true, hideCursor: true})
+    const input = world.resources.getOrCreate(Input);
 
-        const quit = () => {
-            const renderer = world.tryGetSystem(RenderingSystemGroup);
-            if (renderer) renderer.enabled = false;
-            world.stop();
-            input.disable();
-            host.quit();
-        }
-        input.onKeyMatch({name: 'c', ctrl: true}, quit)
-        input.whenKeyDown(Key.Escape, quit)
+    const quit = () => {
+        const renderer = world.tryGetSystem(RenderingSystemGroup);
+        if (renderer) renderer.enabled = false;
+        world.stop();
+        host.quit();
     }
 
-    const registerSpawnKeys = () => {
-        input.whenKeyDown(Key.Space, () => spawnSelected())
-        input.whenKeyDown(Key.Backspace, () => despawnLast())
-        input.whenKeyDown(Key.N, () => {
+    const toggleSystem = (system: System | undefined) => {
+        if (system) system.enabled = !system.enabled;
+    }
+
+    const keyDownHandlers = new Map<Key, () => void>([
+        [Key.W, () => moveCameraLocal(DIR_FWD, MOVE_STEP)],
+        [Key.S, () => moveCameraLocal(DIR_FWD, -MOVE_STEP)],
+        [Key.D, () => moveCameraLocal(DIR_RIGHT, MOVE_STEP)],
+        [Key.A, () => moveCameraLocal(DIR_RIGHT, -MOVE_STEP)],
+        [Key.Q, () => camPos.y -= MOVE_STEP],
+        [Key.E, () => camPos.y += MOVE_STEP],
+        [Key.Up, () => {
+            Vec.setX(groupEuler, Vec.x(groupEuler) + MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
+        }],
+        [Key.Down, () => {
+            Vec.setX(groupEuler, Vec.x(groupEuler) - MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
+        }],
+        [Key.Left, () => {
+            Vec.setY(groupEuler, Vec.y(groupEuler) - MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
+        }],
+        [Key.Right, () => {
+            Vec.setY(groupEuler, Vec.y(groupEuler) + MODEL_ROTATE_STEP_RAD);
+            applyGroupRotation();
+        }],
+        [Key.BracketLeft, () => {
+            Vec.divInto(groupScale, groupScale, scaleFactor);
+            applyGroupScale();
+        }],
+        [Key.BracketRight, () => {
+            Vec.mulInto(groupScale, groupScale, scaleFactor);
+            applyGroupScale();
+        }],
+        [Key.Z, () => fov.degrees /= FOV_KEY_STEP],
+        [Key.X, () => fov.degrees *= FOV_KEY_STEP],
+        [Key.I, () => {
+            Vec.setX(sunEuler, Vec.x(sunEuler) + SUN_ROTATE_STEP_RAD);
+            applySunRotation();
+        }],
+        [Key.K, () => {
+            Vec.setX(sunEuler, Vec.x(sunEuler) - SUN_ROTATE_STEP_RAD);
+            applySunRotation();
+        }],
+        [Key.J, () => {
+            Vec.setY(sunEuler, Vec.y(sunEuler) - SUN_ROTATE_STEP_RAD);
+            applySunRotation();
+        }],
+        [Key.L, () => {
+            Vec.setY(sunEuler, Vec.y(sunEuler) + SUN_ROTATE_STEP_RAD);
+            applySunRotation();
+        }],
+    ]);
+
+    const keyPressHandlers = new Map<Key, () => void>([
+        [Key.Space, () => spawnSelected()],
+        [Key.Backspace, () => despawnLast()],
+        [Key.N, () => {
             if (models.length === 0) return;
             selectedMeshIndex = (selectedMeshIndex + 1) % models.length;
             downloadUnlessLoaded(models[selectedMeshIndex]);
             updatePreview();
-        })
-        input.whenKeyDown(Key.R, () => fetchModels())
-    }
+        }],
+        [Key.R, () => fetchModels()],
+    ]);
 
-    const registerMovementKeys = () => {
-        input.whenKey(Key.W, () => moveCameraLocal(DIR_FWD, MOVE_STEP))
-        input.whenKey(Key.S, () => moveCameraLocal(DIR_FWD, -MOVE_STEP))
-        input.whenKey(Key.D, () => moveCameraLocal(DIR_RIGHT, MOVE_STEP))
-        input.whenKey(Key.A, () => moveCameraLocal(DIR_RIGHT, -MOVE_STEP))
-        input.whenKey(Key.Q, () => {
-            camPos.y -= MOVE_STEP;
-        })
-        input.whenKey(Key.E, () => {
-            camPos.y += MOVE_STEP;
-        })
-    }
-
-    const registerModelRotationKeys = () => {
-        input.whenKey(Key.Up, () => {
-            Vec.setX(groupEuler, Vec.x(groupEuler) + MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        })
-        input.whenKey(Key.Down, () => {
-            Vec.setX(groupEuler, Vec.x(groupEuler) - MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        })
-        input.whenKey(Key.Left, () => {
-            Vec.setY(groupEuler, Vec.y(groupEuler) - MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        })
-        input.whenKey(Key.Right, () => {
-            Vec.setY(groupEuler, Vec.y(groupEuler) + MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        })
-    }
-
-    const registerModelScaleKeys = () => {
-        input.whenKey('[', () => {
-            Vec.divInto(groupScale, groupScale, scaleFactor);
-            applyGroupScale();
-        })
-        input.whenKey(']', () => {
-            Vec.mulInto(groupScale, groupScale, scaleFactor);
-            applyGroupScale();
-        })
-    }
-
-    const registerFovKeys = () => {
-        input.whenKey(Key.Z, () => {
-            fov.degrees /= FOV_KEY_STEP;
-        })
-        input.whenKey(Key.X, () => {
-            fov.degrees *= FOV_KEY_STEP;
-        })
-    }
-
-    const registerRenderToggleKeys = () => {
-        input.whenKeyDown(Key.V, () => {
-            const renderer = world.tryGetSystem(MeshCellPassSystem);
-            if (renderer) renderer.enabled = !renderer.enabled;
-        })
-        input.whenKeyDown(Key.Tab, () => {
-            const renderer = world.tryGetSystem(HudTextSpriteCellPassSystem);
-            if (renderer) renderer.enabled = !renderer.enabled;
-        })
-        input.whenKeyDown(Key.G, () => world.logSystemUpdateOrder())
-        input.whenKeyDown(Key.T, () => {
-            renderSettings.textures = !renderSettings.textures;
-        })
-        input.whenKeyDown(Key.B, () => {
-            renderSettings.halfBlockCells = !renderSettings.halfBlockCells;
-        })
-        input.whenKeyDown(Key.F, () => {
-            renderSettings.lod = !renderSettings.lod;
-        })
-        input.whenKeyDown('-', () => {
-            renderSettings.lodBias += 1;
-        })
-        input.whenKeyDown('=', () => {
-            renderSettings.lodBias -= 1;
-        })
-        const supersamplePresets: [Key, number, number][] = [[Key.Num1, 1, 1], [Key.Num2, 2, 2], [Key.Num3, 2, 4], [Key.Num4, 4, 4]];
-        for (const [key, x, y] of supersamplePresets) {
-            input.whenKeyDown(key, () => {
+    const supersamplePresets: [Key, number, number][] = [[Key.Num1, 1, 1], [Key.Num2, 2, 2], [Key.Num3, 2, 4], [Key.Num4, 4, 4]];
+    const commands: Command[] = [
+        {action: "toggleMeshPass", keys: [Key.V], run: () => toggleSystem(world.tryGetSystem(MeshCellPassSystem))},
+        {action: "toggleHud", keys: [Key.Tab], run: () => toggleSystem(world.tryGetSystem(HudTextSpriteCellPassSystem))},
+        {action: "logSystemOrder", keys: [Key.G], run: () => world.logSystemUpdateOrder()},
+        {action: "toggleTextures", keys: [Key.T], run: () => renderSettings.textures = !renderSettings.textures},
+        {action: "toggleHalfBlock", keys: [Key.B], run: () => renderSettings.halfBlockCells = !renderSettings.halfBlockCells},
+        {action: "toggleLod", keys: [Key.F], run: () => renderSettings.lod = !renderSettings.lod},
+        {action: "lessDetail", keys: [Key.Minus], run: () => renderSettings.lodBias += 1},
+        {action: "moreDetail", keys: [Key.Equal], run: () => renderSettings.lodBias -= 1},
+        ...supersamplePresets.map(([key, x, y]): Command => ({
+            action: `supersample${x}x${y}`,
+            keys: [key],
+            run: () => {
                 renderSettings.supersampleX = x;
                 renderSettings.supersampleY = y;
-            })
+            },
+        })),
+        {action: "toggleLights", keys: [Key.H], run: () => {
+            lightsEnabled = !lightsEnabled;
+            applyLightEnabledState();
+        }},
+        {action: "toggleLamp", keys: [Key.P], run: () => {
+            lampEnabled = !lampEnabled;
+            applyLightEnabledState();
+        }},
+    ];
+    input.bindAction(QUIT_ACTION, [Key.Escape]);
+    for (const command of commands) input.bindAction(command.action, command.keys);
+
+    let lastPointerX = 0;
+    let lastPointerY = 0;
+    let looking = false;
+
+    const handlePointer = (event: InputEvent) => {
+        switch (event.type) {
+            case "pointerDown":
+                if (event.button !== PointerButton.Left) return;
+                looking = true;
+                lastPointerX = event.x;
+                lastPointerY = event.y;
+                return;
+            case "pointerUp":
+                if (event.button === PointerButton.Left) looking = false;
+                return;
+            case "pointerMove": {
+                if (!looking) return;
+                const dx = event.x - lastPointerX;
+                const dy = event.y - lastPointerY;
+                lastPointerX = event.x;
+                lastPointerY = event.y;
+                camYaw += dx * LOOK_RAD_PER_CELL;
+                camPitch += dy * LOOK_RAD_PER_CELL * CELL_WIDTH_PER_HEIGHT;
+                applyCameraLook();
+                return;
+            }
+            case "wheel":
+                fov.degrees = Math.max(MIN_FOV_DEG, Math.min(MAX_FOV_DEG, fov.degrees * Math.pow(FOV_WHEEL_STEP, -event.delta)));
+                return;
         }
     }
 
-    const registerLightingKeys = () => {
-        input.whenKey(Key.I, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) + SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        })
-        input.whenKey(Key.K, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) - SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        })
-        input.whenKey(Key.J, () => {
-            Vec.setY(sunEuler, Vec.y(sunEuler) - SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        })
-        input.whenKey(Key.L, () => {
-            Vec.setY(sunEuler, Vec.y(sunEuler) + SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        })
-        input.whenKeyDown(Key.H, () => {
-            lightsEnabled = !lightsEnabled;
-            applyLightEnabledState();
-        })
-        input.whenKeyDown(Key.P, () => {
-            lampEnabled = !lampEnabled;
-            applyLightEnabledState();
-        })
+    class ControlsSystem extends System {
+        override priority(): number {
+            return BEFORE_SIMULATION_PRIORITY;
+        }
+
+        onUpdate(): void {
+            if (input.actionPressed(QUIT_ACTION)) {
+                quit();
+                return;
+            }
+            for (const event of input.events) {
+                if (event.type !== "keyDown") {
+                    handlePointer(event);
+                    continue;
+                }
+                if (event.key === Key.C && event.ctrl) {
+                    quit();
+                    return;
+                }
+                keyDownHandlers.get(event.key)?.();
+                if (!event.repeat) keyPressHandlers.get(event.key)?.();
+            }
+            for (const command of commands) {
+                if (input.actionPressed(command.action)) command.run();
+            }
+        }
     }
 
-    const registerMouseLook = () => {
-        let lastX = 0;
-        let lastY = 0;
-        let looking = false;
-
-        input.onMouseDown.add((e) => {
-            if (e.button !== 'left') return;
-            looking = true;
-            lastX = e.x;
-            lastY = e.y;
-        })
-        input.onMouseUp.add((e) => {
-            if (e.button === 'left') looking = false;
-        })
-        input.onMouseMove.add((e) => {
-            if (!looking) return;
-            const dx = e.x - lastX;
-            const dy = e.y - lastY;
-            lastX = e.x;
-            lastY = e.y;
-            camYaw += dx * LOOK_RAD_PER_CELL;
-            camPitch += dy * LOOK_RAD_PER_CELL * CELL_WIDTH_PER_HEIGHT;
-            applyCameraLook();
-        })
-    }
-
-    const registerWheelZoom = () => {
-        input.onWheel.add((e) => {
-            const factor = e.button === 'wheelUp' ? 1 / FOV_WHEEL_STEP : FOV_WHEEL_STEP;
-            fov.degrees = Math.max(MIN_FOV_DEG, Math.min(MAX_FOV_DEG, fov.degrees * factor));
-        })
-    }
-
-    enableInputAndQuitKeys();
-    registerSpawnKeys();
-    registerMovementKeys();
-    registerModelRotationKeys();
-    registerModelScaleKeys();
-    registerFovKeys();
-    registerRenderToggleKeys();
-    registerLightingKeys();
-    registerMouseLook();
-    registerWheelZoom();
     fetchModels();
     spawnSelected();
 
+    world.ensureSystemExists(ControlsSystem);
     world.ensureSystemExists(MeshCellPassSystem);
     world.ensureSystemExists(HudTextSpriteCellPassSystem);
 

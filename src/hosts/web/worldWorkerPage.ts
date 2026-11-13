@@ -1,4 +1,5 @@
 import type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
+import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
 import type {PageToWorldMessage} from "./worldWorkerProtocol";
 import {isWorldToPageMessage} from "./worldWorkerProtocol";
 
@@ -20,6 +21,7 @@ export interface WorldWorkerPageOptions {
 }
 
 export interface WorldWorkerPage {
+    readonly input: InputEventSink;
     exit(): void;
 }
 
@@ -33,8 +35,20 @@ export function connectWorldWorker(terminal: PageTerminal, worker: WorldWorker, 
     const post = (message: PageToWorldMessage): void => {
         if (!closed) worker.postMessage(message);
     };
+    const pendingInput: InputEvent[] = [];
+    const flushInput = (): void => {
+        if (pendingInput.length > 0) post({type: "inputEvents", events: pendingInput.splice(0)});
+    };
+    const input: InputEventSink = {
+        enqueue(event: InputEvent): void {
+            if (closed) return;
+            pendingInput.push(event);
+            if (pendingInput.length === 1) queueMicrotask(flushInput);
+        },
+    };
     const close = (): void => {
         closed = true;
+        pendingInput.length = 0;
         for (const subscription of subscriptions) subscription.dispose();
         subscriptions.length = 0;
         worker.terminate();
@@ -66,10 +80,10 @@ export function connectWorldWorker(terminal: PageTerminal, worker: WorldWorker, 
     });
 
     post({type: "init", columns: terminal.cols, rows: terminal.rows, requestedRasterWorkers: options.requestedRasterWorkers});
-    subscriptions.push(terminal.onData(data => post({type: "input", data})));
     subscriptions.push(terminal.onResize(size => post({type: "resize", columns: size.cols, rows: size.rows})));
 
     return {
+        input,
         exit: () => post({type: "exit"}),
     };
 }

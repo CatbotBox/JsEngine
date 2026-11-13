@@ -3,9 +3,6 @@ import {dirname, isAbsolutePath, joinPath, normalizePath} from "./paths";
 import {MemoryFileSource, MemoryPlatform, MemoryTerminal} from "../testing/memoryPlatform";
 import {deflateStored} from "../testing/storedDeflate";
 import type {FileSource} from "./platform";
-import {ConsoleInput} from "../input/consoleInput";
-import type {KeyEvent, MouseEvent} from "../input/consoleInput";
-import {Key} from "../input/key";
 import {Mesh} from "../rendering/3d/mesh";
 import {decodeImageFile} from "../assets/image/decodedImage";
 import {inflate} from "../assets/image/inflate";
@@ -137,113 +134,6 @@ describe("MemoryPlatform", () => {
         expect(hardwareConcurrency()).toBe(4);
         expect(Array.from(inflate(new Uint8Array([1, 2, 3])))).toEqual([3, 2, 1]);
         expect(() => new MemoryPlatform().inflate(new Uint8Array(1))).toThrow("no inflate");
-    });
-});
-
-describe("ConsoleInput on a terminal input source", () => {
-    test("terminal bytes become key events", () => {
-        const platform = new MemoryPlatform();
-        const terminal = new MemoryTerminal();
-        const input = new ConsoleInput();
-        const events: KeyEvent[] = [];
-        input.onKeyDown.add(event => events.push(event));
-        let upPressed = 0;
-        input.whenKeyDown(Key.Up, () => upPressed++);
-        input.enable({terminal, platform, mouse: false});
-        try {
-            terminal.feed("\x1b[A");
-            terminal.feed("W");
-            terminal.feed("\x1b[1;5C");
-            expect(upPressed).toBe(1);
-            expect(input.keyDown("up")).toBe(true);
-            expect(input.keyPressed("w")).toBe(true);
-            expect(events.map(event => event.id)).toEqual(["up", "w", "right"]);
-            expect(events[1].shift).toBe(true);
-            expect(events[2].ctrl).toBe(true);
-        } finally {
-            input.disable();
-        }
-    });
-
-    test("scripted bytes reach listeners registered before enable", () => {
-        const platform = new MemoryPlatform();
-        const terminal = new MemoryTerminal({input: ["\x03"]});
-        const input = new ConsoleInput();
-        let interrupted = false;
-        input.onKeyMatch({name: "c", ctrl: true}, () => interrupted = true);
-        input.enable({terminal, platform, mouse: false});
-        input.disable();
-        expect(interrupted).toBe(true);
-    });
-
-    test("a listener that disables input while scripted bytes arrive leaves it disabled", () => {
-        const platform = new MemoryPlatform();
-        const terminal = new MemoryTerminal({input: ["\x03", "x"]});
-        const input = new ConsoleInput();
-        const seen: string[] = [];
-        input.onKey.add(event => seen.push(event.id));
-        input.onKeyMatch({name: "c", ctrl: true}, () => input.disable());
-        input.enable({terminal, platform});
-        expect(input.isEnabled).toBe(false);
-        expect(terminal.started).toBe(false);
-        expect(seen).toEqual(["c"]);
-        expect(terminal.text().includes("\x1b[?1003h")).toBe(false);
-        platform.exit();
-        expect(input.isEnabled).toBe(false);
-    });
-
-    test("mouse reports are split from key bytes in arrival order", () => {
-        const platform = new MemoryPlatform();
-        const terminal = new MemoryTerminal();
-        const input = new ConsoleInput();
-        const order: string[] = [];
-        let press: MouseEvent | undefined;
-        input.onKey.add(event => order.push("key " + event.id));
-        input.onMouse.add(event => order.push("mouse " + event.type));
-        input.onMouseDown.add(event => press = event);
-        input.enable({terminal, platform});
-        try {
-            terminal.feed("a\x1b[<0;10;5Mb");
-            expect(order).toEqual(["key a", "mouse press", "key b"]);
-            expect(press!.button).toBe("left");
-            expect(press!.x).toBe(10);
-            expect(press!.y).toBe(5);
-        } finally {
-            input.disable();
-        }
-    });
-
-    test("terminal modes are written to the input source and undone on disable", () => {
-        const platform = new MemoryPlatform();
-        const terminal = new MemoryTerminal();
-        const input = new ConsoleInput();
-        input.enable({terminal, platform, mouse: true, hideCursor: true});
-        expect(terminal.started).toBe(true);
-        expect(terminal.text()).toBe("\x1b[?1003h\x1b[?1006h\x1b[?25l");
-        input.disable();
-        expect(terminal.started).toBe(false);
-        expect(terminal.text()).toBe("\x1b[?1003h\x1b[?1006h\x1b[?25l\x1b[?1003l\x1b[?1006l\x1b[?25h");
-    });
-
-    test("host exit restores the terminal through the platform's exit hook", () => {
-        const platform = new MemoryPlatform();
-        const terminal = new MemoryTerminal();
-        const input = new ConsoleInput();
-        input.enable({terminal, platform, mouse: false});
-        platform.exit();
-        expect(input.isEnabled).toBe(false);
-        expect(terminal.started).toBe(false);
-    });
-
-    test("a non-interactive terminal leaves input disabled", () => {
-        const platform = new MemoryPlatform();
-        const terminal = new MemoryTerminal({interactive: false});
-        const input = new ConsoleInput();
-        input.enable({terminal, platform, noTTY: "silent"});
-        expect(input.isEnabled).toBe(false);
-        expect(terminal.started).toBe(false);
-        expect(terminal.text()).toBe("");
-        expect(() => input.enable({terminal, platform, noTTY: "throw"})).toThrow("not a TTY");
     });
 });
 

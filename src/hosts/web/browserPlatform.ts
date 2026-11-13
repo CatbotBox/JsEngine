@@ -1,5 +1,4 @@
 import type {FileSource, Platform} from "../../engine/platform/platform";
-import type {TerminalInputSource} from "../../engine/input/terminalInputSource";
 import type {CellSurface} from "../../backends/cells/cellSurface";
 import {inflate} from "../../engine/assets/image/inflate";
 
@@ -11,11 +10,8 @@ export interface BrowserTerminal {
     readonly cols: number;
     readonly rows: number;
     write(data: string): void;
-    onData(listener: (data: string) => void): TerminalSubscription;
     onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription;
 }
-
-export type WorldTerminal = CellSurface & TerminalInputSource;
 
 interface BrowserHost {
     readonly navigator?: {readonly hardwareConcurrency?: number};
@@ -36,29 +32,12 @@ export function browserPlatform(files: FileSource): Platform {
     };
 }
 
-export function worldTerminal(terminal: BrowserTerminal): WorldTerminal {
+export function worldTerminal(terminal: BrowserTerminal): CellSurface {
     return {
         write(chunk: string): void {
             terminal.write(chunk);
         },
-        ...createTerminalInput(terminal),
         ...createTerminalScreen(terminal),
-    };
-}
-
-function createTerminalInput(terminal: BrowserTerminal): Omit<TerminalInputSource, "write"> {
-    let subscription: TerminalSubscription | undefined;
-    const stop = (): void => {
-        subscription?.dispose();
-        subscription = undefined;
-    };
-    return {
-        available: () => true,
-        start(onData: (data: string) => void): void {
-            stop();
-            subscription = terminal.onData(onData);
-        },
-        stop,
     };
 }
 

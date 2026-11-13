@@ -1,11 +1,16 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
-import {DebugWorld} from "../src/engine/core";
+import {DebugWorld, EntityQuery} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {PreloadedFileSource} from "../src/hosts/web";
 import type {FileSource, FileStat} from "../src/engine/platform";
 import type {FetchedFile} from "../src/hosts/web";
-import {consoleInput} from "../src/engine/input";
+import {Input} from "../src/engine/input";
+import {TerminalInput} from "../src/hosts/terminal";
+import {Camera} from "../src/engine/rendering";
+import {FieldOfView} from "../src/engine/rendering/3d";
+import {LocalRotation} from "../src/engine/translation";
+import {Vec} from "../src/engine/math/types/vec";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {Ansi, CellSurfaceResource} from "../src/backends/cells";
@@ -22,6 +27,10 @@ const FRAMES = 30;
 const FRAME_MS = 1000 / 60;
 const CTRL_C = "\x03";
 const ARROW_RIGHT = "\x1b[C";
+const LEFT_DRAG_10_CELLS_RIGHT = "\x1b[<0;10;10M\x1b[<32;20;10M\x1b[<0;20;10m";
+const WHEEL_UP = "\x1b[<64;20;10M";
+const FOV_WHEEL_STEP = 1.05;
+const FOV_TOLERANCE_DEG = 1e-4;
 const SIZE = {columns: 120, rows: 40};
 const FIRST_SPAWN_FRAME = 5;
 const SPAWN_EVERY = 4;
@@ -119,12 +128,19 @@ async function main(): Promise<void> {
     const gameTerminal = new MemoryTerminal(SIZE);
     const world = new DebugWorld({platform});
     world.resources.insert(new CellSurfaceResource(gameTerminal));
+    const terminalInput = new TerminalInput({
+        terminal: gameTerminal,
+        platform,
+        sink: world.resources.getOrCreate(Input),
+        mouse: true,
+        hideCursor: true,
+    }).start();
     let quits = 0;
     const loadStart = performance.now();
-    setupDemo3d(world, {terminal: gameTerminal, listModels: () => manifest.models, quit: () => quits++});
+    setupDemo3d(world, {listModels: () => manifest.models, quit: () => quits++});
     log(`models loaded in ${(performance.now() - loadStart).toFixed(0)} ms`);
 
-    expect(gameTerminal.started, "the game enabled input on the host's terminal");
+    expect(gameTerminal.started && gameTerminal.text().includes("\x1b[?1003h\x1b[?1006h\x1b[?25l"), "the launch wiring started terminal input with the mouse on and the cursor hidden");
     expect(platform.workers === undefined, "the platform offers no workers, as in the browser");
 
     const pass = world.tryGetSystem(MeshCellPassSystem);
@@ -170,10 +186,26 @@ async function main(): Promise<void> {
     expect(sharedBuffersAllocated === 0, `no SharedArrayBuffer allocated: the raster stayed single-threaded (${sharedBuffersAllocated})`);
     expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
-    gameTerminal.feed(CTRL_C);
-    expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
+    const cameraQuery = new EntityQuery(world, [Camera, FieldOfView, LocalRotation]);
+    const cameraView = () => {
+        const {fov, rotation} = cameraQuery.getSingleton({fov: FieldOfView, rotation: LocalRotation});
+        return {degrees: fov.degrees, yaw: Vec.y(rotation.xyzw)};
+    };
+    const beforeLook = cameraView();
+    gameTerminal.feed(LEFT_DRAG_10_CELLS_RIGHT + WHEEL_UP);
+    (world as any).update();
+    const afterLook = cameraView();
+    expect(afterLook.yaw !== beforeLook.yaw, `a left drag turned the camera (yaw quaternion ${beforeLook.yaw.toFixed(3)} -> ${afterLook.yaw.toFixed(3)})`);
+    expect(Math.abs(afterLook.degrees - beforeLook.degrees / FOV_WHEEL_STEP) < FOV_TOLERANCE_DEG, `the wheel zoomed in one step (${beforeLook.degrees.toFixed(2)} -> ${afterLook.degrees.toFixed(2)} degrees)`);
 
-    consoleInput.disable();
+    gameTerminal.feed(CTRL_C);
+    expect(quits === 0, "Ctrl+C waits for the next frame's input");
+    (world as any).update();
+    expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
+    expect(errors.length === 0, `no errors logged while quitting${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
+
+    terminalInput.stop();
+    expect(!gameTerminal.started && gameTerminal.text().endsWith("\x1b[?1003l\x1b[?1006l\x1b[?25h"), "stopping terminal input restored the mouse mode and the cursor");
     consoleOverride.removeConsoleEventListener(errorRecorder);
     (globalThis as {SharedArrayBuffer: unknown}).SharedArrayBuffer = RealSharedArrayBuffer;
 
