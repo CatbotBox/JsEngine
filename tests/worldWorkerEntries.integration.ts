@@ -1,14 +1,17 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
-import {connectWorldWorker} from "../src/hosts/web";
-import type {PageTerminal, TerminalSubscription, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
+import {connectWorldWorker, STOPPED_STATUS} from "../src/hosts/web";
+import type {CellSurfaceSize, CellWorldDisplay, PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
+import type {CellFrame} from "../src/backends/cells";
+import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {Key, NO_MODIFIERS} from "../src/engine/input";
 import type {Modifiers} from "../src/engine/input";
-import {Ansi} from "../src/backends/cells";
-import {TerminalScreen} from "./support/terminalScreen";
+import {cellFrameLines, rgbCellCount} from "./support/cellFrameText";
+import {pixelFrameShowsText, pixelRgbAt} from "./support/pixelFrameText";
 import {buildDemo3dManifest} from "../demo/3d/assets";
 import type {Demo3dManifest} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
+import {BLACK_RGB} from "../src/engine/rendering";
 
 const ROOT = resolve(__dirname, "..");
 const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
@@ -18,6 +21,10 @@ const DIST = DIST_ARG < 0 ? undefined : resolve(process.argv[DIST_ARG + 1] ?? DE
 const CTRL: Modifiers = {...NO_MODIFIERS, ctrl: true};
 const START = {columns: 120, rows: 40};
 const RESIZED = {columns: 160, rows: 50};
+const PIXELS_PER_SCREEN_UNIT_X = 8;
+const PIXELS_PER_SCREEN_UNIT_Y = 16;
+const PIXEL_START: PixelPresenterSize = {widthPx: START.columns * PIXELS_PER_SCREEN_UNIT_X, heightPx: START.rows * PIXELS_PER_SCREEN_UNIT_Y};
+const PIXEL_RESIZED: PixelPresenterSize = {widthPx: RESIZED.columns * PIXELS_PER_SCREEN_UNIT_X, heightPx: RESIZED.rows * PIXELS_PER_SCREEN_UNIT_Y};
 const RASTER_WORKERS = 3;
 const TIMEOUT_MS = 20_000;
 const LAZY_SPAWN_TIMEOUT_MS = 60_000;
@@ -27,11 +34,33 @@ const POLL_INTERVAL_MS = 10;
 const FRAME_ARRIVAL_WINDOW_MS = 300;
 const PROMPT_ROWS = 1;
 const MIN_SCENE_CELL_DIVISOR = 50;
+const SCENE_REGION_MARGIN_FRACTION = 0.25;
 const ISOLATED = true;
 const NOT_ISOLATED = false;
+const SWARM_TITLE = "S W A R M";
+const SWARM_HUD_WAVE = "WAVE";
+
+interface QuitChord {
+    readonly key: Key;
+    readonly modifiers: Modifiers;
+    readonly label: string;
+}
+
+const CTRL_C_QUIT: QuitChord = {key: Key.C, modifiers: CTRL, label: "Ctrl+C"};
+const ESCAPE_QUIT: QuitChord = {key: Key.Escape, modifiers: NO_MODIFIERS, label: "Esc"};
+const LINE_SEPARATOR = "\n";
+
+const WORKER_SOURCES: Readonly<Record<string, string>> = {
+    "world2d": join(ROOT, "demo", "2d", "launch", "web.worker.ts"),
+    "world3d": join(ROOT, "demo", "3d", "launch", "web.worker.ts"),
+    "world2d-pixels": join(ROOT, "demo", "2d", "launch", "pixelWeb.worker.ts"),
+    "world3d-pixels": join(ROOT, "demo", "3d", "launch", "pixelWeb.worker.ts"),
+    "worldswarm": join(ROOT, "demo", "swarm", "launch", "web.worker.ts"),
+    "worldswarm-pixels": join(ROOT, "demo", "swarm", "launch", "pixelWeb.worker.ts"),
+};
 
 function workerEntry(name: string): string {
-    return DIST === undefined ? join(ROOT, "src", "hosts", "web", `${name}.worker.ts`) : join(DIST, `${name}.worker.js`);
+    return DIST === undefined ? WORKER_SOURCES[name] : join(DIST, `${name}.worker.js`);
 }
 
 function demo3dManifest(): Demo3dManifest {
@@ -63,70 +92,161 @@ async function waitUntil(condition: () => boolean, timeoutMs: number = TIMEOUT_M
     return true;
 }
 
-class ModelTerminal implements PageTerminal {
-    public readonly screen: TerminalScreen;
-    public transcript = "";
-    public writes = 0;
-    private readonly resizeListeners = new Set<(size: {cols: number, rows: number}) => void>();
+abstract class RecordingDisplay {
+    public readonly statuses: string[] = [];
+    public readonly errors: string[] = [];
+    public frames = 0;
+    private readonly resizeListeners = new Set<() => void>();
     private readonly seenByPattern = new Map<string, boolean>();
 
-    public constructor(public cols: number, public rows: number) {
-        this.screen = new TerminalScreen(cols, rows);
+    public onResize(listener: () => void): () => void {
+        this.resizeListeners.add(listener);
+        return () => {
+            this.resizeListeners.delete(listener);
+        };
     }
 
-    public write(data: string, callback?: () => void): void {
-        this.screen.write(data);
-        this.transcript += data;
-        this.writes++;
-        if (this.seenByPattern.size > 0) {
-            const text = this.screen.text();
-            for (const [pattern, seen] of this.seenByPattern) if (!seen && text.includes(pattern)) this.seenByPattern.set(pattern, true);
-        }
-        if (callback !== undefined) setTimeout(callback, 0);
+    public showStatus(text: string): void {
+        this.statuses.push(text);
+    }
+
+    public showError(text: string): void {
+        this.errors.push(text);
     }
 
     public watch(pattern: string): void {
-        this.seenByPattern.set(pattern, this.screen.text().includes(pattern));
+        this.seenByPattern.set(pattern, this.showing(pattern));
     }
 
     public shown(pattern: string): boolean {
         return this.seenByPattern.get(pattern) === true;
     }
 
-    public showing(pattern: string): boolean {
-        return this.screen.text().includes(pattern);
+    public statusShown(pattern: string): boolean {
+        return this.statuses.some(status => status.includes(pattern));
     }
 
-    public onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription {
-        this.resizeListeners.add(listener);
-        return {dispose: () => this.resizeListeners.delete(listener)};
+    public abstract showing(pattern: string): boolean;
+
+    public abstract framePainted(): boolean;
+
+    public abstract scenePainted(): boolean;
+
+    public abstract sizeLabel(): string;
+
+    protected recordFrame(onPresented: () => void): void {
+        this.frames++;
+        for (const [pattern, seen] of this.seenByPattern) if (!seen && this.showing(pattern)) this.seenByPattern.set(pattern, true);
+        setTimeout(onPresented, 0);
     }
 
-    public resize(cols: number, rows: number): void {
-        this.cols = cols;
-        this.rows = rows;
-        this.screen.resize(cols, rows);
-        for (const listener of [...this.resizeListeners]) listener({cols, rows});
-    }
-
-    public text(): string {
-        return Ansi.strip(this.transcript);
-    }
-
-    public framePainted(): boolean {
-        return this.screen.writtenCells(this.cols, this.rows - PROMPT_ROWS) === this.cols * (this.rows - PROMPT_ROWS);
+    protected notifyResize(): void {
+        for (const listener of [...this.resizeListeners]) listener();
     }
 }
 
+class CellFrameDisplay extends RecordingDisplay implements CellWorldDisplay {
+    private latest: CellFrame | undefined;
+    private latestText = "";
+
+    public constructor(private columns: number, private rows: number) {
+        super();
+    }
+
+    public surfaceSize(): CellSurfaceSize {
+        return {kind: "cells", columns: this.columns, rows: this.rows};
+    }
+
+    public presentCells(frame: CellFrame, onPresented: () => void): void {
+        this.latest = frame;
+        this.latestText = cellFrameLines(frame).join(LINE_SEPARATOR);
+        this.recordFrame(onPresented);
+    }
+
+    public resize(columns: number, rows: number): void {
+        this.columns = columns;
+        this.rows = rows;
+        this.notifyResize();
+    }
+
+    public showing(pattern: string): boolean {
+        return this.latestText.includes(pattern);
+    }
+
+    public framePainted(): boolean {
+        return this.latest !== undefined && this.latest.width === this.columns && this.latest.height === this.rows - PROMPT_ROWS;
+    }
+
+    public scenePainted(): boolean {
+        const frameCells = this.columns * (this.rows - PROMPT_ROWS);
+        return this.latest !== undefined && rgbCellCount(this.latest) > frameCells / MIN_SCENE_CELL_DIVISOR;
+    }
+
+    public sizeLabel(): string {
+        return `${this.columns}x${this.rows}`;
+    }
+}
+
+class PixelFrameDisplay extends RecordingDisplay implements PixelWorldDisplay {
+    private latest: PixelFrame | undefined;
+    private size: PixelPresenterSize;
+
+    public constructor(size: PixelPresenterSize) {
+        super();
+        this.size = size;
+    }
+
+    public surfaceSize(): PixelSurfaceSize {
+        return {kind: "pixels", ...this.size};
+    }
+
+    public presentPixels(frame: PixelFrame, onPresented: () => void): void {
+        this.latest = frame;
+        this.recordFrame(onPresented);
+    }
+
+    public resize(size: PixelPresenterSize): void {
+        this.size = size;
+        this.notifyResize();
+    }
+
+    public showing(pattern: string): boolean {
+        return this.latest !== undefined && pixelFrameShowsText(this.latest, pattern);
+    }
+
+    public framePainted(): boolean {
+        const frame = this.latest;
+        return frame !== undefined && frame.widthPx === this.size.widthPx && frame.heightPx === this.size.heightPx
+            && frame.pixelsPerScreenUnitX === PIXELS_PER_SCREEN_UNIT_X && frame.pixelsPerScreenUnitY === PIXELS_PER_SCREEN_UNIT_Y;
+    }
+
+    public scenePainted(): boolean {
+        const frame = this.latest;
+        if (frame === undefined) return false;
+        const left = Math.floor(frame.widthPx * SCENE_REGION_MARGIN_FRACTION), right = frame.widthPx - left;
+        const top = Math.floor(frame.heightPx * SCENE_REGION_MARGIN_FRACTION), bottom = frame.heightPx - top;
+        let painted = 0;
+        for (let y = top; y < bottom; y++) {
+            for (let x = left; x < right; x++) if (pixelRgbAt(frame, x, y) !== BLACK_RGB) painted++;
+        }
+        return painted > (right - left) * (bottom - top) / MIN_SCENE_CELL_DIVISOR;
+    }
+
+    public sizeLabel(): string {
+        return `${this.size.widthPx}x${this.size.heightPx} px`;
+    }
+}
+
+type TestDisplay = CellFrameDisplay | PixelFrameDisplay;
+
 class Page {
-    public readonly terminal = new ModelTerminal(START.columns, START.rows);
     public readonly errors: string[] = [];
     public readonly fetched: string[] = [];
     public terminated = false;
     private readonly worker: Worker;
     private readonly connection: WorldWorkerPage;
 
-    public constructor(entry: string, name: string, isolated: boolean, requestedRasterWorkers?: number) {
+    public constructor(entry: string, name: string, public readonly display: TestDisplay, isolated: boolean, requestedRasterWorkers?: number) {
         this.worker = new Worker(entry, {
             type: "module",
             preload: [SHIM],
@@ -147,7 +267,7 @@ class Page {
             this.terminated = true;
             terminate();
         };
-        this.connection = connectWorldWorker(this.terminal, worker, {name, requestedRasterWorkers});
+        this.connection = connectWorldWorker(display, worker, {name, requestedRasterWorkers});
     }
 
     public press(key: Key, modifiers: Modifiers = NO_MODIFIERS): void {
@@ -156,13 +276,13 @@ class Page {
     }
 
     public failedLines(): string {
-        return this.terminal.text().split("\n").filter(line => line.includes("Could not start") || line.includes("Error in")).join(" | ");
+        return this.display.errors.join(" | ");
     }
 
-    public async quit(label: string): Promise<void> {
-        this.press(Key.C, CTRL);
-        const stopped = await waitUntil(() => this.terminal.text().includes("Stopped. Reload the page to restart."));
-        expect(stopped && this.terminated, `${label}: Ctrl+C quit, the page shows "Stopped" and terminated the worker`);
+    public async quit(label: string, chord: QuitChord = CTRL_C_QUIT): Promise<void> {
+        this.press(chord.key, chord.modifiers);
+        const stopped = await waitUntil(() => this.display.statusShown(STOPPED_STATUS));
+        expect(stopped && this.terminated, `${label}: ${chord.label} quit, the page shows "Stopped" and terminated the worker`);
         const failed = this.failedLines();
         expect(this.errors.length === 0 && failed.length === 0, `${label}: no worker errors${this.errors.length + failed.length > 0 ? ": " + [...this.errors, failed].join(" | ") : ""}`);
     }
@@ -172,25 +292,43 @@ class Page {
     }
 }
 
-async function verify2d(): Promise<void> {
-    const page = new Page(workerEntry("world2d"), "the 2D demo", NOT_ISOLATED);
-    try {
-        expect(await waitUntil(() => page.terminal.framePainted()), "2D: every frame cell painted on start");
-        expect(await waitUntil(() => page.terminal.text().includes("FPS:")), "2D: the FPS label rendered");
-        const writesBefore = page.terminal.writes;
-        await sleep(FRAME_ARRIVAL_WINDOW_MS);
-        expect(page.terminal.writes > writesBefore, `2D: frames keep arriving (${page.terminal.writes - writesBefore} output messages in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
+async function verifyResize(page: Page, label: string, resize: () => void): Promise<void> {
+    resize();
+    expect(await waitUntil(() => page.display.framePainted()), `${label}: repainted at the new size (${page.display.sizeLabel()})`);
+}
 
-        page.terminal.resize(RESIZED.columns, RESIZED.rows);
-        expect(await waitUntil(() => page.terminal.framePainted()), `2D: repainted at the new size (${RESIZED.columns}x${RESIZED.rows})`);
-        await page.quit("2D");
+async function verify2d(label: string, entry: string, display: TestDisplay, resize: () => void): Promise<void> {
+    const page = new Page(entry, "the 2D demo", display, NOT_ISOLATED);
+    try {
+        expect(await waitUntil(() => display.framePainted()), `${label}: a frame of the page's size (${display.sizeLabel()}) painted on start`);
+        expect(await waitUntil(() => display.showing("FPS:")), `${label}: the FPS label rendered`);
+        const framesBefore = display.frames;
+        await sleep(FRAME_ARRIVAL_WINDOW_MS);
+        expect(display.frames > framesBefore, `${label}: frames keep arriving (${display.frames - framesBefore} frame messages in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
+        await verifyResize(page, label, resize);
+        await page.quit(label);
+    } finally {
+        page.dispose();
+    }
+}
+
+async function verifySwarm(label: string, entry: string, display: TestDisplay, resize: () => void): Promise<void> {
+    const page = new Page(entry, "Swarm", display, NOT_ISOLATED);
+    try {
+        expect(await waitUntil(() => display.framePainted()), `${label}: a frame of the page's size (${display.sizeLabel()}) painted on start`);
+        expect(await waitUntil(() => display.showing(SWARM_TITLE)), `${label}: the title "${SWARM_TITLE}" rendered`);
+        expect(!display.showing(SWARM_HUD_WAVE), `${label}: the title screen shows no "${SWARM_HUD_WAVE}"`);
+        page.press(Key.Enter);
+        expect(await waitUntil(() => display.showing(SWARM_HUD_WAVE)), `${label}: Enter started a game and the HUD shows "${SWARM_HUD_WAVE}"`);
+        await verifyResize(page, label, resize);
+        await page.quit(label, ESCAPE_QUIT);
     } finally {
         page.dispose();
     }
 }
 
 function firstLoadMegabytes(page: Page): number | undefined {
-    const totals = [...page.terminal.text().matchAll(/Loading assets: \d+\/\d+ files, [\d.]+\/([\d.]+) MB/g)];
+    const totals = page.display.statuses.flatMap(status => [...status.matchAll(/Loading assets: \d+\/\d+ files, [\d.]+\/([\d.]+) MB/g)]);
     return totals.length === 0 ? undefined : Number(totals[totals.length - 1][1]);
 }
 
@@ -208,8 +346,8 @@ async function verifyLazyModel(page: Page, label: string, manifest: Demo3dManife
     const firstLoad = firstLoadMegabytes(page);
     expect(firstLoad !== undefined && firstLoad * BYTES_PER_MB < lazyBytes, `${label}: the first load (${firstLoad} MB) leaves out ${model.name} (${(lazyBytes / BYTES_PER_MB).toFixed(1)} MB)`);
     const loading = `Loading ${model.name}... `;
-    page.terminal.watch(loading);
-    page.terminal.watch(", 1 to spawn");
+    page.display.watch(loading);
+    page.display.watch(", 1 to spawn");
 
     for (let press = 0; press < index; press++) {
         expect(lazyFetches().length === 0, `${label}: ${model.name} not fetched before n selects it (press ${press + 1}/${index})`);
@@ -218,23 +356,32 @@ async function verifyLazyModel(page: Page, label: string, manifest: Demo3dManife
     }
     page.press(Key.Space);
     expect(await waitUntil(() => lazyFetches().length > 0), `${label}: selecting ${model.name} fetched ${lazyFetches().join(", ")}`);
-    const spawned = await waitUntil(() => page.terminal.showing(`Next: ${model.name}  [spawned: 2]`), LAZY_SPAWN_TIMEOUT_MS);
-    expect(page.terminal.shown(loading), `${label}: the HUD showed "${loading}<MB> / <MB> MB" while it downloaded`);
-    expect(page.terminal.shown(", 1 to spawn"), `${label}: the spawn pressed during the download was queued`);
+    const spawned = await waitUntil(() => page.display.showing(`Next: ${model.name}  [spawned: 2]`), LAZY_SPAWN_TIMEOUT_MS);
+    expect(page.display.shown(loading), `${label}: the HUD showed "${loading}<MB> / <MB> MB" while it downloaded`);
+    expect(page.display.shown(", 1 to spawn"), `${label}: the spawn pressed during the download was queued`);
     expect(spawned, `${label}: ${model.name} spawned once its files arrived`);
-    expect(await waitUntil(() => !page.terminal.showing(loading)), `${label}: the download line is gone`);
+    expect(await waitUntil(() => !page.display.showing(loading)), `${label}: the download line is gone`);
 }
 
-async function verify3d(isolated: boolean, manifest: Demo3dManifest): Promise<void> {
-    const label = isolated ? "3D isolated" : "3D not isolated";
-    const page = new Page(workerEntry("world3d"), "the 3D demo", isolated, isolated ? RASTER_WORKERS : undefined);
+interface Demo3dRun {
+    readonly label: string;
+    readonly entry: string;
+    readonly display: TestDisplay;
+    readonly isolated: boolean;
+    readonly resize?: () => void;
+}
+
+async function verify3d(run: Demo3dRun, manifest: Demo3dManifest): Promise<void> {
+    const {label, display, isolated} = run;
+    const page = new Page(run.entry, "the 3D demo", display, isolated, isolated ? RASTER_WORKERS : undefined);
     try {
         const expected = isolated ? `Raster workers: ${RASTER_WORKERS}` : "Raster workers: none (single-threaded)";
-        expect(await waitUntil(() => page.terminal.text().includes(expected)), `${label}: the HUD shows "${expected}"`);
-        const frameCells = page.terminal.cols * (page.terminal.rows - PROMPT_ROWS);
-        expect(await waitUntil(() => page.terminal.screen.truecolorCells() > frameCells / MIN_SCENE_CELL_DIVISOR), `${label}: the scene is painted in 24-bit colour (${page.terminal.screen.truecolorCells()}/${frameCells})`);
-        expect(page.terminal.text().includes("Loading assets: "), `${label}: preload progress reached the page`);
+        expect(await waitUntil(() => display.showing(expected)), `${label}: the HUD shows "${expected}"`);
+        expect(display.framePainted(), `${label}: frames have the page's size (${display.sizeLabel()})`);
+        expect(await waitUntil(() => display.scenePainted()), `${label}: the scene is painted in 24-bit colour`);
+        expect(display.statusShown("Loading assets: "), `${label}: preload progress reached the page`);
         if (isolated) await verifyLazyModel(page, label, manifest);
+        if (run.resize !== undefined) await verifyResize(page, label, run.resize);
         await page.quit(label);
     } finally {
         page.dispose();
@@ -248,9 +395,23 @@ async function main(): Promise<void> {
     }
     if (DIST !== undefined) log(`running the built site in ${DIST}`);
     const manifest = demo3dManifest();
-    await verify2d();
-    await verify3d(ISOLATED, manifest);
-    await verify3d(NOT_ISOLATED, manifest);
+
+    const cells2d = new CellFrameDisplay(START.columns, START.rows);
+    await verify2d("2D", workerEntry("world2d"), cells2d, () => cells2d.resize(RESIZED.columns, RESIZED.rows));
+    const pixels2d = new PixelFrameDisplay(PIXEL_START);
+    await verify2d("2D pixels", workerEntry("world2d-pixels"), pixels2d, () => pixels2d.resize(PIXEL_RESIZED));
+
+    const cellsSwarm = new CellFrameDisplay(START.columns, START.rows);
+    await verifySwarm("Swarm", workerEntry("worldswarm"), cellsSwarm, () => cellsSwarm.resize(RESIZED.columns, RESIZED.rows));
+    const pixelsSwarm = new PixelFrameDisplay(PIXEL_START);
+    await verifySwarm("Swarm pixels", workerEntry("worldswarm-pixels"), pixelsSwarm, () => pixelsSwarm.resize(PIXEL_RESIZED));
+
+    await verify3d({label: "3D isolated", entry: workerEntry("world3d"), display: new CellFrameDisplay(START.columns, START.rows), isolated: ISOLATED}, manifest);
+    await verify3d({label: "3D not isolated", entry: workerEntry("world3d"), display: new CellFrameDisplay(START.columns, START.rows), isolated: NOT_ISOLATED}, manifest);
+    const pixels3d = new PixelFrameDisplay(PIXEL_START);
+    await verify3d({label: "3D pixels isolated", entry: workerEntry("world3d-pixels"), display: pixels3d, isolated: ISOLATED, resize: () => pixels3d.resize(PIXEL_RESIZED)}, manifest);
+    await verify3d({label: "3D pixels not isolated", entry: workerEntry("world3d-pixels"), display: new PixelFrameDisplay(PIXEL_START), isolated: NOT_ISOLATED}, manifest);
+
     if (failures > 0) {
         console.error(`${failures} world worker failures`);
         process.exit(1);

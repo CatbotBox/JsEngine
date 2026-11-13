@@ -1,6 +1,7 @@
 import {describe, expect, test} from "../../../engine/testing/harness";
 import {ScreenBuffer} from "../cellGrid";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
+import {CellRenderSettings} from "../cellRenderSettings";
 import {BlittableSpriteImage, SpriteCellRasterizer, SpriteCellRasterizerConfig} from "./spriteCellRasterizer";
 
 const WIDTH = 4, HEIGHT = 2;
@@ -10,7 +11,7 @@ function makeBuffer(width = WIDTH, height = HEIGHT): ScreenBuffer {
     screenSize.x = width;
     screenSize.y = height;
     const buffer = new ScreenBuffer();
-    buffer.beginFrame({screenSize}, ".");
+    buffer.beginFrame({screenSize}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
     return buffer;
 }
 

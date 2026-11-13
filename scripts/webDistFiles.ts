@@ -25,25 +25,54 @@ export function contentTypeOf(path: string): string {
     return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 
+const QUERY_OR_FRAGMENT = /[?#]/;
+
 export function distFileFor(distDirectory: string, urlPath: string): string | undefined {
-    const decoded = decodeURIComponent(urlPath);
+    const [pathOnly] = urlPath.split(QUERY_OR_FRAGMENT, 1);
+    const decoded = decodeURIComponent(pathOnly);
     const path = resolve(distDirectory, "." + (decoded.endsWith("/") ? decoded + "index.html" : decoded));
     const inside = relative(distDirectory, path);
     if (inside.startsWith("..") || isAbsolute(inside)) return undefined;
     return existsSync(path) && statSync(path).isFile() ? path : undefined;
 }
 
-const PAGES: Readonly<Record<string, string>> = {"2d": "2d.html", "3d": "3d.html"};
+const PAGES: Readonly<Record<string, string>> = {
+    "2d": "2d.html",
+    "3d": "3d.html",
+    "2d-pixels": "2d.html?backend=pixels",
+    "3d-pixels": "3d.html?backend=pixels",
+    "swarm": "swarm.html",
+    "swarm-pixels": "swarm.html?backend=pixels",
+    "editor-2d": "editor.html?game=2d",
+    "editor-3d": "editor.html?game=3d",
+};
 
-export function pageFromArgumentsOrUndefined(): string | undefined {
+const EDITOR_SITE_FILE_PREFIX = "editor";
+const SITE_PATH_SEPARATOR = /[\\/]/;
+
+export function isEditorSiteFile(sitePath: string): boolean {
+    const [pathOnly] = sitePath.split(QUERY_OR_FRAGMENT, 1);
+    const parts = pathOnly.split(SITE_PATH_SEPARATOR).filter(part => part.length > 0);
+    return parts.length === 1 && parts[0].startsWith(EDITOR_SITE_FILE_PREFIX);
+}
+
+export function pageNameFromArgumentsOrUndefined(): string | undefined {
     const pageName = process.argv.slice(2).find(arg => !arg.startsWith("--"));
     if (pageName === undefined) return undefined;
-    const page = PAGES[pageName];
-    if (page === undefined) {
+    if (PAGES[pageName] === undefined) {
         console.error(`unknown page "${pageName}", expected one of: ${Object.keys(PAGES).join(", ")}`);
         process.exit(1);
     }
-    return page;
+    return pageName;
+}
+
+export function sitePathOfPage(pageName: string): string {
+    return PAGES[pageName];
+}
+
+export function pageFromArgumentsOrUndefined(): string | undefined {
+    const pageName = pageNameFromArgumentsOrUndefined();
+    return pageName === undefined ? undefined : PAGES[pageName];
 }
 
 export function pageFromArguments(fallback: string): string {

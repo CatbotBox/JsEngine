@@ -38,8 +38,8 @@ export class ParentTransform extends Component implements F32Backed {
         this._transform.writeF32(dst, offset);
     }
 
-    bindF32(src: Float32Array, offset: number): void {
-        this._transform.bindF32(src, offset);
+    bindF32(rowView: Float32Array): void {
+        this._transform.bindF32(rowView);
     }
 
     detachF32(): void {

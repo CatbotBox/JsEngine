@@ -1,8 +1,7 @@
 import {ScreenBuffer} from "../cellGrid";
 import type {RasterTarget, SubsampleLayers} from "../../../engine/rendering/3d/software";
+import {BLACK_RGB, PACKED_RGB_MASK, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK} from "../../../engine/rendering/packedRgb";
 
-const PACKED_RGB_MASK = 0xFFFFFF;
-const BLACK = 0x000000;
 
 export interface CellResolveConfig {
     colorQuantMask: number;
@@ -53,8 +52,8 @@ export class CellResolveTarget implements RasterTarget {
         const srcDepth = layers.depth;
         const srcColor = layers.color;
         const quantMask = this.config.colorQuantMask & PACKED_RGB_MASK;
-        const background = (this.config.backgroundColor ?? BLACK) & PACKED_RGB_MASK;
-        const bgR = (background >> 16) & 255, bgG = (background >> 8) & 255, bgB = background & 255;
+        const background = (this.config.backgroundColor ?? BLACK_RGB) & PACKED_RGB_MASK;
+        const bgR = (background >> RED_SHIFT) & CHANNEL_MASK, bgG = (background >> GREEN_SHIFT) & CHANNEL_MASK, bgB = background & CHANNEL_MASK;
 
         for (let cy = 0; cy < height; cy++) {
             const rowBase = (cy * rowsPerCell + firstRow) * rasterWidth;
@@ -71,9 +70,9 @@ export class CellResolveTarget implements RasterTarget {
                             covered++;
                             if (d < minDepth) minDepth = d;
                             const c = srcColor[si];
-                            r += (c >> 16) & 255;
-                            g += (c >> 8) & 255;
-                            b += c & 255;
+                            r += (c >> RED_SHIFT) & CHANNEL_MASK;
+                            g += (c >> GREEN_SHIFT) & CHANNEL_MASK;
+                            b += c & CHANNEL_MASK;
                         }
                     }
                 }
@@ -86,7 +85,7 @@ export class CellResolveTarget implements RasterTarget {
                 g += bgG * uncovered;
                 b += bgB * uncovered;
                 outDepth[outBase + cx] = minDepth;
-                outColor[outBase + cx] = ((Math.round(r / ssArea) << 16) | (Math.round(g / ssArea) << 8) | Math.round(b / ssArea)) & quantMask;
+                outColor[outBase + cx] = ((Math.round(r / ssArea) << RED_SHIFT) | (Math.round(g / ssArea) << GREEN_SHIFT) | Math.round(b / ssArea)) & quantMask;
             }
         }
     }

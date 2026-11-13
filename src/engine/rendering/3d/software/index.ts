@@ -1,6 +1,10 @@
-export {MeshRasterizer, NEAR_PLANE_Z} from "./meshRasterizer";
+export {MeshRasterizer, NEAR_PLANE_Z, clampSupersample} from "./meshRasterizer";
 export type {MeshRasterizerConfig} from "./meshRasterizer";
 export type {RasterTarget, SubsampleLayers} from "./rasterTarget";
 export {TextureStore} from "./textureStore";
 export {RasterWorkerPool} from "./rasterWorkerPool";
 export {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
+export {MeshSceneDrawer} from "./meshSceneDrawer";
+export type {MeshSceneFrame, MeshSceneQueries, StreamableQuery} from "./meshSceneDrawer";
+export {resolveRasterWorkerCount} from "./rasterWorkerCount";
+export type {RasterWorkerCount, RasterWorkerHost} from "./rasterWorkerCount";

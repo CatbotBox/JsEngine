@@ -17,7 +17,6 @@ export class DebugWorld extends World {
 
     constructor(options: WorldOptions) {
         super(options);
-        for (const system of [...this._rootSystemGroup.systems]) system.destroy();
         this._rootSystemGroup.destroy();
         this._rootSystemGroup = this.createSystem(RootSystemGroup);
         this.ensureSystemExists(GcSystem)
@@ -65,14 +64,14 @@ export class DebugWorld extends World {
         let archetypes = 0, occupied = 0, disabled = 0;
         for (const archetype of this.archetypes.values()) {
             archetypes++;
-            if (archetype.entityCountUnfiltered > 0) occupied++;
-            disabled += archetype.entityCountUnfiltered - archetype.entityCount;
+            if (archetype.entityCountIncludingDisabled > 0) occupied++;
+            disabled += archetype.entityCountIncludingDisabled - archetype.enabledEntityCount;
         }
         console.log(
-            `entities: ${this.entityCount} enabled` +
+            `entities: ${this.enabledEntityCount} enabled` +
             (disabled > 0 ? ` (+${disabled} disabled)` : "") +
             ` | archetypes: ${occupied} occupied / ${archetypes} total` +
-            ` | frame budget: ${this.targetDeltaTime.toFixed(2)}ms`
+            ` | frame budget: ${this.targetDeltaTimeMs.toFixed(2)}ms`
         );
         this.logGroupTree(this._rootSystemGroup, ROOT_GROUP_RUNNING);
     }

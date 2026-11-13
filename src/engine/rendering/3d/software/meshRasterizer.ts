@@ -8,6 +8,7 @@ import {RasterWorkerPool} from "./rasterWorkerPool";
 import {TextureStore} from "./textureStore";
 import {RasterTarget, SubsampleLayers} from "./rasterTarget";
 import type {WorkerFactory} from "../../../platform";
+import {PACKED_RGB_MASK, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../../packedRgb";
 
 export interface MeshRasterizerConfig {
     maxDepthFade: number;
@@ -28,20 +29,18 @@ export const NEAR_PLANE_Z = 0.1;
 const LOG2 = Math.log(2);
 const MAX_SUPERSAMPLE = 4;
 const INITIAL_TRIANGLE_CAPACITY = 4096;
-const CHANNEL_MAX = 255;
-const PACKED_RGB_MASK = 0xFFFFFF;
 const A_INSIDE = 1;
 const B_INSIDE = 2;
 const C_INSIDE = 4;
 const CONTINUE_FRAME = true;
 const END_OF_FRAME = false;
 
-function clampSupersample(value: number): number {
+export function clampSupersample(value: number): number {
     return Math.max(1, Math.min(MAX_SUPERSAMPLE, Math.floor(value) || 1));
 }
 
 function packUnitRgb(r: number, g: number, b: number): number {
-    return (clampToByte(r * CHANNEL_MAX) << 16) | (clampToByte(g * CHANNEL_MAX) << 8) | clampToByte(b * CHANNEL_MAX);
+    return (clampToByte(r * CHANNEL_MAX) << RED_SHIFT) | (clampToByte(g * CHANNEL_MAX) << GREEN_SHIFT) | clampToByte(b * CHANNEL_MAX);
 }
 
 function clampToByte(value: number): number {
@@ -49,10 +48,10 @@ function clampToByte(value: number): number {
 }
 
 function lerpPackedColor(from: number, to: number, t: number): number {
-    const r = ((from >> 16) & 255) + t * (((to >> 16) & 255) - ((from >> 16) & 255));
-    const g = ((from >> 8) & 255) + t * (((to >> 8) & 255) - ((from >> 8) & 255));
-    const b = (from & 255) + t * ((to & 255) - (from & 255));
-    return (clampToByte(r) << 16) | (clampToByte(g) << 8) | clampToByte(b);
+    const r = ((from >> RED_SHIFT) & CHANNEL_MASK) + t * (((to >> RED_SHIFT) & CHANNEL_MASK) - ((from >> RED_SHIFT) & CHANNEL_MASK));
+    const g = ((from >> GREEN_SHIFT) & CHANNEL_MASK) + t * (((to >> GREEN_SHIFT) & CHANNEL_MASK) - ((from >> GREEN_SHIFT) & CHANNEL_MASK));
+    const b = (from & CHANNEL_MASK) + t * ((to & CHANNEL_MASK) - (from & CHANNEL_MASK));
+    return (clampToByte(r) << RED_SHIFT) | (clampToByte(g) << GREEN_SHIFT) | clampToByte(b);
 }
 
 export class MeshRasterizer {

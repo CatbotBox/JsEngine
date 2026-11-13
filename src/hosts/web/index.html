@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>JsEngine</title>
-    <meta name="description" content="A TypeScript ECS game engine that renders entirely to a terminal with ANSI escape codes, running in the browser on xterm.js.">
+    <meta name="description" content="A TypeScript ECS game engine that renders to a grid of terminal cells: ANSI escape codes in a real terminal, a canvas in the browser.">
     <script src="coi-serviceworker.js"></script>
     <style>
         html, body {
@@ -103,6 +103,42 @@
             color: #05070b;
         }
 
+        .featured {
+            grid-column: 1 / -1;
+            border-color: #4fa3f7;
+        }
+
+        .featured:hover {
+            transform: none;
+        }
+
+        .featured .links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-top: auto;
+        }
+
+        .featured .play {
+            margin-top: 0;
+            text-decoration: none;
+        }
+
+        .featured .play:hover,
+        .featured .play:focus-visible {
+            background: #4fa3f7;
+            color: #05070b;
+        }
+
+        .backends {
+            margin: 1.5rem 0 0;
+            color: #aab4c3;
+        }
+
+        .backends a {
+            color: #4fa3f7;
+        }
+
         footer {
             margin-top: 2.5rem;
             font-size: 0.85rem;
@@ -118,10 +154,27 @@
 <body>
 <main>
     <h1>JsEngine</h1>
-    <p class="intro">A TypeScript game engine built on an archetype ECS modelled on Unity DOTS, rendering entirely to a
-        terminal with ANSI escape codes. Here the terminal is xterm.js and the world runs in a Web Worker, the same
-        code that runs in a real terminal under node or bun.</p>
+    <p class="intro">A TypeScript game engine built on an archetype ECS modelled on Unity DOTS, rendering to a grid of
+        terminal cells. Here the world runs in a Web Worker and its cells are drawn onto a canvas, the same code that
+        writes ANSI escape codes to a real terminal under node or bun.</p>
     <div class="cards">
+        <section class="card featured">
+            <h2>Swarm</h2>
+            <p>A twin-stick survival game built on the engine: waves of enemies close in from every edge, an ECS grid
+                broadphase resolves the hits, and clearing waves earns bombs.</p>
+            <dl>
+                <dt>wasd</dt><dd>move</dd>
+                <dt>arrows</dt><dd>fire (hold)</dd>
+                <dt>space</dt><dd>bomb</dd>
+                <dt>enter r</dt><dd>start, restart</dd>
+                <dt>tab</dt><dd>HUD on/off</dd>
+                <dt>esc</dt><dd>stop</dd>
+            </dl>
+            <div class="links">
+                <a class="play" href="swarm.html">Play on cells</a>
+                <a class="play" href="swarm.html?backend=pixels">Play on pixels</a>
+            </div>
+        </section>
         <a class="card" href="2d.html">
             <h2>2D</h2>
             <p>Sprites composited into half-block cells, with thousands of entities fading colour through ECS
@@ -151,9 +204,13 @@
             <span class="play">Play 3D</span>
         </a>
     </div>
+    <p class="backends">The same games on the pixels backend, an RGBA framebuffer drawn onto the canvas instead of
+        cells: <a href="2d.html?backend=pixels">2D on pixels</a> &middot; <a href="3d.html?backend=pixels">3D on
+        pixels</a></p>
     <footer>
         Embedding: <code>3d.html?cols=120&amp;rows=40</code> fixes the terminal size, <code>?threads=N</code> sets the
-        number of raster threads.
+        number of raster threads. On pixels, <code>?width=640&amp;height=384</code> fixes the framebuffer size and
+        <code>?scale=N</code> draws each framebuffer pixel as N device pixels.
     </footer>
 </main>
 </body>

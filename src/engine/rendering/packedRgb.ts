@@ -1,0 +1,9 @@
+export const BLACK_RGB = 0x000000;
+export const WHITE_RGB = 0xFFFFFF;
+export const PACKED_RGB_MASK = 0xFFFFFF;
+export const SIX_BITS_PER_CHANNEL_MASK = 0xFCFCFC;
+export const ALPHA_SHIFT = 24;
+export const RED_SHIFT = 16;
+export const GREEN_SHIFT = 8;
+export const CHANNEL_MASK = 0xFF;
+export const CHANNEL_MAX = 255;

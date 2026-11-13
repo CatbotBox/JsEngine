@@ -7,18 +7,11 @@ import {
 import {Input, Key, PointerButton} from "../../src/engine/input";
 import type {InputEvent} from "../../src/engine/input";
 
-import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextSprite} from "../../src/engine/rendering";
+import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextColor, TextSprite, WHITE_RGB} from "../../src/engine/rendering";
 
 import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../../src/engine/translation";
 
-import {
-    Ansi,
-    HudTextSpriteCellPassSystem,
-} from "../../src/backends/cells";
-
 import {AverageStat} from "../../src/engine/datatypes";
-import {MeshCellPassSystem, MeshCellPassSettings} from "../../src/backends/cells/3d";
-import {CellRenderSettings} from "../../src/backends/cells";
 import {
     AmbientLight,
     DirectionalLight,
@@ -42,7 +35,25 @@ export interface DemoModelFiles {
     fetch(model: DemoModel, onProgress: (loadedBytes: number, totalBytes: number) => void): Promise<void>;
 }
 
+export interface Demo3dRenderStats {
+    readonly trianglesDrawn: number;
+    readonly lodLevelCounts: Int32Array;
+    readonly rasterWorkers: number;
+}
+
+export interface Demo3dRenderControls {
+    toggleMeshPass(): void;
+    toggleHud(): void;
+    toggleTextures(): void;
+    toggleHalfBlockCells?(): void;
+    toggleLod(): void;
+    changeLodBias(levels: number): void;
+    setSupersample(x: number, y: number): void;
+    stats(): Demo3dRenderStats | undefined;
+}
+
 export interface Demo3dHost {
+    readonly render: Demo3dRenderControls;
     listModels(): readonly DemoModel[];
     readonly modelFiles?: DemoModelFiles;
     quit(): void;
@@ -68,6 +79,10 @@ const CELL_WIDTH_PER_HEIGHT = 0.5;
 const GRID_SPACING = 5;
 const BEFORE_SIMULATION_PRIORITY = -1;
 const QUIT_ACTION = "quit";
+const LESS_DETAIL_LOD_LEVELS = 1;
+const MORE_DETAIL_LOD_LEVELS = -1;
+const HUD_TEXT_COLOR = TextColor.GREEN;
+const HELP_TEXT_COLOR = TextColor.CYAN;
 
 interface Command {
     readonly action: string;
@@ -116,16 +131,13 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
     const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
 
-    const settingsEntity = buffer.createEntity("renderSettings", [new CellRenderSettings()]);
-    const renderSettings = buffer.addTrackedComponent(settingsEntity, new MeshCellPassSettings());
-
     const sunEntity = buffer.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalToWorld(), new LocalPosition()]);
     const sunRotation = buffer.addTrackedComponent(sunEntity, new LocalRotation());
     const sunEuler: Vec3 = Vec.alloc3(0.7, -0.6, 0);
 
     const lampEntity = buffer.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalToWorld(), new LocalPosition(3, 2, -4)]);
 
-    const ambientEntity = buffer.createEntity("ambient", [new AmbientLight(0xFFFFFF, 0.12)]);
+    const ambientEntity = buffer.createEntity("ambient", [new AmbientLight(WHITE_RGB, 0.12)]);
 
     let lightsEnabled = true;
     let lampEnabled = true;
@@ -177,17 +189,19 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     const previewEntity = buffer.createEntity("spawnPreview", [new HudElement(), previewAnchor]);
     const previewImage = buffer.addTrackedComponent(previewEntity, new TextSprite());
     previewImage.transparentChar = undefined;
+    previewImage.foreground = HELP_TEXT_COLOR;
 
     const controlsAnchor = new ScreenAnchor();
     controlsAnchor.anchorPosition = 'top-left';
     const controlsEntity = buffer.createEntity("controls", [new HudElement(), controlsAnchor]);
     const controlsImage = buffer.addTrackedComponent(controlsEntity, new TextSprite());
     controlsImage.transparentChar = undefined;
+    controlsImage.foreground = HELP_TEXT_COLOR;
     controlsImage.image = [
-        Ansi.colors.fg.cyan + 'camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit',
-        Ansi.colors.fg.cyan + 'models  space spawn  bksp despawn  n next  r reload  arrows rotate  [ ] scale',
-        Ansi.colors.fg.cyan + 'render  1-4 aa  b halfblock  t textures  f lod  - = detail  v 3d  tab hud  g order',
-        Ansi.colors.fg.cyan + 'lights  h all  p lamp  i/k j/l sun',
+        'camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit',
+        'models  space spawn  bksp despawn  n next  r reload  arrows rotate  [ ] scale',
+        'render  1-4 aa  b halfblock  t textures  f lod  - = detail  v 3d  tab hud  g order',
+        'lights  h all  p lamp  i/k j/l sun',
     ];
 
     const namedColors: Record<string, number> = {
@@ -197,7 +211,6 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         "indoor plant_02": 0x66C96A,
     };
     const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
-    const untintedWhite = 0xFFFFFF;
     const doubleSidedModels = new Set(["bugatti"]);
 
     const loadModel = (model: DemoModel, index: number): LoadedModel => {
@@ -205,7 +218,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         const textured = mesh.materials.some(material => material.diffuseTexture !== undefined);
         return {
             mesh,
-            color: textured ? untintedWhite : namedColors[model.name] ?? palette[index % palette.length],
+            color: textured ? WHITE_RGB : namedColors[model.name] ?? palette[index % palette.length],
             faceCulling: doubleSidedModels.has(model.name) ? FaceCulling.None : FaceCulling.BackFaces,
         };
     }
@@ -272,7 +285,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         const text = lines.join('\n');
         if (text === previewText) return;
         previewText = text;
-        previewImage.image = lines.map(line => Ansi.colors.fg.cyan + line);
+        previewImage.image = lines;
     }
 
     const relayoutInGrid = () => {
@@ -392,16 +405,13 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     }
 
     const input = world.resources.getOrCreate(Input);
+    const render = host.render;
 
     const quit = () => {
         const renderer = world.tryGetSystem(RenderingSystemGroup);
         if (renderer) renderer.enabled = false;
         world.stop();
         host.quit();
-    }
-
-    const toggleSystem = (system: System | undefined) => {
-        if (system) system.enabled = !system.enabled;
     }
 
     const keyDownHandlers = new Map<Key, () => void>([
@@ -469,21 +479,18 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
 
     const supersamplePresets: [Key, number, number][] = [[Key.Num1, 1, 1], [Key.Num2, 2, 2], [Key.Num3, 2, 4], [Key.Num4, 4, 4]];
     const commands: Command[] = [
-        {action: "toggleMeshPass", keys: [Key.V], run: () => toggleSystem(world.tryGetSystem(MeshCellPassSystem))},
-        {action: "toggleHud", keys: [Key.Tab], run: () => toggleSystem(world.tryGetSystem(HudTextSpriteCellPassSystem))},
+        {action: "toggleMeshPass", keys: [Key.V], run: () => render.toggleMeshPass()},
+        {action: "toggleHud", keys: [Key.Tab], run: () => render.toggleHud()},
         {action: "logSystemOrder", keys: [Key.G], run: () => world.logSystemUpdateOrder()},
-        {action: "toggleTextures", keys: [Key.T], run: () => renderSettings.textures = !renderSettings.textures},
-        {action: "toggleHalfBlock", keys: [Key.B], run: () => renderSettings.halfBlockCells = !renderSettings.halfBlockCells},
-        {action: "toggleLod", keys: [Key.F], run: () => renderSettings.lod = !renderSettings.lod},
-        {action: "lessDetail", keys: [Key.Minus], run: () => renderSettings.lodBias += 1},
-        {action: "moreDetail", keys: [Key.Equal], run: () => renderSettings.lodBias -= 1},
+        {action: "toggleTextures", keys: [Key.T], run: () => render.toggleTextures()},
+        {action: "toggleHalfBlock", keys: [Key.B], run: () => render.toggleHalfBlockCells?.()},
+        {action: "toggleLod", keys: [Key.F], run: () => render.toggleLod()},
+        {action: "lessDetail", keys: [Key.Minus], run: () => render.changeLodBias(LESS_DETAIL_LOD_LEVELS)},
+        {action: "moreDetail", keys: [Key.Equal], run: () => render.changeLodBias(MORE_DETAIL_LOD_LEVELS)},
         ...supersamplePresets.map(([key, x, y]): Command => ({
             action: `supersample${x}x${y}`,
             keys: [key],
-            run: () => {
-                renderSettings.supersampleX = x;
-                renderSettings.supersampleY = y;
-            },
+            run: () => render.setSupersample(x, y),
         })),
         {action: "toggleLights", keys: [Key.H], run: () => {
             lightsEnabled = !lightsEnabled;
@@ -557,45 +564,42 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         }
     }
 
+    class DebugSystem extends System {
+        private _toggle = true;
+        private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
+        private _entityCounterImage!: TextSprite;
+        private _fpsCounterImage!: TextSprite;
+
+        protected onCreate() {
+            const buffer = this.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
+
+
+            this._entityCounterImage = createHudLabel(buffer, "entityCounter", 'HUD element', HUD_TEXT_COLOR, 'bottom-left');
+            this._fpsCounterImage = createHudLabel(buffer, "fpsCounter", 'FPS: 0', HUD_TEXT_COLOR, 'top-right');
+        }
+
+        onUpdate() {
+            if (!this._toggle) return;
+            this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTimeMs)
+            this._fpsCounterImage.image = [
+                'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
+            ]
+
+            const stats = render.stats();
+            const drawn = stats === undefined ? 0 : stats.trianglesDrawn;
+            const levels = stats === undefined ? '' : '  LOD levels: ' + Array.from(stats.lodLevelCounts.subarray(0, LOD_LEVELS_SHOWN)).join('/');
+            const rasterWorkers = stats === undefined ? 0 : stats.rasterWorkers;
+            this._entityCounterImage.image = [
+                'Entities: ' + (this.world.enabledEntityCount),
+                'Triangles: ' + formatCompact(drawn) + ' drawn / ' + formatCompact(this.world.resources.getOrCreate(SceneStats).sourceTriangles) + ' source' + levels,
+                'Raster workers: ' + (rasterWorkers === 0 ? 'none (single-threaded)' : rasterWorkers),
+            ]
+        }
+    }
+
     fetchModels();
     spawnSelected();
 
     world.ensureSystemExists(ControlsSystem);
-    world.ensureSystemExists(MeshCellPassSystem);
-    world.ensureSystemExists(HudTextSpriteCellPassSystem);
-
     world.ensureSystemExists(DebugSystem)
-}
-
-class DebugSystem extends System {
-    private _toggle = true;
-    private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
-    private _entityCounterImage!: TextSprite;
-    private _fpsCounterImage!: TextSprite;
-
-    protected onCreate() {
-        const buffer = this.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
-
-
-        this._entityCounterImage = createHudLabel(buffer, "entityCounter", Ansi.colors.fg.green + 'HUD element', 'bottom-left');
-        this._fpsCounterImage = createHudLabel(buffer, "fpsCounter", Ansi.colors.fg.green + 'FPS: 0', 'top-right');
-    }
-
-    onUpdate() {
-        if (!this._toggle) return;
-        this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTime)
-        this._fpsCounterImage.image = [
-            Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
-        ]
-
-        const pass = this.world.tryGetSystem(MeshCellPassSystem);
-        const drawn = pass === undefined ? 0 : pass.trianglesDrawn;
-        const levels = pass === undefined ? '' : '  LOD levels: ' + Array.from(pass.lodLevelCounts.subarray(0, LOD_LEVELS_SHOWN)).join('/');
-        const rasterWorkers = pass === undefined ? 0 : pass.rasterWorkers;
-        this._entityCounterImage.image = [
-            Ansi.colors.fg.green + 'Entities: ' + (this.world.entityCount),
-            Ansi.colors.fg.green + 'Triangles: ' + formatCompact(drawn) + ' drawn / ' + formatCompact(this.world.resources.getOrCreate(SceneStats).sourceTriangles) + ' source' + levels,
-            Ansi.colors.fg.green + 'Raster workers: ' + (rasterWorkers === 0 ? 'none (single-threaded)' : rasterWorkers),
-        ]
-    }
 }

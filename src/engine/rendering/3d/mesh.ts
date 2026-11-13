@@ -17,6 +17,7 @@ const OBJ_MATERIAL_LIBRARY = "mtllib ";
 const OBJ_COMMENT = '#';
 const MIN_FACE_CORNERS = 3;
 const DECIMAL = 10;
+const NO_SOURCE_FILE: string | undefined = undefined;
 
 export class Mesh {
     public readonly data: Vec3Array;
@@ -24,6 +25,7 @@ export class Mesh {
     public readonly triangleCount: number;
     public readonly materials: readonly Material[];
     public readonly vertexMaterial: Uint16Array;
+    public readonly sourcePath: string | undefined;
 
     private _bounds?: Float32Array;
     private _lods: Mesh[] = [this];
@@ -104,7 +106,8 @@ export class Mesh {
         return this.materials[this.vertexMaterial[firstCorner]];
     }
 
-    public constructor(source: MeshBuilder | MeshParts) {
+    public constructor(source: MeshBuilder | MeshParts, sourcePath: string | undefined = NO_SOURCE_FILE) {
+        this.sourcePath = sourcePath;
         if (source instanceof MeshBuilder) {
             source.verify();
             this.triangleCount = source.triangles.length;
@@ -138,12 +141,12 @@ export class Mesh {
         if (cached !== undefined) {
             const library = loadMaterialLibraries(directory, cached.materialLibraryNames, files);
             const materials = cached.materialNames.map(name => library.get(name) ?? new Material(name));
-            mesh = new Mesh({data: cached.data, vertCount: cached.vertCount, triangleCount: cached.triangleCount, materials, vertexMaterial: cached.vertexMaterial});
+            mesh = new Mesh({data: cached.data, vertCount: cached.vertCount, triangleCount: cached.triangleCount, materials, vertexMaterial: cached.vertexMaterial}, filePath);
             if (lodOptions !== undefined) mesh.attachLods(cached.lods.map(level => new Mesh({...level, materials})));
         } else {
             const parser = new ObjParser(files.readText(filePath));
             parser.applyMaterialLibrary(loadMaterialLibraries(directory, parser.materialLibraryNames, files));
-            mesh = parser.toMesh();
+            mesh = parser.toMesh(filePath);
             if (lodOptions !== undefined) mesh.attachLods(Mesh.buildLods(mesh, lodOptions));
             if (useCache) writeMeshCache(filePath, mesh, parser.materialLibraryNames, files);
         }
@@ -158,7 +161,7 @@ export class Mesh {
     public static parseObj(data: string, materialLibrary?: MaterialLibrary): Mesh {
         const parser = new ObjParser(data);
         if (materialLibrary !== undefined) parser.applyMaterialLibrary(materialLibrary);
-        return parser.toMesh();
+        return parser.toMesh(NO_SOURCE_FILE);
     }
 }
 
@@ -213,10 +216,10 @@ class ObjParser {
         }
     }
 
-    public toMesh(): Mesh {
+    public toMesh(sourcePath: string | undefined): Mesh {
         const builder = this.builder;
         builder.generateNormals(this.cornerHasFileNormal);
-        return new Mesh(builder);
+        return new Mesh(builder, sourcePath);
     }
 
     private parseLine(line: string): void {

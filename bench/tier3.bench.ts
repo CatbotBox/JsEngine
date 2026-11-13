@@ -1,5 +1,5 @@
 import {Entity} from "../src/engine/core/entity";
-import {Ansi} from "../src/backends/cells/ansiEncoding";
+import {Ansi} from "../src/hosts/terminal/ansi/ansiEncoding";
 
 const WARMUP_ITERS_MAX = 1000;
 const MIN_TOTAL_MS = 50;

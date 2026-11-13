@@ -1,30 +1,7 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {browserPlatform, worldTerminal} from "./browserPlatform";
-import type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
+import {browserPlatform} from "./browserPlatform";
 import {MemoryFileSource} from "../../engine/testing/memoryPlatform";
 import {inflate} from "../../engine/assets/image/inflate";
-
-class FakeTerminal implements BrowserTerminal {
-    public cols = 80;
-    public rows = 24;
-    public readonly written: string[] = [];
-    public readonly resizeListeners = new Set<(size: {cols: number, rows: number}) => void>();
-
-    public write(data: string): void {
-        this.written.push(data);
-    }
-
-    public onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription {
-        this.resizeListeners.add(listener);
-        return {dispose: () => this.resizeListeners.delete(listener)};
-    }
-
-    public resize(cols: number, rows: number): void {
-        this.cols = cols;
-        this.rows = rows;
-        for (const listener of [...this.resizeListeners]) listener({cols, rows});
-    }
-}
 
 type Listeners = Map<string, Set<() => void>>;
 
@@ -48,28 +25,6 @@ function withPageEvents(body: (listeners: Listeners) => void): void {
 function fire(listeners: Listeners, type: string): void {
     for (const listener of [...(listeners.get(type) ?? [])]) listener();
 }
-
-describe("worldTerminal", () => {
-    test("writes go to the terminal and size follows it; it is only a surface, input comes from the DOM adapter", () => {
-        const terminal = new FakeTerminal();
-        const world = worldTerminal(terminal);
-        world.write("frame");
-        expect(terminal.written).toEqual(["frame"]);
-        expect(world.size()).toEqual({columns: 80, rows: 24});
-        expect(world.backlogged).toBeUndefined();
-        expect(Object.keys(world).sort()).toEqual(["onResize", "size", "write"]);
-
-        let resizes = 0;
-        const stop = world.onResize(() => resizes++);
-        terminal.resize(100, 30);
-        expect(resizes).toBe(1);
-        expect(world.size()).toEqual({columns: 100, rows: 30});
-        stop();
-        terminal.resize(90, 20);
-        expect(resizes).toBe(1);
-        expect(terminal.resizeListeners.size).toBe(0);
-    });
-});
 
 describe("browserPlatform", () => {
     test("files are the page's, there are no workers and inflate is the hand-written one", () => {

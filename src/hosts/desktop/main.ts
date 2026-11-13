@@ -17,6 +17,12 @@ const AS_USER_GESTURE = true;
 
 export interface PackagedLaunch {
     readonly page: string;
+    readonly title: string;
+    readonly iconFile: string;
+}
+
+interface PreventableEvent {
+    preventDefault(): void;
 }
 
 const args = process.argv.slice(process.defaultApp ? ARGV_APP_ARGS_START_UNPACKAGED : ARGV_APP_ARGS_START_PACKAGED);
@@ -31,10 +37,12 @@ function packagedLaunch(): PackagedLaunch | undefined {
 }
 
 const distDirectory = flagValue("dist") ?? join(app.getAppPath(), "web");
-const page = flagValue("page") ?? packagedLaunch()?.page ?? "index.html";
+const launch = packagedLaunch();
+const page = flagValue("page") ?? launch?.page ?? "index.html";
 const smoke = args.includes("--smoke");
 const screenshotPath = flagValue("screenshot");
 const MIN_DRAWN_FRACTION = 0.01;
+const DISPLAY_CANVAS_SELECTOR = "#terminal canvas, #viewport canvas";
 
 protocol.registerSchemesAsPrivileged([
     {scheme: SCHEME, privileges: {standard: true, secure: true, supportFetchAPI: true}},
@@ -58,13 +66,14 @@ function drawnFraction(bitmap: Buffer): number {
 
 async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<void> {
     await new Promise(settle => setTimeout(settle, SMOKE_SETTLE_MS));
-    const report = await window.webContents.executeJavaScript(
-        `({crossOriginIsolated, terminal: document.querySelector(".xterm") !== null})`,
-    ) as {crossOriginIsolated: boolean, terminal: boolean};
+    const report = await window.webContents.executeJavaScript(`(() => {
+        const canvas = document.querySelector(${JSON.stringify(DISPLAY_CANVAS_SELECTOR)});
+        return {crossOriginIsolated, canvas: canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0};
+    })()`) as {crossOriginIsolated: boolean, canvas: boolean};
     const image = await window.webContents.capturePage();
     if (screenshotPath !== undefined) await writeFile(screenshotPath, image.toPNG());
     const drawn = drawnFraction(image.toBitmap());
-    const passed = report.crossOriginIsolated && report.terminal && drawn >= MIN_DRAWN_FRACTION && pageErrors.length === 0;
+    const passed = report.crossOriginIsolated && report.canvas && drawn >= MIN_DRAWN_FRACTION && pageErrors.length === 0;
     console.log(JSON.stringify({page, ...report, drawn: Number(drawn.toFixed(3)), pageErrors, passed}));
     app.exit(passed ? 0 : 1);
 }
@@ -76,7 +85,15 @@ async function pressPlay(window: BrowserWindow): Promise<void> {
 async function openWindow(): Promise<void> {
     protocol.handle(SCHEME, respond);
     Menu.setApplicationMenu(null);
-    const window = new BrowserWindow({width: WINDOW_WIDTH_PX, height: WINDOW_HEIGHT_PX, backgroundColor: "#000000", show: !smoke});
+    const window = new BrowserWindow({
+        width: WINDOW_WIDTH_PX,
+        height: WINDOW_HEIGHT_PX,
+        backgroundColor: "#000000",
+        show: !smoke,
+        title: launch?.title,
+        icon: launch === undefined ? undefined : join(app.getAppPath(), launch.iconFile),
+    });
+    if (launch !== undefined) window.on("page-title-updated", (event: PreventableEvent) => event.preventDefault());
     const pageErrors: string[] = [];
     window.webContents.on("console-message", event => {
         if (event.level === "error") pageErrors.push(event.message);

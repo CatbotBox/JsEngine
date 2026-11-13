@@ -8,6 +8,7 @@ import {ScreenSize} from "../../../engine/rendering/screenSize";
 import {MeshRasterizer, MeshRasterizerConfig, TextureStore} from "../../../engine/rendering/3d/software";
 import {CellResolveConfig, CellResolveTarget} from "./cellResolveTarget";
 import {FaceCulling} from "../../../engine/rendering/3d/faceCulling";
+import {CellRenderSettings} from "../cellRenderSettings";
 
 const WIDTH = 8, HEIGHT = 8;
 const BACK_FACING = true;
@@ -55,7 +56,7 @@ function render(mesh: Mesh, overrides: Partial<RenderConfig> = {}): ScreenBuffer
     screenSize.x = WIDTH;
     screenSize.y = HEIGHT;
     const buffer = new ScreenBuffer();
-    buffer.beginFrame({screenSize}, " ");
+    buffer.beginFrame({screenSize}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
     const rasterizer = new MeshRasterizer();
     beginFrame(rasterizer, buffer, config(overrides));
     rasterizer.addMesh(mesh, identityModelView, undefined, 1, 0xFFFFFF);
@@ -243,7 +244,7 @@ describe("near-plane clipping", () => {
         screenSize.x = WIDTH;
         screenSize.y = HEIGHT;
         const buffer = new ScreenBuffer();
-        buffer.beginFrame({screenSize}, " ");
+        buffer.beginFrame({screenSize}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
         const rasterizer = new MeshRasterizer();
         beginFrame(rasterizer, buffer, config({textures: false}));
         rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);
@@ -296,7 +297,7 @@ describe("face culling modes", () => {
         screenSize.x = WIDTH;
         screenSize.y = HEIGHT;
         const buffer = new ScreenBuffer();
-        buffer.beginFrame({screenSize}, " ");
+        buffer.beginFrame({screenSize}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
         const rasterizer = new MeshRasterizer();
         beginFrame(rasterizer, buffer, config({textures: false}));
         if (faceCulling === undefined) rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF);
@@ -350,7 +351,7 @@ describe("front face culling", () => {
         screenSize.x = WIDTH;
         screenSize.y = HEIGHT;
         const buffer = new ScreenBuffer();
-        buffer.beginFrame({screenSize}, " ");
+        buffer.beginFrame({screenSize}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
         const rasterizer = new MeshRasterizer();
         beginFrame(rasterizer, buffer, config({textures: false}));
         rasterizer.addMesh(mesh, identityModelView, FOCAL, CELL_RATIO, 0xFFFFFF, null, faceCulling);

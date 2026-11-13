@@ -14,6 +14,9 @@ import {ComponentType} from "./componentType";
 import {getOwner} from "./ownership";
 import {EntityCommandBufferSystem} from "./entityCommandBufferSystem";
 import {Resource} from "./resource";
+import {System} from "./system";
+import type {SystemCtor} from "./system";
+import {SystemGroup} from "./systemGroup";
 import {types} from "util";
 
 const isProxy = types.isProxy;
@@ -74,7 +77,7 @@ describe("EntityManager: lifecycle", () => {
         expect(em.hasComponent(e, Position)).toBe(true);
         expect(em.hasComponent(e, Velocity)).toBe(true);
         expect(em.getComponent<Position>(e, Position)!.y).toBe(4);
-        expect(before.entityCountUnfiltered).toBe(0);
+        expect(before.entityCountIncludingDisabled).toBe(0);
     });
 
     test("removeComponent drops just that component", () => {
@@ -126,20 +129,20 @@ describe("EntityManager: lifecycle", () => {
 });
 
 describe("EntityArchetype: storage invariants", () => {
-    test("entityCount counts enabled only; unfiltered counts all", () => {
+    test("enabledEntityCount counts enabled only; entityCountIncludingDisabled counts all", () => {
         const es = Array.from({length: 5}, () => {
             const e = em.createEntity();
             em.addComponent(e, new Position());
             return e;
         });
         const arch = world.archetypes.getOrCreate([Position.type()]) as EntityArchetype;
-        expect(arch.entityCount).toBe(5);
-        expect(arch.entityCountUnfiltered).toBe(5);
+        expect(arch.enabledEntityCount).toBe(5);
+        expect(arch.entityCountIncludingDisabled).toBe(5);
 
         em.setEnabledState(es[1], false);
         em.setEnabledState(es[3], false);
-        expect(arch.entityCount).toBe(3);
-        expect(arch.entityCountUnfiltered).toBe(5);
+        expect(arch.enabledEntityCount).toBe(3);
+        expect(arch.entityCountIncludingDisabled).toBe(5);
     });
 
     test("removal keeps the store dense and other entities intact", () => {
@@ -151,7 +154,7 @@ describe("EntityArchetype: storage invariants", () => {
         em.destroyEntity(es[1]);
 
         const arch = world.archetypes.getOrCreate([Position.type()]) as EntityArchetype;
-        expect(arch.entityCountUnfiltered).toBe(3);
+        expect(arch.entityCountIncludingDisabled).toBe(3);
         for (const keep of [es[0], es[2], es[3]]) {
             expect(em.exists(keep)).toBe(true);
             expect(em.getComponent<Position>(keep, Position)).toBeDefined();
@@ -171,7 +174,7 @@ describe("EntityArchetype: storage invariants", () => {
         const byToken = world.archetypes.getOrCreate([Position.type()]) as EntityArchetype;
         const byCtor = world.archetypes.getOrCreate([Position]) as EntityArchetype;
         expect(byCtor).toBe(byToken);
-        expect(byCtor.entityCountUnfiltered).toBe(1);
+        expect(byCtor.entityCountIncludingDisabled).toBe(1);
     });
 });
 
@@ -184,18 +187,18 @@ describe("EntityQuery", () => {
         const withOne = em.createEntity();
         em.addComponent(withOne, new Position());
 
-        expect(new EntityQuery(world, [Position]).entityCount()).toBe(2);
-        expect(new EntityQuery(world, [Position, Velocity]).entityCount()).toBe(1);
-        expect(new EntityQuery(world, [Tag]).entityCount()).toBe(0);
+        expect(new EntityQuery(world, [Position]).enabledEntityCount()).toBe(2);
+        expect(new EntityQuery(world, [Position, Velocity]).enabledEntityCount()).toBe(1);
+        expect(new EntityQuery(world, [Tag]).enabledEntityCount()).toBe(0);
     });
 
     test("picks up archetypes created after the query was built", () => {
         const q = new EntityQuery(world, [Position]);
-        expect(q.entityCount()).toBe(0);
+        expect(q.enabledEntityCount()).toBe(0);
 
         const e = em.createEntity();
         em.addComponent(e, new Position());
-        expect(q.entityCount()).toBe(1);
+        expect(q.enabledEntityCount()).toBe(1);
     });
 
     test("excludes archetypes carrying a blacklisted component", () => {
@@ -205,7 +208,7 @@ describe("EntityQuery", () => {
         em.addComponent(tagged, new Position());
         em.addComponent(tagged, new Tag());
 
-        expect(new EntityQuery(world, [Position], [Tag]).entityCount()).toBe(1);
+        expect(new EntityQuery(world, [Position], [Tag]).enabledEntityCount()).toBe(1);
     });
 
     test("tryGetSingleton returns undefined unless exactly one matches", () => {
@@ -271,7 +274,7 @@ describe("EntityQueryStream", () => {
         em.addComponent(plain, new Position(99, 99));
 
         const q = new EntityQuery(world, [Position]);
-        expect(q.entityCount()).toBe(4);
+        expect(q.enabledEntityCount()).toBe(4);
 
         let rows = 0;
         q.stream({read: {p: Position, v: Velocity}}).forEach(() => rows++);
@@ -588,10 +591,10 @@ describe("EntityCommandBuffer", () => {
         const e = cb.createEntity("deferred");
         cb.addComponent(e, new Position(1, 2));
 
-        expect(new EntityQuery(world, [Position]).entityCount()).toBe(0);
+        expect(new EntityQuery(world, [Position]).enabledEntityCount()).toBe(0);
 
         cbSystem.update();
-        expect(new EntityQuery(world, [Position]).entityCount()).toBe(1);
+        expect(new EntityQuery(world, [Position]).enabledEntityCount()).toBe(1);
         expect(em.getComponent<Position>(e, Position)!.x).toBe(1);
     });
 });
@@ -648,7 +651,7 @@ describe("Entity handles: generation counters", () => {
         em.destroyQuery(q as never);
         expect(em.exists(a)).toBe(false);
         expect(em.exists(b)).toBe(false);
-        expect(q.entityCount()).toBe(0);
+        expect(q.enabledEntityCount()).toBe(0);
     });
 });
 
@@ -667,5 +670,104 @@ describe("ResourceManager", () => {
         const bye = new Greeting("bye");
         world.resources.insert(bye);
         expect(world.resources.get(Greeting)).toBe(bye);
+    });
+});
+
+describe("World", () => {
+    test("systems yields every system the world holds", () => {
+        const commandBufferSystem = world.getOrCreateSystem(EntityCommandBufferSystem);
+        const systems = [...world.systems()];
+        expect(systems.length).toBe(world.systemCount);
+        expect(systems.length).toBeGreaterThan(1);
+        expect(systems.includes(commandBufferSystem)).toBe(true);
+        expect(systems.includes(world.rootSystemGroup!)).toBe(true);
+    });
+});
+
+type LifecycleCounts = Map<string, {disabled: number, destroyed: number}>;
+
+function countLifecycle(counts: LifecycleCounts, name: string, event: "disabled" | "destroyed"): void {
+    const entry = counts.get(name) ?? {disabled: 0, destroyed: 0};
+    entry[event]++;
+    counts.set(name, entry);
+}
+
+function recordingGroup(counts: LifecycleCounts, name: string): SystemCtor<SystemGroup> {
+    return class extends SystemGroup {
+        override onDisable(): void {
+            countLifecycle(counts, name, "disabled");
+            super.onDisable();
+        }
+
+        protected override onDestroy(): void {
+            countLifecycle(counts, name, "destroyed");
+        }
+    };
+}
+
+function recordingSystemIn(group: SystemCtor<SystemGroup> | undefined, counts: LifecycleCounts, name: string): SystemCtor<System> {
+    return class extends System {
+        override systemGroup() {
+            return group;
+        }
+
+        onUpdate() {
+        }
+
+        override onDisable(): void {
+            countLifecycle(counts, name, "disabled");
+        }
+
+        protected override onDestroy(): void {
+            countLifecycle(counts, name, "destroyed");
+        }
+    };
+}
+
+const CHILDREN_PER_GROUP = 5;
+const ONCE = {disabled: 1, destroyed: 1};
+
+function childNames(prefix: string): string[] {
+    return Array.from({length: CHILDREN_PER_GROUP}, (_, i) => prefix + i);
+}
+
+describe("SystemGroup lifecycle", () => {
+    test("destroying a group destroys every child and disables each one once", () => {
+        const counts: LifecycleCounts = new Map();
+        const groupCtor = recordingGroup(counts, "group");
+        const childCtors = childNames("child").map(name => recordingSystemIn(groupCtor, counts, name));
+        for (const ctor of childCtors) world.getOrCreateSystem(ctor);
+        const group = world.tryGetSystem(groupCtor)!;
+        expect(group.systems.length).toBe(CHILDREN_PER_GROUP);
+
+        group.destroy();
+
+        expect(group.systems.length).toBe(0);
+        for (const ctor of childCtors) expect(world.hasSystem(ctor)).toBe(false);
+        expect(world.hasSystem(groupCtor)).toBe(false);
+        for (const name of [...childNames("child"), "group"]) expect(counts.get(name)).toEqual(ONCE);
+    });
+
+    test("world.stop destroys every system in every group once and leaves the world without systems", () => {
+        const counts: LifecycleCounts = new Map();
+        const groupCtor = recordingGroup(counts, "group");
+        for (const name of childNames("nested")) world.getOrCreateSystem(recordingSystemIn(groupCtor, counts, name));
+        for (const name of childNames("root")) world.getOrCreateSystem(recordingSystemIn(undefined, counts, name));
+
+        world.stop();
+
+        for (const name of [...childNames("nested"), ...childNames("root"), "group"]) expect(counts.get(name)).toEqual(ONCE);
+        expect(world.systemCount).toBe(0);
+    });
+
+    test("children of a disabled group are not disabled a second time when the world stops", () => {
+        const counts: LifecycleCounts = new Map();
+        const groupCtor = recordingGroup(counts, "group");
+        for (const name of childNames("child")) world.getOrCreateSystem(recordingSystemIn(groupCtor, counts, name));
+        world.tryGetSystem(groupCtor)!.enabled = false;
+
+        world.stop();
+
+        for (const name of [...childNames("child"), "group"]) expect(counts.get(name)).toEqual(ONCE);
     });
 });

@@ -3,14 +3,13 @@ import {EntityWriteOptions} from "../../core/entityWriteOptions";
 import {Mesh} from "./mesh";
 import {RenderBounds} from "../renderBounds";
 import {FaceCulling} from "./faceCulling";
+import {WHITE_RGB, PACKED_RGB_MASK} from "../packedRgb";
 
-const WHITE = 0xFFFFFF;
-const PACKED_RGB_MASK = 0xFFFFFF;
 
 export class RenderMesh extends Component {
     public faceCulling: FaceCulling = FaceCulling.BackFaces;
 
-    public constructor(private _mesh?: Mesh, private _color: number = WHITE) {
+    public constructor(private _mesh?: Mesh, private _color: number = WHITE_RGB) {
         super();
     }
 

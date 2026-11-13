@@ -7,11 +7,13 @@ import {SceneLights, VertexLighting} from "../src/engine/rendering/3d/lighting";
 import {MeshRasterizer} from "../src/engine/rendering/3d/software";
 import {CellResolveTarget} from "../src/backends/cells/3d/cellResolveTarget";
 import {ScreenBuffer} from "../src/backends/cells/cellGrid";
+import type {CellBackgroundStyle} from "../src/backends/cells/cellFrame";
+import {TextColor} from "../src/engine/rendering/textColor";
 import {ScreenSize} from "../src/engine/rendering/screenSize";
 import {LocalToWorld} from "../src/engine/translation/localToWorld";
 import {Quaternions} from "../src/engine/math/quaternions";
 import {fromFloat32Array, Vec3} from "../src/engine/math/types/vec";
-import {nodePlatform} from "../src/hosts/terminal";
+import {AnsiCellEncoder, nodePlatform} from "../src/hosts/terminal";
 
 const ROOT = resolve(__dirname, "..");
 const BASELINE_PATH = join(__dirname, "frameHashes.baseline.txt");
@@ -27,6 +29,9 @@ const MONKEY_SCALE = 3;
 const PITCH_RAD_PER_FRAME = 0.05, YAW_RAD_PER_FRAME = 0.03;
 const UNCLIPPED_FRAMES = 15, UNCLIPPED_Z = 8, NEAR_PLANE_CLIPPED_Z = 0.6;
 const MAX_DEPTH_FADE = 15;
+const SPACE_CODE_POINT = 0x20;
+const UNSTYLED_SPACE: CellBackgroundStyle = {glyph: SPACE_CODE_POINT, foreground: TextColor.DEFAULT, background: TextColor.DEFAULT};
+const ROW_SEPARATOR = "\n";
 
 interface FrameHash {
     readonly label: string;
@@ -57,6 +62,7 @@ function renderFrameHashes(): FrameHash[] {
         for (const supersample of [1, 2]) {
             const rasterizer = new MeshRasterizer();
             const target = new CellResolveTarget();
+            const encoder = new AnsiCellEncoder();
             const hash = createHash("sha1");
             let bytes = 0;
             for (let f = 0; f < FRAMES; f++) {
@@ -65,7 +71,7 @@ function renderFrameHashes(): FrameHash[] {
                 LocalToWorld.fromTRS(transform.matrix, Vec3.alloc(0, 0, f < UNCLIPPED_FRAMES ? UNCLIPPED_Z : NEAR_PLANE_CLIPPED_Z), quat, Vec3.alloc(MONKEY_SCALE, MONKEY_SCALE, MONKEY_SCALE));
                 const modelView = LocalToWorld.mul(invCam, transform.matrix) as unknown as Float32Array;
                 const buffer = new ScreenBuffer();
-                buffer.beginFrame({screenSize} as any, " ");
+                buffer.beginFrame({screenSize}, UNSTYLED_SPACE);
                 target.begin(buffer, {colorQuantMask: COLOR_QUANT_MASK});
                 rasterizer.beginFrame(target, WIDTH, HEIGHT, {
                     maxDepthFade: MAX_DEPTH_FADE, colorQuantMask: COLOR_QUANT_MASK, supersample, workerCount: 0,
@@ -78,7 +84,7 @@ function renderFrameHashes(): FrameHash[] {
                     rasterizer.addMesh(mesh, modelView, focal, CELL_ASPECT_RATIO, MONKEY_RGB);
                 }
                 rasterizer.endFrame();
-                const frame = buffer.flush();
+                const frame = encoder.encodeRows(buffer.toCellFrame()).join(ROW_SEPARATOR);
                 bytes += frame.length;
                 hash.update(frame);
             }

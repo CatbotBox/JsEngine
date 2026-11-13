@@ -1,30 +1,32 @@
 ﻿import {SystemGroup} from "../../engine/core";
 import {Camera} from "../../engine/rendering/camera";
-import {consoleOverride} from "../../engine/debugging";
-import {originalConsole as display} from "../../engine/debugging/originalConsole";
+import {TextColor} from "../../engine/rendering/textColor";
 import {CellCameraSizingSystem} from "./cellCameraSizingSystem";
-import {Ansi} from "./ansiEncoding";
 import {CellGrid} from "./cellGrid";
+import type {ScreenBuffer} from "./cellGrid";
 import {CellRenderSettings} from "./cellRenderSettings";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {ScreenSize} from "../../engine/rendering/screenSize";
-import {CellSurfaceResource} from "./cellSurfaceResource";
+import {CellPresenterResource} from "./cellPresenterResource";
+import type {CellPresenter, CellRepaint} from "./cellPresenter";
 
 const PRIORITY_AFTER_CAMERA_SIZING = 100;
-const CURSOR_HOME = "\x1b[H";
-const ERASE_BELOW_CURSOR = "\x1b[J";
-const AUTOWRAP_OFF = "\x1b[?7l";
-const AUTOWRAP_ON = "\x1b[?7h";
-const CRLF = "\r\n";
+const ERROR_TEXT_COLUMN = 0;
+const ERROR_TEXT_DEPTH = Number.NEGATIVE_INFINITY;
+
+interface MutableBackgroundStyle {
+    glyph: number;
+    foreground: TextColor;
+    background: TextColor;
+}
 
 export class CellRenderSystemGroup extends SystemGroup {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _settingsQuery = this.createEntityQuery([CellRenderSettings]);
 
-    private _prevRows: string[] = [];
-    private _prevWidth = -1;
-    private _forceRedraw = true;
+    private _repaint: CellRepaint = "full";
+    private _backgroundStyle: MutableBackgroundStyle = {...CellRenderSettings.DEFAULT_BACKGROUND_STYLE};
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -40,89 +42,79 @@ export class CellRenderSystemGroup extends SystemGroup {
     }
 
     public onDestroy() {
-        display.clear();
+        CellPresenterResource.presenterOf(this.world).dispose?.();
     }
 
     onUpdate() {
-        const surface = CellSurfaceResource.surfaceOf(this.world);
-        if (surface.backlogged?.() === true) {
-            this._forceRedraw = true;
+        const presenter = CellPresenterResource.presenterOf(this.world);
+        if (presenter.backlogged?.() === true) {
+            this._repaint = "full";
             return;
         }
-        const dualScreenBuffer = this.world.resources.getOrCreate(CellGrid);
-        const screenBuffer = dualScreenBuffer.screenBuffer;
+        const grid = this.world.resources.getOrCreate(CellGrid);
+        const screenBuffer = grid.screenBuffer;
+        const backgroundStyle = this.refreshBackgroundStyle();
+
+        const cameraError = this.beginCameraFrame(screenBuffer, backgroundStyle);
+        if (cameraError === undefined) {
+            super.onUpdate();
+            presenter.present(screenBuffer.toCellFrame(), this._repaint);
+        } else {
+            this.drawCameraError(screenBuffer, backgroundStyle, presenter, cameraError);
+            presenter.present(screenBuffer.toCellFrame(), "full");
+        }
+        this._repaint = "changes";
+        grid.swapBuffer();
+    }
+
+    private refreshBackgroundStyle(): MutableBackgroundStyle {
+        const style = this._backgroundStyle;
+        const settings = this._settingsQuery.tryGetSingleton({settings: CellRenderSettings})?.settings;
+        if (settings === undefined) {
+            const fallback = CellRenderSettings.DEFAULT_BACKGROUND_STYLE;
+            style.glyph = fallback.glyph;
+            style.foreground = fallback.foreground;
+            style.background = fallback.background;
+        } else {
+            style.glyph = settings.backgroundGlyphCodePoint();
+            style.foreground = settings.backgroundGlyphColor;
+            style.background = settings.backgroundColor;
+        }
+        return style;
+    }
+
+    private beginCameraFrame(screenBuffer: ScreenBuffer, backgroundStyle: MutableBackgroundStyle): string[] | undefined {
         try {
             const cameraEntity = this._cameraQuery.getSingleton({
                 camera: Camera,
                 screenSize: ScreenSize,
             });
-
-            const settings = this._settingsQuery.tryGetSingleton({settings: CellRenderSettings});
-            const backgroundChar = settings?.settings.backgroundChar ?? CellRenderSettings.DEFAULT_BACKGROUND_CHAR;
-            screenBuffer.beginFrame(cameraEntity, backgroundChar);
+            screenBuffer.beginFrame(cameraEntity, backgroundStyle);
+            return undefined;
         } catch (error) {
-            const camCount = this._cameraQuery.entityCount();
-            surface.write(CURSOR_HOME);
-            if (camCount == 0) {
-                surface.write("ERROR: NO CAMERA ENTITIES FOUND");
-            } else if (camCount > 1) {
-                surface.write("ERROR: MULTIPLE CAMERA ENTITIES FOUND (" + camCount + ")");
-            } else {
-                surface.write("ERROR: UNEXPECTED ERROR HAPPENED WITH CAMERA SYSTEM");
-                surface.write(String(error));
-            }
-
-            surface.write(ERASE_BELOW_CURSOR);
-            this._forceRedraw = true;
+            const cameraCount = this._cameraQuery.enabledEntityCount();
+            if (cameraCount == 0) return ["ERROR: NO CAMERA ENTITIES FOUND"];
+            if (cameraCount > 1) return ["ERROR: MULTIPLE CAMERA ENTITIES FOUND (" + cameraCount + ")"];
+            return ["ERROR: UNEXPECTED ERROR HAPPENED WITH CAMERA SYSTEM", String(error)];
         }
+    }
 
-        super.onUpdate()
-
-        const rows = screenBuffer.flushRows();
-        const prevRows = this._prevRows;
-        const fullRedraw = this._forceRedraw
-            || rows.length !== prevRows.length
-            || screenBuffer.cellWidth !== this._prevWidth;
-
-        let out = "";
-        if (fullRedraw) {
-            out = CURSOR_HOME + rows.join(CRLF) + CRLF + ERASE_BELOW_CURSOR;
-        } else {
-            for (let y = 0; y < rows.length; y++) {
-                if (rows[y] !== prevRows[y]) {
-                    out += `\x1b[${y + 1};1H` + rows[y];
-                }
-            }
-        }
-
-        if (out.length > 0) {
-            surface.write(out);
-        }
-
-        this._prevRows = rows;
-        this._prevWidth = screenBuffer.cellWidth;
-        this._forceRedraw = false;
-        dualScreenBuffer.swapBuffer();
-
+    private drawCameraError(screenBuffer: ScreenBuffer, backgroundStyle: MutableBackgroundStyle, presenter: CellPresenter, lines: readonly string[]): void {
+        screenBuffer.beginFrame({screenSize: CellCameraSizingSystem.frameSizeFor(presenter.size())}, backgroundStyle);
+        lines.forEach((line, row) => {
+            screenBuffer.writeText(line, ERROR_TEXT_COLUMN, row, ERROR_TEXT_DEPTH, TextColor.DEFAULT, TextColor.DEFAULT);
+        });
     }
 
     override onEnable(): void {
         super.onEnable();
-        const surface = CellSurfaceResource.surfaceOf(this.world);
-        consoleOverride.removeConsoleEventListener(display)
-        surface.write(Ansi.modes.altScreenEnter);
-        surface.write(Ansi.cursor.hide);
-        surface.write(AUTOWRAP_OFF);
-        this._forceRedraw = true;
+        CellPresenterResource.presenterOf(this.world).start();
+        this._repaint = "full";
         this.update();
     }
 
     override onDisable(): void {
-        consoleOverride.addConsoleEventListener(display)
-        const surface = CellSurfaceResource.surfaceOf(this.world);
-        surface.write(AUTOWRAP_ON);
-        surface.write(Ansi.cursor.show);
-        surface.write(Ansi.modes.altScreenExit);
+        CellPresenterResource.presenterOf(this.world).stop();
         super.onDisable();
     }
 }

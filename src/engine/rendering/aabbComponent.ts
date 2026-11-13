@@ -80,8 +80,8 @@ export abstract class AABBComponent extends Component implements F32Backed {
         dst.set(AABB.asFloat32Array(this._values), offset);
     }
 
-    bindF32(src: Float32Array, offset: number): void {
-        this._values = AABB.wrap(src.subarray(offset, offset + AABB_STRIDE));
+    bindF32(rowView: Float32Array): void {
+        this._values = AABB.wrap(rowView);
     }
 
     detachF32(): void {

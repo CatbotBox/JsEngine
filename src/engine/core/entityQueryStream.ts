@@ -133,7 +133,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
     public count(): number {
         let count = 0;
         for (const {arch} of this.plans()) {
-            count += this.options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+            count += this.options?.includeDisabled ? arch.entityCountIncludingDisabled : arch.enabledEntityCount;
         }
         return count;
     }
@@ -141,7 +141,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
     public hasAny(): boolean {
         const includeDisabled = this.options?.includeDisabled;
         for (const {arch} of this.plans()) {
-            if ((includeDisabled ? arch.entityCountUnfiltered : arch.entityCount) > 0) return true;
+            if ((includeDisabled ? arch.entityCountIncludingDisabled : arch.enabledEntityCount) > 0) return true;
         }
         return false;
     }
@@ -165,7 +165,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
         const cols = span.cols, stores = span.stores;
 
         for (const {arch, readCols, writeCols, optCols, watchCols, visitEveryBlock, since} of this.plans()) {
-            const n = includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+            const n = includeDisabled ? arch.entityCountIncludingDisabled : arch.enabledEntityCount;
             if (n === 0) continue;
             const hasWrites = writeCols.length > 0;
             const stampTime = hasWrites ? performance.now() : 0;
@@ -217,7 +217,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
         const shared: any = reuseRow ? {} : undefined;
 
         for (const {arch, readCols, writeCols, optCols, watchCols, visitEveryBlock, since} of this.plans()) {
-            const n = includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+            const n = includeDisabled ? arch.entityCountIncludingDisabled : arch.enabledEntityCount;
             const hasWrites = writeCols.length > 0;
             const stampTime = hasWrites ? performance.now() : 0;
 

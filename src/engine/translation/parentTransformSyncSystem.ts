@@ -7,9 +7,8 @@ import {HierarchySyncSystem} from "./hierarchySyncSystem";
 import {LocalToWorldSystem} from "./localToWorldSystem";
 import {TranslationSystemGroup} from "./translationSystemGroup";
 import {Children} from "./children";
+import {MAT4_FLOATS, MAT4_FLOATS_SHIFT} from "../math/mat4Layout";
 
-const MATRIX_FLOATS = 16;
-const MATRIX_FLOATS_SHIFT = 4;
 
 export class ParentTransformSyncSystem extends System {
     private _parentQuery = this.createEntityQuery([Children, LocalToWorld])
@@ -41,7 +40,7 @@ export class ParentTransformSyncSystem extends System {
                 const childrenStore = stores.children!;
                 for (let i = start; i < end; i++) {
                     const children = (childrenStore.get(i) as Children).children;
-                    const pOff = i << MATRIX_FLOATS_SHIFT;
+                    const pOff = i << MAT4_FLOATS_SHIFT;
                     for (let c = 0; c < children.length; c++) {
                         const arch = getOwnerInferred(children[c]);
                         if (arch === undefined) continue;
@@ -51,16 +50,16 @@ export class ParentTransformSyncSystem extends System {
                         if (row === undefined) continue;
                         const pt = ptStore.f32Data;
                         if (pt === undefined) continue;
-                        const cOff = row << MATRIX_FLOATS_SHIFT;
+                        const cOff = row << MAT4_FLOATS_SHIFT;
                         let same = true;
-                        for (let k = 0; k < MATRIX_FLOATS; k++) {
+                        for (let k = 0; k < MAT4_FLOATS; k++) {
                             if (pt[cOff + k] !== l2w[pOff + k]) {
                                 same = false;
                                 break;
                             }
                         }
                         if (same) continue;
-                        for (let k = 0; k < MATRIX_FLOATS; k++) pt[cOff + k] = l2w[pOff + k];
+                        for (let k = 0; k < MAT4_FLOATS; k++) pt[cOff + k] = l2w[pOff + k];
                         ptStore.markBlockAt(row, now);
                     }
                 }

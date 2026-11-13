@@ -3,6 +3,10 @@ import {join, resolve} from "path";
 export const ROOT = resolve(__dirname, "..");
 export const WEB_DIST = join(ROOT, "dist", "web");
 export const WINDOW_DIST = join(ROOT, "dist", "desktop");
+export const APP_ICON_DIRECTORY = join(ROOT, "assets", "icon");
+export const APP_ICON_ICO_FILE = "icon.ico";
+export const APP_ICON_ICNS_FILE = "icon.icns";
+export const APP_ICON_PNG_FILE = "icon.png";
 
 export function exitOnFailure(exitCode: number | null): void {
     if (exitCode !== 0) process.exit(exitCode ?? 1);

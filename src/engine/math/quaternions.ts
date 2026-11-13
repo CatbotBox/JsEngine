@@ -6,9 +6,22 @@ export namespace Quaternions {
 
     const raw = asFloat32Array;
     const HALF_TURN_DEGREES = 180;
+    const FULL_TURN_RADIANS = 2 * Math.PI;
+    const QUARTER_TURN_RADIANS = Math.PI / 2;
+    const GIMBAL_LOCK_SIN_PITCH = 1 - 1e-6;
 
     function deg2rad(a: number) {
         return a * Math.PI / HALF_TURN_DEGREES;
+    }
+
+    function rad2deg(a: number) {
+        return a * HALF_TURN_DEGREES / Math.PI;
+    }
+
+    function wrapToHalfTurn(radians: number): number {
+        if (radians > Math.PI) return radians - FULL_TURN_RADIANS;
+        if (radians <= -Math.PI) return radians + FULL_TURN_RADIANS;
+        return radians;
     }
 
     export type EulerOrder =
@@ -121,5 +134,27 @@ export namespace Quaternions {
         opts?: { deg?: boolean },
     ): Quaternion {
         return eulerToQuatInto(Vec.alloc4(), euler, order, opts);
+    }
+
+    export function quatToEulerZYXInto(out: Vec3, q: ReadonlyQuaternion, opts?: { deg?: boolean }): Vec3 {
+        const v = raw(q);
+        const length = Math.hypot(v[0], v[1], v[2], v[3]) || 1;
+        const x = v[0] / length, y = v[1] / length, z = v[2] / length, w = v[3] / length;
+        const sinPitch = 2 * (w * y - z * x);
+        let roll: number, pitch: number, yaw: number;
+        if (Math.abs(sinPitch) >= GIMBAL_LOCK_SIN_PITCH) {
+            roll = 0;
+            pitch = Math.sign(sinPitch) * QUARTER_TURN_RADIANS;
+            yaw = wrapToHalfTurn(2 * Math.atan2(z, w));
+        } else {
+            roll = Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
+            pitch = Math.asin(sinPitch);
+            yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
+        }
+        const o = raw(out);
+        o[0] = opts?.deg ? rad2deg(roll) : roll;
+        o[1] = opts?.deg ? rad2deg(pitch) : pitch;
+        o[2] = opts?.deg ? rad2deg(yaw) : yaw;
+        return out;
     }
 }

@@ -110,7 +110,7 @@ export class EntityQuery<
         const keys = Object.keys(spec);
         let rowData: any = undefined;
         for (const arch of this.archetypes) {
-            const entityCount = options?.includeDisabled ? arch.entityCountUnfiltered : arch.entityCount;
+            const entityCount = options?.includeDisabled ? arch.entityCountIncludingDisabled : arch.enabledEntityCount;
             if (entityCount == 0) continue;
             if (entityCount > 1) return AMBIGUOUS;
             if (rowData != undefined) return AMBIGUOUS;
@@ -148,24 +148,24 @@ export class EntityQuery<
 
     public hasEntity(): boolean {
         for (const arch of this.archetypes) {
-            if (arch.entityCount > 0) return true;
+            if (arch.enabledEntityCount > 0) return true;
         }
         return false;
     }
 
-    public entityCount(): number {
+    public enabledEntityCount(): number {
         let count = 0;
         for (const arch of this.archetypes) {
-            const n = arch.entityCount;
+            const n = arch.enabledEntityCount;
             count += n;
         }
         return count;
     }
 
-    public entityCountUnfiltered(): number {
+    public entityCountIncludingDisabled(): number {
         let count = 0;
         for (const arch of this.archetypes) {
-            const n = arch.entityCountUnfiltered;
+            const n = arch.entityCountIncludingDisabled;
             count += n;
         }
         return count;
@@ -173,7 +173,7 @@ export class EntityQuery<
 
     public* [Symbol.iterator](): IterableIterator<Entity> {
         for (const arch of this.archetypes) {
-            const n = arch.entityCount;
+            const n = arch.enabledEntityCount;
             for (let i = 0; i < n; i++) yield arch.getEntityAtIndex(i);
         }
     }
