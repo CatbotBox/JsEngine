@@ -1,3 +1,6 @@
+import {isInputEvent} from "../../engine/input/inputEvent";
+import type {InputEvent} from "../../engine/input/inputEvent";
+
 export interface InitMessage {
     readonly type: "init";
     readonly columns: number;
@@ -5,9 +8,14 @@ export interface InitMessage {
     readonly requestedRasterWorkers?: number;
 }
 
+export interface InputEventsMessage {
+    readonly type: "inputEvents";
+    readonly events: readonly InputEvent[];
+}
+
 export type PageToWorldMessage =
     | InitMessage
-    | {readonly type: "input", readonly data: string}
+    | InputEventsMessage
     | {readonly type: "resize", readonly columns: number, readonly rows: number}
     | {readonly type: "written"}
     | {readonly type: "exit"};
@@ -17,7 +25,7 @@ export type WorldToPageMessage =
     | {readonly type: "quit"}
     | {readonly type: "error", readonly message: string};
 
-const PAGE_TO_WORLD_TYPES: ReadonlySet<string> = new Set(["init", "input", "resize", "written", "exit"]);
+const PAGE_TO_WORLD_TYPES: ReadonlySet<string> = new Set(["init", "inputEvents", "resize", "written", "exit"]);
 const WORLD_TO_PAGE_TYPES: ReadonlySet<string> = new Set(["output", "quit", "error"]);
 
 function hasType(message: unknown, types: ReadonlySet<string>): boolean {
@@ -25,7 +33,9 @@ function hasType(message: unknown, types: ReadonlySet<string>): boolean {
 }
 
 export function isPageToWorldMessage(message: unknown): message is PageToWorldMessage {
-    return hasType(message, PAGE_TO_WORLD_TYPES);
+    if (!hasType(message, PAGE_TO_WORLD_TYPES)) return false;
+    const {type, events} = message as {type: string, events?: unknown};
+    return type !== "inputEvents" || (Array.isArray(events) && events.every(isInputEvent));
 }
 
 export function isWorldToPageMessage(message: unknown): message is WorldToPageMessage {

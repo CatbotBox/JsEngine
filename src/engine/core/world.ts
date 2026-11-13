@@ -5,6 +5,7 @@ import {Entity} from "./entity";
 import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
 import {GcSystem} from "./gcSystem";
+import {InputSystem} from "../input/inputSystem";
 import {WorldSource} from "./worldSource";
 import {ResourceManager} from "./resourceManager";
 import type {Platform} from "../platform/platform";
@@ -60,6 +61,7 @@ export class World extends WorldSource {
         this.platform = options.platform;
         this._rootSystemGroup = this.createSystem(RootSystemGroup)
         this.ensureSystemExists(GcSystem)
+        this.ensureSystemExists(InputSystem)
     }
 
     public ensureSystemExists<T extends System>(constructor: SystemCtor<T>): void {

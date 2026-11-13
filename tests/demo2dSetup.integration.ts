@@ -1,6 +1,7 @@
 import {DebugWorld} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
-import {consoleInput} from "../src/engine/input";
+import {Input} from "../src/engine/input";
+import {TerminalInput} from "../src/hosts/terminal";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {Ansi, CellSurfaceResource} from "../src/backends/cells";
@@ -44,8 +45,14 @@ const gameTerminal = new MemoryTerminal(START);
 const terminal = new TerminalScreen(START.columns, START.rows);
 const world = new DebugWorld({platform});
 world.resources.insert(new CellSurfaceResource(gameTerminal));
+const terminalInput = new TerminalInput({
+    terminal: gameTerminal,
+    platform,
+    sink: world.resources.getOrCreate(Input),
+    mouse: true,
+}).start();
 let quits = 0;
-setupDemo2d(world, {terminal: gameTerminal, quit: () => quits++});
+setupDemo2d(world, {quit: () => quits++});
 
 const tick = () => {
     const before = gameTerminal.length;
@@ -60,7 +67,7 @@ function expectFramePainted(size: {columns: number, rows: number}, when: string)
     expect(written === cells, `every frame cell painted ${when} (${written}/${cells})`);
 }
 
-expect(gameTerminal.started, "the game enabled input on the host's terminal");
+expect(gameTerminal.started && gameTerminal.text().includes("\x1b[?1003h"), "the launch wiring started terminal input with the mouse on");
 
 let framesWritten = 0;
 let entitiesBeforeSpace = 0;
@@ -93,9 +100,13 @@ expect(world.entityCount === entitiesBeforeSpace + PIXELS_PER_SPACE, `Space spaw
 expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
 gameTerminal.feed(CTRL_C);
+expect(quits === 0, "Ctrl+C waits for the next frame's input");
+tick();
 expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
+expect(errors.length === 0, `no errors logged while quitting${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
-consoleInput.disable();
+terminalInput.stop();
+expect(!gameTerminal.started && gameTerminal.text().endsWith("\x1b[?1003l\x1b[?1006l"), "stopping terminal input restored the terminal");
 consoleOverride.removeConsoleEventListener(errorRecorder);
 
 if (failures > 0) {

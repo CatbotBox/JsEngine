@@ -24,6 +24,10 @@ import {RootSystemGroup} from "../../engine/core/rootSystemGroup";
 import {System} from "../../engine/core/system";
 import {Camera} from "../../engine/rendering/camera";
 import {CellRenderSystemGroup} from "../../backends/cells/cellRenderSystemGroup";
+import {Input} from "../../engine/input/input";
+import {Key} from "../../engine/input/key";
+import {NO_MODIFIERS} from "../../engine/input/inputEvent";
+import type {InputEvent} from "../../engine/input/inputEvent";
 
 const nextTask = () => new Promise<void>(done => setTimeout(done, 0));
 
@@ -50,6 +54,9 @@ class FakeScope implements WorldWorkerScope {
 }
 
 const INIT: PageToWorldMessage = {type: "init", columns: 100, rows: 30, requestedRasterWorkers: 2};
+const UP_PRESSED: InputEvent = {type: "keyDown", key: Key.Up, repeat: false, ...NO_MODIFIERS};
+const UP_RELEASED: InputEvent = {type: "keyUp", key: Key.Up, ...NO_MODIFIERS};
+const TYPED_X: InputEvent = {type: "text", text: "x"};
 
 async function openConnection(scope: FakeScope = new FakeScope(), files = new MemoryFileSource()): Promise<PageConnection> {
     const opening = PageConnection.open(scope, files);
@@ -111,7 +118,6 @@ class FakePageTerminal implements PageTerminal {
     public rows = 40;
     public readonly written: string[] = [];
     public readonly unparsed: (() => void)[] = [];
-    public readonly dataListeners = new Set<(data: string) => void>();
     public readonly resizeListeners = new Set<(size: {cols: number, rows: number}) => void>();
 
     public write(data: string, callback?: () => void): void {
@@ -119,18 +125,9 @@ class FakePageTerminal implements PageTerminal {
         if (callback !== undefined) this.unparsed.push(callback);
     }
 
-    public onData(listener: (data: string) => void): TerminalSubscription {
-        this.dataListeners.add(listener);
-        return {dispose: () => this.dataListeners.delete(listener)};
-    }
-
     public onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription {
         this.resizeListeners.add(listener);
         return {dispose: () => this.resizeListeners.delete(listener)};
-    }
-
-    public type(data: string): void {
-        for (const listener of [...this.dataListeners]) listener(data);
     }
 
     public resize(cols: number, rows: number): void {
@@ -201,9 +198,19 @@ describe("world worker protocol", () => {
         expect(isPageToWorldMessage({type: "init", columns: 1, rows: 1})).toBe(true);
         expect(isPageToWorldMessage({type: "output", data: ""})).toBe(false);
         expect(isWorldToPageMessage({type: "output", data: ""})).toBe(true);
-        expect(isWorldToPageMessage({type: "input", data: ""})).toBe(false);
+        expect(isWorldToPageMessage({type: "inputEvents", events: []})).toBe(false);
         expect(isWorldToPageMessage(null)).toBe(false);
         expect(isWorldToPageMessage("output")).toBe(false);
+    });
+
+    test("input arrives as engine input events, each one validated; raw terminal bytes are gone", () => {
+        expect(isPageToWorldMessage({type: "inputEvents", events: [UP_PRESSED, TYPED_X, UP_RELEASED]})).toBe(true);
+        expect(isPageToWorldMessage({type: "inputEvents", events: []})).toBe(true);
+        expect(isPageToWorldMessage({type: "inputEvents", events: [UP_PRESSED, {type: "keyDown", key: "up"}]})).toBe(false);
+        expect(isPageToWorldMessage({type: "inputEvents", events: [{...UP_PRESSED, key: "hyper"}]})).toBe(false);
+        expect(isPageToWorldMessage({type: "inputEvents", events: "keyDown"})).toBe(false);
+        expect(isPageToWorldMessage({type: "inputEvents"})).toBe(false);
+        expect(isPageToWorldMessage({type: "input", data: "\x1b[A"})).toBe(false);
     });
 });
 
@@ -216,7 +223,7 @@ describe("PageConnection (the world worker's platform)", () => {
             opened = true;
             return connection;
         });
-        scope.send({type: "input", data: "x"});
+        scope.send({type: "inputEvents", events: [TYPED_X]});
         await nextTask();
         expect(opened).toBe(false);
 
@@ -227,20 +234,23 @@ describe("PageConnection (the world worker's platform)", () => {
         expect(platform.hardwareConcurrency()).toBe(6);
         expect(platform.files).toBe(files);
         expect(platform.inflate).toBe(inflate);
-        expect(terminal.available()).toBe(true);
+        expect(Object.keys(terminal).sort()).toEqual(["backlogged", "onResize", "size", "write"]);
         expect(platform.now()).toBeGreaterThan(-1);
     });
 
-    test("input reaches the reader only while it reads", async () => {
+    test("input events reach the connected Input only while it is connected, in order", async () => {
         const scope = new FakeScope();
-        const {terminal} = await openConnection(scope);
-        const received: string[] = [];
-        scope.send({type: "input", data: "early"});
-        terminal.start(data => received.push(data));
-        scope.send({type: "input", data: "\x1b[A"});
-        terminal.stop();
-        scope.send({type: "input", data: "late"});
-        expect(received).toEqual(["\x1b[A"]);
+        const connection = await openConnection(scope);
+        const input = new Input();
+        scope.send({type: "inputEvents", events: [TYPED_X]});
+        const disconnect = connection.connectInput(input);
+        scope.send({type: "inputEvents", events: [UP_PRESSED, TYPED_X]});
+        scope.send({type: "inputEvents", events: [UP_RELEASED, {type: "pointerMove", x: Number.NaN}]} as unknown as PageToWorldMessage);
+        disconnect();
+        scope.send({type: "inputEvents", events: [UP_RELEASED]});
+        input.beginFrame();
+        expect(input.events).toEqual([UP_PRESSED, TYPED_X]);
+        expect(input.keyHeld(Key.Up)).toBe(true);
     });
 
     test("resize messages change the size and notify subscribers until they unsubscribe", async () => {
@@ -408,19 +418,38 @@ describe("browserWorkerFactory", () => {
 });
 
 describe("connectWorldWorker (the page's end)", () => {
-    test("sends init with the terminal's size first, then forwards typed bytes, resizes and pagehide", () => {
+    test("sends init with the terminal's size first, then input events, resizes and pagehide", async () => {
         const terminal = new FakePageTerminal();
         const worker = new FakeWorldWorker();
         const page = connectWorldWorker(terminal, worker, {name: "the 3D demo", requestedRasterWorkers: 3});
-        terminal.type("\x1b[A");
+        page.input.enqueue(UP_PRESSED);
+        await nextTask();
         terminal.resize(90, 20);
         page.exit();
         expect(worker.posted).toEqual([
             {type: "init", columns: 120, rows: 40, requestedRasterWorkers: 3},
-            {type: "input", data: "\x1b[A"},
+            {type: "inputEvents", events: [UP_PRESSED]},
             {type: "resize", columns: 90, rows: 20},
             {type: "exit"},
         ]);
+    });
+
+    test("input events of one task go out as one message when the task ends", async () => {
+        const terminal = new FakePageTerminal();
+        const worker = new FakeWorldWorker();
+        const page = connectWorldWorker(terminal, worker, {name: "the demo"});
+        page.input.enqueue(UP_PRESSED);
+        page.input.enqueue(TYPED_X);
+        expect(worker.posted.length).toBe(1);
+        await nextTask();
+        page.input.enqueue(UP_RELEASED);
+        await nextTask();
+        expect(worker.posted.slice(1)).toEqual([
+            {type: "inputEvents", events: [UP_PRESSED, TYPED_X]},
+            {type: "inputEvents", events: [UP_RELEASED]},
+        ]);
+        await nextTask();
+        expect(worker.posted.length).toBe(3);
     });
 
     test("writes each output message and acknowledges it once the terminal has parsed it", () => {
@@ -435,7 +464,7 @@ describe("connectWorldWorker (the page's end)", () => {
         expect(worker.posted.filter(message => message.type === "written").length).toBe(2);
     });
 
-    test("quit: says it stopped, stops forwarding and terminates the worker", () => {
+    test("quit: says it stopped, stops forwarding and terminates the worker", async () => {
         const terminal = new FakePageTerminal();
         const worker = new FakeWorldWorker();
         const page = connectWorldWorker(terminal, worker, {name: "the demo"});
@@ -443,11 +472,13 @@ describe("connectWorldWorker (the page's end)", () => {
         worker.emit({type: "quit"});
         expect(worker.terminated).toBe(true);
         expect(terminal.written[1].includes("Stopped. Reload the page to restart.")).toBe(true);
-        expect(terminal.dataListeners.size + terminal.resizeListeners.size).toBe(0);
+        expect(terminal.resizeListeners.size).toBe(0);
 
         const sent = worker.posted.length;
         terminal.parseAll();
         page.exit();
+        page.input.enqueue(UP_PRESSED);
+        await nextTask();
         worker.emit({type: "output", data: "after quit"});
         expect(worker.posted.length).toBe(sent);
         expect(terminal.written.length).toBe(2);

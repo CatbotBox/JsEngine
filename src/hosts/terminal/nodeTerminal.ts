@@ -1,5 +1,5 @@
 import type {CellSurface, CellSurfaceSize} from "../../backends/cells/cellSurface";
-import type {TerminalInputSource} from "../../engine/input/terminalInputSource";
+import type {TerminalInputSource} from "./terminalInputSource";
 
 export type NodeTerminal = CellSurface & TerminalInputSource;
 

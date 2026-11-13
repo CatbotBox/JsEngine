@@ -2,8 +2,10 @@ import {Terminal} from "@xterm/xterm";
 import {FitAddon} from "@xterm/addon-fit";
 import {WebglAddon} from "@xterm/addon-webgl";
 import type {FixedTerminalSize} from "./worldWorkerProtocol";
+import type {CellArea} from "./domInput";
 
 const UNFOCUSED_CLASS = "terminal-unfocused";
+const CELL_GRID_SELECTOR = ".xterm-screen";
 
 export function createTerminal(container: HTMLElement, fixed: FixedTerminalSize = {}): Terminal {
     const terminal = new Terminal({
@@ -33,6 +35,12 @@ export function createTerminal(container: HTMLElement, fixed: FixedTerminalSize 
     trackFocus(terminal);
     terminal.focus();
     return terminal;
+}
+
+export function terminalCellArea(terminal: Terminal, container: HTMLElement): CellArea {
+    const grid: Element = terminal.element?.querySelector(CELL_GRID_SELECTOR) ?? container;
+    const rect = grid.getBoundingClientRect();
+    return {left: rect.left, top: rect.top, width: rect.width, height: rect.height, columns: terminal.cols, rows: terminal.rows};
 }
 
 function trackFocus(terminal: Terminal): void {

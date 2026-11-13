@@ -1,12 +1,14 @@
 export {browserPlatform, worldTerminal} from "./browserPlatform";
-export type {BrowserTerminal, TerminalSubscription, WorldTerminal} from "./browserPlatform";
+export type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
 export {browserWorkerFactory, browserWorkersIfIsolated} from "./browserWorkers";
 export type {BrowserWorker, BrowserWorkerHost} from "./browserWorkers";
 export {PageConnection} from "./worldWorkerPlatform";
 export type {WorldWorkerScope} from "./worldWorkerPlatform";
 export {connectWorldWorker} from "./worldWorkerPage";
+export {installDomInput} from "./domInput";
+export type {CellArea, DomInputOptions, DomInputTarget, DomKeyboardEvent, DomPointerEvent, DomWheelEvent} from "./domInput";
 export type {PageTerminal, WorldWorker, WorldWorkerPage, WorldWorkerPageOptions} from "./worldWorkerPage";
 export {isPageToWorldMessage, isWorldToPageMessage, requestedRasterWorkersFromQuery, fixedTerminalSizeFromQuery, FIXED_TERMINAL_LIMITS} from "./worldWorkerProtocol";
-export type {InitMessage, PageToWorldMessage, WorldToPageMessage, FixedTerminalSize} from "./worldWorkerProtocol";
+export type {InitMessage, InputEventsMessage, PageToWorldMessage, WorldToPageMessage, FixedTerminalSize} from "./worldWorkerProtocol";
 export {PreloadedFileSource} from "./preloadedFileSource";
 export type {PreloadEntry, PreloadProgress, PreloadedFileSourceOptions, FetchFile, FetchedFile, ByteStream, ByteStreamReader} from "./preloadedFileSource";

@@ -5,6 +5,7 @@ import {World} from "./world";
 import type {WorldOptions} from "./world";
 import {RootSystemGroup} from "./rootSystemGroup";
 import {GcSystem} from "./gcSystem";
+import {InputSystem} from "../input/inputSystem";
 
 const PERF_STAT_WINDOW_FRAMES = 60;
 const PARTIAL_WINDOW_AVERAGE = false;
@@ -16,9 +17,11 @@ export class DebugWorld extends World {
 
     constructor(options: WorldOptions) {
         super(options);
+        for (const system of [...this._rootSystemGroup.systems]) system.destroy();
         this._rootSystemGroup.destroy();
         this._rootSystemGroup = this.createSystem(RootSystemGroup);
         this.ensureSystemExists(GcSystem)
+        this.ensureSystemExists(InputSystem)
     }
 
     public override getOrCreateSystem<T extends System>(systemClass: SystemCtor<T>): T {

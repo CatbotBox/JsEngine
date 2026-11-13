@@ -1,7 +1,9 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
 import {connectWorldWorker} from "../src/hosts/web";
-import type {PageTerminal, TerminalSubscription, WorldWorker} from "../src/hosts/web";
+import type {PageTerminal, TerminalSubscription, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
+import {Key, NO_MODIFIERS} from "../src/engine/input";
+import type {Modifiers} from "../src/engine/input";
 import {Ansi} from "../src/backends/cells";
 import {TerminalScreen} from "./support/terminalScreen";
 import {buildDemo3dManifest} from "../demo/3d/assets";
@@ -13,13 +15,13 @@ const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
 const DEFAULT_DIST = "dist/web-prod";
 const DIST_ARG = process.argv.indexOf("--dist");
 const DIST = DIST_ARG < 0 ? undefined : resolve(process.argv[DIST_ARG + 1] ?? DEFAULT_DIST);
-const CTRL_C = "\x03";
+const CTRL: Modifiers = {...NO_MODIFIERS, ctrl: true};
 const START = {columns: 120, rows: 40};
 const RESIZED = {columns: 160, rows: 50};
 const RASTER_WORKERS = 3;
 const TIMEOUT_MS = 20_000;
 const LAZY_SPAWN_TIMEOUT_MS = 60_000;
-const KEY_RELEASE_WAIT_MS = 200;
+const PRESS_INTERVAL_MS = 200;
 const BYTES_PER_MB = 1024 * 1024;
 const POLL_INTERVAL_MS = 10;
 const FRAME_ARRIVAL_WINDOW_MS = 300;
@@ -65,7 +67,6 @@ class ModelTerminal implements PageTerminal {
     public readonly screen: TerminalScreen;
     public transcript = "";
     public writes = 0;
-    private readonly dataListeners = new Set<(data: string) => void>();
     private readonly resizeListeners = new Set<(size: {cols: number, rows: number}) => void>();
     private readonly seenByPattern = new Map<string, boolean>();
 
@@ -96,18 +97,9 @@ class ModelTerminal implements PageTerminal {
         return this.screen.text().includes(pattern);
     }
 
-    public onData(listener: (data: string) => void): TerminalSubscription {
-        this.dataListeners.add(listener);
-        return {dispose: () => this.dataListeners.delete(listener)};
-    }
-
     public onResize(listener: (size: {cols: number, rows: number}) => void): TerminalSubscription {
         this.resizeListeners.add(listener);
         return {dispose: () => this.resizeListeners.delete(listener)};
-    }
-
-    public type(data: string): void {
-        for (const listener of [...this.dataListeners]) listener(data);
     }
 
     public resize(cols: number, rows: number): void {
@@ -132,6 +124,7 @@ class Page {
     public readonly fetched: string[] = [];
     public terminated = false;
     private readonly worker: Worker;
+    private readonly connection: WorldWorkerPage;
 
     public constructor(entry: string, name: string, isolated: boolean, requestedRasterWorkers?: number) {
         this.worker = new Worker(entry, {
@@ -154,7 +147,12 @@ class Page {
             this.terminated = true;
             terminate();
         };
-        connectWorldWorker(this.terminal, worker, {name, requestedRasterWorkers});
+        this.connection = connectWorldWorker(this.terminal, worker, {name, requestedRasterWorkers});
+    }
+
+    public press(key: Key, modifiers: Modifiers = NO_MODIFIERS): void {
+        this.connection.input.enqueue({type: "keyDown", key, repeat: false, ...modifiers});
+        this.connection.input.enqueue({type: "keyUp", key, ...modifiers});
     }
 
     public failedLines(): string {
@@ -162,7 +160,7 @@ class Page {
     }
 
     public async quit(label: string): Promise<void> {
-        this.terminal.type(CTRL_C);
+        this.press(Key.C, CTRL);
         const stopped = await waitUntil(() => this.terminal.text().includes("Stopped. Reload the page to restart."));
         expect(stopped && this.terminated, `${label}: Ctrl+C quit, the page shows "Stopped" and terminated the worker`);
         const failed = this.failedLines();
@@ -215,10 +213,10 @@ async function verifyLazyModel(page: Page, label: string, manifest: Demo3dManife
 
     for (let press = 0; press < index; press++) {
         expect(lazyFetches().length === 0, `${label}: ${model.name} not fetched before n selects it (press ${press + 1}/${index})`);
-        await sleep(KEY_RELEASE_WAIT_MS);
-        page.terminal.type("n");
+        await sleep(PRESS_INTERVAL_MS);
+        page.press(Key.N);
     }
-    page.terminal.type(" ");
+    page.press(Key.Space);
     expect(await waitUntil(() => lazyFetches().length > 0), `${label}: selecting ${model.name} fetched ${lazyFetches().join(", ")}`);
     const spawned = await waitUntil(() => page.terminal.showing(`Next: ${model.name}  [spawned: 2]`), LAZY_SPAWN_TIMEOUT_MS);
     expect(page.terminal.shown(loading), `${label}: the HUD showed "${loading}<MB> / <MB> MB" while it downloaded`);

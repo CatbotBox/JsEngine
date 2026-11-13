@@ -1,7 +1,8 @@
 import {DebugWorld} from "../../engine/core";
+import {Input} from "../../engine/input";
 import {CellSurfaceResource} from "../../backends/cells";
+import type {CellSurface} from "../../backends/cells";
 import type {PreloadedFileSource, PreloadProgress} from "./preloadedFileSource";
-import type {WorldTerminal} from "./browserPlatform";
 import {setupDemo3d} from "../../../demo/3d/game";
 import type {DemoModel, DemoModelFiles} from "../../../demo/3d/game";
 import type {Demo3dManifest} from "../../../demo/3d/assets";
@@ -18,7 +19,7 @@ function progressLine(progress: PreloadProgress): string {
     return `${RETURN_AND_CLEAR_LINE}Loading assets: ${progress.loadedFiles}/${progress.totalFiles} files, ${loaded}/${total} MB`;
 }
 
-function progressWriter(terminal: WorldTerminal): (progress: PreloadProgress) => void {
+function progressWriter(terminal: CellSurface): (progress: PreloadProgress) => void {
     let shown = "";
     return progress => {
         const line = progressLine(progress);
@@ -51,8 +52,8 @@ runWorldWorker(async (page, files) => {
 
     const world = new DebugWorld({platform: page.platform});
     world.resources.insert(new CellSurfaceResource(terminal));
+    page.connectInput(world.resources.getOrCreate(Input));
     setupDemo3d(world, {
-        terminal,
         listModels: () => manifest.models,
         modelFiles: manifestModelFiles(manifest, files),
         quit: () => page.quit(),

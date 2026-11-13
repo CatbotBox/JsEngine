@@ -1,5 +1,4 @@
 import type {FileSource, FileStat, Inflate, Platform, WorkerFactory} from "../platform/platform";
-import type {TerminalInputSource} from "../input/terminalInputSource";
 import {normalizePath} from "../platform/paths";
 
 const DEFAULT_COLUMNS = 80;
@@ -13,7 +12,7 @@ export interface MemoryTerminalOptions {
     readonly interactive?: boolean;
 }
 
-export class MemoryTerminal implements TerminalInputSource {
+export class MemoryTerminal {
     public readonly chunks: string[] = [];
     public interactive: boolean;
 

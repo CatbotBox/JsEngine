@@ -6,8 +6,7 @@ import {
     System,
     DebugWorld
 } from "../../src/engine/core";
-import {consoleInput, Key} from "../../src/engine/input";
-import type {TerminalInputSource} from "../../src/engine/input";
+import {Input, Key} from "../../src/engine/input";
 
 import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor} from "../../src/engine/rendering";
 
@@ -28,7 +27,6 @@ import {AverageStat} from "../../src/engine/datatypes";
 import {createHudLabel} from "../_shared/hud";
 
 export interface Demo2dHost {
-    readonly terminal: TerminalInputSource;
     quit(): void;
 }
 
@@ -47,6 +45,8 @@ const PLAYER_STEP_ROWS = 0.5;
 const PLAYER_STEP_COLUMNS = 1;
 const FPS_AVERAGE_FRAMES = 10;
 const MS_PER_SECOND = 1000;
+const BEFORE_SIMULATION_PRIORITY = -1;
+const TOGGLE_HUD_ACTION = "toggleHud";
 
 const CROSS_IMAGE = SpriteImage.fromPattern([
     ' # ',
@@ -129,35 +129,10 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
 
     createHudCross();
 
-    consoleInput.enable({terminal: host.terminal, platform: world.platform})
-    consoleInput.whenKey(Key.Up, () => {
-        position.y -= PLAYER_STEP_ROWS;
-    })
-    consoleInput.whenKey(Key.Down, () => {
-        position.y += PLAYER_STEP_ROWS;
-    })
-    consoleInput.whenKey(Key.Left, () => {
-        position.x -= PLAYER_STEP_COLUMNS;
-    })
-    consoleInput.whenKey(Key.Right, () => {
-        position.x += PLAYER_STEP_COLUMNS;
-    })
+    const input = world.resources.getOrCreate(Input);
+    input.bindAction(TOGGLE_HUD_ACTION, [Key.Tab]);
 
-    consoleInput.whenKey(Key.W, () => {
-        cameraPosition.y -= 1;
-    })
-    consoleInput.whenKey(Key.S, () => {
-        cameraPosition.y += 1;
-    })
-    consoleInput.whenKey(Key.A, () => {
-        cameraPosition.x -= 1;
-    })
-    consoleInput.whenKey(Key.D, () => {
-        cameraPosition.x += 1;
-    })
-
-
-    consoleInput.whenKey(Key.Space, () => {
+    const spawnFadingPixels = () => {
         for (let i = 0; i < PIXELS_PER_SPAWN; i++) {
             const x = (Math.random() - 0.5) * SPAWN_AREA_CELLS
             const y = (Math.random() - 0.5) * SPAWN_AREA_CELLS
@@ -170,28 +145,45 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
             fadeToColor.fadeTime = Math.random() * FADE_JITTER_MS + FADE_MIN_MS;
             createPixel(newPos, undefined, undefined, fadeToColor);
         }
-    })
-    consoleInput.whenKey(Key.Enter, () => {
-        const renderer = world.tryGetSystem(RenderingSystemGroup);
-        if (!renderer) return;
-        renderer.enabled = !renderer.enabled;
-    })
-    consoleInput.whenKey(Key.Backspace, () => {
-        const renderer = world.tryGetSystem(SpriteCellPassSystem);
-        if (!renderer) return;
-        renderer.enabled = !renderer.enabled;
-    })
-    consoleInput.whenKey(Key.H, () => {
-        renderSettings.halfBlockCells = !renderSettings.halfBlockCells;
-    })
-    consoleInput.whenKey(Key.G, () => {
-        world.logSystemUpdateOrder();
-    })
+    }
 
-    consoleInput.onKeyMatch({name: 'c', ctrl: true}, () => {
-        world.stop()
-        host.quit();
-    })
+    const toggleSystem = (system: System | undefined) => {
+        if (system) system.enabled = !system.enabled;
+    }
+
+    const keyDownHandlers = new Map<Key, () => void>([
+        [Key.Up, () => position.y -= PLAYER_STEP_ROWS],
+        [Key.Down, () => position.y += PLAYER_STEP_ROWS],
+        [Key.Left, () => position.x -= PLAYER_STEP_COLUMNS],
+        [Key.Right, () => position.x += PLAYER_STEP_COLUMNS],
+        [Key.W, () => cameraPosition.y -= 1],
+        [Key.S, () => cameraPosition.y += 1],
+        [Key.A, () => cameraPosition.x -= 1],
+        [Key.D, () => cameraPosition.x += 1],
+        [Key.Space, spawnFadingPixels],
+        [Key.Enter, () => toggleSystem(world.tryGetSystem(RenderingSystemGroup))],
+        [Key.Backspace, () => toggleSystem(world.tryGetSystem(SpriteCellPassSystem))],
+        [Key.H, () => renderSettings.halfBlockCells = !renderSettings.halfBlockCells],
+        [Key.G, () => world.logSystemUpdateOrder()],
+    ]);
+
+    class ControlsSystem extends System {
+        override priority(): number {
+            return BEFORE_SIMULATION_PRIORITY;
+        }
+
+        onUpdate(): void {
+            for (const event of input.events) {
+                if (event.type !== "keyDown") continue;
+                if (event.key === Key.C && event.ctrl) {
+                    world.stop();
+                    host.quit();
+                    return;
+                }
+                keyDownHandlers.get(event.key)?.();
+            }
+        }
+    }
 
 
     class FadeSystem extends System {
@@ -254,14 +246,11 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         private _toggle = true;
         private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
 
-        protected onCreate() {
-            consoleInput.whenKeyDown(Key.Tab, () => {
+        onUpdate() {
+            if (input.actionPressed(TOGGLE_HUD_ACTION)) {
                 this._toggle = !this._toggle;
                 buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
-            })
-        }
-
-        onUpdate() {
+            }
             if (!this._toggle) return;
             this._query.entityCount();
             this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTime)
@@ -289,6 +278,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     }
 
 
+    world.ensureSystemExists(ControlsSystem);
     world.ensureSystemExists(SpriteCellPassSystem);
     world.ensureSystemExists(HudSpriteCellPassSystem);
     world.ensureSystemExists(HudTextSpriteCellPassSystem);
