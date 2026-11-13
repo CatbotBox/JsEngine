@@ -1,6 +1,7 @@
 import {DecodedImage, decodeImageFile} from "../../assets/image/decodedImage";
 import type {AssetLoadOptions} from "../../platform";
 import "../../assets/image/builtinDecoders";
+import {ALPHA_SHIFT, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK} from "../packedRgb";
 
 const RGBA_BYTES = 4;
 
@@ -60,7 +61,7 @@ export class Texture {
 function packLevel(width: number, height: number, rgba: Uint8Array): TextureLevel {
     const texels = new Int32Array(width * height);
     for (let i = 0, j = 0; i < texels.length; i++, j += RGBA_BYTES) {
-        texels[i] = (rgba[j + 3] << 24) | (rgba[j] << 16) | (rgba[j + 1] << 8) | rgba[j + 2];
+        texels[i] = (rgba[j + 3] << ALPHA_SHIFT) | (rgba[j] << RED_SHIFT) | (rgba[j + 1] << GREEN_SHIFT) | rgba[j + 2];
     }
     return {width, height, texels};
 }
@@ -85,9 +86,9 @@ function halve(level: TextureLevel): TextureLevel {
 }
 
 function averageFour(a: number, b: number, c: number, d: number): number {
-    const alpha = (((a >>> 24) + (b >>> 24) + (c >>> 24) + (d >>> 24) + 2) >> 2) & 255;
-    const red = ((((a >> 16) & 255) + ((b >> 16) & 255) + ((c >> 16) & 255) + ((d >> 16) & 255) + 2) >> 2) & 255;
-    const green = ((((a >> 8) & 255) + ((b >> 8) & 255) + ((c >> 8) & 255) + ((d >> 8) & 255) + 2) >> 2) & 255;
-    const blue = (((a & 255) + (b & 255) + (c & 255) + (d & 255) + 2) >> 2) & 255;
-    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    const alpha = (((a >>> ALPHA_SHIFT) + (b >>> ALPHA_SHIFT) + (c >>> ALPHA_SHIFT) + (d >>> ALPHA_SHIFT) + 2) >> 2) & CHANNEL_MASK;
+    const red = ((((a >> RED_SHIFT) & CHANNEL_MASK) + ((b >> RED_SHIFT) & CHANNEL_MASK) + ((c >> RED_SHIFT) & CHANNEL_MASK) + ((d >> RED_SHIFT) & CHANNEL_MASK) + 2) >> 2) & CHANNEL_MASK;
+    const green = ((((a >> GREEN_SHIFT) & CHANNEL_MASK) + ((b >> GREEN_SHIFT) & CHANNEL_MASK) + ((c >> GREEN_SHIFT) & CHANNEL_MASK) + ((d >> GREEN_SHIFT) & CHANNEL_MASK) + 2) >> 2) & CHANNEL_MASK;
+    const blue = (((a & CHANNEL_MASK) + (b & CHANNEL_MASK) + (c & CHANNEL_MASK) + (d & CHANNEL_MASK) + 2) >> 2) & CHANNEL_MASK;
+    return (alpha << ALPHA_SHIFT) | (red << RED_SHIFT) | (green << GREEN_SHIFT) | blue;
 }

@@ -15,9 +15,9 @@ const DEFAULT_TARGET_FPS = 60;
 const LOOP_POLLS_PER_FRAME = 10;
 
 class Time {
-    public deltaTime: number = 0;
+    public deltaTimeMs: number = 0;
 
-    public get elapsedTime(): number {
+    public get elapsedTimeMs(): number {
         return performance.now();
     }
 
@@ -53,7 +53,7 @@ export class World extends WorldSource {
     }
 
     private _loopHandle: ReturnType<typeof setInterval> | null = null;
-    protected _targetDeltaTime: number = MS_PER_SECOND / DEFAULT_TARGET_FPS;
+    protected _targetDeltaTimeMs: number = MS_PER_SECOND / DEFAULT_TARGET_FPS;
 
     constructor(options: WorldOptions) {
         super(undefined!);
@@ -120,16 +120,16 @@ export class World extends WorldSource {
             updateInProgress = true
             const now = performance.now();
             const delta = now - prevCycle;
-            if (delta < this._targetDeltaTime) {
+            if (delta < this._targetDeltaTimeMs) {
                 updateInProgress = false;
                 return;
             }
             prevCycle = now;
-            time.deltaTime = delta;
+            time.deltaTimeMs = delta;
             this.update();
             updateInProgress = false;
 
-        }, this._targetDeltaTime / LOOP_POLLS_PER_FRAME);
+        }, this._targetDeltaTimeMs / LOOP_POLLS_PER_FRAME);
     }
 
     public pause(): void {
@@ -144,13 +144,13 @@ export class World extends WorldSource {
         this._rootSystemGroup.destroy();
     }
 
-    public get targetDeltaTime(): number {
-        return this._targetDeltaTime;
+    public get targetDeltaTimeMs(): number {
+        return this._targetDeltaTimeMs;
     }
 
-    public set targetDeltaTime(value: number) {
-        if (value === this._targetDeltaTime) return;
-        this._targetDeltaTime = value;
+    public set targetDeltaTimeMs(value: number) {
+        if (value === this._targetDeltaTimeMs) return;
+        this._targetDeltaTimeMs = value;
         if (this._loopHandle !== null) {
             this.pause();
             this.startLoop();
@@ -158,25 +158,31 @@ export class World extends WorldSource {
     }
 
     public get targetFramerate(): number {
-        return MS_PER_SECOND / this._targetDeltaTime;
+        return MS_PER_SECOND / this._targetDeltaTimeMs;
     }
 
     public set targetFramerate(value: number) {
         if (value <= 0) throw new Error("Framerate must be positive and non-zero");
-        this.targetDeltaTime = MS_PER_SECOND / value;
+        this.targetDeltaTimeMs = MS_PER_SECOND / value;
+    }
+
+    public step(deltaTimeMs: number = this._targetDeltaTimeMs): void {
+        if (this._loopHandle !== null) throw new Error("World.step: the loop is running; pause() the world before stepping it");
+        this.time.deltaTimeMs = deltaTimeMs;
+        this.update();
     }
 
     private update(): void {
         this._rootSystemGroup.update();
     }
 
-    public* systems(): Iterator<System> {
-        return this._systems.values();
+    public* systems(): IterableIterator<System> {
+        yield* this._systems.values();
     }
 
-    public* entities(): Iterator<Entity> {
+    public* entities(): IterableIterator<Entity> {
         for (const archetype of this._archetypes.values()) {
-            for (let i = 0; i < archetype.entityCount; i++) {
+            for (let i = 0; i < archetype.enabledEntityCount; i++) {
                 const entity = archetype.getEntityAtIndex(i);
                 if (entity) yield entity;
             }
@@ -187,10 +193,10 @@ export class World extends WorldSource {
         return this._systems.size;
     }
 
-    public get entityCount(): number {
+    public get enabledEntityCount(): number {
         let count = 0;
         for (const archetype of this._archetypes.values()) {
-            count += archetype.entityCount;
+            count += archetype.enabledEntityCount;
         }
         return count;
     }

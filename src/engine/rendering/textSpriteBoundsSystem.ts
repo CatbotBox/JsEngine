@@ -5,7 +5,7 @@ import {LocalToWorld} from "../translation";
 import {anchorFractionX, anchorFractionY, ScreenAnchor} from "./screenAnchor";
 import {TextSprite} from "./textSprite";
 import {WorldSpaceRenderBoundsComputeSystem} from "./worldSpaceRenderBoundsComputeSystem";
-import {AABB_STRIDE} from "../datatypes/aabb";
+import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../datatypes/aabb";
 
 const PRIORITY_BEFORE_WORLD_BOUNDS = -20;
 const CENTER_FRACTION = 0.5;
@@ -63,16 +63,16 @@ export class TextSpriteBoundsSystem extends System {
                 const yMin = Math.min(y0, y1), yMax = Math.max(y0, y1);
 
                 const b = i * AABB_STRIDE;
-                if (rb[b] === xMin && rb[b + 1] === yMin && rb[b + 2] === FLAT_Z_MIN
-                    && rb[b + 3] === xMax && rb[b + 4] === yMax && rb[b + 5] === FLAT_Z_MAX) {
+                if (rb[b + AABB_MIN_X] === xMin && rb[b + AABB_MIN_Y] === yMin && rb[b + AABB_MIN_Z] === FLAT_Z_MIN
+                    && rb[b + AABB_MAX_X] === xMax && rb[b + AABB_MAX_Y] === yMax && rb[b + AABB_MAX_Z] === FLAT_Z_MAX) {
                     continue;
                 }
-                rb[b] = xMin;
-                rb[b + 1] = yMin;
-                rb[b + 2] = FLAT_Z_MIN;
-                rb[b + 3] = xMax;
-                rb[b + 4] = yMax;
-                rb[b + 5] = FLAT_Z_MAX;
+                rb[b + AABB_MIN_X] = xMin;
+                rb[b + AABB_MIN_Y] = yMin;
+                rb[b + AABB_MIN_Z] = FLAT_Z_MIN;
+                rb[b + AABB_MAX_X] = xMax;
+                rb[b + AABB_MAX_Y] = yMax;
+                rb[b + AABB_MAX_Z] = FLAT_Z_MAX;
                 wrote = true;
             }
             return wrote ? undefined : Unchanged;

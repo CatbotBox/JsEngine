@@ -6,12 +6,12 @@ import {LocalScale} from "./localScale";
 import {Parent, ParentTransform} from "./parent";
 import {ParentTransformSyncSystem} from "./parentTransformSyncSystem";
 import {TranslationSystemGroup} from "./translationSystemGroup";
+import {MAT4_FLOATS_SHIFT} from "../math/mat4Layout";
 
 const EARLY_TRANSLATION_PRIORITY = -10;
 const POSITION_FLOATS = 3;
 const ROTATION_FLOATS = 4;
 const SCALE_FLOATS = 3;
-const MATRIX_FLOATS_SHIFT = 4;
 
 export class LocalToWorldSystem extends System {
     private _baseQuery = this.createEntityQuery([LocalPosition, LocalToWorld])
@@ -65,7 +65,7 @@ export class LocalToWorldSystem extends System {
                     sy = scl[s + 1];
                     sz = scl[s + 2];
                 }
-                const p = i * POSITION_FLOATS, o = i << MATRIX_FLOATS_SHIFT;
+                const p = i * POSITION_FLOATS, o = i << MAT4_FLOATS_SHIFT;
                 LocalToWorld.fromTRSAt(out, o, pos[p], pos[p + 1], pos[p + 2], qx, qy, qz, qw, sx, sy, sz);
                 if (par !== undefined) LocalToWorld.mulAt(par, o, out, o, out, o);
             }

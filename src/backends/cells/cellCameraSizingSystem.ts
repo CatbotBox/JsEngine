@@ -3,9 +3,15 @@ import {Camera} from "../../engine/rendering/camera";
 import {CellAspectRatio} from "./cellAspectRatio";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {ScreenSize} from "../../engine/rendering/screenSize";
-import {CellSurfaceResource} from "./cellSurfaceResource";
+import {CellPresenterResource} from "./cellPresenterResource";
+import type {CellPresenterSize} from "./cellPresenter";
 
 const PROMPT_ROWS = 1;
+
+export interface CellFrameSize {
+    readonly x: number;
+    readonly y: number;
+}
 
 export class CellCameraSizingSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize])
@@ -14,13 +20,17 @@ export class CellCameraSizingSystem extends System {
     private _sizeStale: boolean = true;
     private _stopWatchingResize: (() => void) | undefined;
 
+    public static frameSizeFor({columns, rows}: CellPresenterSize): CellFrameSize {
+        return {x: columns, y: rows - PROMPT_ROWS};
+    }
+
     override systemGroup() {
         return RenderingSystemGroup;
     }
 
     protected onCreate() {
         this.requireAnyForUpdate(this._cameraQuery)
-        this._stopWatchingResize = CellSurfaceResource.surfaceOf(this.world).onResize(() => {
+        this._stopWatchingResize = CellPresenterResource.presenterOf(this.world).onResize(() => {
             this._sizeStale = true;
         });
     }
@@ -50,13 +60,12 @@ export class CellCameraSizingSystem extends System {
     }
 
     public refreshSize() {
-        const {columns, rows} = CellSurfaceResource.surfaceOf(this.world).size();
-        const height = rows - PROMPT_ROWS;
+        const {x, y} = CellCameraSizingSystem.frameSizeFor(CellPresenterResource.presenterOf(this.world).size());
 
         const cameraEntity = this._cameraQuery.getSingleton({screenSize: ScreenSize})
         const screenSize = cameraEntity.screenSize;
-        if (screenSize.x === columns && screenSize.y === height) return;
-        screenSize.x = columns;
-        screenSize.y = height;
+        if (screenSize.x === x && screenSize.y === y) return;
+        screenSize.x = x;
+        screenSize.y = y;
     }
 }

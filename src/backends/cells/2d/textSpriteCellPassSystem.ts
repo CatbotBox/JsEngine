@@ -9,10 +9,10 @@ import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {TextSpriteBoundsSystem} from "../../../engine/rendering/textSpriteBoundsSystem";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
 import {Vec} from "../../../engine/math/types/vec";
-import {AABB_STRIDE} from "../../../engine/datatypes/aabb";
+import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../../../engine/datatypes/aabb";
+import {MAT4_FLOATS_SHIFT, MAT4_TRANSLATION_Z} from "../../../engine/math/mat4Layout";
 
 const CAMERA_DEPTH_EXTENT = 1000;
-const TRANSLATION_Z = 14;
 
 export class TextSpriteCellPassSystem extends System {
 
@@ -69,19 +69,19 @@ export class TextSpriteCellPassSystem extends System {
 
             const l2w = arch.getColumn(this._localToWorldToken)?.f32Data;
 
-            const n = arch.entityCount;
+            const n = arch.enabledEntityCount;
             for (let row = 0; row < n; row++) {
                 const b = row * AABB_STRIDE;
-                const xMin = wb[b], yMin = wb[b + 1];
-                if (wb[b + 3] < camXMin || xMin > camXMax) continue;
-                if (wb[b + 4] < camYMin || yMin > camYMax) continue;
-                if (wb[b + 5] < camZMin || wb[b + 2] > camZMax) continue;
+                const xMin = wb[b + AABB_MIN_X], yMin = wb[b + AABB_MIN_Y];
+                if (wb[b + AABB_MAX_X] < camXMin || xMin > camXMax) continue;
+                if (wb[b + AABB_MAX_Y] < camYMin || yMin > camYMax) continue;
+                if (wb[b + AABB_MAX_Z] < camZMin || wb[b + AABB_MIN_Z] > camZMax) continue;
 
                 screenBuffer.blit(
                     imageCol.get(row) as TextSprite,
                     Math.floor(xMin - camXMin),
                     Math.floor(yMin - camYMin),
-                    l2w !== undefined ? l2w[(row << 4) + TRANSLATION_Z] : 0,
+                    l2w !== undefined ? l2w[(row << MAT4_FLOATS_SHIFT) + MAT4_TRANSLATION_Z] : 0,
                 );
             }
         }

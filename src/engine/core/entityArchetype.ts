@@ -42,12 +42,14 @@ export const BLOCK_SIZE = 1 << BLOCK_SHIFT;
 export const NO_SOURCE_COLUMN = -1;
 
 const INITIAL_F32_ROWS = 8;
+const F32_COLUMN_GROWTH_FACTOR = 4;
 const INITIAL_BLOCK_CAPACITY = 8;
 
 export class ComponentStore<CT extends ComponentType<any>> {
     private readonly _componentData: ComponentOf<CT>[] = [];
 
     private _f32: Float32Array | undefined;
+    private _rowViews: Float32Array[] = [];
     private readonly _f32Width: number;
 
     constructor(token?: CT) {
@@ -68,15 +70,29 @@ export class ComponentStore<CT extends ComponentType<any>> {
         const cur = this._f32!;
         if (count * width <= cur.length) return;
         let cap = cur.length || INITIAL_F32_ROWS * width;
-        while (cap < count * width) cap *= 2;
+        while (cap < count * width) cap *= F32_COLUMN_GROWTH_FACTOR;
         const grown = new Float32Array(cap);
         grown.set(cur);
         this._f32 = grown;
-        const data = this._componentData;
+        const data = this._componentData, views = this._rowViews;
         for (let i = 0; i < data.length; i++) {
-            (data[i] as unknown as F32Backed).bindF32(grown, i * width);
+            const view = grown.subarray(i * width, i * width + width);
+            views[i] = view;
+            (data[i] as unknown as F32Backed).bindF32(view);
         }
+        views.length = data.length;
     }
+
+    private rowView(row: number): Float32Array {
+        const views = this._rowViews;
+        const cached = row < views.length ? views[row] : undefined;
+        if (cached !== undefined) return cached;
+        const offset = row * this._f32Width;
+        const view = this._f32!.subarray(offset, offset + this._f32Width);
+        views[row] = view;
+        return view;
+    }
+
     private _lastUpdatedTime: number = 0;
 
     private _blockTimes = new Float64Array(INITIAL_BLOCK_CAPACITY);
@@ -129,8 +145,8 @@ export class ComponentStore<CT extends ComponentType<any>> {
                 f[a + k] = f[b + k];
                 f[b + k] = t;
             }
-            (data[indexA] as unknown as F32Backed).bindF32(f, a);
-            (data[indexB] as unknown as F32Backed).bindF32(f, b);
+            (data[indexA] as unknown as F32Backed).bindF32(this.rowView(indexA));
+            (data[indexB] as unknown as F32Backed).bindF32(this.rowView(indexB));
         }
     }
 
@@ -144,7 +160,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
             const off = index * this._f32Width;
             const backed = component as unknown as F32Backed;
             backed.writeF32(this._f32!, off);
-            backed.bindF32(this._f32!, off);
+            backed.bindF32(this.rowView(index));
         }
         this.markBlockAt(index, time);
     }
@@ -159,7 +175,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
             const dst = this._f32!, src = source._f32!;
             const off = index * width, srcOff = row * width;
             for (let k = 0; k < width; k++) dst[off + k] = src[srcOff + k];
-            (component as unknown as F32Backed).bindF32(dst, off);
+            (component as unknown as F32Backed).bindF32(this.rowView(index));
         }
         this.markBlockAt(index, time);
     }
@@ -173,7 +189,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
             const f = this._f32!;
             const a = from * width, b = to * width;
             for (let k = 0; k < width; k++) f[b + k] = f[a + k];
-            (component as unknown as F32Backed).bindF32(f, b);
+            (component as unknown as F32Backed).bindF32(this.rowView(to));
         }
     }
 
@@ -207,7 +223,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
             if (old !== undefined && old !== value) (old as unknown as F32Backed).detachF32();
             const backed = value as unknown as F32Backed;
             backed.writeF32(this._f32!, off);
-            backed.bindF32(this._f32!, off);
+            backed.bindF32(this.rowView(index));
         }
         this.markBlockAt(index, time);
     }
@@ -237,11 +253,11 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
 
     private _lastEntityAddedTime: number = 0;
 
-    public get entityCount(): number {
+    public get enabledEntityCount(): number {
         return this._enabledCount;
     }
 
-    public get entityCountUnfiltered(): number {
+    public get entityCountIncludingDisabled(): number {
         return this._entities.length;
     }
 
@@ -277,9 +293,9 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     }
 
     public addEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined, time: {
-        elapsedTime: number
+        elapsedTimeMs: number
     }) {
-        const now = time.elapsedTime;
+        const now = time.elapsedTimeMs;
         const row = this.pushEntity(entity);
         this._uniqueTypes.forEach((type, idx) => {
             const component = components.get(type);
@@ -290,9 +306,9 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     }
 
     public addEntityFromList(entity: Entity, tokens: readonly CT[], components: readonly ComponentOf<CT>[], enabled: boolean | undefined, time: {
-        elapsedTime: number
+        elapsedTimeMs: number
     }) {
-        const now = time.elapsedTime;
+        const now = time.elapsedTimeMs;
         const row = this.pushEntity(entity);
         const types = this._uniqueTypes, cols = this._componentData;
         for (let i = 0; i < types.length; i++) {
@@ -304,9 +320,9 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     }
 
     public moveRowTo(entity: Entity, target: EntityArchetype<CT>, edge: ArchetypeEdge<CT>, added: ComponentOf<CT> | undefined, time: {
-        elapsedTime: number
+        elapsedTimeMs: number
     }) {
-        const now = time.elapsedTime;
+        const now = time.elapsedTimeMs;
         const row = this.getIndexOfEntity(entity);
         if (row === undefined) throw new Error("Entity does not exist");
         const columnMap = edge.columnMap;
@@ -317,10 +333,10 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     }
 
     public moveRowWith(entity: Entity, target: EntityArchetype<CT>, columnMap: Int32Array, supplied: readonly (ComponentOf<CT> | undefined)[], time: {
-        elapsedTime: number
+        elapsedTimeMs: number
     }) {
         if (target === this) throw new Error("moveRowWith needs a different archetype; rewrite the row in place instead");
-        const now = time.elapsedTime;
+        const now = time.elapsedTimeMs;
         const row = this.getIndexOfEntity(entity);
         if (row === undefined) throw new Error("Entity does not exist");
         this.detachDroppedAt(row, columnMap, target._componentData.length);
@@ -369,12 +385,12 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     }
 
     public setEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined, time: {
-        elapsedTime: number
+        elapsedTimeMs: number
     }) {
         const index = this.getIndexOfEntity(entity);
         if (index === undefined) throw new Error("Entity does not exist");
 
-        const now = time.elapsedTime;
+        const now = time.elapsedTimeMs;
         if (enabled !== undefined) {
             this.setEnabledStateAtIndex(index, enabled, now);
         }
@@ -389,8 +405,8 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         this._lastEntityAddedTime = now;
     }
 
-    public removeAll(time: { elapsedTime: number }) {
-        const now = time.elapsedTime;
+    public removeAll(time: { elapsedTimeMs: number }) {
+        const now = time.elapsedTimeMs;
         for (let i = 0; i < this._entities.length; i++) setEntityRow(this._entities[i], -1);
         this._entities.length = 0;
         this._enabledCount = 0;
@@ -398,7 +414,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         this._lastStructuralChangeTime = now;
     }
 
-    public removeEntity(entity: Entity, time: { elapsedTime: number }) {
+    public removeEntity(entity: Entity, time: { elapsedTimeMs: number }) {
         const index = this.getIndexOfEntity(entity);
         if (index === undefined) throw new Error("Entity does not exist");
 
@@ -406,7 +422,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         for (let i = 0; i < cols.length; i++) cols[i].detachAt(index);
         setEntityRow(entity, -1);
         this.vacateRow(index);
-        this._lastStructuralChangeTime = time.elapsedTime;
+        this._lastStructuralChangeTime = time.elapsedTimeMs;
     }
 
     private vacateRow(row: number) {
@@ -450,8 +466,8 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         setEntityRow(eb, a);
     }
 
-    setEnabledStateForAll(enabled: boolean, time: { elapsedTime: number }) {
-        const now = time.elapsedTime;
+    setEnabledStateForAll(enabled: boolean, time: { elapsedTimeMs: number }) {
+        const now = time.elapsedTimeMs;
         if (enabled) this._enabledCount = this._entities.length;
         else this._enabledCount = 0;
         this._lastStructuralChangeTime = now;
@@ -461,10 +477,10 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         }
     }
 
-    public setEnabledState(entity: Entity, enabled: boolean, time: { elapsedTime: number }): boolean {
+    public setEnabledState(entity: Entity, enabled: boolean, time: { elapsedTimeMs: number }): boolean {
         const entityIndex = this.getIndexOfEntity(entity);
         if (entityIndex === undefined) throw new Error("invalid entity");
-        return this.setEnabledStateAtIndex(entityIndex, enabled, time.elapsedTime);
+        return this.setEnabledStateAtIndex(entityIndex, enabled, time.elapsedTimeMs);
     }
 
     public setEnabledStateAtIndex(index: number, enabled: boolean, timestamp: number): boolean {

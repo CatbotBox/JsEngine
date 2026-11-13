@@ -1,8 +1,7 @@
 import {Texture} from "./texture";
 import type {AssetLoadOptions} from "../../platform";
+import {WHITE_RGB, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../packedRgb";
 
-const WHITE = 0xFFFFFF;
-const CHANNEL_MAX = 255;
 
 export class Material {
     public static readonly DEFAULT_NAME = "default";
@@ -16,7 +15,7 @@ export class Material {
 
     public constructor(
         public readonly name: string = Material.DEFAULT_NAME,
-        public diffuseColor: number = WHITE,
+        public diffuseColor: number = WHITE_RGB,
         public diffuseTexturePath?: string,
     ) {
     }
@@ -57,14 +56,14 @@ export function loadMaterialTextures(materials: readonly Material[], options: As
 }
 
 export function packRgb(r: number, g: number, b: number): number {
-    return (clampToByte(r * CHANNEL_MAX) << 16) | (clampToByte(g * CHANNEL_MAX) << 8) | clampToByte(b * CHANNEL_MAX);
+    return (clampToByte(r * CHANNEL_MAX) << RED_SHIFT) | (clampToByte(g * CHANNEL_MAX) << GREEN_SHIFT) | clampToByte(b * CHANNEL_MAX);
 }
 
 export function multiplyPackedRgb(a: number, b: number): number {
-    const r = (((a >> 16) & 255) * ((b >> 16) & 255)) / CHANNEL_MAX;
-    const g = (((a >> 8) & 255) * ((b >> 8) & 255)) / CHANNEL_MAX;
-    const bl = ((a & 255) * (b & 255)) / CHANNEL_MAX;
-    return (clampToByte(r) << 16) | (clampToByte(g) << 8) | clampToByte(bl);
+    const r = (((a >> RED_SHIFT) & CHANNEL_MASK) * ((b >> RED_SHIFT) & CHANNEL_MASK)) / CHANNEL_MAX;
+    const g = (((a >> GREEN_SHIFT) & CHANNEL_MASK) * ((b >> GREEN_SHIFT) & CHANNEL_MASK)) / CHANNEL_MAX;
+    const bl = ((a & CHANNEL_MASK) * (b & CHANNEL_MASK)) / CHANNEL_MAX;
+    return (clampToByte(r) << RED_SHIFT) | (clampToByte(g) << GREEN_SHIFT) | clampToByte(bl);
 }
 
 function clampToByte(value: number): number {

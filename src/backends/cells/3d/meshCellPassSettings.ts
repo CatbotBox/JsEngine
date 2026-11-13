@@ -1,13 +1,11 @@
 import {Component} from "../../../engine/core";
 import type {MeshRasterizerConfig} from "../../../engine/rendering/3d/software";
-import type {Platform} from "../../../engine/platform/platform";
+import {resolveRasterWorkerCount} from "../../../engine/rendering/3d/software/rasterWorkerCount";
+import type {RasterWorkerCount, RasterWorkerHost} from "../../../engine/rendering/3d/software/rasterWorkerCount";
+import {BLACK_RGB, SIX_BITS_PER_CHANNEL_MASK} from "../../../engine/rendering/packedRgb";
 
-export type RasterWorkerHost = Pick<Platform, "hardwareConcurrency" | "requestedRasterWorkers">;
+export type {RasterWorkerHost} from "../../../engine/rendering/3d/software/rasterWorkerCount";
 
-const MAX_REQUESTED_WORKERS = 15;
-const MAX_AUTO_WORKERS = 7;
-const SIX_BITS_PER_CHANNEL = 0xFCFCFC;
-const BLACK = 0x000000;
 const DEFAULT_SUPERSAMPLE_X = 2;
 const DEFAULT_SUPERSAMPLE_Y = 4;
 const DEFAULT_THREAD_TRIANGLE_THRESHOLD = 2048;
@@ -16,11 +14,11 @@ const DEFAULT_LOD_TRIANGLES_PER_CELL = 32;
 
 export class MeshCellPassSettings extends Component {
     public maxDepthFade: number = Number.POSITIVE_INFINITY;
-    public colorQuantMask: number = SIX_BITS_PER_CHANNEL;
+    public colorQuantMask: number = SIX_BITS_PER_CHANNEL_MASK;
     public supersampleX: number = DEFAULT_SUPERSAMPLE_X;
     public supersampleY: number = DEFAULT_SUPERSAMPLE_Y;
-    public backgroundColor: number = BLACK;
-    public workerCount: number | "auto" = "auto";
+    public backgroundColor: number = BLACK_RGB;
+    public workerCount: RasterWorkerCount = "auto";
     public threadTriangleThreshold: number = DEFAULT_THREAD_TRIANGLE_THRESHOLD;
     public threadAreaThreshold: number = DEFAULT_THREAD_AREA_THRESHOLD_CELLS;
     public textures: boolean = true;
@@ -30,10 +28,7 @@ export class MeshCellPassSettings extends Component {
     public lodTrianglesPerCell: number = DEFAULT_LOD_TRIANGLES_PER_CELL;
 
     public resolvedWorkerCount(host: RasterWorkerHost): number {
-        if (this.workerCount !== "auto") return this.workerCount;
-        const requested = host.requestedRasterWorkers?.();
-        if (requested !== undefined) return Math.max(0, Math.min(MAX_REQUESTED_WORKERS, requested));
-        return Math.max(0, Math.min(MAX_AUTO_WORKERS, host.hardwareConcurrency() - 1));
+        return resolveRasterWorkerCount(this.workerCount, host);
     }
 
     public toRasterizerConfig(host: RasterWorkerHost): MeshRasterizerConfig {

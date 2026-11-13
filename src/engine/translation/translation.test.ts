@@ -6,7 +6,12 @@ import {Vec, Vec4} from "../math/types/vec";
 import {Quaternions} from "../math/quaternions";
 import {LocalPosition} from "./localPosition";
 import {LocalToWorld} from "./localToWorld";
-import {Parent} from "./parent";
+import {Parent, ParentTransform} from "./parent";
+import {LocalRotation} from "./localRotation";
+import {LocalScale} from "./localScale";
+import {Component} from "../core/component";
+import {EntityCommandBufferSystem} from "../core/entityCommandBufferSystem";
+import type {EntityManager} from "../core/entityManager";
 import {Children} from "./children";
 import {TranslationSystemGroup} from "./translationSystemGroup";
 import {LocalToWorldSystem} from "./localToWorldSystem";
@@ -112,6 +117,101 @@ describe("transform hierarchy", () => {
         children.removeChild(c);
         expect(children.children.length).toBe(0);
         expect(children.has(c)).toBe(false);
+    });
+});
+
+class StampTag extends Component {
+}
+
+type EntityDestroyer = (world: World, entity: Entity) => void;
+
+const ENTITY_DESTROYERS: [string, EntityDestroyer][] = [
+    ["the EntityManager", (world, entity) => world.entityManager.destroyEntity(entity)],
+    ["a command buffer", (world, entity) => world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer().destroyEntity(entity)],
+];
+
+const PLAYBACK_TICKS = 1;
+const ROUNDING_SCALE = 1e5;
+const roundedValues = (values: ArrayLike<number>) => Array.from(values).map(v => Math.round(v * ROUNDING_SCALE) / ROUNDING_SCALE + 0);
+const quarterTurnAboutZ = () => Quaternions.qFromAxisAngle(Vec.alloc3(0, 0, 1), Math.PI / 2);
+
+function rotatedScaledParentWithChild(em: EntityManager) {
+    const turn = Vec.toArray(quarterTurnAboutZ());
+    const parent = em.createEntity("parent", [
+        new LocalPosition(10, 0, 0),
+        new LocalRotation(turn[0], turn[1], turn[2], turn[3]),
+        new LocalScale(2, 2, 2),
+        new LocalToWorld(),
+    ]);
+    const child = em.createEntity("child", [new LocalPosition(1, 0, 0), new LocalToWorld(), new Parent(parent)]);
+    return {parent, child};
+}
+
+function worldMatrixOf(em: EntityManager, entity: Entity): number[] {
+    return roundedValues(Vec.toArray(em.getComponent<LocalToWorld>(entity, LocalToWorld)!.matrix));
+}
+
+describe("destroying part of a hierarchy", () => {
+    for (const [route, destroy] of ENTITY_DESTROYERS) {
+        test(`a child whose parent was destroyed through ${route} becomes a root and keeps its world transform`, () => {
+            const {world, root, em} = makeWorld();
+            const {parent, child} = rotatedScaledParentWithChild(em);
+            tick(root);
+            const worldBefore = worldMatrixOf(em, child);
+            expect(roundedValues(Vec.toArray(em.getComponent<LocalToWorld>(child, LocalToWorld)!.position))).toEqual([10, 2, 0]);
+
+            destroy(world, parent);
+            tick(root, PLAYBACK_TICKS);
+            expect(em.exists(parent)).toBe(false);
+            expect(worldMatrixOf(em, child)).toEqual(worldBefore);
+
+            em.addComponent(child, new StampTag());
+            tick(root);
+
+            expect(em.hasComponent(child, Parent)).toBe(false);
+            expect(em.hasComponent(child, ParentTransform)).toBe(false);
+            expect(worldMatrixOf(em, child)).toEqual(worldBefore);
+            expect(roundedValues(Vec.toArray(em.getComponent<LocalPosition>(child, LocalPosition)!.xyz))).toEqual([10, 2, 0]);
+            expect(roundedValues(Vec.toArray(em.getComponent<LocalRotation>(child, LocalRotation)!.xyzw))).toEqual(roundedValues(Vec.toArray(quarterTurnAboutZ())));
+            expect(roundedValues(Vec.toArray(em.getComponent<LocalScale>(child, LocalScale)!.xyz))).toEqual([2, 2, 2]);
+
+            em.getComponent<LocalPosition>(child, LocalPosition)!.x = 50;
+            tick(root);
+            expect(roundedValues(Vec.toArray(em.getComponent<LocalToWorld>(child, LocalToWorld)!.position))).toEqual([50, 2, 0]);
+        });
+
+        test(`a child destroyed through ${route} drops out of its parent's Children without coming back`, () => {
+            const {world, root, em} = makeWorld();
+            const parent = em.createEntity("parent", [new LocalPosition(), new LocalToWorld()]);
+            const doomed = em.createEntity("doomed", [new LocalPosition(1, 0, 0), new LocalToWorld(), new Parent(parent)]);
+            const survivor = em.createEntity("survivor", [new LocalPosition(2, 0, 0), new LocalToWorld(), new Parent(parent)]);
+            tick(root);
+
+            destroy(world, doomed);
+            tick(root, PLAYBACK_TICKS);
+            em.addComponent(parent, new StampTag());
+            tick(root);
+
+            expect(em.exists(doomed)).toBe(false);
+            expect(em.getComponent<Children>(parent, Children)!.children).toEqual([survivor]);
+            expect(em.getComponent<Parent>(survivor, Parent)!.entity).toBe(parent);
+        });
+    }
+
+    test("the Children of a destroyed parent resurrect neither the parent nor a link to an entity reusing its slot", () => {
+        const {world, root, em} = makeWorld();
+        const {parent, child} = rotatedScaledParentWithChild(em);
+        tick(root);
+
+        em.destroyEntity(parent);
+        const newcomer = em.createEntity("newcomer", [new LocalPosition(), new LocalToWorld()]);
+        em.addComponent(child, new StampTag());
+        tick(root);
+
+        expect(em.exists(parent)).toBe(false);
+        expect(em.hasComponent(newcomer, Children)).toBe(false);
+        expect(em.hasComponent(child, Parent)).toBe(false);
+        expect([...world.entities()].sort()).toEqual([child, newcomer].sort());
     });
 });
 

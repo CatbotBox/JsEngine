@@ -1,9 +1,9 @@
 ﻿import {DebugWorld, EntityCommandBufferSystem} from "../src/engine";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
-import {nodePlatform} from "../src/hosts/terminal";
-import {Camera, HudElement, RenderBounds, TextSprite, ScreenAnchor} from "../src/engine/rendering";
+import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
+import {Camera, HudElement, RenderBounds, TextColor, TextSprite, ScreenAnchor, WHITE_RGB} from "../src/engine/rendering";
 import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../src/engine/translation";
-import {Ansi, CellSurfaceResource, HudTextSpriteCellPassSystem} from "../src/backends/cells";
+import {CellPresenterResource, HudTextSpriteCellPassSystem} from "../src/backends/cells";
 import {TextSpriteCellPassSystem} from "../src/backends/cells/2d/textSpriteCellPassSystem";
 import {MeshCellPassSystem} from "../src/backends/cells/3d/meshCellPassSystem";
 import {MeshCellPassSettings} from "../src/backends/cells/3d/meshCellPassSettings";
@@ -37,7 +37,7 @@ function expect(condition: boolean, label: string) {
 }
 
 const world = new DebugWorld({platform});
-world.resources.insert(new CellSurfaceResource(output));
+world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(output)));
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
 
 buffer.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new RenderBounds(), new LocalRotation(), new FieldOfView()]);
@@ -47,19 +47,22 @@ buffer.addTrackedComponent(meshEntity, new LocalPosition(0, 0, 8));
 const rotation = buffer.addTrackedComponent(meshEntity, new LocalRotation());
 
 const hudImage = new TextSprite();
-hudImage.image = [Ansi.colors.fg.green + "HUDMARKER"];
+hudImage.foreground = TextColor.GREEN;
+hudImage.image = ["HUDMARKER"];
 hudImage.transparentChar = undefined;
 const anchor = new ScreenAnchor();
 anchor.anchorPosition = "top-right";
 buffer.createEntity("hud", [hudImage, new HudElement(), anchor]);
 
 const spriteImage = new TextSprite();
-spriteImage.image = [Ansi.colors.fg.green + "SPRITEMARK"];
+spriteImage.foreground = TextColor.GREEN;
+spriteImage.image = ["SPRITEMARK"];
 spriteImage.transparentChar = undefined;
 buffer.createEntity("sprite", [spriteImage, new LocalToWorld(), new LocalPosition(0, 0, 0)]);
 
 const offscreenImage = new TextSprite();
-offscreenImage.image = [Ansi.colors.fg.red + "OFFSCREENMARK"];
+offscreenImage.foreground = TextColor.RED;
+offscreenImage.image = ["OFFSCREENMARK"];
 offscreenImage.transparentChar = undefined;
 buffer.createEntity("offscreen-sprite", [offscreenImage, new LocalToWorld(), new LocalPosition(5000, 5000, 0)]);
 
@@ -67,7 +70,7 @@ world.ensureSystemExists(MeshCellPassSystem);
 world.ensureSystemExists(TextSpriteCellPassSystem);
 world.ensureSystemExists(HudTextSpriteCellPassSystem);
 
-const tick = () => (world as any).update();
+const tick = () => world.step();
 const tickTimes = (count: number) => {
     for (let i = 0; i < count; i++) tick();
 };
@@ -103,13 +106,13 @@ log(`rotating frame delta: ${output.length - lenRot} bytes`);
 tick();
 const lenUnlit = output.length;
 buffer.createEntity("sun", [
-    new DirectionalLight(0xFFFFFF, 0.8),
+    new DirectionalLight(WHITE_RGB, 0.8),
     new LocalToWorld(),
     new LocalPosition(),
     new LocalRotation(...Vec.toArray(Quaternions.eulerToQuat(Vec3.alloc(0.6, -0.5, 0))) as [number, number, number, number]),
 ]);
 buffer.createEntity("lamp", [new PointLight(12, 0xFF8040, 1), new LocalToWorld(), new LocalPosition(3, 2, 4)]);
-buffer.createEntity("ambient", [new AmbientLight(0xFFFFFF, 0.15)]);
+buffer.createEntity("ambient", [new AmbientLight(WHITE_RGB, 0.15)]);
 tickTimes(ADDED_ENTITY_SETTLE_TICKS);
 const litDelta = output.length - lenUnlit;
 expect(litDelta > 0, `adding lights changed the frame (${litDelta} bytes)`);

@@ -25,7 +25,7 @@ export abstract class System extends WorldSource {
     }
 
     protected updateLastUpdateTime() {
-        this._lastUpdateTime = this.world.time.elapsedTime;
+        this._lastUpdateTime = this.world.time.elapsedTimeMs;
     }
 
     public constructor() {
@@ -109,13 +109,20 @@ export abstract class System extends WorldSource {
 
     public destroy(): void {
         if (!this._isCreated) return;
-        if (this.enabled) this.onDisable();
+        if (this.isEnabledInHierarchy()) this.onDisable();
         this._isCreated = false;
         this.onDestroy();
         const updateGroup = this.resolveUpdateGroup(EXISTING_GROUP_ONLY);
         if (!updateGroup) return;
         updateGroup.removeSystemInstance(this);
         this.world.removeSystem(this.constructor as SystemCtor<this>);
+    }
+
+    private isEnabledInHierarchy(): boolean {
+        if (!this._enabled) return false;
+        const updateGroup = this.resolveUpdateGroup(EXISTING_GROUP_ONLY);
+        if (updateGroup === undefined || (updateGroup as System) === this) return true;
+        return (updateGroup as System).isEnabledInHierarchy();
     }
 
     protected onDestroy(): void {
@@ -134,7 +141,7 @@ export abstract class System extends WorldSource {
             if (!update) return;
         }
         this.onUpdate();
-        this._lastUpdateTime = this.world.time.elapsedTime;
+        this._lastUpdateTime = this.world.time.elapsedTimeMs;
     }
 
     public get enabled(): boolean {

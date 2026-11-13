@@ -1,6 +1,7 @@
 ﻿import {Component} from "../core";
 import type {F32Backed} from "../core/componentType";
 import {asFloat32Array, fromFloat32Array, ReadonlyVec, ReadonlyVec16, ReadonlyVec3, ReadonlyVec4, Vec, Vec16, Vec3, Vec4} from "../math/types/vec";
+import {MAT4_FLOATS, MAT4_TRANSLATION_X, MAT4_TRANSLATION_Y, MAT4_TRANSLATION_Z} from "../math/mat4Layout";
 
 const raw = (v: ReadonlyVec<number>): Float32Array => asFloat32Array(v);
 
@@ -35,7 +36,7 @@ const normalMatrixScratch = Vec16.alloc();
 const SINGULAR_DETERMINANT_EPSILON = 1e-8;
 
 export class LocalToWorld extends Component implements F32Backed {
-    static readonly f32Width = 16;
+    static readonly f32Width = MAT4_FLOATS;
 
     private _matrix: Vec16;
 
@@ -167,8 +168,8 @@ export class LocalToWorld extends Component implements F32Backed {
         dst.set(asFloat32Array(this._matrix), offset);
     }
 
-    bindF32(src: Float32Array, offset: number): void {
-        this._matrix = fromFloat32Array<16>(src.subarray(offset, offset + LocalToWorld.f32Width));
+    bindF32(rowView: Float32Array): void {
+        this._matrix = fromFloat32Array<16>(rowView);
     }
 
     detachF32(): void {
@@ -244,9 +245,9 @@ export class LocalToWorld extends Component implements F32Backed {
         out[off + 10] = (1 - (xx + yy)) * sz;
         out[off + 11] = 0;
 
-        out[off + 12] = px;
-        out[off + 13] = py;
-        out[off + 14] = pz;
+        out[off + MAT4_TRANSLATION_X] = px;
+        out[off + MAT4_TRANSLATION_Y] = py;
+        out[off + MAT4_TRANSLATION_Z] = pz;
         out[off + 15] = 1;
     }
 

@@ -2,14 +2,13 @@ import {Component, Entity} from "../../core";
 import {EntityWriteOptions} from "../../core/entityWriteOptions";
 import {RenderBounds} from "../renderBounds";
 import {SpriteImage} from "./spriteImage";
+import {WHITE_RGB, PACKED_RGB_MASK} from "../packedRgb";
 
-const WHITE = 0xFFFFFF;
-const PACKED_RGB_MASK = 0xFFFFFF;
 
 export class Sprite extends Component {
     public opacity: number = 1;
 
-    public constructor(private _image?: SpriteImage, private _tint: number = WHITE) {
+    public constructor(private _image?: SpriteImage, private _tint: number = WHITE_RGB) {
         super();
     }
 

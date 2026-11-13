@@ -32,7 +32,7 @@ export class ComponentType<C extends Component = Component> {
 export interface F32Backed {
     writeF32(dst: Float32Array, offset: number): void;
 
-    bindF32(src: Float32Array, offset: number): void;
+    bindF32(rowView: Float32Array): void;
 
     detachF32(): void;
 }

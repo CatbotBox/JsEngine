@@ -59,8 +59,8 @@ export class LocalRotation extends Component implements F32Backed {
         dst.set(asFloat32Array(this._values), offset);
     }
 
-    bindF32(src: Float32Array, offset: number): void {
-        this._values = fromFloat32Array<4>(src.subarray(offset, offset + LocalRotation.f32Width));
+    bindF32(rowView: Float32Array): void {
+        this._values = fromFloat32Array<4>(rowView);
     }
 
     detachF32(): void {

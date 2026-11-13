@@ -13,10 +13,11 @@ export abstract class SystemGroup extends System {
         }
     }
 
-    public onDestroy(): void {
-        for (const system of this._systems) {
+    public override destroy(): void {
+        for (const system of [...this._systems]) {
             system.destroy();
         }
+        super.destroy();
     }
 
     public onEnable(): void {

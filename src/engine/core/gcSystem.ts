@@ -6,7 +6,7 @@ export class GcSystem extends System {
     private _msUntilNextPrune = 0;
 
     public onUpdate(): void {
-        this._msUntilNextPrune -= this.world.time.deltaTime;
+        this._msUntilNextPrune -= this.world.time.deltaTimeMs;
         if (this._msUntilNextPrune > 0) return;
         const pruneCount = this.world.archetypes.prune();
         if (pruneCount > 0) {

@@ -7,7 +7,7 @@ import type {EntityArchetype} from "./entityArchetype";
 import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
 import {EntityQuery} from "./entityQuery";
 import {EntityWriteOptions} from "./entityWriteOptions";
-import {allocEntityHandle, freeEntityHandle, getOwner, requireOwner, setOwner} from "./ownership";
+import {allocEntityHandle, freeEntityHandle, getEntityName, getOwner, requireOwner, setOwner} from "./ownership";
 import {EntityReadOptions} from "./entityReadOptions";
 
 const PLACE_ENABLED = true;
@@ -58,7 +58,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     public destroyQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>): void {
         for (const archetype of entityQuery.archetypes) {
-            const n = archetype.entityCountUnfiltered;
+            const n = archetype.entityCountIncludingDisabled;
             for (let i = 0; i < n; i++) {
                 const e = archetype.getEntityAtIndex(i);
                 setOwner(this._world, e, undefined);
@@ -136,7 +136,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         }
         const index = currentArch.getIndexOfEntity(entity)!;
 
-        componentStore.set(index, component, this._world.time.elapsedTime);
+        componentStore.set(index, component, this._world.time.elapsedTimeMs);
         component.setup(entity, this);
     }
 
@@ -177,6 +177,10 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         const arch = getOwner(this._world, entity);
         return arch !== undefined;
 
+    }
+
+    public nameOf(entity: Entity): string | undefined {
+        return getEntityName(entity);
     }
 
     private static tokenOf(component: Component): AnyCT {

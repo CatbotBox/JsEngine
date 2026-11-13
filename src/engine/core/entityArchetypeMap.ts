@@ -95,7 +95,7 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
   public prune(): number {
     let pruneCount = 0;
     for (const arch of this._archetypes) {
-      const holdsAnyEntity = arch.entityCountUnfiltered !== 0;
+      const holdsAnyEntity = arch.entityCountIncludingDisabled !== 0;
       const isSpawnArchetype = arch.componentTypes.length === 0;
       if (holdsAnyEntity || isSpawnArchetype) continue;
       this._archetypes.delete(arch);

@@ -1,8 +1,8 @@
 ﻿import * as fs from "fs";
 import {World} from "../src/engine/core/world";
 import {EntityQuery} from "../src/engine/core/entityQuery";
-import {Ansi} from "../src/backends/cells/ansiEncoding";
 import {TextSprite} from "../src/engine/rendering/textSprite";
+import {TextColor} from "../src/engine/rendering/textColor";
 import {LocalPosition, LocalToWorld} from "../src/engine/translation";
 import {LocalToWorldSystem} from "../src/engine/translation/localToWorldSystem";
 import {Camera} from "../src/engine/rendering/camera";
@@ -13,8 +13,9 @@ import {
 import {WorldSpaceRenderBoundsComputeSystem} from "../src/engine/rendering/worldSpaceRenderBoundsComputeSystem";
 import {TextSpriteCellPassSystem} from "../src/backends/cells/2d/textSpriteCellPassSystem";
 import {CellGrid} from "../src/backends/cells/cellGrid";
-import {CellSurfaceResource} from "../src/backends/cells/cellSurfaceResource";
-import {nodePlatform, nodeTerminal} from "../src/hosts/terminal";
+import {CellPresenterResource} from "../src/backends/cells/cellPresenterResource";
+import {CellRenderSettings} from "../src/backends/cells/cellRenderSettings";
+import {AnsiCellPresenter, nodePlatform, nodeTerminal} from "../src/hosts/terminal";
 import {formatMs, median} from "./_harness";
 
 const N = 40_000;
@@ -34,7 +35,8 @@ function spawn(world: World, count: number) {
         const e = em.createEntity();
         const img = new TextSprite();
         img.transparentChar = "0";
-        img.image = [Ansi.bgRGB(1, 2, 3) + " "];
+        img.background = TextColor.rgb(1, 2, 3);
+        img.image = [" "];
         em.addComponent(e, img);
         em.addComponent(e, new LocalToWorld());
         em.addComponent(e, new LocalPosition(i % GRID_COLUMNS, (i / GRID_COLUMNS) | 0, 0));
@@ -50,9 +52,12 @@ function imageRewriteCascadeMs(mode: "colour-only" | "geometry") {
 
     const samples: number[] = [];
     for (let f = 0; f < FRAMES; f++) {
-        const c = Ansi.bgRGB((f * 7) % 256, (f * 11) % 256, (f * 13) % 256);
+        const c = TextColor.rgb((f * 7) % 256, (f * 11) % 256, (f * 13) % 256);
         const glyphs = mode === "geometry" ? " ".repeat(1 + (f % MAX_GLYPH_WIDTH)) : " ";
-        for (let i = 0; i < N; i++) images[i].image = [c + glyphs];
+        for (let i = 0; i < N; i++) {
+            images[i].background = c;
+            images[i].image = [glyphs];
+        }
 
         const t = performance.now();
         modifier.update();
@@ -63,7 +68,7 @@ function imageRewriteCascadeMs(mode: "colour-only" | "geometry") {
 
 function archetypeArrivalCascadeMs(mode: "arrivals" | "quiet" | "moving") {
     const world = new World({platform: nodePlatform()});
-    world.resources.insert(new CellSurfaceResource(nodeTerminal()));
+    world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(nodeTerminal())));
     const em = world.entityManager;
 
     const cam = em.createEntity("camera");
@@ -96,7 +101,7 @@ function archetypeArrivalCascadeMs(mode: "arrivals" | "quiet" | "moving") {
         wsb.update();
         if (f >= WARMUP) wsbS.push(performance.now() - t);
 
-        screen.screenBuffer.beginFrame({screenSize: {x: SCREEN_COLUMNS, y: SCREEN_ROWS} as ScreenSize}, " ");
+        screen.screenBuffer.beginFrame({screenSize: {x: SCREEN_COLUMNS, y: SCREEN_ROWS}}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
         t = performance.now();
         pass.update();
         if (f >= WARMUP) passS.push(performance.now() - t);

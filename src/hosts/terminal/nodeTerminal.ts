@@ -1,7 +1,7 @@
-import type {CellSurface, CellSurfaceSize} from "../../backends/cells/cellSurface";
+import type {TerminalOutput, TerminalSize} from "./terminalOutput";
 import type {TerminalInputSource} from "./terminalInputSource";
 
-export type NodeTerminal = CellSurface & TerminalInputSource;
+export type NodeTerminal = TerminalOutput & TerminalInputSource;
 
 interface NodeTtyReadStream {
     readonly isTTY?: boolean;
@@ -34,7 +34,7 @@ function nodeStdio(): NodeStdio {
     return process as unknown as NodeStdio;
 }
 
-const FALLBACK_SIZE: CellSurfaceSize = {columns: 80, rows: 24};
+const FALLBACK_SIZE: TerminalSize = {columns: 80, rows: 24};
 const BUN_RESIZE_POLL_MS = 50;
 
 let sharedTerminal: NodeTerminal | undefined;
@@ -79,8 +79,8 @@ function createTerminalInput(): Omit<TerminalInputSource, "write"> {
     };
 }
 
-function createTerminalScreen(onBun: boolean): Pick<CellSurface, "size" | "onResize"> {
-    const size = (): CellSurfaceSize => {
+function createTerminalScreen(onBun: boolean): Pick<TerminalOutput, "size" | "onResize"> {
+    const size = (): TerminalSize => {
         const {stdout, stderr, env} = nodeStdio();
         if (onBun) stdout._refreshSize?.();
         if (stdout?.isTTY) return {columns: stdout.columns, rows: stdout.rows};

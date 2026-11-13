@@ -1,12 +1,13 @@
 import {DebugWorld} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {Input} from "../src/engine/input";
-import {TerminalInput} from "../src/hosts/terminal";
+import {Ansi, AnsiCellPresenter, TerminalInput} from "../src/hosts/terminal";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
-import {Ansi, CellSurfaceResource} from "../src/backends/cells";
+import {CellPresenterResource} from "../src/backends/cells";
 import {TerminalScreen} from "./support/terminalScreen";
 import {setupDemo2d} from "../demo/2d/game";
+import {installCellRendering2d} from "../demo/2d/launch/cellRendering";
 
 const FRAMES = 60;
 const FRAME_MS = 1000 / 60;
@@ -44,7 +45,7 @@ const platform = new MemoryPlatform();
 const gameTerminal = new MemoryTerminal(START);
 const terminal = new TerminalScreen(START.columns, START.rows);
 const world = new DebugWorld({platform});
-world.resources.insert(new CellSurfaceResource(gameTerminal));
+world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(gameTerminal)));
 const terminalInput = new TerminalInput({
     terminal: gameTerminal,
     platform,
@@ -52,12 +53,11 @@ const terminalInput = new TerminalInput({
     mouse: true,
 }).start();
 let quits = 0;
-setupDemo2d(world, {quit: () => quits++});
+setupDemo2d(world, {render: installCellRendering2d(world), quit: () => quits++});
 
 const tick = () => {
     const before = gameTerminal.length;
-    world.time.deltaTime = FRAME_MS;
-    (world as any).update();
+    world.step(FRAME_MS);
     terminal.write(gameTerminal.text().slice(before));
 };
 
@@ -73,7 +73,7 @@ let framesWritten = 0;
 let entitiesBeforeSpace = 0;
 for (let frame = 0; frame < FRAMES; frame++) {
     if (frame === SPACE_FRAME) {
-        entitiesBeforeSpace = world.entityCount;
+        entitiesBeforeSpace = world.enabledEntityCount;
         gameTerminal.feed(" ");
     }
     if (frame % ARROW_EVERY_FRAMES === 0) gameTerminal.feed(ARROW_UP);
@@ -96,7 +96,7 @@ const screen = Ansi.strip(gameTerminal.text());
 expect(framesWritten > FRAMES / 2, `frames written (${framesWritten}/${FRAMES})`);
 expect(screen.includes("FPS:"), "the FPS label rendered");
 expect(screen.includes("Entities:"), "the entity counter rendered");
-expect(world.entityCount === entitiesBeforeSpace + PIXELS_PER_SPACE, `Space spawned ${PIXELS_PER_SPACE} pixels (${entitiesBeforeSpace} -> ${world.entityCount})`);
+expect(world.enabledEntityCount === entitiesBeforeSpace + PIXELS_PER_SPACE, `Space spawned ${PIXELS_PER_SPACE} pixels (${entitiesBeforeSpace} -> ${world.enabledEntityCount})`);
 expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
 gameTerminal.feed(CTRL_C);
@@ -104,6 +104,8 @@ expect(quits === 0, "Ctrl+C waits for the next frame's input");
 tick();
 expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
 expect(errors.length === 0, `no errors logged while quitting${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
+const altScreenExits = gameTerminal.text().split(Ansi.modes.altScreenExit).length - 1;
+expect(altScreenExits === 1, `stopping the world restored the presenter's screen once (${altScreenExits})`);
 
 terminalInput.stop();
 expect(!gameTerminal.started && gameTerminal.text().endsWith("\x1b[?1003l\x1b[?1006l"), "stopping terminal input restored the terminal");

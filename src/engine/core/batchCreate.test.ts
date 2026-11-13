@@ -64,7 +64,7 @@ function ownerOf(e: Entity): EntityArchetype {
 }
 
 function countIn(...ctors: (new (...args: never[]) => Component)[]): number {
-    return world.archetypes.getOrCreate(ctors as never).entityCountUnfiltered;
+    return world.archetypes.getOrCreate(ctors as never).entityCountIncludingDisabled;
 }
 
 describe("EntityCommandBuffer playback semantics", () => {
@@ -105,7 +105,7 @@ describe("EntityCommandBuffer playback semantics", () => {
         expect(em.exists(e)).toBe(false);
         expect(getEntityName(e)).toBeUndefined();
         expect(countIn(Position)).toBe(0);
-        expect(world.entityCount).toBe(0);
+        expect(world.enabledEntityCount).toBe(0);
     });
 
     test("a component added then removed in the same buffer is absent", () => {
@@ -131,7 +131,7 @@ describe("EntityCommandBuffer playback semantics", () => {
 
         expect(em.isEnabled(e)).toBe(false);
         expect(em.getComponent<Position>(e, Position)!.x).toBe(5);
-        expect(world.archetypes.getOrCreate([Position]).entityCount).toBe(0);
+        expect(world.archetypes.getOrCreate([Position]).enabledEntityCount).toBe(0);
         expect(countIn(Position)).toBe(1);
     });
 
@@ -213,7 +213,7 @@ describe("EntityCommandBuffer playback semantics", () => {
         expect(ecb.isEmpty).toBe(false);
         ecb.playback(em);
         expect(ecb.isEmpty).toBe(true);
-        expect(new EntityQuery(world, [Position]).entityCount()).toBe(1);
+        expect(new EntityQuery(world, [Position]).enabledEntityCount()).toBe(1);
     });
 });
 
@@ -247,7 +247,7 @@ describe("EntityManager.createEntity with components", () => {
         em.createEntity(undefined, [new Position(), new Velocity()]);
 
         expect(placements()).toBe(0);
-        expect(empty.entityCountUnfiltered).toBe(0);
+        expect(empty.entityCountIncludingDisabled).toBe(0);
     });
 
     test("without components it lands in the component-less archetype as before", () => {
@@ -336,7 +336,7 @@ describe("EntityManager.addComponents", () => {
         expect(created.length).toBe(1);
         expect(ownerOf(e)).toBe(created[0]);
         expect(ownerOf(e)).toBe(world.archetypes.getOrCreate([Position, Velocity, Tag]));
-        expect(source.entityCountUnfiltered).toBe(0);
+        expect(source.entityCountIncludingDisabled).toBe(0);
         expect(em.getComponent<Position>(e, Position)!.x).toBe(1);
         expect(em.getComponent<Velocity>(e, Velocity)!.dx).toBe(2);
     });

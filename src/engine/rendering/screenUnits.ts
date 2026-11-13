@@ -1,0 +1,3 @@
+export const SCREEN_UNIT_HEIGHT_PER_WIDTH = 2;
+export const SPRITE_PIXELS_PER_SCREEN_UNIT_X = 1;
+export const SPRITE_PIXELS_PER_SCREEN_UNIT_Y = 2;

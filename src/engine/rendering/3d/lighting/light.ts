@@ -1,11 +1,9 @@
 import {Component} from "../../../core";
+import {WHITE_RGB, PACKED_RGB_MASK, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../../packedRgb";
 
-const WHITE = 0xFFFFFF;
-const PACKED_RGB_MASK = 0xFFFFFF;
-const CHANNEL_MAX = 255;
 
 export abstract class Light extends Component {
-    protected constructor(private _color: number = WHITE, private _intensity: number = 1) {
+    protected constructor(private _color: number = WHITE_RGB, private _intensity: number = 1) {
         super();
         this.color = _color;
         this.intensity = _intensity;
@@ -29,8 +27,8 @@ export abstract class Light extends Component {
 
     public writeScaledRgb(out: Float32Array, offset: number): void {
         const scale = this._intensity / CHANNEL_MAX;
-        out[offset] = ((this._color >> 16) & 255) * scale;
-        out[offset + 1] = ((this._color >> 8) & 255) * scale;
-        out[offset + 2] = (this._color & 255) * scale;
+        out[offset] = ((this._color >> RED_SHIFT) & CHANNEL_MASK) * scale;
+        out[offset + 1] = ((this._color >> GREEN_SHIFT) & CHANNEL_MASK) * scale;
+        out[offset + 2] = (this._color & CHANNEL_MASK) * scale;
     }
 }

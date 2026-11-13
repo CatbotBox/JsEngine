@@ -144,6 +144,29 @@ describe("SoA column storage", () => {
         for (let i = 0; i < 4; i++) expect(handles[i].x).toBe(i);
     });
 
+    test("row moves hand instances the column's cached row views instead of new ones", () => {
+        const firstPos = new LocalPosition(1, 0, 0);
+        const secondPos = new LocalPosition(2, 0, 0);
+        const first = em.createEntity(undefined, [firstPos]);
+        const second = em.createEntity(undefined, [secondPos]);
+        const rowZeroView = asFloat32Array(firstPos.xyz);
+        const rowOneView = asFloat32Array(secondPos.xyz);
+
+        em.setEnabledState(first, false);
+        expect(asFloat32Array(secondPos.xyz)).toBe(rowZeroView);
+        expect(asFloat32Array(firstPos.xyz)).toBe(rowOneView);
+
+        em.addComponent(second, new ObjectBacked());
+        expect(asFloat32Array(firstPos.xyz)).toBe(rowZeroView);
+        em.removeComponent(second, ObjectBacked);
+        expect(asFloat32Array(secondPos.xyz)).toBe(rowZeroView);
+        expect(asFloat32Array(firstPos.xyz)).toBe(rowOneView);
+
+        expectViewsOwnRow(first, LocalPosition, asFloat32Array(firstPos.xyz));
+        expectViewsOwnRow(second, LocalPosition, asFloat32Array(secondPos.xyz));
+        expect([firstPos.x, secondPos.x]).toEqual([1, 2]);
+    });
+
     test("LocalToWorld matrix stays a live view through moves", () => {
         const e = em.createEntity();
         em.addComponent(e, new LocalToWorld());
@@ -268,7 +291,7 @@ describe("column-mapped moves (moveRowTo)", () => {
         const scale = new LocalScale(2, 3, 4);
         em.addComponent(es[2], scale);
         em.removeComponent(es[1], ObjectBacked);
-        expect(source.entityCountUnfiltered).toBe(3);
+        expect(source.entityCountIncludingDisabled).toBe(3);
 
         expectViewsOwnRow(es[2], LocalScale, asFloat32Array(scale.xyz));
         expect([scale.x, scale.y, scale.z]).toEqual([2, 3, 4]);
@@ -298,8 +321,8 @@ describe("column-mapped moves (moveRowTo)", () => {
         for (const e of disabled) em.setEnabledState(e, false);
         const source = ownerOf(es[0]);
         const target = ownerOf(es[5]);
-        const lastEnabledOf = (arch: EntityArchetype) => arch.getEntityAtIndex(arch.entityCount - 1);
-        const firstDisabledOf = (arch: EntityArchetype) => arch.getEntityAtIndex(arch.entityCount);
+        const lastEnabledOf = (arch: EntityArchetype) => arch.getEntityAtIndex(arch.enabledEntityCount - 1);
+        const firstDisabledOf = (arch: EntityArchetype) => arch.getEntityAtIndex(arch.enabledEntityCount);
 
         const expectIntact = () => {
             for (let i = 0; i < es.length; i++) {
@@ -308,10 +331,10 @@ describe("column-mapped moves (moveRowTo)", () => {
             }
             for (const arch of [source, target]) {
                 let enabled = 0;
-                for (let row = 0; row < arch.entityCountUnfiltered; row++) {
+                for (let row = 0; row < arch.entityCountIncludingDisabled; row++) {
                     if (!disabled.has(arch.getEntityAtIndex(row))) enabled++;
                 }
-                expect(arch.entityCount).toBe(enabled);
+                expect(arch.enabledEntityCount).toBe(enabled);
             }
         };
 
@@ -328,7 +351,7 @@ describe("column-mapped moves (moveRowTo)", () => {
         expectIntact();
         em.removeComponent(lastEnabledOf(target), ObjectBacked);
         expectIntact();
-        expect(source.entityCountUnfiltered + target.entityCountUnfiltered).toBe(7);
+        expect(source.entityCountIncludingDisabled + target.entityCountIncludingDisabled).toBe(7);
     });
 
     test("destroying an enabled row keeps disabled rows disabled", () => {
@@ -531,10 +554,10 @@ describe("command-buffer moves (moveRowWith)", () => {
         }
         for (const arch of [source, ownerOf(es[0]), ownerOf(es[2])]) {
             let enabled = 0;
-            for (let row = 0; row < arch.entityCountUnfiltered; row++) if (!disabled.has(arch.getEntityAtIndex(row))) enabled++;
-            expect(arch.entityCount).toBe(enabled);
+            for (let row = 0; row < arch.entityCountIncludingDisabled; row++) if (!disabled.has(arch.getEntityAtIndex(row))) enabled++;
+            expect(arch.enabledEntityCount).toBe(enabled);
         }
-        expect(source.entityCountUnfiltered).toBe(3);
+        expect(source.entityCountIncludingDisabled).toBe(3);
     });
 
     test("a buffered move wakes an additions stream in the target, not the source", () => {

@@ -6,19 +6,20 @@ import {PreloadedFileSource} from "../src/hosts/web";
 import type {FileSource, FileStat} from "../src/engine/platform";
 import type {FetchedFile} from "../src/hosts/web";
 import {Input} from "../src/engine/input";
-import {TerminalInput} from "../src/hosts/terminal";
+import {Ansi, AnsiCellPresenter, TerminalInput} from "../src/hosts/terminal";
 import {Camera} from "../src/engine/rendering";
 import {FieldOfView} from "../src/engine/rendering/3d";
 import {LocalRotation} from "../src/engine/translation";
 import {Vec} from "../src/engine/math/types/vec";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
-import {Ansi, CellSurfaceResource} from "../src/backends/cells";
+import {CellPresenterResource} from "../src/backends/cells";
 import {MeshCellPassSystem} from "../src/backends/cells/3d";
 import {inflate, meshCachePathFor} from "../src/engine/rendering/3d";
 import {normalizePath} from "../src/engine/platform";
 import {TerminalScreen} from "./support/terminalScreen";
 import {setupDemo3d} from "../demo/3d/game";
+import {installCellRendering3d} from "../demo/3d/launch/cellRendering";
 import {buildDemo3dManifest} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
 
@@ -127,7 +128,7 @@ async function main(): Promise<void> {
     const terminal = new TerminalScreen(SIZE.columns, SIZE.rows);
     const gameTerminal = new MemoryTerminal(SIZE);
     const world = new DebugWorld({platform});
-    world.resources.insert(new CellSurfaceResource(gameTerminal));
+    world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(gameTerminal)));
     const terminalInput = new TerminalInput({
         terminal: gameTerminal,
         platform,
@@ -137,7 +138,7 @@ async function main(): Promise<void> {
     }).start();
     let quits = 0;
     const loadStart = performance.now();
-    setupDemo3d(world, {listModels: () => manifest.models, quit: () => quits++});
+    setupDemo3d(world, {render: installCellRendering3d(world), listModels: () => manifest.models, quit: () => quits++});
     log(`models loaded in ${(performance.now() - loadStart).toFixed(0)} ms`);
 
     expect(gameTerminal.started && gameTerminal.text().includes("\x1b[?1003h\x1b[?1006h\x1b[?25l"), "the launch wiring started terminal input with the mouse on and the cursor hidden");
@@ -157,7 +158,7 @@ async function main(): Promise<void> {
         }
         gameTerminal.feed(ARROW_RIGHT);
         const before = gameTerminal.length;
-        world.time.deltaTime = FRAME_MS;
+        world.time.deltaTimeMs = FRAME_MS;
         (world as any).update();
         platform.advance(FRAME_MS);
         const written = gameTerminal.text().slice(before);
@@ -174,7 +175,7 @@ async function main(): Promise<void> {
     expect(maxSceneCells > frameCells / MIN_SCENE_CELL_DIVISOR, `scene cells painted in 24-bit colour (up to ${maxSceneCells}/${frameCells})`);
     expect(screen.includes("FPS:"), "the FPS label rendered");
     expect(screen.includes("Next: "), "the spawn preview rendered");
-    expect(world.entityCount > 0 && spawned === manifest.models.length - 1, `every model was spawned once (${spawned + 1} models)`);
+    expect(world.enabledEntityCount > 0 && spawned === manifest.models.length - 1, `every model was spawned once (${spawned + 1} models)`);
     expect(cached.length > 0, `models with a mesh cache: ${cached.map(model => model.name).join(", ")}`);
     for (const model of cached) {
         const objPath = normalizePath(model.path);
@@ -203,6 +204,8 @@ async function main(): Promise<void> {
     (world as any).update();
     expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
     expect(errors.length === 0, `no errors logged while quitting${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
+    const altScreenExits = gameTerminal.text().split(Ansi.modes.altScreenExit).length - 1;
+    expect(altScreenExits === 1, `stopping the world restored the presenter's screen once (${altScreenExits})`);
 
     terminalInput.stop();
     expect(!gameTerminal.started && gameTerminal.text().endsWith("\x1b[?1003l\x1b[?1006l\x1b[?25h"), "stopping terminal input restored the mouse mode and the cursor");

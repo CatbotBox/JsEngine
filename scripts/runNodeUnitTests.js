@@ -3,6 +3,7 @@ const path = require("path");
 
 const src = path.join(__dirname, "..", "src");
 const demo = path.join(__dirname, "..", "demo");
+const scripts = __dirname;
 
 function collect(dir, out) {
     for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
@@ -13,9 +14,9 @@ function collect(dir, out) {
     return out;
 }
 
-const files = [...collect(src, []).sort(), ...collect(demo, []).sort()];
+const files = [...collect(src, []).sort(), ...collect(demo, []).sort(), ...collect(scripts, []).sort()];
 if (files.length === 0) {
-    console.error("no *.test.ts files found under src/ or demo/");
+    console.error("no *.test.ts files found under src/, demo/ or scripts/");
     process.exit(1);
 }
 for (const file of files) require(file);

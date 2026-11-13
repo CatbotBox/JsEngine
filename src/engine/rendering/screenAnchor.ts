@@ -17,3 +17,7 @@ export function anchorFractionX(position: AnchorPosition): number {
 export function anchorFractionY(position: AnchorPosition): number {
     return position.startsWith('top') ? START_FRACTION : position.startsWith('middle') ? CENTER_FRACTION : END_FRACTION;
 }
+
+export function anchoredStart(anchorFraction: number, screenExtent: number, elementExtent: number): number {
+    return Math.floor(anchorFraction * (screenExtent - elementExtent));
+}

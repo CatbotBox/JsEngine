@@ -8,35 +8,29 @@ import {
 } from "../../src/engine/core";
 import {Input, Key} from "../../src/engine/input";
 
-import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor} from "../../src/engine/rendering";
+import {Camera, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextColor, WHITE_RGB} from "../../src/engine/rendering";
 
 import {LocalPosition, LocalToWorld, Parent} from "../../src/engine/translation";
 
-import {
-    Ansi,
-    HudTextSpriteCellPassSystem,
-} from "../../src/backends/cells";
-
-import {
-    TextSpriteCellPassSettings,
-    HudSpriteCellPassSystem,
-    SpriteCellPassSystem,
-} from "../../src/backends/cells/2d";
 import {Sprite, SpriteImage} from "../../src/engine/rendering/2d";
 import {AverageStat} from "../../src/engine/datatypes";
 import {createHudLabel} from "../_shared/hud";
 
+export interface Demo2dRenderControls {
+    toggleSpritePass(): void;
+    toggleHalfBlockCells?(): void;
+}
+
 export interface Demo2dHost {
+    readonly render: Demo2dRenderControls;
     quit(): void;
 }
 
 function packRgb(r: number, g: number, b: number): number {
-    return (r << 16) | (g << 8) | b;
+    return (r << RED_SHIFT) | (g << GREEN_SHIFT) | b;
 }
 
-const WHITE_RGB = 0xFFFFFF;
 const HUD_CROSS_RGB = 0x00FFCC;
-const MAX_CHANNEL = 255;
 const FADE_TARGET_RGB: readonly [number, number, number] = [255, 183, 206];
 const FADE_MIN_MS = 5000, FADE_JITTER_MS = 5000;
 const PIXELS_PER_SPAWN = 1_000;
@@ -47,6 +41,7 @@ const FPS_AVERAGE_FRAMES = 10;
 const MS_PER_SECOND = 1000;
 const BEFORE_SIMULATION_PRIORITY = -1;
 const TOGGLE_HUD_ACTION = "toggleHud";
+const HUD_TEXT_COLOR = TextColor.GREEN;
 
 const CROSS_IMAGE = SpriteImage.fromPattern([
     ' # ',
@@ -78,13 +73,10 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     const cameraEntity = buffer.createEntity("cameraEntity", [new Camera(), new LocalToWorld(), new RenderBounds()]);
     const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
 
-    const settingsEntity = buffer.createEntity("2dRenderSettings");
-    const renderSettings = buffer.addTrackedComponent(settingsEntity, new TextSpriteCellPassSettings());
-
     function createCross(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const r = Math.round(Math.random() * MAX_CHANNEL)
-        const g = Math.round(Math.random() * MAX_CHANNEL)
-        const b = Math.round(Math.random() * MAX_CHANNEL)
+        const r = Math.round(Math.random() * CHANNEL_MAX)
+        const g = Math.round(Math.random() * CHANNEL_MAX)
+        const b = Math.round(Math.random() * CHANNEL_MAX)
         const localToWorld = new LocalToWorld();
         const components: Component[] = [new Sprite(CROSS_IMAGE, packRgb(r, g, b)), localToWorld];
         if (parent) {
@@ -97,9 +89,9 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     }
 
     function createPixel(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const r = Math.round(Math.random() * MAX_CHANNEL)
-        const g = Math.round(Math.random() * MAX_CHANNEL)
-        const b = Math.round(Math.random() * MAX_CHANNEL)
+        const r = Math.round(Math.random() * CHANNEL_MAX)
+        const g = Math.round(Math.random() * CHANNEL_MAX)
+        const b = Math.round(Math.random() * CHANNEL_MAX)
         const originalColor = new OriginalColor()
         originalColor.color = [r, g, b];
         const localToWorld = new LocalToWorld();
@@ -124,8 +116,8 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     createCross(new LocalPosition(+5, -5), entity, "cross4")
     createCross(new LocalPosition(+5, +5), entity, "cross5")
 
-    const entityCounterImage = createHudLabel(buffer, "entityCounter", Ansi.colors.fg.green + 'HUD element', 'bottom-left');
-    const fpsCounterImage = createHudLabel(buffer, "fpsCounter", Ansi.colors.fg.green + 'FPS: 0', 'top-right');
+    const entityCounterImage = createHudLabel(buffer, "entityCounter", 'HUD element', HUD_TEXT_COLOR, 'bottom-left');
+    const fpsCounterImage = createHudLabel(buffer, "fpsCounter", 'FPS: 0', HUD_TEXT_COLOR, 'top-right');
 
     createHudCross();
 
@@ -162,8 +154,8 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         [Key.D, () => cameraPosition.x += 1],
         [Key.Space, spawnFadingPixels],
         [Key.Enter, () => toggleSystem(world.tryGetSystem(RenderingSystemGroup))],
-        [Key.Backspace, () => toggleSystem(world.tryGetSystem(SpriteCellPassSystem))],
-        [Key.H, () => renderSettings.halfBlockCells = !renderSettings.halfBlockCells],
+        [Key.Backspace, () => host.render.toggleSpritePass()],
+        [Key.H, () => host.render.toggleHalfBlockCells?.()],
         [Key.G, () => world.logSystemUpdateOrder()],
     ]);
 
@@ -195,7 +187,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         }
 
         public count() {
-            return this._query.entityCount()
+            return this._query.enabledEntityCount()
         }
 
         private interpolate(color1: readonly [number, number, number], color2: readonly [number, number, number], scale: number): [number, number, number] {
@@ -220,13 +212,13 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         }
 
         onUpdate(): void {
-            const deltaTime = this.world.time.deltaTime;
+            const deltaTimeMs = this.world.time.deltaTimeMs;
             this._query.stream({
                 write: {originalColor: OriginalColor, fadeToColor: FadeToColor, sprite: Sprite},
             }, {
                 includeEntity: true
             }).consume(({entity, sprite, fadeToColor, originalColor}) => {
-                fadeToColor.currentFadeTime += deltaTime;
+                fadeToColor.currentFadeTime += deltaTimeMs;
 
                 const scale = fadeToColor.currentFadeTime / fadeToColor.fadeTime;
                 const finalColor = this.interpolate(originalColor.color, fadeToColor.color, scale)
@@ -252,21 +244,20 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
                 buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
             }
             if (!this._toggle) return;
-            this._query.entityCount();
-            this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTime)
+            this._query.enabledEntityCount();
+            this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTimeMs)
             fpsCounterImage.image = [
-                Ansi.colors.fg.green + 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
+                'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
             ]
             const fadeSystem = this.world.tryGetSystem(FadeSystem);
             if (fadeSystem) {
                 const fadeSystemCount = fadeSystem.count();
                 entityCounterImage.image = [
-                    Ansi.colors.fg.green + 'Entities: ' +
-                    fadeSystemCount.toFixed(2),
+                    'Entities: ' + fadeSystemCount.toFixed(2),
                 ]
             } else {
                 entityCounterImage.image = [
-                    Ansi.colors.fg.green + 'Fade System Not Active'
+                    'Fade System Not Active'
                 ]
             }
 
@@ -279,9 +270,6 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
 
 
     world.ensureSystemExists(ControlsSystem);
-    world.ensureSystemExists(SpriteCellPassSystem);
-    world.ensureSystemExists(HudSpriteCellPassSystem);
-    world.ensureSystemExists(HudTextSpriteCellPassSystem);
 
 
     world.ensureSystemExists(DebugSystem)

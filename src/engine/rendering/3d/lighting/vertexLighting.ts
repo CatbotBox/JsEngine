@@ -3,11 +3,10 @@ import {DeepReadonly} from "../../../util/tokenUtils";
 import {Texture} from "../texture";
 import {ViewSpaceMesh} from "../viewSpaceMesh";
 import {LIGHT_KIND_DIRECTIONAL, SceneLights} from "./sceneLights";
+import {WHITE_RGB, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../../packedRgb";
 
 const NEGLIGIBLE_SPECULAR = 0.005;
 const NO_SPECULAR_CUTOFF = 2;
-const WHITE = 0xFFFFFF;
-const CHANNEL_MAX = 255;
 
 export class VertexLighting {
     private lightCount: number = 0;
@@ -101,9 +100,9 @@ export class VertexLighting {
                 const glossTexture = specularTextures[material];
                 if (glossTexture !== undefined && uvs !== undefined) {
                     const texel = sampleBaseLevel(glossTexture, uvs[j], uvs[j + 1]);
-                    glossR = ((texel >> 16) & 255) / CHANNEL_MAX;
-                    glossG = ((texel >> 8) & 255) / CHANNEL_MAX;
-                    glossB = (texel & 255) / CHANNEL_MAX;
+                    glossR = ((texel >> RED_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX;
+                    glossG = ((texel >> GREEN_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX;
+                    glossB = (texel & CHANNEL_MASK) / CHANNEL_MAX;
                 }
             }
             let r = ambientR, g = ambientG, b = ambientB;
@@ -168,12 +167,12 @@ export class VertexLighting {
             this.materialSpecularCutoff = new Float64Array(materialCount);
         }
         this.materialSpecularTexture.length = materialCount;
-        const tintR = ((tint >> 16) & 255) / CHANNEL_MAX, tintG = ((tint >> 8) & 255) / CHANNEL_MAX, tintB = (tint & 255) / CHANNEL_MAX;
+        const tintR = ((tint >> RED_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX, tintG = ((tint >> GREEN_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX, tintB = (tint & CHANNEL_MASK) / CHANNEL_MAX;
         for (let i = 0, j = 0; i < materialCount; i++, j += 3) {
             const material = materials?.[i];
             const specularColor = material?.specularColor ?? 0;
             const shininess = material?.shininess ?? 0;
-            writeTintedRgb(this.materialAlbedo, j, material?.diffuseColor ?? WHITE, tintR, tintG, tintB);
+            writeTintedRgb(this.materialAlbedo, j, material?.diffuseColor ?? WHITE_RGB, tintR, tintG, tintB);
             writeTintedRgb(this.materialSpecular, j, specularColor, tintR, tintG, tintB);
             writeTintedRgb(this.materialEmissive, j, material?.emissiveColor ?? 0, tintR, tintG, tintB);
             this.materialShininess[i] = shininess;
@@ -191,7 +190,7 @@ function sampleBaseLevel(texture: DeepReadonly<Texture>, u: number, v: number): 
 }
 
 function writeTintedRgb(out: Float64Array, offset: number, packed: number, tintR: number, tintG: number, tintB: number): void {
-    out[offset] = (((packed >> 16) & 255) / CHANNEL_MAX) * tintR;
-    out[offset + 1] = (((packed >> 8) & 255) / CHANNEL_MAX) * tintG;
-    out[offset + 2] = ((packed & 255) / CHANNEL_MAX) * tintB;
+    out[offset] = (((packed >> RED_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX) * tintR;
+    out[offset + 1] = (((packed >> GREEN_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX) * tintG;
+    out[offset + 2] = ((packed & CHANNEL_MASK) / CHANNEL_MAX) * tintB;
 }

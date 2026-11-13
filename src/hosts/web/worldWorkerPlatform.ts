@@ -1,47 +1,44 @@
 import type {FileSource, Platform} from "../../engine/platform/platform";
-import type {CellSurface, CellSurfaceSize} from "../../backends/cells/cellSurface";
+import type {CellPresenter} from "../../backends/cells/cellPresenter";
+import {cellFrameBuffers, copyCellFrame} from "../../backends/cells/cellFrame";
+import type {CellFrame} from "../../backends/cells/cellFrame";
+import type {PixelPresenter} from "../../backends/pixels/pixelPresenter";
+import {copyPixelFrame, pixelFrameBuffers} from "../../backends/pixels/pixelFrame";
+import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import type {InputEventSink} from "../../engine/input";
-import type {InitMessage, PageToWorldMessage, WorldToPageMessage} from "./worldWorkerProtocol";
+import type {CellSurfaceSize, InitMessage, PageToWorldMessage, PixelSurfaceSize, RenderBackend, SurfaceSize, WorldToPageMessage} from "./worldWorkerProtocol";
 import {isPageToWorldMessage} from "./worldWorkerProtocol";
 import {browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorkerHost} from "./browserWorkers";
 import {inflate} from "../../engine/assets/image/inflate";
 
 export interface WorldWorkerScope extends BrowserWorkerHost {
-    postMessage(message: WorldToPageMessage): void;
+    postMessage(message: WorldToPageMessage, transfer?: ArrayBuffer[]): void;
     addEventListener(type: "message", listener: (event: {readonly data: unknown}) => void): void;
     readonly navigator?: {readonly hardwareConcurrency?: number};
 }
 
-const MAX_OUTPUT_IN_FLIGHT = 2;
+const MAX_FRAMES_IN_FLIGHT = 2;
+
+function surfaceMismatch(surface: SurfaceSize, wanted: RenderBackend): Error {
+    return new Error(`The page shows a ${surface.kind} surface, so this world cannot present ${wanted}: `
+        + `a ${wanted} world needs the page opened with ?backend=${wanted}`);
+}
 
 export class PageConnection {
     public readonly platform: Platform;
-    public readonly terminal: CellSurface;
 
-    private size: CellSurfaceSize;
+    private surface: SurfaceSize;
+    private cells: CellPresenter | undefined;
+    private pixels: PixelPresenter | undefined;
     private inputSink: InputEventSink | undefined;
     private readonly resizeListeners = new Set<() => void>();
     private readonly exitCallbacks = new Set<() => void>();
-    private pendingOutput = "";
-    private flushQueued = false;
-    private outputInFlight = 0;
+    private framesInFlight = 0;
 
     private constructor(private readonly scope: WorldWorkerScope, init: InitMessage, files: FileSource) {
-        this.size = {columns: init.columns, rows: init.rows};
+        this.surface = init.surface;
         const requestedRasterWorkers = init.requestedRasterWorkers;
-        this.terminal = {
-            write: chunk => this.write(chunk),
-            backlogged: () => this.outputInFlight >= MAX_OUTPUT_IN_FLIGHT,
-            size: () => this.size,
-            onResize: callback => {
-                const listener = () => callback();
-                this.resizeListeners.add(listener);
-                return () => {
-                    this.resizeListeners.delete(listener);
-                };
-            },
-        };
         this.platform = {
             files,
             inflate,
@@ -71,6 +68,36 @@ export class PageConnection {
         });
     }
 
+    public cellPresenter(): CellPresenter {
+        this.cellSurface();
+        return this.cells ??= {
+            size: () => {
+                const {columns, rows} = this.cellSurface();
+                return {columns, rows};
+            },
+            onResize: listener => this.watchResize(listener),
+            backlogged: () => this.backlogged(),
+            start: () => {},
+            stop: () => {},
+            present: frame => this.postCellFrame(frame),
+        };
+    }
+
+    public pixelPresenter(): PixelPresenter {
+        this.pixelSurface();
+        return this.pixels ??= {
+            size: () => {
+                const {widthPx, heightPx} = this.pixelSurface();
+                return {widthPx, heightPx};
+            },
+            onResize: listener => this.watchResize(listener),
+            backlogged: () => this.backlogged(),
+            start: () => {},
+            stop: () => {},
+            present: frame => this.postPixelFrame(frame),
+        };
+    }
+
     public connectInput(sink: InputEventSink): () => void {
         this.inputSink = sink;
         return () => {
@@ -78,36 +105,52 @@ export class PageConnection {
         };
     }
 
+    public showStatus(text: string): void {
+        this.scope.postMessage({type: "status", text});
+    }
+
     public quit(): void {
-        this.post({type: "quit"});
+        this.scope.postMessage({type: "quit"});
     }
 
     public fail(error: unknown): void {
-        this.post({type: "error", message: error instanceof Error ? error.message : String(error)});
+        this.scope.postMessage({type: "error", message: error instanceof Error ? error.message : String(error)});
     }
 
-    public flush(): void {
-        if (this.pendingOutput.length === 0) return;
-        const data = this.pendingOutput;
-        this.pendingOutput = "";
-        this.outputInFlight++;
-        this.scope.postMessage({type: "output", data});
+    private cellSurface(): CellSurfaceSize {
+        const surface = this.surface;
+        if (surface.kind !== "cells") throw surfaceMismatch(surface, "cells");
+        return surface;
     }
 
-    private post(message: WorldToPageMessage): void {
-        this.flush();
-        this.scope.postMessage(message);
+    private pixelSurface(): PixelSurfaceSize {
+        const surface = this.surface;
+        if (surface.kind !== "pixels") throw surfaceMismatch(surface, "pixels");
+        return surface;
     }
 
-    private write(chunk: string): void {
-        if (chunk.length === 0) return;
-        this.pendingOutput += chunk;
-        if (this.flushQueued) return;
-        this.flushQueued = true;
-        queueMicrotask(() => {
-            this.flushQueued = false;
-            this.flush();
-        });
+    private watchResize(listener: () => void): () => void {
+        const entry = () => listener();
+        this.resizeListeners.add(entry);
+        return () => {
+            this.resizeListeners.delete(entry);
+        };
+    }
+
+    private backlogged(): boolean {
+        return this.framesInFlight >= MAX_FRAMES_IN_FLIGHT;
+    }
+
+    private postCellFrame(frame: CellFrame): void {
+        const copy = copyCellFrame(frame);
+        this.framesInFlight++;
+        this.scope.postMessage({type: "frame", frame: copy}, cellFrameBuffers(copy));
+    }
+
+    private postPixelFrame(frame: PixelFrame): void {
+        const copy = copyPixelFrame(frame);
+        this.framesInFlight++;
+        this.scope.postMessage({type: "pixelFrame", frame: copy}, pixelFrameBuffers(copy));
     }
 
     private receive(message: PageToWorldMessage): void {
@@ -118,11 +161,12 @@ export class PageConnection {
                 break;
             }
             case "resize":
-                this.size = {columns: message.columns, rows: message.rows};
+                if (message.surface.kind !== this.surface.kind) break;
+                this.surface = message.surface;
                 for (const listener of [...this.resizeListeners]) listener();
                 break;
-            case "written":
-                this.outputInFlight = Math.max(0, this.outputInFlight - 1);
+            case "presented":
+                this.framesInFlight = Math.max(0, this.framesInFlight - 1);
                 break;
             case "exit": {
                 const callbacks = [...this.exitCallbacks];

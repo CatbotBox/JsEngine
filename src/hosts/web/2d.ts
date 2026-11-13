@@ -1,3 +1,3 @@
-import {startWorldPage} from "./worldPage";
+import {loadRenderBackendScript} from "./renderBackendBootstrap";
 
-startWorldPage("world2d.worker.js", "the 2D demo");
+loadRenderBackendScript({cells: "2d-cells.js", pixels: "2d-pixels.js"});

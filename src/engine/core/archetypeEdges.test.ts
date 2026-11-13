@@ -138,7 +138,7 @@ describe("archetype lifetime", () => {
         const e = em.createEntity();
         em.addComponent(e, new Velocity(5, 6));
         const first = ownerOf(e);
-        expect(query.entityCount()).toBe(1);
+        expect(query.enabledEntityCount()).toBe(1);
         em.removeComponent(e, Velocity);
         world.archetypes.prune();
 
@@ -147,7 +147,7 @@ describe("archetype lifetime", () => {
         expect(second === first).toBe(false);
         expect(world.archetypes.getOrCreate([Velocity])).toBe(second);
         expect(em.getComponent<Velocity>(e, Velocity)!.dx).toBe(7);
-        expect(query.entityCount()).toBe(1);
+        expect(query.enabledEntityCount()).toBe(1);
         expect(Array.from(query.archetypes).indexOf(first)).toBe(-1);
     });
 
@@ -156,7 +156,7 @@ describe("archetype lifetime", () => {
         em.addComponent(e, new Position());
         const arch = ownerOf(e);
         em.setEnabledState(e, false);
-        expect(arch.entityCount).toBe(0);
+        expect(arch.enabledEntityCount).toBe(0);
 
         world.archetypes.prune();
 
@@ -167,7 +167,7 @@ describe("archetype lifetime", () => {
 
     test("the component-less archetype survives pruning", () => {
         const empty = world.archetypes.getOrCreate([]);
-        expect(empty.entityCountUnfiltered).toBe(0);
+        expect(empty.entityCountIncludingDisabled).toBe(0);
         world.archetypes.prune();
         expect(world.archetypes.getOrCreate([])).toBe(empty);
     });

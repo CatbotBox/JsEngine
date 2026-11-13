@@ -85,12 +85,12 @@ function teardown(fixture: Fixture) {
 }
 
 function expectCount(fixture: Fixture, types: ComponentCtor<Component>[], expected: number, label: string) {
-    const actual = fixture.world.archetypes.getOrCreate(types).entityCountUnfiltered;
+    const actual = fixture.world.archetypes.getOrCreate(types).entityCountIncludingDisabled;
     if (actual !== expected) throw new Error(`${label}: expected ${expected} entities in archetype, found ${actual}`);
 }
 
 function expectWorldCount(fixture: Fixture, expected: number, label: string) {
-    const actual = fixture.world.entityCount;
+    const actual = fixture.world.enabledEntityCount;
     if (actual !== expected) throw new Error(`${label}: expected ${expected} enabled entities in world, found ${actual}`);
 }
 

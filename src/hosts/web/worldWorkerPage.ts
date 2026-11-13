@@ -1,11 +1,26 @@
-import type {BrowserTerminal, TerminalSubscription} from "./browserPlatform";
+import type {CellFrame} from "../../backends/cells/cellFrame";
+import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
-import type {PageToWorldMessage} from "./worldWorkerProtocol";
+import type {CellSurfaceSize, PageToWorldMessage, PixelSurfaceSize, RenderBackend} from "./worldWorkerProtocol";
 import {isWorldToPageMessage} from "./worldWorkerProtocol";
 
-export interface PageTerminal extends BrowserTerminal {
-    write(data: string, callback?: () => void): void;
+interface WorldDisplaySurface {
+    onResize(listener: () => void): () => void;
+    showStatus(text: string): void;
+    showError(text: string): void;
 }
+
+export interface CellWorldDisplay extends WorldDisplaySurface {
+    surfaceSize(): CellSurfaceSize;
+    presentCells(frame: CellFrame, onPresented: () => void): void;
+}
+
+export interface PixelWorldDisplay extends WorldDisplaySurface {
+    surfaceSize(): PixelSurfaceSize;
+    presentPixels(frame: PixelFrame, onPresented: () => void): void;
+}
+
+export type WorldDisplay = CellWorldDisplay | PixelWorldDisplay;
 
 export interface WorldWorker {
     postMessage(message: PageToWorldMessage): void;
@@ -25,12 +40,18 @@ export interface WorldWorkerPage {
     exit(): void;
 }
 
-const RESET = "\x1b[0m";
-const RED = "\x1b[31m";
-const STOPPED_LINE = `${RESET}\r\nStopped. Reload the page to restart.\r\n`;
+export const STOPPED_STATUS = "Stopped. Reload the page to restart.";
 
-export function connectWorldWorker(terminal: PageTerminal, worker: WorldWorker, options: WorldWorkerPageOptions): WorldWorkerPage {
-    const subscriptions: TerminalSubscription[] = [];
+export function startingStatus(name: string): string {
+    return `Starting ${name}...`;
+}
+
+export function surfaceMismatchMessage(name: string, sent: RenderBackend, shown: RenderBackend): string {
+    return `${name} sent ${sent} frames, but this page shows ${shown}`;
+}
+
+export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, options: WorldWorkerPageOptions): WorldWorkerPage {
+    let stopWatchingResize: (() => void) | undefined;
     let closed = false;
     const post = (message: PageToWorldMessage): void => {
         if (!closed) worker.postMessage(message);
@@ -49,38 +70,49 @@ export function connectWorldWorker(terminal: PageTerminal, worker: WorldWorker, 
     const close = (): void => {
         closed = true;
         pendingInput.length = 0;
-        for (const subscription of subscriptions) subscription.dispose();
-        subscriptions.length = 0;
+        stopWatchingResize?.();
+        stopWatchingResize = undefined;
         worker.terminate();
     };
-    const showError = (prefix: string, message: string): void => {
-        terminal.write(`${RESET}\r\n${RED}${prefix}: ${message}${RESET}\r\n`);
+    const acknowledge = (): void => post({type: "presented"});
+    const failOnMismatch = (sent: RenderBackend): void => {
+        close();
+        display.showError(surfaceMismatchMessage(options.name, sent, display.surfaceSize().kind));
     };
 
     worker.addEventListener("message", event => {
         const message = event.data;
         if (closed || !isWorldToPageMessage(message)) return;
         switch (message.type) {
-            case "output":
-                terminal.write(message.data, () => post({type: "written"}));
+            case "frame":
+                if ("presentCells" in display) display.presentCells(message.frame, acknowledge);
+                else failOnMismatch("cells");
+                break;
+            case "pixelFrame":
+                if ("presentPixels" in display) display.presentPixels(message.frame, acknowledge);
+                else failOnMismatch("pixels");
+                break;
+            case "status":
+                display.showStatus(message.text);
                 break;
             case "quit":
                 close();
-                terminal.write(STOPPED_LINE);
+                display.showStatus(STOPPED_STATUS);
                 options.onQuit?.();
                 break;
             case "error":
                 close();
-                showError(`Could not start ${options.name}`, message.message);
+                display.showError(`Could not start ${options.name}: ${message.message}`);
                 break;
         }
     });
     worker.addEventListener("error", event => {
-        if (!closed) showError(`Error in ${options.name}`, event.message ?? "the world worker failed");
+        if (!closed) display.showError(`Error in ${options.name}: ${event.message ?? "the world worker failed"}`);
     });
 
-    post({type: "init", columns: terminal.cols, rows: terminal.rows, requestedRasterWorkers: options.requestedRasterWorkers});
-    subscriptions.push(terminal.onResize(size => post({type: "resize", columns: size.cols, rows: size.rows})));
+    display.showStatus(startingStatus(options.name));
+    post({type: "init", surface: display.surfaceSize(), requestedRasterWorkers: options.requestedRasterWorkers});
+    stopWatchingResize = display.onResize(() => post({type: "resize", surface: display.surfaceSize()}));
 
     return {
         input,

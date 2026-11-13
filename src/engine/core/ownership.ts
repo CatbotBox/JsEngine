@@ -12,8 +12,10 @@ const worldOf: unknown[] = [];
 const archOf: unknown[] = [];
 const rowOf: number[] = [];
 const nameOf: (string | undefined)[] = [];
+const creationOrderOf: number[] = [];
 const freeIndices: number[] = [];
 let nextIndex = 0;
+let nextCreationOrder = 0;
 
 export function allocEntityHandle(name?: string): Entity {
     let i: number;
@@ -28,6 +30,7 @@ export function allocEntityHandle(name?: string): Entity {
         rowOf[i] = UNOWNED_ROW;
     }
     nameOf[i] = name;
+    creationOrderOf[i] = nextCreationOrder++;
     return makeEntityHandle(i, generations[i]);
 }
 
@@ -96,4 +99,10 @@ export function getEntityName(entity: Entity): string | undefined {
     const i = entity & ENTITY_INDEX_MASK;
     if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined;
     return nameOf[i];
+}
+
+export function getEntityCreationOrder(entity: Entity): number | undefined {
+    const i = entity & ENTITY_INDEX_MASK;
+    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined;
+    return creationOrderOf[i];
 }

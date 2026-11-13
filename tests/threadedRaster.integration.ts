@@ -10,10 +10,11 @@ import {fromFloat32Array, Vec3} from "../src/engine/math/types/vec";
 import {ViewSpaceMesh} from "../src/engine/rendering/3d/viewSpaceMesh";
 import {SceneLights, VertexLighting} from "../src/engine/rendering/3d/lighting";
 import {Texture} from "../src/engine/rendering/3d/texture";
-import {Ansi} from "../src/backends/cells/ansiEncoding";
+import {CellRenderSettings} from "../src/backends/cells/cellRenderSettings";
 import {browserWorkerFactory} from "../src/hosts/web";
-import {nodePlatform} from "../src/hosts/terminal";
+import {AnsiCellEncoder, nodePlatform} from "../src/hosts/terminal";
 import type {WorkerFactory} from "../src/engine/platform";
+import {WHITE_RGB, PACKED_RGB_MASK} from "../src/engine/rendering/packedRgb";
 
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
 const WORKERS = 3;
@@ -23,19 +24,18 @@ const HEAVY_MESH_PATH = "./demo/3d/indoor plant_02.obj";
 const FALLBACK_MESH_PATH = "./demo/3d/blender_monkey.obj";
 const HALF_FOV_RAD = Math.PI / 6;
 const CELL_ASPECT_RATIO = 2;
-const FULL_COLOR_MASK = 0xFFFFFF;
-const WHITE_RGB = 0xFFFFFF;
 const SHADE_RGB = 0xF7A44F;
 const NO_SUPERSAMPLING = 1;
 const MESH_Z = 8;
 const MESH_SCALE = 3;
 const PITCH_RAD_PER_FRAME = 0.05, YAW_RAD_PER_FRAME = 0.03;
 const resolveTarget = new CellResolveTarget();
+const encoder = new AnsiCellEncoder();
+const ROW_SEPARATOR = "\n";
 
 const screenSize = new ScreenSize();
 screenSize.x = WIDTH;
 screenSize.y = HEIGHT;
-const backgroundChar = Ansi.colors.bg.black + Ansi.colors.fg.black + " ";
 const mesh = existsSync(HEAVY_MESH_PATH)
     ? Mesh.fromFile(HEAVY_MESH_PATH, nodePlatform())
     : Mesh.fromFile(FALLBACK_MESH_PATH, nodePlatform());
@@ -88,11 +88,11 @@ function renderFrame(rasterizer: MeshRasterizer, frame: number, config: PassConf
     const modelView = LocalToWorld.mul(invCam, transform.matrix) as unknown as Float32Array;
 
     const buffer = new ScreenBuffer();
-    buffer.beginFrame({screenSize} as any, backgroundChar);
-    resolveTarget.begin(buffer, {colorQuantMask: FULL_COLOR_MASK});
+    buffer.beginFrame({screenSize}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
+    resolveTarget.begin(buffer, {colorQuantMask: PACKED_RGB_MASK});
     rasterizer.beginFrame(resolveTarget, WIDTH, HEIGHT, {
         maxDepthFade: 15,
-        colorQuantMask: FULL_COLOR_MASK,
+        colorQuantMask: PACKED_RGB_MASK,
         supersample: NO_SUPERSAMPLING,
         workerCount: config.workerCount,
         threadTriangleThreshold: config.threadTriangleThreshold,
@@ -107,7 +107,7 @@ function renderFrame(rasterizer: MeshRasterizer, frame: number, config: PassConf
         rasterizer.addMesh(mesh, modelView, focal, CELL_ASPECT_RATIO, WHITE_RGB);
     }
     rasterizer.endFrame();
-    return buffer.flush();
+    return encoder.encodeRows(buffer.toCellFrame()).join(ROW_SEPARATOR);
 }
 
 async function renderAll(workers: WorkerFactory, config: PassConfig): Promise<PassResult> {

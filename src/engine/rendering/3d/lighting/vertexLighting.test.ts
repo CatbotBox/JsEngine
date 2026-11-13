@@ -7,6 +7,7 @@ import {Texture} from "../texture";
 import {ViewSpaceMesh} from "../viewSpaceMesh";
 import {SceneLights} from "./sceneLights";
 import {VertexLighting} from "./vertexLighting";
+import {BLACK_RGB, WHITE_RGB} from "../../packedRgb";
 
 function triangleFacingPlusZ(): Mesh {
     const builder = new MeshBuilder();
@@ -134,7 +135,7 @@ function shadeVertexFacingCamera(setup: (lights: SceneLights) => void, material:
     return Array.from(rgb.subarray(0, 3)).map(v => Math.round(v * 1000) / 1000);
 }
 
-const BLACK = 0x000000, WHITE = 0xFFFFFF, HALF = 0x808080;
+const HALF = 0x808080;
 const halfSpecular = 128 / 255;
 const towardsFace = (lights: SceneLights) => lights.addDirectional(0, 0, 1, 1, 1, 1);
 const fortyFiveDegreesOntoFace = (lights: SceneLights) => lights.addDirectional(-1, 0, 1, 1, 1, 1);
@@ -144,18 +145,18 @@ describe("VertexLighting specular and emissive", () => {
         const plain = shadeVertexFacingCamera(l => {
             l.addAmbient(0.1, 0.1, 0.1);
             l.addPoint(0, 0, 4, 1, 1, 1, 2);
-        }, new Material("plain", WHITE));
+        }, new Material("plain", WHITE_RGB));
         const glossless = shadeVertexFacingCamera(l => {
             l.addAmbient(0.1, 0.1, 0.1);
             l.addPoint(0, 0, 4, 1, 1, 1, 2);
-        }, glossyMaterial(WHITE, 0, 96));
+        }, glossyMaterial(WHITE_RGB, 0, 96));
         expect(glossless).toEqual(plain);
         expect(plain).toEqual([0.663, 0.663, 0.663]);
     });
 
     test("the mirror direction gives the full specular color at any shininess", () => {
         for (const shininess of [1, 8, 96, 1000]) {
-            const rgb = shadeVertexFacingCamera(towardsFace, glossyMaterial(BLACK, HALF, shininess));
+            const rgb = shadeVertexFacingCamera(towardsFace, glossyMaterial(BLACK_RGB, HALF, shininess));
             expect(rgb).toEqual([0.502, 0.502, 0.502]);
         }
     });
@@ -164,7 +165,7 @@ describe("VertexLighting specular and emissive", () => {
         const normalDotHalf = Math.cos(Math.PI / 8);
         for (const shininess of [2, 8]) {
             const expected = Math.round(halfSpecular * Math.pow(normalDotHalf, shininess) * 1000) / 1000;
-            const rgb = shadeVertexFacingCamera(fortyFiveDegreesOntoFace, glossyMaterial(BLACK, HALF, shininess));
+            const rgb = shadeVertexFacingCamera(fortyFiveDegreesOntoFace, glossyMaterial(BLACK_RGB, HALF, shininess));
             expect(rgb[0]).toBeCloseTo(expected, 3);
             expect(rgb[1]).toBe(rgb[0]);
             expect(rgb[2]).toBe(rgb[0]);
@@ -172,26 +173,26 @@ describe("VertexLighting specular and emissive", () => {
     });
 
     test("a negligible highlight is skipped entirely", () => {
-        expect(shadeVertexFacingCamera(fortyFiveDegreesOntoFace, glossyMaterial(BLACK, HALF, 1000))).toEqual([0, 0, 0]);
+        expect(shadeVertexFacingCamera(fortyFiveDegreesOntoFace, glossyMaterial(BLACK_RGB, HALF, 1000))).toEqual([0, 0, 0]);
     });
 
     test("light from behind the face gives no highlight", () => {
-        expect(shadeVertexFacingCamera(l => l.addDirectional(0, 0, -1, 1, 1, 1), glossyMaterial(BLACK, HALF, 8))).toEqual([0, 0, 0]);
+        expect(shadeVertexFacingCamera(l => l.addDirectional(0, 0, -1, 1, 1, 1), glossyMaterial(BLACK_RGB, HALF, 8))).toEqual([0, 0, 0]);
     });
 
     test("point light highlights attenuate with the same falloff as their diffuse term", () => {
         const pointLight = (l: SceneLights) => l.addPoint(0, 0, 4, 1, 1, 1, 2);
-        expect(shadeVertexFacingCamera(pointLight, glossyMaterial(WHITE, 0, 8))).toEqual([0.563, 0.563, 0.563]);
-        expect(shadeVertexFacingCamera(pointLight, glossyMaterial(BLACK, WHITE, 8))).toEqual([0.563, 0.563, 0.563]);
-        expect(shadeVertexFacingCamera(pointLight, glossyMaterial(WHITE, WHITE, 8))).toEqual([1.125, 1.125, 1.125]);
+        expect(shadeVertexFacingCamera(pointLight, glossyMaterial(WHITE_RGB, 0, 8))).toEqual([0.563, 0.563, 0.563]);
+        expect(shadeVertexFacingCamera(pointLight, glossyMaterial(BLACK_RGB, WHITE_RGB, 8))).toEqual([0.563, 0.563, 0.563]);
+        expect(shadeVertexFacingCamera(pointLight, glossyMaterial(WHITE_RGB, WHITE_RGB, 8))).toEqual([1.125, 1.125, 1.125]);
     });
 
     test("specular color is tinted like the albedo", () => {
-        expect(shadeVertexFacingCamera(towardsFace, glossyMaterial(BLACK, WHITE, 8), 0x0080FF)).toEqual([0, 0.502, 1]);
+        expect(shadeVertexFacingCamera(towardsFace, glossyMaterial(BLACK_RGB, WHITE_RGB, 8), 0x0080FF)).toEqual([0, 0.502, 1]);
     });
 
     test("emissive adds the material color even with no lights and is tinted", () => {
-        const emissive = glossyMaterial(WHITE, 0, 0, 0x404040);
+        const emissive = glossyMaterial(WHITE_RGB, 0, 0, 0x404040);
         expect(shadeVertexFacingCamera(() => {}, emissive)).toEqual([0.251, 0.251, 0.251]);
         expect(shadeVertexFacingCamera(() => {}, emissive, HALF)).toEqual([0.126, 0.126, 0.126]);
         expect(shadeVertexFacingCamera(l => l.addAmbient(0.5, 0.5, 0.5), emissive)).toEqual([0.751, 0.751, 0.751]);
@@ -199,11 +200,11 @@ describe("VertexLighting specular and emissive", () => {
 
     test("a specular texture scales the highlight by the texel at the vertex uv", () => {
         const glossMap = Texture.fromRgba(2, 1, new Uint8Array([0, 0, 0, 255, 255, 128, 0, 255]));
-        const material = glossyMaterial(BLACK, WHITE, 8);
+        const material = glossyMaterial(BLACK_RGB, WHITE_RGB, 8);
         material.specularTexture = glossMap;
-        expect(shadeVertexFacingCamera(towardsFace, material, WHITE, [0.25, 0.5])).toEqual([0, 0, 0]);
-        expect(shadeVertexFacingCamera(towardsFace, material, WHITE, [0.75, 0.5])).toEqual([1, 0.502, 0]);
-        expect(shadeVertexFacingCamera(towardsFace, material, WHITE, [1.75, -0.5])).toEqual([1, 0.502, 0]);
+        expect(shadeVertexFacingCamera(towardsFace, material, WHITE_RGB, [0.25, 0.5])).toEqual([0, 0, 0]);
+        expect(shadeVertexFacingCamera(towardsFace, material, WHITE_RGB, [0.75, 0.5])).toEqual([1, 0.502, 0]);
+        expect(shadeVertexFacingCamera(towardsFace, material, WHITE_RGB, [1.75, -0.5])).toEqual([1, 0.502, 0]);
     });
 
     test("an emissive material does not make a scene without lights count as lit", () => {

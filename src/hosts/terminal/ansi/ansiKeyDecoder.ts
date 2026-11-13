@@ -2,7 +2,7 @@ export interface DecodedKey {
     sequence: string;
     name?: string;
     ctrl: boolean;
-    meta: boolean;
+    alt: boolean;
     shift: boolean;
     code?: string;
 }
@@ -59,7 +59,7 @@ export class AnsiKeyDecoder {
             let ch: string = yield;
             let s = ch;
             let escaped = false;
-            const key: DecodedKey = {sequence: "", name: undefined, ctrl: false, meta: false, shift: false};
+            const key: DecodedKey = {sequence: "", name: undefined, ctrl: false, alt: false, shift: false};
 
             if (ch === ESCAPE) {
                 escaped = true;
@@ -116,39 +116,39 @@ export class AnsiKeyDecoder {
                 }
 
                 key.ctrl = !!(modifier & CTRL_MODIFIER_BIT);
-                key.meta = !!(modifier & ALT_OR_META_MODIFIER_BITS);
+                key.alt = !!(modifier & ALT_OR_META_MODIFIER_BITS);
                 key.shift = !!(modifier & SHIFT_MODIFIER_BIT);
                 key.code = code;
                 nameEscapeCode(key, code);
             } else if (ch === "\r") {
                 key.name = "return";
-                key.meta = escaped;
+                key.alt = escaped;
             } else if (ch === "\n") {
                 key.name = "enter";
-                key.meta = escaped;
+                key.alt = escaped;
             } else if (ch === "\t") {
                 key.name = "tab";
-                key.meta = escaped;
+                key.alt = escaped;
             } else if (ch === "\b" || ch === DELETE) {
                 key.name = "backspace";
-                key.meta = escaped;
+                key.alt = escaped;
             } else if (ch === ESCAPE) {
                 key.name = "escape";
-                key.meta = escaped;
+                key.alt = escaped;
             } else if (ch === " ") {
                 key.name = "space";
-                key.meta = escaped;
+                key.alt = escaped;
             } else if (!escaped && ch <= LAST_CTRL_LETTER) {
                 key.name = String.fromCharCode(ch.charCodeAt(0) + "a".charCodeAt(0) - 1);
                 key.ctrl = true;
             } else if (/^[0-9A-Za-z]$/.test(ch)) {
                 key.name = ch.toLowerCase();
                 key.shift = /^[A-Z]$/.test(ch);
-                key.meta = escaped;
+                key.alt = escaped;
             } else if (escaped) {
                 const escapeTimedOut = !ch.length;
                 key.name = escapeTimedOut ? "escape" : undefined;
-                key.meta = true;
+                key.alt = true;
             }
 
             key.sequence = s;

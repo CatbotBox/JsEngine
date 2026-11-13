@@ -1,7 +1,6 @@
 import {ScreenBuffer} from "../cellGrid";
+import {WHITE_RGB, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../../../engine/rendering/packedRgb";
 
-const CHANNEL_MAX = 255;
-const WHITE = 0xFFFFFF;
 const HALF_ROWS_PER_CELL = 2;
 const RGBA_BYTES_LOG2 = 2;
 
@@ -52,20 +51,20 @@ export class SpriteCellRasterizer {
         this.depthBottom.fill(Number.POSITIVE_INFINITY, 0, cellCount);
     }
 
-    public blitSprite(image: BlittableSpriteImage, dstX: number, dstHalfRowY: number, depth: number, tint: number = WHITE, opacity: number = 1): void {
+    public blitSprite(image: BlittableSpriteImage, dstX: number, dstHalfRowY: number, depth: number, tint: number = WHITE_RGB, opacity: number = 1): void {
         const {width, height, config} = this;
         if (width === 0 || height === 0) return;
         const {sizeX, sizeY, rgba} = image;
         if (opacity <= 0) return;
 
         const bg = config.backgroundColor;
-        const bgR = (bg >> 16) & 255, bgG = (bg >> 8) & 255, bgB = bg & 255;
+        const bgR = (bg >> RED_SHIFT) & CHANNEL_MASK, bgG = (bg >> GREEN_SHIFT) & CHANNEL_MASK, bgB = bg & CHANNEL_MASK;
         let fade = config.maxDepthFade === Number.POSITIVE_INFINITY ? 1 : 1 - depth / config.maxDepthFade;
         if (fade < 0) fade = 0;
         else if (fade > 1) fade = 1;
         const quantMask = config.colorQuantMask;
-        const tintR = ((tint >> 16) & 255) / CHANNEL_MAX, tintG = ((tint >> 8) & 255) / CHANNEL_MAX, tintB = (tint & 255) / CHANNEL_MAX;
-        const tinted = tint !== WHITE;
+        const tintR = ((tint >> RED_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX, tintG = ((tint >> GREEN_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX, tintB = (tint & CHANNEL_MASK) / CHANNEL_MAX;
+        const tinted = tint !== WHITE_RGB;
 
         const colStart = dstX < 0 ? -dstX : 0;
         const colEnd = Math.min(sizeX, width - dstX);
@@ -107,7 +106,7 @@ export class SpriteCellRasterizer {
                 }
 
                 depths[idx] = depth;
-                colors[idx] = ((clampToByte(r) << 16) | (clampToByte(g) << 8) | clampToByte(b)) & quantMask;
+                colors[idx] = ((clampToByte(r) << RED_SHIFT) | (clampToByte(g) << GREEN_SHIFT) | clampToByte(b)) & quantMask;
             }
         }
     }
@@ -137,11 +136,11 @@ export class SpriteCellRasterizer {
             }
             const a = topCovered ? colorTop[i] : bg;
             const b = bottomCovered ? colorBottom[i] : bg;
-            const r = (((a >> 16) & 255) + ((b >> 16) & 255)) >> 1;
-            const g = (((a >> 8) & 255) + ((b >> 8) & 255)) >> 1;
-            const bl = ((a & 255) + (b & 255)) >> 1;
+            const r = (((a >> RED_SHIFT) & CHANNEL_MASK) + ((b >> RED_SHIFT) & CHANNEL_MASK)) >> 1;
+            const g = (((a >> GREEN_SHIFT) & CHANNEL_MASK) + ((b >> GREEN_SHIFT) & CHANNEL_MASK)) >> 1;
+            const bl = ((a & CHANNEL_MASK) + (b & CHANNEL_MASK)) >> 1;
             resolveDepth[i] = dTop < dBottom ? dTop : dBottom;
-            resolveColor[i] = ((r << 16) | (g << 8) | bl) & quantMask;
+            resolveColor[i] = ((r << RED_SHIFT) | (g << GREEN_SHIFT) | bl) & quantMask;
         }
         this.screenBuffer.mergeRgbLayer(resolveDepth, resolveColor);
     }
