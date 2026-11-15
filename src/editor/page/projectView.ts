@@ -27,7 +27,7 @@ import {
     uniqueChildPath,
 } from "./projectFiles";
 import type {ProjectFileKind, ProjectFolder} from "./projectFiles";
-import {EXTERNAL_EDITOR_UNAVAILABLE_TEXT, ProjectFilePreview} from "./projectPreview";
+import {EXTERNAL_EDITOR_UNAVAILABLE_TEXT} from "./projectPreview";
 
 type ItemKind = ProjectFileKind | "folder";
 
@@ -44,7 +44,6 @@ export class ProjectView {
     private readonly tree: HTMLElement;
     private readonly grid: HTMLElement;
     private readonly breadcrumb: HTMLElement;
-    private readonly preview: ProjectFilePreview;
     private readonly expanded = new Set<string>([ROOT_FOLDER_PATH]);
     private entries: readonly ProjectEntry[] = [];
     private root: ProjectFolder = buildProjectTree([]);
@@ -69,8 +68,7 @@ export class ProjectView {
         this.tree.setAttribute("role", "tree");
         this.grid = createElement(document, "div", "project-grid");
         this.grid.setAttribute("role", "listbox");
-        this.preview = new ProjectFilePreview(document, workspace);
-        body.append(this.tree, this.grid, this.preview.element);
+        body.append(this.tree, this.grid);
         container.replaceChildren(toolbar, body);
         this.installFolderDrop(this.grid, () => this.currentFolder);
         this.grid.addEventListener("contextmenu", event => {
@@ -87,7 +85,7 @@ export class ProjectView {
 
     public rebind(): void {
         this.unsubscribeFiles();
-        this.preview.clear();
+        this.workspace.inspectFile(undefined);
         this.unsubscribeFiles = this.workspace.session.files.onChange(change => {
             void this.reload();
             for (const path of change.paths) {
@@ -136,12 +134,17 @@ export class ProjectView {
         this.renderBreadcrumb();
         this.tree.replaceChildren(this.folderNode(this.root, 0));
         this.renderGrid();
-        this.showSelectedFile();
+        this.syncInspectedFile();
     }
 
-    private showSelectedFile(): void {
-        const selected = this.selectedPath;
-        this.preview.show(selected === undefined ? undefined : this.entries.find(entry => entry.kind === "file" && normalizeProjectPath(entry.path) === selected));
+    private syncInspectedFile(): void {
+        const inspected = this.workspace.inspectedFile;
+        if (inspected !== undefined) this.workspace.inspectFile(this.fileEntry(inspected.path));
+    }
+
+    private fileEntry(path: string): ProjectEntry | undefined {
+        const normalized = normalizeProjectPath(path);
+        return this.entries.find(entry => entry.kind === "file" && normalizeProjectPath(entry.path) === normalized);
     }
 
     private renderBreadcrumb(): void {
@@ -207,7 +210,7 @@ export class ProjectView {
             this.selectedPath = path;
             for (const selected of this.grid.querySelectorAll(`.${SELECTED_CLASS}`)) selected.classList.remove(SELECTED_CLASS);
             item.classList.add(SELECTED_CLASS);
-            this.showSelectedFile();
+            this.workspace.inspectFile(this.fileEntry(path));
         });
         item.addEventListener("dblclick", () => this.activate(path, kind));
         item.addEventListener("contextmenu", event => {
