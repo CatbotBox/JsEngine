@@ -6,6 +6,7 @@ import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
 import {Time} from "./time";
 import {PresentationBarriers} from "./presentationBarriers";
+import {ActiveRenderers} from "./activeRenderers";
 import {GcSystem} from "./gcSystem";
 import {InputSystem} from "../input/inputSystem";
 import {WorldSource} from "./worldSource";
@@ -40,6 +41,7 @@ export class World extends WorldSource {
     private _entityManager: EntityManager | undefined;
     public time: Time = new Time();
     public readonly presentationBarriers: PresentationBarriers = new PresentationBarriers();
+    public readonly renderers: ActiveRenderers = new ActiveRenderers();
 
     get archetypes(): EntityArchetypeMap {
         return this._archetypes;
@@ -132,7 +134,7 @@ export class World extends WorldSource {
 
     public get loopTiming(): LoopTiming {
         const settings = this._frameLoopSettingsQuery.tryGetSingleton({settings: FrameLoopSettings})?.settings ?? this._defaultFrameLoopSettings;
-        return this._loopTimingResolver.resolve(settings);
+        return this._loopTimingResolver.resolve(settings, this.renderers.framesRenderedOnCpu);
     }
 
     public step(deltaTimeMs: number = this.loopTiming.tickDeltaMs): void {

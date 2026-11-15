@@ -40,3 +40,14 @@ export function minimumFrameIntervalMs(pacing: FramePacing): number {
 export function interleavedFrameIntervalMs(pacing: FramePacing): number {
     return pacing.kind === "uncapped" ? ASSUMED_DISPLAY_INTERVAL_MS : minimumFrameIntervalMs(pacing);
 }
+
+export function limitPacing(pacing: FramePacing, minimumIntervalMs: number): FramePacing {
+    switch (pacing.kind) {
+        case "interval":
+            return pacing.intervalMs >= minimumIntervalMs ? pacing : intervalPacing(minimumIntervalMs);
+        case "uncapped":
+            return intervalPacing(minimumIntervalMs);
+        case "display":
+            return displayPacing(Math.max(pacing.capIntervalMs ?? NO_MINIMUM_INTERVAL_MS, minimumIntervalMs));
+    }
+}

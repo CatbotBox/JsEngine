@@ -257,6 +257,19 @@ describe("GpuMeshPassSystem", () => {
         expect([...first.errors, ...second.errors]).toEqual([]);
     });
 
+    test("lifts the CPU render rate limit while enabled, though the pixel overlay still renders on the CPU", () => {
+        recordConsole();
+        const {world} = gpuWorld();
+        const pass = world.getOrCreateSystem(GpuMeshPassSystem);
+        expect([world.renderers.count("cpu"), world.renderers.count("gpu")]).toEqual([1, 1]);
+        expect(world.renderers.framesRenderedOnCpu).toBe(false);
+        pass.enabled = false;
+        expect(world.renderers.framesRenderedOnCpu).toBe(true);
+        pass.enabled = true;
+        world.stop();
+        expect([world.renderers.count("cpu"), world.renderers.count("gpu")]).toEqual([0, 0]);
+    });
+
     test("draws every instance of a mesh in one instanced call and counts its triangles", async () => {
         const rig = gpuWorld();
         const {world, device, errors} = rig;

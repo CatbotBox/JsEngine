@@ -7,6 +7,7 @@ import type {SystemCtor} from "./system";
 import {SystemGroup} from "./systemGroup";
 import {PresentationSystemGroup} from "./presentationSystemGroup";
 import {Resource} from "./resource";
+import {ActiveRenderers} from "./activeRenderers";
 import {Component} from "./component";
 import {EntityCommandBufferSystem} from "./entityCommandBufferSystem";
 import {FrameLoopSettings, resolveLoopTiming, UNCAPPED_RENDER_RATE} from "./frameLoopSettings";
@@ -28,6 +29,12 @@ const DELTA_DECIMALS = 2;
 const NO_WORK_MS = 0;
 const NOT_REPEATED = false;
 const LATE_PRESENTATION_PRIORITY = 1000;
+const CPU_RENDERED = true;
+const NOT_CPU_RENDERED = false;
+const CPU_LIMIT = 60;
+const CPU_LIMIT_MS = MS_PER_SECOND / CPU_LIMIT;
+const SLOW_RENDER_RATE = 30;
+const FAST_RENDER_RATE = 120;
 
 class Recorder extends Resource {
     public readonly entries: string[] = [];
@@ -196,9 +203,9 @@ describe("World loop pacing", () => {
         const rig = loopRig();
         const settings = new FrameLoopSettings();
         settings.matchDisplay = true;
-        expect(resolveLoopTiming(settings).pacing).toEqual({kind: "display", capIntervalMs: TICK_MS});
+        expect(resolveLoopTiming(settings, NOT_CPU_RENDERED).pacing).toEqual({kind: "display", capIntervalMs: TICK_MS});
         settings.renderRate = UNCAPPED_RENDER_RATE;
-        expect(resolveLoopTiming(settings).pacing).toEqual({kind: "display"});
+        expect(resolveLoopTiming(settings, NOT_CPU_RENDERED).pacing).toEqual({kind: "display"});
         rig.world.entityManager.createEntity("frameLoop", [settings]);
         rig.world.startLoop();
         expect(rig.scheduler.pacing).toEqual({kind: "display"});
@@ -207,13 +214,13 @@ describe("World loop pacing", () => {
     test("invalid settings are rejected with the field that is wrong", () => {
         const settings = new FrameLoopSettings();
         settings.simulationTickRate = 0;
-        expect(() => resolveLoopTiming(settings)).toThrow("simulationTickRate");
+        expect(() => resolveLoopTiming(settings, NOT_CPU_RENDERED)).toThrow("simulationTickRate");
         settings.simulationTickRate = TICK_RATE;
         settings.renderRate = Number.NaN;
-        expect(() => resolveLoopTiming(settings)).toThrow("renderRate");
+        expect(() => resolveLoopTiming(settings, NOT_CPU_RENDERED)).toThrow("renderRate");
         settings.renderRate = TICK_RATE;
         settings.maxCatchUpTicks = 0;
-        expect(() => resolveLoopTiming(settings)).toThrow("maxCatchUpTicks");
+        expect(() => resolveLoopTiming(settings, NOT_CPU_RENDERED)).toThrow("maxCatchUpTicks");
     });
 
     test("settings changed while running take effect after the frame, restarting the scheduler only for new pacing", () => {
@@ -257,6 +264,83 @@ describe("World loop pacing", () => {
         rig.frameAt(3 * TICK_MS);
         expect(seen).toEqual([1, 1, 0]);
         expect(input.keyHeld(Key.A) && input.keyHeld(Key.B)).toBe(true);
+    });
+});
+
+describe("World loop CPU render rate limit", () => {
+    function settingsWith(configure: (settings: FrameLoopSettings) => void): FrameLoopSettings {
+        const settings = new FrameLoopSettings();
+        configure(settings);
+        return settings;
+    }
+
+    test("frames rendered on the CPU turn an uncapped render rate into frames at the limit", () => {
+        const settings = settingsWith(settings => settings.renderRate = UNCAPPED_RENDER_RATE);
+        const timing = resolveLoopTiming(settings, CPU_RENDERED);
+        expect(timing.pacing).toEqual({kind: "interval", intervalMs: CPU_LIMIT_MS});
+        expect(timing.renderRateLimit).toBe(CPU_LIMIT);
+    });
+
+    test("frames rendered on the CPU cap display pacing at the limit, keeping a lower render rate's cap", () => {
+        const settings = settingsWith(settings => {
+            settings.renderRate = UNCAPPED_RENDER_RATE;
+            settings.matchDisplay = true;
+        });
+        expect(resolveLoopTiming(settings, CPU_RENDERED).pacing).toEqual({kind: "display", capIntervalMs: CPU_LIMIT_MS});
+        settings.renderRate = SLOW_RENDER_RATE;
+        expect(resolveLoopTiming(settings, CPU_RENDERED).pacing).toEqual({kind: "display", capIntervalMs: MS_PER_SECOND / SLOW_RENDER_RATE});
+    });
+
+    test("frames rendered on the CPU lower a faster interval to the limit and keep a slower one", () => {
+        const settings = settingsWith(settings => settings.renderRate = FAST_RENDER_RATE);
+        expect(resolveLoopTiming(settings, CPU_RENDERED).pacing).toEqual({kind: "interval", intervalMs: CPU_LIMIT_MS});
+        settings.renderRate = SLOW_RENDER_RATE;
+        expect(resolveLoopTiming(settings, CPU_RENDERED).pacing).toEqual({kind: "interval", intervalMs: MS_PER_SECOND / SLOW_RENDER_RATE});
+    });
+
+    test("frames not rendered on the CPU, or an uncapped limit, keep the requested pacing", () => {
+        const settings = settingsWith(settings => settings.renderRate = UNCAPPED_RENDER_RATE);
+        const gpuTiming = resolveLoopTiming(settings, NOT_CPU_RENDERED);
+        expect(gpuTiming.pacing).toEqual({kind: "uncapped"});
+        expect(gpuTiming.renderRateLimit).toBe(UNCAPPED_RENDER_RATE);
+        settings.cpuRenderRateLimit = UNCAPPED_RENDER_RATE;
+        expect(resolveLoopTiming(settings, CPU_RENDERED).pacing).toEqual({kind: "uncapped"});
+    });
+
+    test("an invalid limit is rejected even when no CPU renderer is active", () => {
+        for (const limit of [0, -CPU_LIMIT, Number.NaN]) {
+            const settings = settingsWith(settings => settings.cpuRenderRateLimit = limit);
+            expect(() => resolveLoopTiming(settings, NOT_CPU_RENDERED)).toThrow("cpuRenderRateLimit");
+        }
+    });
+
+    test("a GPU renderer lifts the limit even while a CPU renderer draws its overlay", () => {
+        const renderers = new ActiveRenderers();
+        renderers.add("cpu");
+        expect(renderers.framesRenderedOnCpu).toBe(true);
+        renderers.add("gpu");
+        expect(renderers.framesRenderedOnCpu).toBe(false);
+        renderers.remove("gpu");
+        renderers.remove("cpu");
+        expect(renderers.framesRenderedOnCpu).toBe(false);
+        expect(() => renderers.remove("cpu")).toThrow("no cpu renderer");
+    });
+
+    test("the running loop re-resolves its pacing when renderers appear or go away", () => {
+        const rig = loopRig(workSystem({name: "tick", priority: 1}));
+        withSettings(rig.world, settings => settings.renderRate = UNCAPPED_RENDER_RATE);
+        rig.world.renderers.add("cpu");
+        rig.world.startLoop();
+        expect(rig.scheduler.pacing).toEqual({kind: "interval", intervalMs: CPU_LIMIT_MS});
+        rig.world.renderers.add("gpu");
+        rig.frameAt(TICK_MS);
+        expect([rig.scheduler.starts, rig.scheduler.pacing]).toEqual([2, {kind: "uncapped"}]);
+        expect(rig.world.loopTiming.renderRateLimit).toBe(UNCAPPED_RENDER_RATE);
+        rig.world.renderers.remove("gpu");
+        rig.frameAt(2 * TICK_MS);
+        expect([rig.scheduler.starts, rig.scheduler.pacing]).toEqual([3, {kind: "interval", intervalMs: CPU_LIMIT_MS}]);
+        rig.frameAt(3 * TICK_MS);
+        expect(rig.scheduler.starts).toBe(3);
     });
 });
 

@@ -69,6 +69,7 @@ export class PixelRenderSystemGroup extends SystemGroup {
     }
 
     override onEnable(): void {
+        this.world.renderers.add("cpu");
         super.onEnable();
         PixelPresenterResource.presenterOf(this.world).start();
         this.update();
@@ -77,5 +78,6 @@ export class PixelRenderSystemGroup extends SystemGroup {
     override onDisable(): void {
         PixelPresenterResource.presenterOf(this.world).stop();
         super.onDisable();
+        this.world.renderers.remove("cpu");
     }
 }

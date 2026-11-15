@@ -107,6 +107,7 @@ export class CellRenderSystemGroup extends SystemGroup {
     }
 
     override onEnable(): void {
+        this.world.renderers.add("cpu");
         super.onEnable();
         CellPresenterResource.presenterOf(this.world).start();
         this._repaint = "full";
@@ -116,5 +117,6 @@ export class CellRenderSystemGroup extends SystemGroup {
     override onDisable(): void {
         CellPresenterResource.presenterOf(this.world).stop();
         super.onDisable();
+        this.world.renderers.remove("cpu");
     }
 }
