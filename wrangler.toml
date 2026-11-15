@@ -1,0 +1,3 @@
+name = "jsengine"
+pages_build_output_dir = "dist/web-prod"
+compatibility_date = "2026-11-01"
