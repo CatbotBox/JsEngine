@@ -11,6 +11,10 @@ const PIXEL_GREEN_SHIFT = 8;
 const PIXEL_BLUE_SHIFT = 16;
 const PIXEL_ALPHA_SHIFT = 24;
 const OPAQUE_ALPHA_BITS = CHANNEL_MAX << PIXEL_ALPHA_SHIFT;
+const PIXEL_RGB_BITS = 0x00FFFFFF;
+
+export const OPAQUE_ALPHA = CHANNEL_MAX;
+export const TRANSPARENT_ALPHA = 0;
 const ENDIANNESS_PROBE = 1;
 const NOT_LITTLE_ENDIAN = "PixelFramebuffer writes RGBA bytes through a Uint32Array view and needs a little-endian platform";
 
@@ -81,11 +85,11 @@ export class PixelFramebuffer extends Resource {
         return this._depth;
     }
 
-    public beginFrame(size: PixelPresenterSize, backgroundRgb: number, pixelsPerScreenUnitX: number): void {
+    public beginFrame(size: PixelPresenterSize, backgroundRgb: number, pixelsPerScreenUnitX: number, backgroundAlpha: number = OPAQUE_ALPHA): void {
         this.resize(Math.max(0, size.widthPx | 0), Math.max(0, size.heightPx | 0));
         this._pixelsPerScreenUnitX = pixelsPerScreenUnitX;
         this._pixelsPerScreenUnitY = pixelsPerScreenUnitX * SCREEN_UNIT_HEIGHT_PER_WIDTH;
-        this._pixels.fill(pixelOfRgb(backgroundRgb));
+        this._pixels.fill((pixelOfRgb(backgroundRgb) & PIXEL_RGB_BITS) | ((backgroundAlpha & CHANNEL_MASK) << PIXEL_ALPHA_SHIFT));
         this._depth.fill(Number.POSITIVE_INFINITY);
     }
 

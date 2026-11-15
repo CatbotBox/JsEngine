@@ -6,17 +6,29 @@ import type {PixelWorldDisplay} from "./worldWorkerPage";
 import {FIXED_FRAMEBUFFER_LIMITS, fixedFramebufferSizeFromQuery, PIXEL_SCALE_LIMITS, pixelScaleFromQuery} from "./worldWorkerProtocol";
 import type {FixedFramebufferSize, PixelSurfaceSize} from "./worldWorkerProtocol";
 
-const PIXELATED_IMAGE_RENDERING = "pixelated";
-const NO_SCREEN_UNITS = 0;
+export const PIXELATED_IMAGE_RENDERING = "pixelated";
+export const NO_SCREEN_UNITS = 0;
 
 export interface PixelCanvasDisplayOptions {
     readonly fixed?: FixedFramebufferSize;
     readonly devicePixelsPerFramebufferPixel?: number;
 }
 
-interface ScreenUnitPx {
+export interface ScreenUnitPx {
     readonly x: number;
     readonly y: number;
+}
+
+export interface FramebufferFit {
+    readonly widthPx: number;
+    readonly heightPx: number;
+    readonly cssWidthPx: number;
+    readonly cssHeightPx: number;
+}
+
+export interface ContainerSize {
+    readonly width: number;
+    readonly height: number;
 }
 
 function fittedPixels(availableDevicePx: number, devicePixelsPerFramebufferPixel: number): number {
@@ -27,6 +39,20 @@ function defaultDevicePixelsPerFramebufferPixel(devicePixelRatio: number): numbe
     return Math.min(PIXEL_SCALE_LIMITS.max, Math.max(PIXEL_SCALE_LIMITS.min, Math.round(devicePixelRatio)));
 }
 
+export function fitFramebuffer(container: ContainerSize, devicePixelRatio: number, options: PixelCanvasDisplayOptions): FramebufferFit {
+    const scale = options.devicePixelsPerFramebufferPixel ?? defaultDevicePixelsPerFramebufferPixel(devicePixelRatio);
+    const widthPx = options.fixed?.widthPx ?? fittedPixels(container.width * devicePixelRatio, scale);
+    const heightPx = options.fixed?.heightPx ?? fittedPixels(container.height * devicePixelRatio, scale);
+    return {widthPx, heightPx, cssWidthPx: widthPx * scale / devicePixelRatio, cssHeightPx: heightPx * scale / devicePixelRatio};
+}
+
+export function pixelCanvasDisplayOptionsFromQuery(search: string): PixelCanvasDisplayOptions {
+    return {
+        fixed: fixedFramebufferSizeFromQuery(search),
+        devicePixelsPerFramebufferPixel: pixelScaleFromQuery(search),
+    };
+}
+
 export class PixelCanvasDisplay implements PixelWorldDisplay {
     private readonly shell: CanvasDisplayShell<PixelFrame>;
     private readonly presenter: CanvasPixelPresenter<ImageData>;
@@ -35,7 +61,7 @@ export class PixelCanvasDisplay implements PixelWorldDisplay {
     public constructor(container: HTMLElement, private readonly options: PixelCanvasDisplayOptions = {}) {
         this.shell = new CanvasDisplayShell<PixelFrame>(container, frame => this.draw(frame));
         this.shell.canvas.style.imageRendering = PIXELATED_IMAGE_RENDERING;
-        this.presenter = new CanvasPixelPresenter<ImageData>({canvas: this.shell.canvas, context: this.shell.context});
+        this.presenter = new CanvasPixelPresenter<ImageData>({canvas: this.shell.canvas, context: this.shell.context2d()});
         this.shell.mount(this.fit);
     }
 
@@ -81,21 +107,14 @@ export class PixelCanvasDisplay implements PixelWorldDisplay {
     }
 
     private readonly fit = (): void => {
-        const ratio = currentDevicePixelRatio();
-        const scale = this.options.devicePixelsPerFramebufferPixel ?? defaultDevicePixelsPerFramebufferPixel(ratio);
-        const bounds = this.shell.containerBounds();
-        const widthPx = this.options.fixed?.widthPx ?? fittedPixels(bounds.width * ratio, scale);
-        const heightPx = this.options.fixed?.heightPx ?? fittedPixels(bounds.height * ratio, scale);
-        this.presenter.resize(widthPx, heightPx);
+        const fitted = fitFramebuffer(this.shell.containerBounds(), currentDevicePixelRatio(), this.options);
+        this.presenter.resize(fitted.widthPx, fitted.heightPx);
         const style = this.shell.canvas.style;
-        style.width = `${widthPx * scale / ratio}px`;
-        style.height = `${heightPx * scale / ratio}px`;
+        style.width = `${fitted.cssWidthPx}px`;
+        style.height = `${fitted.cssHeightPx}px`;
     };
 }
 
 export function pixelCanvasDisplayFromQuery(container: HTMLElement, search: string): PixelCanvasDisplay {
-    return new PixelCanvasDisplay(container, {
-        fixed: fixedFramebufferSizeFromQuery(search),
-        devicePixelsPerFramebufferPixel: pixelScaleFromQuery(search),
-    });
+    return new PixelCanvasDisplay(container, pixelCanvasDisplayOptionsFromQuery(search));
 }

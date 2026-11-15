@@ -6,6 +6,7 @@ export interface PixelPresenterSize {
 }
 
 export interface PixelPresenter {
+    readonly overlaysScene?: boolean;
     size(): PixelPresenterSize;
     onResize(listener: () => void): () => void;
     backlogged?(): boolean;

@@ -22,12 +22,13 @@ const SUITE_ROOTS = [SRC, DEMO];
 const RELATIVE_IMPORT = /(?:from|import|require)\s*\(?\s*["'](\.{1,2}(?:\/[^"']*)?)["']/g;
 const RESOLVE_SUFFIXES = ["", ".ts", ".js", "/index.ts"];
 
-const BACKENDS = ["backends/cells", "backends/pixels"];
+const BACKENDS = ["backends/cells", "backends/pixels", "backends/gpu"];
 
 const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     "engine": ["engine"],
     "backends/cells": ["engine", "backends/cells"],
     "backends/pixels": ["engine", "backends/pixels"],
+    "backends/gpu": ["engine", "backends/pixels", "backends/gpu"],
     "hosts/terminal": ["engine", ...BACKENDS, "hosts/terminal"],
     "hosts/web": ["engine", ...BACKENDS, "hosts/web"],
     "hosts/desktop": ["engine", ...BACKENDS, "editor project", "hosts/desktop"],
@@ -47,8 +48,8 @@ const DEMO_LAUNCH_FOLDER = "launch";
 const EDITOR_LAUNCH_FOLDER = "launch";
 const EDITOR_PROJECT_FOLDER = "project";
 const EDITOR_SOURCES = "src/editor/";
-const WEB_GAME_ENTRY_NAMES = ["2d", "3d", "swarm", "2d-cells", "2d-pixels", "3d-cells", "3d-pixels", "swarm-cells", "swarm-pixels"];
-const DEMO_GAME_ENTRY_PATHS = [["launch", "web.worker.ts"], ["launch", "pixelWeb.worker.ts"], ["index.ts"]];
+const WEB_GAME_ENTRY_NAMES = ["2d", "3d", "swarm", "2d-cells", "2d-pixels", "3d-cells", "3d-pixels", "3d-gpu", "swarm-cells", "swarm-pixels"];
+const DEMO_GAME_ENTRY_PATHS = [["launch", "web.worker.ts"], ["launch", "pixelWeb.worker.ts"], ["launch", "gpuWeb.worker.ts"], ["index.ts"]];
 const ENGINE_WORLD_SOURCE = "src/engine/core/world.ts";
 
 function typeScriptFilesUnder(directory: string): string[] {
@@ -146,9 +147,12 @@ describe("source rules", () => {
         expect(found.filter(entry => !WRONG_DIRECTION_ALLOWLIST.includes(entry))).toEqual([]);
     });
 
-    test("the cells and pixels backends are separate layers and every source folder has one", () => {
+    test("the cells and pixels backends are separate layers, gpu builds on pixels only, and every source folder has one", () => {
         expect(ALLOWED_LAYERS["backends/cells"].includes("backends/pixels")).toBe(false);
         expect(ALLOWED_LAYERS["backends/pixels"].includes("backends/cells")).toBe(false);
+        expect(ALLOWED_LAYERS["backends/cells"].includes("backends/gpu")).toBe(false);
+        expect(ALLOWED_LAYERS["backends/pixels"].includes("backends/gpu")).toBe(false);
+        expect(ALLOWED_LAYERS["backends/gpu"].includes("backends/cells")).toBe(false);
         const layers = new Set([...typeScriptFilesUnder(SRC), ...typeScriptFilesUnder(DEMO)].map(file => layerOf(file)!));
         expect([...layers].filter(layer => ALLOWED_LAYERS[layer] === undefined)).toEqual([]);
     });

@@ -45,6 +45,7 @@ export interface Demo3dRenderControls {
     toggleMeshPass(): void;
     toggleHud(): void;
     toggleTextures(): void;
+    toggleTextureFiltering?(): void;
     toggleHalfBlockCells?(): void;
     toggleLod(): void;
     changeLodBias(levels: number): void;
@@ -200,7 +201,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     controlsImage.image = [
         'camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit',
         'models  space spawn  bksp despawn  n next  r reload  arrows rotate  [ ] scale',
-        'render  1-4 aa  b halfblock  t textures  f lod  - = detail  v 3d  tab hud  g order',
+        'render  1-4 aa  b halfblock  t textures  m filter  f lod  - = detail  v 3d  tab hud  g order',
         'lights  h all  p lamp  i/k j/l sun',
     ];
 
@@ -483,6 +484,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         {action: "toggleHud", keys: [Key.Tab], run: () => render.toggleHud()},
         {action: "logSystemOrder", keys: [Key.G], run: () => world.logSystemUpdateOrder()},
         {action: "toggleTextures", keys: [Key.T], run: () => render.toggleTextures()},
+        {action: "toggleTextureFiltering", keys: [Key.M], run: () => render.toggleTextureFiltering?.()},
         {action: "toggleHalfBlock", keys: [Key.B], run: () => render.toggleHalfBlockCells?.()},
         {action: "toggleLod", keys: [Key.F], run: () => render.toggleLod()},
         {action: "lessDetail", keys: [Key.Minus], run: () => render.changeLodBias(LESS_DETAIL_LOD_LEVELS)},

@@ -2,6 +2,7 @@ import {FaceCulling} from "../faceCulling";
 import {DeepReadonly} from "../../../util/tokenUtils";
 import {Mesh} from "../mesh";
 import {ViewSpaceMesh} from "../viewSpaceMesh";
+import type {VertexShading} from "../lighting/vertexLighting";
 import {multiplyPackedRgb} from "../material";
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
 import {RasterWorkerPool} from "./rasterWorkerPool";
@@ -32,6 +33,7 @@ const INITIAL_TRIANGLE_CAPACITY = 4096;
 const A_INSIDE = 1;
 const B_INSIDE = 2;
 const C_INSIDE = 4;
+const NO_SPECULAR = 0;
 const CONTINUE_FRAME = true;
 const END_OF_FRAME = false;
 
@@ -45,6 +47,13 @@ function packUnitRgb(r: number, g: number, b: number): number {
 
 function clampToByte(value: number): number {
     return value <= 0 ? 0 : value >= CHANNEL_MAX ? CHANNEL_MAX : Math.round(value);
+}
+
+function fillSummedShadedVertexColors(colors: Int32Array, vertCount: number, shading: VertexShading): void {
+    const diffuse = shading.diffuseRgb, specular = shading.specularRgb;
+    for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
+        colors[i] = packUnitRgb(diffuse[j] + specular[j], diffuse[j + 1] + specular[j + 1], diffuse[j + 2] + specular[j + 2]);
+    }
 }
 
 function lerpPackedColor(from: number, to: number, t: number): number {
@@ -85,6 +94,10 @@ export class MeshRasterizer {
 
     private viewSpaceMesh = new ViewSpaceMesh();
     private vertexColors = new Int32Array(0);
+    private vertexSpeculars = new Int32Array(0);
+    private triangleSpecularA = NO_SPECULAR;
+    private triangleSpecularB = NO_SPECULAR;
+    private triangleSpecularC = NO_SPECULAR;
     private materialColors = new Int32Array(0);
     private materialTextureIds = new Int32Array(0);
     private materialTexelAreas = new Float64Array(0);
@@ -189,21 +202,27 @@ export class MeshRasterizer {
         return this.pool;
     }
 
-    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgbOrNull: Float64Array | null = null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
+    public addMesh(mesh: DeepReadonly<Mesh>, modelView: Float32Array, focalLength: number | undefined, cellRatio: number, baseColor: number, shadingOrNull: VertexShading | null = null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
         if (this.width === 0 || this.height === 0) return;
-        this.addViewSpaceMesh(mesh, this.viewSpaceMesh.transformFrom(mesh, modelView, null), focalLength, cellRatio, baseColor, vertexRgbOrNull, faceCulling);
+        this.addViewSpaceMesh(mesh, this.viewSpaceMesh.transformFrom(mesh, modelView, null), focalLength, cellRatio, baseColor, shadingOrNull, faceCulling);
     }
 
-    public addViewSpaceMesh(mesh: DeepReadonly<Mesh>, viewMesh: ViewSpaceMesh, focalLength: number | undefined, cellRatio: number, baseColor: number, vertexRgbOrNull: Float64Array | null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
+    public addViewSpaceMesh(mesh: DeepReadonly<Mesh>, viewMesh: ViewSpaceMesh, focalLength: number | undefined, cellRatio: number, baseColor: number, shadingOrNull: VertexShading | null, faceCulling: FaceCulling = FaceCulling.BackFaces): void {
         if (this.width === 0 || this.height === 0) return;
         this.faceCulling = faceCulling;
 
         const vertCount = viewMesh.vertCount;
-        if (this.vertexColors.length < vertCount) this.vertexColors = new Int32Array(vertCount);
+        if (this.vertexColors.length < vertCount) {
+            this.vertexColors = new Int32Array(vertCount);
+            this.vertexSpeculars = new Int32Array(vertCount);
+        }
         const view = viewMesh.positions;
         const colors = this.vertexColors;
-        this.fillVertexColors(colors, mesh, baseColor, vertexRgbOrNull);
+        const speculars = this.vertexSpeculars;
         const anyTexture = this.anyTextureAfterPreparingMaterials(mesh);
+        const splitSpecular = anyTexture && shadingOrNull !== null && shadingOrNull.hasSpecular;
+        this.fillVertexColors(colors, mesh, baseColor, shadingOrNull, splitSpecular);
+        this.triangleSpecularA = this.triangleSpecularB = this.triangleSpecularC = NO_SPECULAR;
         const uvs = mesh.uvs.raw;
         const vertexMaterial = mesh.vertexMaterial;
         const textureIds = this.materialTextureIds;
@@ -221,6 +240,11 @@ export class MeshRasterizer {
             const bx = view[ib], by = view[ib + 1], bz = view[ib + 2];
             const cx = view[ic], cy = view[ic + 1], cz = view[ic + 2];
             const colorA = colors[cornerA], colorB = colors[cornerB], colorC = colors[cornerC];
+            if (splitSpecular) {
+                this.triangleSpecularA = speculars[cornerA];
+                this.triangleSpecularB = speculars[cornerB];
+                this.triangleSpecularC = speculars[cornerC];
+            }
 
             let textureId = TextureStore.NO_TEXTURE, texelArea = 0, levelCount = 1;
             let ua = 0, va = 0, ub = 0, vb = 0, uc = 0, vc = 0;
@@ -246,31 +270,35 @@ export class MeshRasterizer {
             }
             if (!aIn && !bIn && !cIn) continue;
 
+            const specularA = this.triangleSpecularA, specularB = this.triangleSpecularB, specularC = this.triangleSpecularC;
             const insideMask = (aIn ? A_INSIDE : 0) | (bIn ? B_INSIDE : 0) | (cIn ? C_INSIDE : 0);
             if (insideMask === A_INSIDE) {
-                this.emitClippedCorner(ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
+                this.emitClippedCorner(ax, ay, az, colorA, specularA, ua, va, bx, by, bz, colorB, specularB, ub, vb, cx, cy, cz, colorC, specularC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
             } else if (insideMask === B_INSIDE) {
-                this.emitClippedCorner(bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
+                this.emitClippedCorner(bx, by, bz, colorB, specularB, ub, vb, cx, cy, cz, colorC, specularC, uc, vc, ax, ay, az, colorA, specularA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
             } else if (insideMask === C_INSIDE) {
-                this.emitClippedCorner(cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
+                this.emitClippedCorner(cx, cy, cz, colorC, specularC, uc, vc, ax, ay, az, colorA, specularA, ua, va, bx, by, bz, colorB, specularB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
             } else if (insideMask === (A_INSIDE | B_INSIDE)) {
-                this.emitClippedQuad(ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
+                this.emitClippedQuad(ax, ay, az, colorA, specularA, ua, va, bx, by, bz, colorB, specularB, ub, vb, cx, cy, cz, colorC, specularC, uc, vc, textureId, texelArea, levelCount, focalLength, cellRatio);
             } else if (insideMask === (B_INSIDE | C_INSIDE)) {
-                this.emitClippedQuad(bx, by, bz, colorB, ub, vb, cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
+                this.emitClippedQuad(bx, by, bz, colorB, specularB, ub, vb, cx, cy, cz, colorC, specularC, uc, vc, ax, ay, az, colorA, specularA, ua, va, textureId, texelArea, levelCount, focalLength, cellRatio);
             } else {
-                this.emitClippedQuad(cx, cy, cz, colorC, uc, vc, ax, ay, az, colorA, ua, va, bx, by, bz, colorB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
+                this.emitClippedQuad(cx, cy, cz, colorC, specularC, uc, vc, ax, ay, az, colorA, specularA, ua, va, bx, by, bz, colorB, specularB, ub, vb, textureId, texelArea, levelCount, focalLength, cellRatio);
             }
         }
     }
 
     private emitClippedCorner(
-        px: number, py: number, pz: number, colorP: number, up: number, vp: number,
-        qx: number, qy: number, qz: number, colorQ: number, uq: number, vq: number,
-        rx: number, ry: number, rz: number, colorR: number, ur: number, vr: number,
+        px: number, py: number, pz: number, colorP: number, specularP: number, up: number, vp: number,
+        qx: number, qy: number, qz: number, colorQ: number, specularQ: number, uq: number, vq: number,
+        rx: number, ry: number, rz: number, colorR: number, specularR: number, ur: number, vr: number,
         textureId: number, texelArea: number, levelCount: number, focalLength: number | undefined, cellRatio: number,
     ): void {
         const tq = (NEAR_PLANE_Z - pz) / (qz - pz);
         const tr = (NEAR_PLANE_Z - pz) / (rz - pz);
+        this.triangleSpecularA = specularP;
+        this.triangleSpecularB = lerpPackedColor(specularP, specularQ, tq);
+        this.triangleSpecularC = lerpPackedColor(specularP, specularR, tr);
         this.emitTriangle(
             px, py, pz,
             px + tq * (qx - px), py + tq * (qy - py), NEAR_PLANE_Z,
@@ -282,24 +310,31 @@ export class MeshRasterizer {
     }
 
     private emitClippedQuad(
-        px: number, py: number, pz: number, colorP: number, up: number, vp: number,
-        qx: number, qy: number, qz: number, colorQ: number, uq: number, vq: number,
-        rx: number, ry: number, rz: number, colorR: number, ur: number, vr: number,
+        px: number, py: number, pz: number, colorP: number, specularP: number, up: number, vp: number,
+        qx: number, qy: number, qz: number, colorQ: number, specularQ: number, uq: number, vq: number,
+        rx: number, ry: number, rz: number, colorR: number, specularR: number, ur: number, vr: number,
         textureId: number, texelArea: number, levelCount: number, focalLength: number | undefined, cellRatio: number,
     ): void {
         const tq = (NEAR_PLANE_Z - qz) / (rz - qz);
         const qrX = qx + tq * (rx - qx), qrY = qy + tq * (ry - qy);
         const colorQR = lerpPackedColor(colorQ, colorR, tq);
+        const specularQR = lerpPackedColor(specularQ, specularR, tq);
         const uQR = uq + tq * (ur - uq), vQR = vq + tq * (vr - vq);
         const tp = (NEAR_PLANE_Z - pz) / (rz - pz);
         const prX = px + tp * (rx - px), prY = py + tp * (ry - py);
         const colorPR = lerpPackedColor(colorP, colorR, tp);
+        const specularPR = lerpPackedColor(specularP, specularR, tp);
         const uPR = up + tp * (ur - up), vPR = vp + tp * (vr - vp);
+        this.triangleSpecularA = specularP;
+        this.triangleSpecularB = specularQ;
+        this.triangleSpecularC = specularQR;
         this.emitTriangle(
             px, py, pz, qx, qy, qz, qrX, qrY, NEAR_PLANE_Z,
             colorP, colorQ, colorQR, up, vp, uq, vq, uQR, vQR,
             textureId, texelArea, levelCount, focalLength, cellRatio,
         );
+        this.triangleSpecularB = specularQR;
+        this.triangleSpecularC = specularPR;
         this.emitTriangle(
             px, py, pz, qrX, qrY, NEAR_PLANE_Z, prX, prY, NEAR_PLANE_Z,
             colorP, colorQR, colorPR, up, vp, uQR, vQR, uPR, vPR,
@@ -307,12 +342,14 @@ export class MeshRasterizer {
         );
     }
 
-    private fillVertexColors(colors: Int32Array, mesh: DeepReadonly<Mesh>, tint: number, vertexRgbOrNull: Float64Array | null): void {
+    private fillVertexColors(colors: Int32Array, mesh: DeepReadonly<Mesh>, tint: number, shadingOrNull: VertexShading | null, splitSpecular: boolean): void {
         const vertCount = mesh.vertCount;
-        if (vertexRgbOrNull !== null) {
-            for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
-                colors[i] = packUnitRgb(vertexRgbOrNull[j], vertexRgbOrNull[j + 1], vertexRgbOrNull[j + 2]);
-            }
+        if (splitSpecular) {
+            this.fillSplitShadedVertexColors(colors, this.vertexSpeculars, mesh, shadingOrNull!);
+            return;
+        }
+        if (shadingOrNull !== null) {
+            fillSummedShadedVertexColors(colors, vertCount, shadingOrNull);
             return;
         }
         const materials = mesh.materials;
@@ -327,6 +364,22 @@ export class MeshRasterizer {
         const vertexMaterial = mesh.vertexMaterial;
         for (let i = 0; i < vertCount; i++) {
             colors[i] = materialColors[vertexMaterial[i]];
+        }
+    }
+
+    private fillSplitShadedVertexColors(colors: Int32Array, speculars: Int32Array, mesh: DeepReadonly<Mesh>, shading: VertexShading): void {
+        const vertCount = mesh.vertCount;
+        const diffuse = shading.diffuseRgb, specular = shading.specularRgb;
+        const vertexMaterial = mesh.vertexMaterial;
+        const textureIds = this.materialTextureIds;
+        for (let i = 0, j = 0; i < vertCount; i++, j += 3) {
+            if (textureIds[vertexMaterial[i]] !== TextureStore.NO_TEXTURE) {
+                colors[i] = packUnitRgb(diffuse[j], diffuse[j + 1], diffuse[j + 2]);
+                speculars[i] = packUnitRgb(specular[j], specular[j + 1], specular[j + 2]);
+            } else {
+                colors[i] = packUnitRgb(diffuse[j] + specular[j], diffuse[j + 1] + specular[j + 1], diffuse[j + 2] + specular[j + 2]);
+                speculars[i] = NO_SPECULAR;
+            }
         }
     }
 
@@ -437,6 +490,9 @@ export class MeshRasterizer {
         ints[o + 10] = colorC;
         ints[o + 11] = colorB;
         ints[o + 18] = textureId;
+        ints[o + 20] = this.triangleSpecularA;
+        ints[o + 21] = isBackFace ? this.triangleSpecularB : this.triangleSpecularC;
+        ints[o + 22] = isBackFace ? this.triangleSpecularC : this.triangleSpecularB;
         if (textureId !== TextureStore.NO_TEXTURE) {
             tris[o + 12] = ua;
             tris[o + 13] = va;

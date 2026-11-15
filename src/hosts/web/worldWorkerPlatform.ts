@@ -21,15 +21,26 @@ export interface WorldWorkerScope extends BrowserWorkerHost {
 
 const MAX_FRAMES_IN_FLIGHT = 2;
 
+const GPU_BACKEND: RenderBackend = "gpu";
+const NO_SCREEN_UNIT = 0;
+
 function surfaceMismatch(surface: SurfaceSize, wanted: RenderBackend): Error {
     return new Error(`The page shows a ${surface.kind} surface, so this world cannot present ${wanted}: `
         + `a ${wanted} world needs the page opened with ?backend=${wanted}`);
+}
+
+function missingCanvas(): Error {
+    return new Error(`The page sent no canvas, so this world cannot present ${GPU_BACKEND}: `
+        + `a ${GPU_BACKEND} world needs the page opened with ?backend=${GPU_BACKEND}`);
 }
 
 export class PageConnection {
     public readonly platform: Platform;
 
     private surface: SurfaceSize;
+    private readonly canvas: OffscreenCanvas | undefined;
+    private shownScreenUnitX = NO_SCREEN_UNIT;
+    private shownScreenUnitY = NO_SCREEN_UNIT;
     private cells: CellPresenter | undefined;
     private pixels: PixelPresenter | undefined;
     private inputSink: InputEventSink | undefined;
@@ -40,6 +51,7 @@ export class PageConnection {
 
     private constructor(private readonly scope: WorldWorkerScope, init: InitMessage, files: FileSource) {
         this.surface = init.surface;
+        this.canvas = init.canvas;
         const requestedRasterWorkers = init.requestedRasterWorkers;
         this.platform = {
             files,
@@ -98,6 +110,18 @@ export class PageConnection {
             stop: () => {},
             present: frame => this.postPixelFrame(frame),
         };
+    }
+
+    public gpuCanvas(): OffscreenCanvas {
+        if (this.canvas === undefined) throw missingCanvas();
+        return this.canvas;
+    }
+
+    public showScreenUnit(pixelsPerScreenUnitX: number, pixelsPerScreenUnitY: number): void {
+        if (pixelsPerScreenUnitX === this.shownScreenUnitX && pixelsPerScreenUnitY === this.shownScreenUnitY) return;
+        this.shownScreenUnitX = pixelsPerScreenUnitX;
+        this.shownScreenUnitY = pixelsPerScreenUnitY;
+        this.scope.postMessage({type: "screenUnit", pixelsPerScreenUnitX, pixelsPerScreenUnitY});
     }
 
     public connectInput(sink: InputEventSink): () => void {

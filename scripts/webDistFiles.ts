@@ -7,6 +7,7 @@ const PAGES: Readonly<Record<string, string>> = {
     "3d": "3d.html",
     "2d-pixels": "2d.html?backend=pixels",
     "3d-pixels": "3d.html?backend=pixels",
+    "3d-gpu": "3d.html?backend=gpu",
     "swarm": "swarm.html?backend=cells",
     "swarm-pixels": "swarm.html",
     "editor": "editor.html",
