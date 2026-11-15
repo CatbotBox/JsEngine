@@ -20,9 +20,10 @@ import {FaceCulling} from "../rendering/3d/faceCulling";
 import {AmbientLight} from "../rendering/3d/lighting/ambientLight";
 import {DirectionalLight} from "../rendering/3d/lighting/directionalLight";
 import {PointLight} from "../rendering/3d/lighting/pointLight";
-import {componentSchema} from "./componentSchemaBuilder";
+import {componentSchema, resourceSchema} from "./componentSchemaBuilder";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {PrefabInstance} from "./prefabInstance";
+import {ACTIVE_SCENE_RESOURCE_NAME, ActiveScene, SCENE_INSTANCE_COMPONENT_NAME, SceneInstance} from "./sceneInstance";
 import {PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY} from "./sceneSerialization";
 
 const REQUIRED_ENTITY = {nullable: false};
@@ -36,6 +37,7 @@ export const ENGINE_COMPONENT_CATEGORIES = {
     hud: "HUD",
     lighting: "Lighting",
     prefab: "Prefab",
+    scene: "Scene",
     settings: "Settings",
 } as const;
 
@@ -74,10 +76,12 @@ export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry
     registry.register(componentSchema(PointLight, "PointLight").number("range").rgb("color").number("intensity").category(CATEGORY.lighting).build());
     registry.register(componentSchema(AmbientLight, "AmbientLight").rgb("color").number("intensity").category(CATEGORY.lighting).build());
     registry.register(componentSchema(PrefabInstance, "PrefabInstance").string("sourcePath").textLines("overrides").category(CATEGORY.prefab).build());
+    registry.register(componentSchema(SceneInstance, SCENE_INSTANCE_COMPONENT_NAME).integer("sceneId").nullableString("path").category(CATEGORY.scene).build());
     registry.register(componentSchema(LocalToWorld, "LocalToWorld").presenceOnly().category(CATEGORY.transform).build());
     registry.register(componentSchema(RenderBounds, "RenderBounds").presenceOnly().category(CATEGORY.rendering).build());
     registry.register(componentSchema(ParentTransform, "ParentTransform").implied().category(CATEGORY.transform).build());
     registry.register(componentSchema(Children, "Children").implied().category(CATEGORY.transform).build());
     registry.register(componentSchema(WorldSpaceRenderBounds, "WorldSpaceRenderBounds").implied().category(CATEGORY.rendering).build());
     registry.register(componentSchema(ScreenSize, "ScreenSize").implied().category(CATEGORY.camera).build());
+    registry.registerResource(resourceSchema(ActiveScene, ACTIVE_SCENE_RESOURCE_NAME).integer("sceneId").nullableString("path").build());
 }

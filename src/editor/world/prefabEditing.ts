@@ -15,6 +15,7 @@ import {
     sceneJsonEquals,
     serializeEntities,
     untrackedComponentOf,
+    withoutSceneMembership,
 } from "../../engine/scene";
 import type {
     ComponentSchema,
@@ -71,7 +72,7 @@ function fieldsOf(component: Component): Record<string, unknown> {
 
 function withoutInstanceData(document: SceneDocument): SceneDocument {
     const root = documentTree(document).roots[0];
-    const entities = document.entities.map((record, index): SceneEntityRecord => {
+    const entities = withoutSceneMembership(document).entities.map((record, index): SceneEntityRecord => {
         if (index !== root) return record;
         const components = {...record.components};
         delete components[PREFAB_INSTANCE_COMPONENT_NAME];

@@ -21,6 +21,26 @@ export {assignInferredFieldValue, inferComponentSchema} from "./inferredSchema";
 export {EditorOnly} from "./editorOnly";
 export {PrefabInstance} from "./prefabInstance";
 export {
+    ACTIVE_SCENE_RESOURCE_NAME,
+    ActiveScene,
+    NO_SCENE_ID,
+    SCENE_INSTANCE_COMPONENT_NAME,
+    SceneInstance,
+    withoutSceneMembership,
+} from "./sceneInstance";
+export {SceneManager} from "./sceneManager";
+export type {
+    LoadedScene,
+    PersistentEntityPolicy,
+    SceneDocumentLoadRequest,
+    SceneHandle,
+    SceneLoadedListener,
+    SceneLoadMode,
+    SceneLoadRequest,
+    SceneManagerOptions,
+    ScenePreload,
+} from "./sceneManager";
+export {
     childEntitiesOf,
     orderedSceneRoots,
     parentEntityOf,

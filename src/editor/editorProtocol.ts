@@ -177,6 +177,7 @@ export interface SaveSceneRequest {
 export interface LoadSceneRequest {
     readonly op: "loadScene";
     readonly sceneText: string;
+    readonly path?: string;
 }
 
 export interface ExportSnapshotRequest {
@@ -625,7 +626,7 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
         case "getViewInfo":
             return isEditorView(value.view) && isAbsentOr(value.entities, isEntityList);
         case "loadScene":
-            return isString(value.sceneText);
+            return isString(value.sceneText) && isAbsentOr(value.path, isString);
         case "importSnapshot":
             return isString(value.documentText)
                 && isEditorMode(value.mode)
