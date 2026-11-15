@@ -32,6 +32,18 @@ locally with cross-origin isolation) and `demo:3d:window` (Electron window); the
 
 2D sprites and HUD elements render alongside 3D through the same screen buffer.
 
+## Deploying the web build
+
+`bun run web:deploy` builds `dist/web-prod` and uploads it to Cloudflare Pages on the account you are logged in to
+(the first run opens a browser to log in). The build fails if the site exceeds Pages' 25 MiB per-file or
+20,000-file limits.
+
+- The project name defaults to `jsengine` (from `wrangler.toml`); pass `--project-name=<name>` to use another. The
+  site lands on `<name>.pages.dev`, or a suffixed subdomain if that one is taken.
+- In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead of logging in, and create the project once
+  beforehand with `bunx wrangler pages project create <name>`.
+- `bun run web:serve-prod` serves the same build locally.
+
 ## Credits
 
 - `src/hosts/web/coi-serviceworker.js` is [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) v0.1.7 by

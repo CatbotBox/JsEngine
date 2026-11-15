@@ -86,6 +86,8 @@ const PRECOMPRESSED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".web
 const GZIP_PART_BYTES = 20 * MB;
 const GZIP_LEVEL_MAX = 9;
 const GZIP_LEVEL_HOST_TRANSIT = 6;
+const PAGES_MAX_FILE_BYTES = 25 * MB;
+const PAGES_MAX_FILES = 20_000;
 
 const FORBIDDEN: readonly [label: string, pattern: RegExp][] = [
     ["node module require", /require\(\s*["'](node:)?(fs|path|os|zlib|worker_threads|util)["']\s*\)/],
@@ -196,6 +198,13 @@ function writeDemo3dAssets(): Demo3dManifest {
     return manifest;
 }
 
+function overPagesLimits(): string[] {
+    const files = outputFiles(OUT);
+    const oversized = files.filter(path => statSync(path).size > PAGES_MAX_FILE_BYTES)
+        .map(path => `${siteRelative(path)}: ${formatSize(statSync(path).size)} exceeds the ${formatSize(PAGES_MAX_FILE_BYTES)} per-file limit`);
+    return files.length > PAGES_MAX_FILES ? [...oversized, `${files.length} files exceed the ${PAGES_MAX_FILES}-file limit`] : oversized;
+}
+
 function sizeOf(path: string): number {
     return statSync(join(OUT, path)).size;
 }
@@ -284,6 +293,13 @@ async function main(): Promise<void> {
     if (misplacedEditor.length > 0) {
         console.error("the editor protocol is in the wrong bundles:");
         for (const leak of misplacedEditor) console.error("  " + leak);
+        process.exit(1);
+    }
+
+    const overLimits = PROD ? overPagesLimits() : [];
+    if (overLimits.length > 0) {
+        console.error("the site exceeds Cloudflare Pages limits:");
+        for (const problem of overLimits) console.error("  " + problem);
         process.exit(1);
     }
 

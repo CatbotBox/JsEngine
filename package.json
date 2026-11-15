@@ -55,6 +55,7 @@
     "web:build-prod": "bun scripts/buildWeb.ts --prod",
     "web:serve-dev": "bun scripts/serveWeb.ts",
     "web:serve-prod": "bun scripts/serveWeb.ts --prod",
+    "web:deploy": "bun scripts/buildWeb.ts --prod && bunx wrangler pages deploy",
     "window:smoke-test": "bun scripts/launchWindow.ts 2d --smoke && bun scripts/launchWindow.ts 3d --smoke --no-build && bun scripts/launchWindow.ts swarm --smoke --no-build && bun scripts/launchWindow.ts 2d-pixels --smoke --no-build && bun scripts/launchWindow.ts 3d-pixels --smoke --no-build && bun scripts/launchWindow.ts swarm-pixels --smoke --no-build",
     "window:package-2d": "bun scripts/packageWindow.ts 2d",
     "window:package-3d": "bun scripts/packageWindow.ts 3d",
