@@ -8,6 +8,12 @@ import {WHITE_RGB, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../.
 const NEGLIGIBLE_SPECULAR = 0.005;
 const NO_SPECULAR_CUTOFF = 2;
 
+export interface VertexShading {
+    readonly diffuseRgb: Float64Array;
+    readonly specularRgb: Float64Array;
+    readonly hasSpecular: boolean;
+}
+
 export class VertexLighting {
     private lightCount: number = 0;
     private isLit: boolean = false;
@@ -16,7 +22,7 @@ export class VertexLighting {
     private vector: Float64Array = new Float64Array(0);
     private color: Float64Array = new Float64Array(0);
     private rangeSquared: Float64Array = new Float64Array(0);
-    private vertexRgb: Float64Array = new Float64Array(0);
+    private readonly shading: {diffuseRgb: Float64Array, specularRgb: Float64Array, hasSpecular: boolean} = {diffuseRgb: new Float64Array(0), specularRgb: new Float64Array(0), hasSpecular: false};
     private materialAlbedo: Float64Array = new Float64Array(3);
     private materialSpecular: Float64Array = new Float64Array(3);
     private materialEmissive: Float64Array = new Float64Array(3);
@@ -65,11 +71,15 @@ export class VertexLighting {
         }
     }
 
-    public shade(viewMesh: ViewSpaceMesh, tint: number): Float64Array {
+    public shade(viewMesh: ViewSpaceMesh, tint: number): VertexShading {
         const vertCount = viewMesh.vertCount;
         const floatCount = vertCount * 3;
-        if (this.vertexRgb.length < floatCount) this.vertexRgb = new Float64Array(floatCount);
-        const out = this.vertexRgb;
+        const shading = this.shading;
+        if (shading.diffuseRgb.length < floatCount) {
+            shading.diffuseRgb = new Float64Array(floatCount);
+            shading.specularRgb = new Float64Array(floatCount);
+        }
+        const diffuseOut = shading.diffuseRgb, specularOut = shading.specularRgb;
         const positions = viewMesh.positions;
         const normals = viewMesh.normals;
         this.fillMaterialParameters(viewMesh, tint);
@@ -149,11 +159,14 @@ export class VertexLighting {
                 specularB += color[l + 2] * highlight;
             }
 
-            out[j] = r * albedo[materialOffset] + specularR * glossR * specular[materialOffset] + emissive[materialOffset];
-            out[j + 1] = g * albedo[materialOffset + 1] + specularG * glossG * specular[materialOffset + 1] + emissive[materialOffset + 1];
-            out[j + 2] = b * albedo[materialOffset + 2] + specularB * glossB * specular[materialOffset + 2] + emissive[materialOffset + 2];
+            diffuseOut[j] = r * albedo[materialOffset] + emissive[materialOffset];
+            diffuseOut[j + 1] = g * albedo[materialOffset + 1] + emissive[materialOffset + 1];
+            diffuseOut[j + 2] = b * albedo[materialOffset + 2] + emissive[materialOffset + 2];
+            specularOut[j] = specularR * glossR * specular[materialOffset];
+            specularOut[j + 1] = specularG * glossG * specular[materialOffset + 1];
+            specularOut[j + 2] = specularB * glossB * specular[materialOffset + 2];
         }
-        return out;
+        return shading;
     }
 
     private fillMaterialParameters(viewMesh: ViewSpaceMesh, tint: number): void {
@@ -167,6 +180,7 @@ export class VertexLighting {
             this.materialSpecularCutoff = new Float64Array(materialCount);
         }
         this.materialSpecularTexture.length = materialCount;
+        let anySpecular = false;
         const tintR = ((tint >> RED_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX, tintG = ((tint >> GREEN_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX, tintB = (tint & CHANNEL_MASK) / CHANNEL_MAX;
         for (let i = 0, j = 0; i < materialCount; i++, j += 3) {
             const material = materials?.[i];
@@ -178,7 +192,9 @@ export class VertexLighting {
             this.materialShininess[i] = shininess;
             this.materialSpecularCutoff[i] = specularColor === 0 ? NO_SPECULAR_CUTOFF : Math.pow(NEGLIGIBLE_SPECULAR, 1 / shininess);
             this.materialSpecularTexture[i] = material?.specularTexture;
+            if (specularColor !== 0) anySpecular = true;
         }
+        this.shading.hasSpecular = anySpecular;
     }
 }
 

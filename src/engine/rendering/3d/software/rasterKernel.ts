@@ -1,4 +1,4 @@
-export const TRI_STRIDE = 20;
+export const TRI_STRIDE = 23;
 
 export function rasterizeTriangleBand(
     trisF: Float32Array,
@@ -18,7 +18,7 @@ export function rasterizeTriangleBand(
     quantMask: number,
 ): void {
     const NEAR = 0.1;
-    const strideSlots = 20;
+    const strideSlots = 23;
     const descriptorStride = 49;
     const levelStride = 3;
     const descriptorLevelsOffset = 1;
@@ -39,6 +39,16 @@ export function rasterizeTriangleBand(
         const rA = (colorA >> 16) & 255, gA = (colorA >> 8) & 255, bA = colorA & 255;
         const rDeltaB = ((colorB >> 16) & 255) - rA, gDeltaB = ((colorB >> 8) & 255) - gA, bDeltaB = (colorB & 255) - bA;
         const rDeltaC = ((colorC >> 16) & 255) - rA, gDeltaC = ((colorC >> 8) & 255) - gA, bDeltaC = (colorC & 255) - bA;
+        const specularA = trisI[o + 20], specularB = trisI[o + 21], specularC = trisI[o + 22];
+        const specular = (specularA | specularB | specularC) !== 0;
+        let rSpecularA = 0, gSpecularA = 0, bSpecularA = 0;
+        let rSpecularDeltaB = 0, gSpecularDeltaB = 0, bSpecularDeltaB = 0;
+        let rSpecularDeltaC = 0, gSpecularDeltaC = 0, bSpecularDeltaC = 0;
+        if (specular) {
+            rSpecularA = (specularA >> 16) & 255; gSpecularA = (specularA >> 8) & 255; bSpecularA = specularA & 255;
+            rSpecularDeltaB = ((specularB >> 16) & 255) - rSpecularA; gSpecularDeltaB = ((specularB >> 8) & 255) - gSpecularA; bSpecularDeltaB = (specularB & 255) - bSpecularA;
+            rSpecularDeltaC = ((specularC >> 16) & 255) - rSpecularA; gSpecularDeltaC = ((specularC >> 8) & 255) - gSpecularA; bSpecularDeltaC = (specularC & 255) - bSpecularA;
+        }
 
         const textureId = trisI[o + 18];
         const textured = textureId >= 0;
@@ -118,6 +128,14 @@ export function rasterizeTriangleBand(
                             }
 
                             if (visible) {
+                                if (specular) {
+                                    rVertex += rSpecularA + rSpecularDeltaB * wB + rSpecularDeltaC * wC;
+                                    gVertex += gSpecularA + gSpecularDeltaB * wB + gSpecularDeltaC * wC;
+                                    bVertex += bSpecularA + bSpecularDeltaB * wB + bSpecularDeltaC * wC;
+                                    if (rVertex > channelMax) rVertex = channelMax;
+                                    if (gVertex > channelMax) gVertex = channelMax;
+                                    if (bVertex > channelMax) bVertex = channelMax;
+                                }
                                 let fade = 1 - depth * invFade;
                                 if (fade < 0) fade = 0;
                                 else if (fade > 1) fade = 1;

@@ -18,7 +18,7 @@ export class CellCanvasDisplay implements CellWorldDisplay {
         this.shell = new CanvasDisplayShell<CellFrame>(container, frame => this.presenter.present(frame));
         this.presenter = new CanvasCellPresenter<HTMLCanvasElement>({
             canvas: this.shell.canvas,
-            context: this.shell.context,
+            context: this.shell.context2d(),
             atlasCanvas: document.createElement("canvas"),
             devicePixelRatio: currentDevicePixelRatio(),
         });

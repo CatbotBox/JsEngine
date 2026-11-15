@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {mixRgb, PixelFramebuffer, pixelOfRgb, rgbOfPixel} from "./pixelFramebuffer";
+import {mixRgb, OPAQUE_ALPHA, PixelFramebuffer, pixelOfRgb, rgbOfPixel, TRANSPARENT_ALPHA} from "./pixelFramebuffer";
 
 const SIZE = {widthPx: 4, heightPx: 3};
 const BACKGROUND_RGB = 0x102030;
@@ -54,6 +54,20 @@ describe("PixelFramebuffer", () => {
         buffer.blendRgb(1, NEAR, RED_RGB, 0);
         expect([buffer.rgbAt(1, 0), buffer.depthAt(1, 0)]).toEqual([BACKGROUND_RGB, Number.POSITIVE_INFINITY]);
         expect(mixRgb(0x000000, 0xFFFFFF, 1)).toBe(0xFFFFFF);
+    });
+
+    test("a transparent frame keeps the background colour at zero alpha, and drawing over it is opaque", () => {
+        const buffer = new PixelFramebuffer();
+        buffer.beginFrame(SIZE, BACKGROUND_RGB, PIXELS_PER_UNIT_X, TRANSPARENT_ALPHA);
+        buffer.writeRgb(0, NEAR, RED_RGB);
+        buffer.blendRgb(1, NEAR, BLUE_RGB, HALF);
+        const rgba = buffer.toPixelFrame().rgba;
+        expect(Array.from(rgba.subarray(0, 4))).toEqual([0xFF, 0x00, 0x00, OPAQUE_ALPHA]);
+        expect(Array.from(rgba.subarray(4, 8))).toEqual([0x08, 0x10, 0x98, OPAQUE_ALPHA]);
+        expect(Array.from(rgba.subarray(rgba.length - 4))).toEqual([0x10, 0x20, 0x30, TRANSPARENT_ALPHA]);
+        expect(buffer.rgbAt(3, 2)).toBe(BACKGROUND_RGB);
+        buffer.beginFrame(SIZE, BACKGROUND_RGB, PIXELS_PER_UNIT_X);
+        expect(rgba[rgba.length - 1]).toBe(OPAQUE_ALPHA);
     });
 
     test("a new size reallocates, the same size reuses the buffer", () => {

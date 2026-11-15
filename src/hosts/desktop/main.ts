@@ -10,6 +10,8 @@ const HOST = "bundle";
 const SMOKE_SETTLE_MS = 3000;
 const EDITOR_READY_TIMEOUT_MS = 120_000;
 const EDITOR_READY_POLL_MS = 250;
+const RENDER_BACKEND_SCRIPT_TIMEOUT_MS = 10_000;
+const RENDER_BACKEND_SCRIPT_POLL_MS = 50;
 const EDITOR_LOADING_STATE = "loading";
 const EDITOR_READY_STATE = "ready";
 const WINDOW_WIDTH_PX = 1280;
@@ -102,8 +104,12 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     const editorState = await editorStateOf(window);
     const report = await window.webContents.executeJavaScript(`(() => {
         const canvas = document.querySelector(${JSON.stringify(DISPLAY_CANVAS_SELECTOR)});
-        return {crossOriginIsolated, canvas: canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0};
-    })()`) as {crossOriginIsolated: boolean, canvas: boolean};
+        return {
+            crossOriginIsolated,
+            canvas: canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0,
+            renderBackend: document.documentElement.dataset.renderBackend,
+        };
+    })()`) as {crossOriginIsolated: boolean, canvas: boolean, renderBackend: string | undefined};
     const image = await window.webContents.capturePage();
     if (screenshotPath !== undefined) await writeFile(screenshotPath, image.toPNG());
     const drawnPixels = drawnPixelCount(image.toBitmap());
@@ -113,7 +119,18 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     app.exit(passed ? 0 : 1);
 }
 
+async function renderBackendScriptPending(window: BrowserWindow): Promise<boolean> {
+    return await window.webContents.executeJavaScript(
+        `document.getElementById("play") !== null && document.documentElement.dataset.renderBackend === undefined`) as boolean;
+}
+
+async function waitForRenderBackendScript(window: BrowserWindow): Promise<void> {
+    const deadline = Date.now() + RENDER_BACKEND_SCRIPT_TIMEOUT_MS;
+    while (await renderBackendScriptPending(window) && Date.now() < deadline) await sleep(RENDER_BACKEND_SCRIPT_POLL_MS);
+}
+
 async function pressPlay(window: BrowserWindow): Promise<void> {
+    await waitForRenderBackendScript(window);
     await window.webContents.executeJavaScript(`document.getElementById("play")?.click()`, AS_USER_GESTURE);
 }
 

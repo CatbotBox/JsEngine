@@ -4,7 +4,7 @@ import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup"
 import {ScreenSize} from "../../engine/rendering/screenSize";
 import {TextColor} from "../../engine/rendering/textColor";
 import {PixelCameraSizingSystem} from "./pixelCameraSizingSystem";
-import {PixelFramebuffer} from "./pixelFramebuffer";
+import {OPAQUE_ALPHA, PixelFramebuffer, TRANSPARENT_ALPHA} from "./pixelFramebuffer";
 import {PixelPresenterResource} from "./pixelPresenterResource";
 import {backgroundColorOf, PixelRenderSettings, pixelsPerScreenUnitXOf} from "./pixelRenderSettings";
 import {PixelTextRasterizer} from "./pixelTextRasterizer";
@@ -41,7 +41,8 @@ export class PixelRenderSystemGroup extends SystemGroup {
         if (presenter.backlogged?.() === true) return;
         const framebuffer = this.world.resources.getOrCreate(PixelFramebuffer);
         const settings = this._settingsQuery.tryGetSingleton({settings: PixelRenderSettings})?.settings;
-        framebuffer.beginFrame(presenter.size(), backgroundColorOf(settings), pixelsPerScreenUnitXOf(settings));
+        const backgroundAlpha = presenter.overlaysScene === true ? TRANSPARENT_ALPHA : OPAQUE_ALPHA;
+        framebuffer.beginFrame(presenter.size(), backgroundColorOf(settings), pixelsPerScreenUnitXOf(settings), backgroundAlpha);
 
         const cameraError = this.cameraError();
         if (cameraError === undefined) super.onUpdate();

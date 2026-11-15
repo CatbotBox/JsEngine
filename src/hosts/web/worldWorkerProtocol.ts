@@ -5,11 +5,11 @@ import type {CellFrame} from "../../backends/cells/cellFrame";
 import {isPixelFrame} from "../../backends/pixels/pixelFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 
-export type RenderBackend = "cells" | "pixels";
+export type RenderBackend = "cells" | "pixels" | "gpu";
 
 export const DEFAULT_RENDER_BACKEND: RenderBackend = "cells";
 
-const RENDER_BACKENDS: readonly RenderBackend[] = ["cells", "pixels"];
+const RENDER_BACKENDS: readonly RenderBackend[] = ["cells", "pixels", "gpu"];
 
 function isRenderBackend(value: string | undefined): value is RenderBackend {
     return RENDER_BACKENDS.some(backend => backend === value);
@@ -33,6 +33,7 @@ export interface InitMessage {
     readonly type: "init";
     readonly surface: SurfaceSize;
     readonly requestedRasterWorkers?: number;
+    readonly canvas?: OffscreenCanvas;
 }
 
 export interface ResizeMessage {
@@ -72,15 +73,22 @@ export interface StatusMessage {
     readonly text: string;
 }
 
+export interface ScreenUnitMessage {
+    readonly type: "screenUnit";
+    readonly pixelsPerScreenUnitX: number;
+    readonly pixelsPerScreenUnitY: number;
+}
+
 export type WorldToPageMessage =
     | FrameMessage
     | PixelFrameMessage
     | StatusMessage
+    | ScreenUnitMessage
     | {readonly type: "quit"}
     | {readonly type: "error", readonly message: string};
 
 const PAGE_TO_WORLD_TYPES: ReadonlySet<string> = new Set(["init", "inputEvents", "resize", "presented", "exit"]);
-const WORLD_TO_PAGE_TYPES: ReadonlySet<string> = new Set(["frame", "pixelFrame", "status", "quit", "error"]);
+const WORLD_TO_PAGE_TYPES: ReadonlySet<string> = new Set(["frame", "pixelFrame", "status", "screenUnit", "quit", "error"]);
 
 function hasType(message: unknown, types: ReadonlySet<string>): boolean {
     return typeof message === "object" && message !== null && types.has((message as {type?: unknown}).type as string);
@@ -88,6 +96,14 @@ function hasType(message: unknown, types: ReadonlySet<string>): boolean {
 
 function isWholeCount(value: unknown): value is number {
     return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isPositiveScale(value: unknown): value is number {
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isOffscreenCanvas(value: unknown): value is OffscreenCanvas {
+    return typeof OffscreenCanvas !== "undefined" && value instanceof OffscreenCanvas;
 }
 
 export function isSurfaceSize(value: unknown): value is SurfaceSize {
@@ -105,11 +121,12 @@ export function isSurfaceSize(value: unknown): value is SurfaceSize {
 
 export function isPageToWorldMessage(message: unknown): message is PageToWorldMessage {
     if (!hasType(message, PAGE_TO_WORLD_TYPES)) return false;
-    const fields = message as {type: string, events?: unknown, surface?: unknown, returnedBuffer?: unknown};
+    const fields = message as {type: string, events?: unknown, surface?: unknown, returnedBuffer?: unknown, canvas?: unknown};
     switch (fields.type) {
         case "inputEvents":
             return Array.isArray(fields.events) && fields.events.every(isInputEvent);
         case "init":
+            return isSurfaceSize(fields.surface) && (fields.canvas === undefined || isOffscreenCanvas(fields.canvas));
         case "resize":
             return isSurfaceSize(fields.surface);
         case "presented":
@@ -121,7 +138,7 @@ export function isPageToWorldMessage(message: unknown): message is PageToWorldMe
 
 export function isWorldToPageMessage(message: unknown): message is WorldToPageMessage {
     if (!hasType(message, WORLD_TO_PAGE_TYPES)) return false;
-    const fields = message as {type: string, frame?: unknown, text?: unknown, message?: unknown};
+    const fields = message as {type: string, frame?: unknown, text?: unknown, message?: unknown, pixelsPerScreenUnitX?: unknown, pixelsPerScreenUnitY?: unknown};
     switch (fields.type) {
         case "frame":
             return isCellFrame(fields.frame);
@@ -129,6 +146,8 @@ export function isWorldToPageMessage(message: unknown): message is WorldToPageMe
             return isPixelFrame(fields.frame);
         case "status":
             return typeof fields.text === "string";
+        case "screenUnit":
+            return isPositiveScale(fields.pixelsPerScreenUnitX) && isPositiveScale(fields.pixelsPerScreenUnitY);
         case "error":
             return typeof fields.message === "string";
         default:

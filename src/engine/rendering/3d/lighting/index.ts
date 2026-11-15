@@ -5,3 +5,4 @@ export {AmbientLight} from "./ambientLight";
 export {SceneLights, LIGHT_KIND_DIRECTIONAL, LIGHT_KIND_POINT} from "./sceneLights";
 export {SceneLightsGatherSystem} from "./sceneLightsGatherSystem";
 export {VertexLighting} from "./vertexLighting";
+export type {VertexShading} from "./vertexLighting";

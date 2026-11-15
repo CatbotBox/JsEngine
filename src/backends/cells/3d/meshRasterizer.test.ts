@@ -9,6 +9,7 @@ import {MeshRasterizer, MeshRasterizerConfig, TextureStore} from "../../../engin
 import {CellResolveConfig, CellResolveTarget} from "./cellResolveTarget";
 import {FaceCulling} from "../../../engine/rendering/3d/faceCulling";
 import {CellRenderSettings} from "../cellRenderSettings";
+import type {VertexShading} from "../../../engine/rendering/3d/lighting";
 
 const WIDTH = 8, HEIGHT = 8;
 const BACK_FACING = true;
@@ -45,13 +46,24 @@ function screenQuad(material: Material): Mesh {
     return new Mesh(builder);
 }
 
+const QUAD_VERTICES = 4;
+
+function uniformShading(vertexCount: number, diffuse: number[], specular: number[]): VertexShading {
+    const diffuseRgb = new Float64Array(vertexCount * 3), specularRgb = new Float64Array(vertexCount * 3);
+    for (let i = 0; i < vertexCount; i++) {
+        diffuseRgb.set(diffuse, i * 3);
+        specularRgb.set(specular, i * 3);
+    }
+    return {diffuseRgb, specularRgb, hasSpecular: true};
+}
+
 function rgbaOf(colors: number[][]): Uint8Array {
     const out = new Uint8Array(colors.length * 4);
     colors.forEach(([r, g, b, a], i) => out.set([r, g, b, a ?? 255], i * 4));
     return out;
 }
 
-function render(mesh: Mesh, overrides: Partial<RenderConfig> = {}): ScreenBuffer {
+function render(mesh: Mesh, overrides: Partial<RenderConfig> = {}, shading: VertexShading | null = null): ScreenBuffer {
     const screenSize = new ScreenSize();
     screenSize.x = WIDTH;
     screenSize.y = HEIGHT;
@@ -59,7 +71,7 @@ function render(mesh: Mesh, overrides: Partial<RenderConfig> = {}): ScreenBuffer
     buffer.beginFrame({screenSize}, CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
     const rasterizer = new MeshRasterizer();
     beginFrame(rasterizer, buffer, config(overrides));
-    rasterizer.addMesh(mesh, identityModelView, undefined, 1, 0xFFFFFF);
+    rasterizer.addMesh(mesh, identityModelView, undefined, 1, 0xFFFFFF, shading);
     rasterizer.endFrame();
     rasterizer.dispose();
     return buffer;
@@ -106,6 +118,26 @@ describe("MeshRasterizer textures", () => {
         material.diffuseTexture = twoByTwo;
         const buffer = render(screenQuad(material), {textures: false});
         expect(buffer.rgbAt(1, 1)).toBe(0xABCDEF);
+    });
+
+    test("a vertex highlight is added on top of the texel instead of being tinted by it", () => {
+        const material = new Material("glossy black", 0xFFFFFF);
+        material.diffuseTexture = Texture.fromRgba(1, 1, rgbaOf([[0, 0, 0]]));
+        const quarterLight = 64 / 255;
+        const shading = uniformShading(QUAD_VERTICES, [1, 1, 1], [quarterLight, quarterLight * 2, 0]);
+        const buffer = render(screenQuad(material), {}, shading);
+        expect(buffer.rgbAt(1, 1)).toBe(0x408000);
+    });
+
+    test("an untextured shaded quad looks the same whether its highlight is split out or summed in", () => {
+        const diffuse = new Float64Array([0.9, 0.2, 0.5, 0.4, 0.8, 0.1, 1.2, 0.3, 0.6, 0.1, 0.1, 0.1]);
+        const specular = new Float64Array([0.3, 0.9, 0, 0, 0.4, 0.2, 0.5, 0.5, 0.5, 0, 0, 0]);
+        const summed = diffuse.map((value, i) => value + specular[i]);
+        const split = render(screenQuad(new Material("plain")), {}, {diffuseRgb: diffuse, specularRgb: specular, hasSpecular: true});
+        const combined = render(screenQuad(new Material("plain")), {}, {diffuseRgb: summed, specularRgb: new Float64Array(summed.length), hasSpecular: false});
+        for (let y = 0; y < HEIGHT; y++) {
+            for (let x = 0; x < WIDTH; x++) expect(split.rgbAt(x, y)).toBe(combined.rgbAt(x, y));
+        }
     });
 
     test("supersampling still samples the texture per subsample", () => {

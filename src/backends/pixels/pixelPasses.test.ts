@@ -19,6 +19,7 @@ import {LocalPosition, LocalToWorld} from "../../engine/translation";
 import {MemoryPixelPresenter} from "./memoryPixelPresenter";
 import {PixelPresenterResource} from "./pixelPresenterResource";
 import {RGBA_BYTES_PER_PIXEL} from "./pixelFrame";
+import {OPAQUE_ALPHA, TRANSPARENT_ALPHA} from "./pixelFramebuffer";
 import type {PixelFrame} from "./pixelFrame";
 import {TextSpritePixelPassSystem} from "./textSpritePixelPassSystem";
 import {HudTextSpritePixelPassSystem} from "./hudTextSpritePixelPassSystem";
@@ -117,5 +118,26 @@ describe("pixel passes", () => {
         expect(rgbAt(frame, 1, 0)).toBe(GREEN_RGB);
         expect(rgbAt(frame, 15, 31)).toBe(RED_RGB);
         expect(rgbAt(frame, 16, 0)).toBe(BACKGROUND_RGB);
+    });
+});
+
+describe("PixelRenderSystemGroup background", () => {
+    const ALPHA_BYTE = 3;
+
+    function backgroundAlphaFor(overlaysScene: boolean | undefined): number {
+        const presenter = Object.assign(new MemoryPixelPresenter(SIZE), overlaysScene === undefined ? {} : {overlaysScene});
+        const world = new World({platform: new MemoryPlatform()});
+        world.resources.insert(new PixelPresenterResource(presenter));
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        world.entityManager.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition()]);
+        world.getOrCreateSystem(HudTextSpritePixelPassSystem);
+        for (let update = 0; update < SETTLE_UPDATES; update++) root.update();
+        return presenter.lastFrame!.rgba[ALPHA_BYTE];
+    }
+
+    test("is transparent for a presenter that overlays a scene drawn elsewhere, opaque otherwise", () => {
+        expect(backgroundAlphaFor(true)).toBe(TRANSPARENT_ALPHA);
+        expect(backgroundAlphaFor(false)).toBe(OPAQUE_ALPHA);
+        expect(backgroundAlphaFor(undefined)).toBe(OPAQUE_ALPHA);
     });
 });

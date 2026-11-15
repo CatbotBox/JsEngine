@@ -36,6 +36,8 @@ const ENTRY_POINTS: readonly EntryPoint[] = [
     {source: join(WEB, "3d-pixels.ts"), output: "3d-pixels", backend: "pixels"},
     {source: join(DEMO, "3d", "launch", "web.worker.ts"), output: "world3d.worker", backend: "cells"},
     {source: join(DEMO, "3d", "launch", "pixelWeb.worker.ts"), output: "world3d-pixels.worker", backend: "pixels"},
+    {source: join(WEB, "3d-gpu.ts"), output: "3d-gpu", backend: "gpu"},
+    {source: join(DEMO, "3d", "launch", "gpuWeb.worker.ts"), output: "world3d-gpu.worker", backend: "gpu"},
     {source: join(WEB, "swarm.ts"), output: "swarm"},
     {source: join(WEB, "swarm-cells.ts"), output: "swarm-cells", backend: "cells"},
     {source: join(WEB, "swarm-pixels.ts"), output: "swarm-pixels", backend: "pixels"},
@@ -46,12 +48,19 @@ const ENTRY_POINTS: readonly EntryPoint[] = [
 const DEFAULT_BUNDLE_ROLE: BundleRole = "game";
 const OUTPUT_EXTENSION_PLACEHOLDER = "[ext]";
 const BUNDLE_EXTENSION = ".js";
-const RENDER_BACKENDS: readonly RenderBackend[] = ["cells", "pixels"];
+const RENDER_BACKENDS: readonly RenderBackend[] = ["cells", "pixels", "gpu"];
 const BOOTSTRAP_BUNDLE = "bootstrap";
 const PRESENTER_MISSING_MESSAGES: Readonly<Record<RenderBackend, string>> = {
     cells: "This world has no CellPresenterResource",
     pixels: "This world has no PixelPresenterResource",
+    gpu: "This world has no GpuDeviceResource",
 };
+const EMBEDDED_BACKENDS: Readonly<Record<RenderBackend, readonly RenderBackend[]>> = {
+    cells: [],
+    pixels: [],
+    gpu: ["pixels"],
+};
+const NO_EMBEDDED_BACKENDS: readonly RenderBackend[] = [];
 const STATIC_FILES: readonly [from: string, to: string][] =
     ["index.html", "2d.html", "3d.html", "swarm.html", "demo.css", "coi-serviceworker.js", "_headers"].map((name): [string, string] => [join(WEB, name), name]);
 const EDITOR_STATIC_FILES: readonly [from: string, to: string][] =
@@ -76,6 +85,7 @@ const FIRST_LOADS: readonly FirstLoad[] = [
     {page: "2d.html?backend=pixels", files: ["2d.html", "demo.css", "2d.js", "2d-pixels.js", "world2d-pixels.worker.js"], fetchesDemo3dAssets: false},
     {page: "3d.html", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-cells.js", "world3d.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
     {page: "3d.html?backend=pixels", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-pixels.js", "world3d-pixels.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
+    {page: "3d.html?backend=gpu", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-gpu.js", "world3d-gpu.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
     {page: "swarm.html?backend=cells", files: ["swarm.html", "demo.css", "swarm.js", "swarm-cells.js", "worldswarm.worker.js"], fetchesDemo3dAssets: false},
     {page: "swarm.html", files:["swarm.html", "demo.css", "swarm.js", "swarm-pixels.js", "worldswarm-pixels.worker.js"], fetchesDemo3dAssets: false},
 ];
@@ -127,8 +137,13 @@ function bundlePath(entry: EntryPoint): string {
     return join(OUT, entry.output + BUNDLE_EXTENSION);
 }
 
+function embeddedBackendsOf(entry: EntryPoint): readonly RenderBackend[] {
+    return entry.backend === undefined ? NO_EMBEDDED_BACKENDS : EMBEDDED_BACKENDS[entry.backend];
+}
+
 function otherBackendsIn(entry: EntryPoint, text: string): string[] {
-    return RENDER_BACKENDS.filter(backend => backend !== entry.backend && text.includes(PRESENTER_MISSING_MESSAGES[backend]))
+    const embedded = embeddedBackendsOf(entry);
+    return RENDER_BACKENDS.filter(backend => backend !== entry.backend && !embedded.includes(backend) && text.includes(PRESENTER_MISSING_MESSAGES[backend]))
         .map(backend => `${siteRelative(bundlePath(entry))}: the ${backend} presenter is in a ${entry.backend ?? BOOTSTRAP_BUNDLE} bundle ("${PRESENTER_MISSING_MESSAGES[backend]}")`);
 }
 
@@ -284,7 +299,7 @@ async function main(): Promise<void> {
     const textByEntry = bundleTexts();
     const mixed = backendLeaks(textByEntry);
     if (mixed.length > 0) {
-        console.error("a bundle mixes the cells and pixels backends:");
+        console.error("a bundle mixes render backends:");
         for (const leak of mixed) console.error("  " + leak);
         process.exit(1);
     }
@@ -306,7 +321,7 @@ async function main(): Promise<void> {
     console.log(`${PROD ? "production" : "dev"} build in ${relative(ROOT, OUT).replace(/\\/g, "/")}`);
     report(manifest);
     const editorBundles = BUILT_ENTRY_POINTS.filter(entry => roleOf(entry) === "editor").length;
-    console.log(`guard OK: ${scripts.length} script(s) free of node APIs; ${BUILT_ENTRY_POINTS.length} bundles each carry no other backend's presenter; `
+    console.log(`guard OK: ${scripts.length} script(s) free of node APIs; ${BUILT_ENTRY_POINTS.length} bundles each carry no other backend's presenter (gpu bundles embed the pixels one); `
         + `${BUILT_ENTRY_POINTS.length - editorBundles} game bundles free of "${EDITOR_MESSAGE_TYPE}", ${editorBundles} editor bundles carry it`
         + (WITH_EDITOR ? "" : " (editor page and bundles skipped: --prod without --with-editor)"));
 }

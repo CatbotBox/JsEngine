@@ -6,7 +6,7 @@ import {Material} from "../material";
 import {Texture} from "../texture";
 import {ViewSpaceMesh} from "../viewSpaceMesh";
 import {SceneLights} from "./sceneLights";
-import {VertexLighting} from "./vertexLighting";
+import {VertexLighting, VertexShading} from "./vertexLighting";
 import {BLACK_RGB, WHITE_RGB} from "../../packedRgb";
 
 function triangleFacingPlusZ(): Mesh {
@@ -22,6 +22,14 @@ const identity = LocalToWorld.identity();
 const identityMatrix = Vec.toArray(identity);
 const identityNormalMatrix = LocalToWorld.normalMatrix3(identity, new Float32Array(9));
 
+function roundedFirstVertex(rgb: Float64Array): number[] {
+    return Array.from(rgb.subarray(0, 3)).map(v => Math.round(v * 1000) / 1000);
+}
+
+function firstVertexTotal(shading: VertexShading): number[] {
+    return roundedFirstVertex(shading.diffuseRgb.map((diffuse, i) => diffuse + shading.specularRgb[i]));
+}
+
 function shadeTriangle(setup: (lights: SceneLights) => void, albedo = 0xFFFFFF): number[] {
     const lights = new SceneLights();
     lights.beginGather();
@@ -29,8 +37,7 @@ function shadeTriangle(setup: (lights: SceneLights) => void, albedo = 0xFFFFFF):
     const lighting = new VertexLighting();
     lighting.beginFrame(lights, identity);
     const viewMesh = new ViewSpaceMesh().transformFrom(triangleFacingPlusZ(), new Float32Array(identityMatrix), identityNormalMatrix);
-    const rgb = lighting.shade(viewMesh, albedo);
-    return Array.from(rgb.subarray(0, 3)).map(v => Math.round(v * 1000) / 1000);
+    return firstVertexTotal(lighting.shade(viewMesh, albedo));
 }
 
 describe("ViewSpaceMesh", () => {
@@ -96,7 +103,7 @@ describe("VertexLighting", () => {
         const lighting = new VertexLighting();
         lighting.beginFrame(lights, viewMatrix);
         const viewMesh = new ViewSpaceMesh().transformFrom(triangleFacingPlusZ(), new Float32Array(identityMatrix), identityNormalMatrix);
-        const rgb = lighting.shade(viewMesh, 0xFFFFFF);
+        const rgb = lighting.shade(viewMesh, 0xFFFFFF).diffuseRgb;
         expect(Math.round(rgb[0] * 1000) / 1000).toBe(0.563);
     });
 
@@ -124,15 +131,18 @@ function glossyMaterial(diffuse: number, specular: number, shininess: number, em
     return material;
 }
 
-function shadeVertexFacingCamera(setup: (lights: SceneLights) => void, material: Material, tint = 0xFFFFFF, firstVertexUv?: [number, number]): number[] {
+function shadeFacingCamera(setup: (lights: SceneLights) => void, material: Material, tint = 0xFFFFFF, firstVertexUv?: [number, number]): VertexShading {
     const lights = new SceneLights();
     lights.beginGather();
     setup(lights);
     const lighting = new VertexLighting();
     lighting.beginFrame(lights, identity);
     const viewMesh = new ViewSpaceMesh().transformFrom(triangleFacingCamera(material, firstVertexUv), new Float32Array(identityMatrix), identityNormalMatrix);
-    const rgb = lighting.shade(viewMesh, tint);
-    return Array.from(rgb.subarray(0, 3)).map(v => Math.round(v * 1000) / 1000);
+    return lighting.shade(viewMesh, tint);
+}
+
+function shadeVertexFacingCamera(setup: (lights: SceneLights) => void, material: Material, tint = 0xFFFFFF, firstVertexUv?: [number, number]): number[] {
+    return firstVertexTotal(shadeFacingCamera(setup, material, tint, firstVertexUv));
 }
 
 const HALF = 0x808080;
@@ -185,6 +195,17 @@ describe("VertexLighting specular and emissive", () => {
         expect(shadeVertexFacingCamera(pointLight, glossyMaterial(WHITE_RGB, 0, 8))).toEqual([0.563, 0.563, 0.563]);
         expect(shadeVertexFacingCamera(pointLight, glossyMaterial(BLACK_RGB, WHITE_RGB, 8))).toEqual([0.563, 0.563, 0.563]);
         expect(shadeVertexFacingCamera(pointLight, glossyMaterial(WHITE_RGB, WHITE_RGB, 8))).toEqual([1.125, 1.125, 1.125]);
+    });
+
+    test("the highlight is kept apart from the diffuse and emissive light", () => {
+        const shading = shadeFacingCamera(towardsFace, glossyMaterial(HALF, WHITE_RGB, 8, 0x404040));
+        expect(roundedFirstVertex(shading.diffuseRgb)).toEqual([0.753, 0.753, 0.753]);
+        expect(roundedFirstVertex(shading.specularRgb)).toEqual([1, 1, 1]);
+    });
+
+    test("shading reports whether any material can produce a highlight", () => {
+        expect(shadeFacingCamera(towardsFace, glossyMaterial(HALF, WHITE_RGB, 8)).hasSpecular).toBe(true);
+        expect(shadeFacingCamera(towardsFace, glossyMaterial(HALF, 0, 8)).hasSpecular).toBe(false);
     });
 
     test("specular color is tinted like the albedo", () => {

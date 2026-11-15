@@ -3,22 +3,22 @@ import {FaceCulling} from "../faceCulling";
 import type {EntityQuery} from "../../../core";
 import {LocalToWorld} from "../../../translation";
 import {Mesh} from "../mesh";
-import {asFloat32Array, fromFloat32Array, ReadonlyVec16, Vec16} from "../../../math/types/vec";
+import {fromFloat32Array, ReadonlyVec16, Vec16} from "../../../math/types/vec";
 import {RenderMesh} from "../renderMesh";
 import {WorldSpaceRenderBounds} from "../../worldSpaceRenderBounds";
 import {ViewSpaceMesh} from "../viewSpaceMesh";
 import type {SceneLights} from "../lighting/sceneLights";
 import {VertexLighting} from "../lighting/vertexLighting";
 import {selectLodLevel} from "../meshLod";
-import {MAT4_FLOATS, MAT4_TRANSLATION_X, MAT4_TRANSLATION_Y, MAT4_TRANSLATION_Z} from "../../../math/mat4Layout";
+import {ScreenProjectedBounds} from "../screenProjectedBounds";
+import {MAT4_FLOATS} from "../../../math/mat4Layout";
 import type {WorkerFactory} from "../../../platform";
-import {MeshRasterizer, NEAR_PLANE_Z} from "./meshRasterizer";
+import {MeshRasterizer} from "./meshRasterizer";
 import type {MeshRasterizerConfig} from "./meshRasterizer";
 import type {RasterTarget} from "./rasterTarget";
 
 const TRACKED_LOD_LEVELS = 8;
 const MAT3_FLOATS = 9;
-const AABB_CORNERS = 8;
 
 export type StreamableQuery = Pick<EntityQuery, "stream">;
 
@@ -50,8 +50,7 @@ export class MeshSceneDrawer {
     private readonly _normalMatrixScratch = new Float32Array(MAT3_FLOATS);
     private readonly _viewSpaceMesh = new ViewSpaceMesh();
     private readonly _vertexLighting = new VertexLighting();
-    private _projectedWidth = 0;
-    private _projectedHeight = 0;
+    private readonly _projectedBounds = new ScreenProjectedBounds();
 
     public constructor(private readonly queries: MeshSceneQueries, workers: WorkerFactory | undefined) {
         this._rasterizer = new MeshRasterizer(workers);
@@ -84,6 +83,8 @@ export class MeshSceneDrawer {
         if (lit) this._vertexLighting.beginFrame(sceneLights, invertedCameraMatrix);
 
         const lodEnabled = frame.lod;
+        const projectedBounds = this._projectedBounds;
+        projectedBounds.begin(invertedCameraMatrix, focalLength, cellRatio, width, height);
 
         this.queries.meshesWithoutBounds.stream({
             read: {renderMesh: RenderMesh, localToWorld: LocalToWorld},
@@ -99,10 +100,10 @@ export class MeshSceneDrawer {
         }).consume(({renderMesh, localToWorld, bounds}) => {
             let mesh = renderMesh.mesh;
             if (mesh === undefined) return;
-            if (!this.visibleAfterProjectingBounds(bounds, invertedCameraMatrix, focalLength, cellRatio, width, height)) return;
+            if (!projectedBounds.project(bounds.xMin, bounds.yMin, bounds.zMin, bounds.xMax, bounds.yMax, bounds.zMax)) return;
             let level = 0;
             if (lodEnabled && mesh.lods.length > 1) {
-                level = selectLodLevel(mesh.lods, this._projectedWidth, this._projectedHeight, frame.lodTrianglesPerRasterPixel, frame.lodBias);
+                level = selectLodLevel(mesh.lods, projectedBounds.width, projectedBounds.height, frame.lodTrianglesPerRasterPixel, frame.lodBias);
                 mesh = mesh.lods[level];
             }
             this.countDrawn(mesh, level);
@@ -129,60 +130,7 @@ export class MeshSceneDrawer {
         LocalToWorld.mul(invertedCameraMatrix, localToWorld.matrix, modelView);
         const normalMatrix = lit ? LocalToWorld.normalMatrix3(modelView, this._normalMatrixScratch) : null;
         const viewMesh = this._viewSpaceMesh.transformFrom(mesh, this._modelViewScratch, normalMatrix);
-        const vertexRgb = lit ? this._vertexLighting.shade(viewMesh, color) : null;
-        this._rasterizer.addViewSpaceMesh(mesh, viewMesh, focalLength, cellRatio, color, vertexRgb, faceCulling);
-    }
-
-    private visibleAfterProjectingBounds(
-        bounds: DeepReadonly<WorldSpaceRenderBounds>,
-        invertedCameraMatrix: Vec16,
-        focalLength: number | undefined,
-        cellRatio: number,
-        width: number,
-        height: number,
-    ): boolean {
-        const m = asFloat32Array(invertedCameraMatrix);
-        const halfW = width / 2, halfH = height / 2;
-
-        let anyInFront = false;
-        let anyBehindNearPlane = false;
-        let minX = Number.POSITIVE_INFINITY, maxX = Number.NEGATIVE_INFINITY;
-        let minY = Number.POSITIVE_INFINITY, maxY = Number.NEGATIVE_INFINITY;
-
-        for (let corner = 0; corner < AABB_CORNERS; corner++) {
-            const x = (corner & 1) === 0 ? bounds.xMin : bounds.xMax;
-            const y = (corner & 2) === 0 ? bounds.yMin : bounds.yMax;
-            const z = (corner & 4) === 0 ? bounds.zMin : bounds.zMax;
-
-            const vx = m[0] * x + m[4] * y + m[8] * z + m[MAT4_TRANSLATION_X];
-            const vy = m[1] * x + m[5] * y + m[9] * z + m[MAT4_TRANSLATION_Y];
-            const vz = m[2] * x + m[6] * y + m[10] * z + m[MAT4_TRANSLATION_Z];
-
-            let depth = vz;
-            if (vz < NEAR_PLANE_Z) {
-                anyBehindNearPlane = true;
-                depth = NEAR_PLANE_Z;
-            } else {
-                anyInFront = true;
-            }
-
-            const ppu = focalLength !== undefined ? focalLength / depth : 1;
-            const sx = halfW + vx * ppu * cellRatio;
-            const sy = halfH - vy * ppu;
-            if (sx < minX) minX = sx;
-            if (sx > maxX) maxX = sx;
-            if (sy < minY) minY = sy;
-            if (sy > maxY) maxY = sy;
-        }
-
-        if (!anyInFront) return false;
-
-        const left = minX > 0 ? minX : 0, right = maxX < width ? maxX : width;
-        const top = minY > 0 ? minY : 0, bottom = maxY < height ? maxY : height;
-        this._projectedWidth = right > left ? right - left : 0;
-        this._projectedHeight = bottom > top ? bottom - top : 0;
-
-        if (anyBehindNearPlane) return true;
-        return maxX > 0 && minX < width && maxY > 0 && minY < height;
+        const shading = lit ? this._vertexLighting.shade(viewMesh, color) : null;
+        this._rasterizer.addViewSpaceMesh(mesh, viewMesh, focalLength, cellRatio, color, shading, faceCulling);
     }
 }

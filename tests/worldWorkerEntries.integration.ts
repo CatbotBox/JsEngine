@@ -39,6 +39,9 @@ const ISOLATED = true;
 const NOT_ISOLATED = false;
 const SWARM_TITLE = "S W A R M";
 const SWARM_HUD_WAVE = "WAVE";
+const GPU_DEMO_NAME = "the 3D demo (experimental WebGPU)";
+const WEBGPU_UNAVAILABLE = "WebGPU is unavailable in the world worker";
+const PIXELS_FALLBACK_ADVICE = "?backend=pixels";
 
 interface QuitChord {
     readonly key: Key;
@@ -55,6 +58,7 @@ const WORKER_SOURCES: Readonly<Record<string, string>> = {
     "world3d": join(ROOT, "demo", "3d", "launch", "web.worker.ts"),
     "world2d-pixels": join(ROOT, "demo", "2d", "launch", "pixelWeb.worker.ts"),
     "world3d-pixels": join(ROOT, "demo", "3d", "launch", "pixelWeb.worker.ts"),
+    "world3d-gpu": join(ROOT, "demo", "3d", "launch", "gpuWeb.worker.ts"),
     "worldswarm": join(ROOT, "demo", "swarm", "launch", "web.worker.ts"),
     "worldswarm-pixels": join(ROOT, "demo", "swarm", "launch", "pixelWeb.worker.ts"),
 };
@@ -388,6 +392,22 @@ async function verify3d(run: Demo3dRun, manifest: Demo3dManifest): Promise<void>
     }
 }
 
+async function verifyGpuWithoutWebGpu(label: string, entry: string): Promise<void> {
+    const display = new PixelFrameDisplay(PIXEL_START);
+    const page = new Page(entry, GPU_DEMO_NAME, display, NOT_ISOLATED);
+    try {
+        const failed = await waitUntil(() => display.errors.length > 0);
+        const error = display.errors.join(" | ");
+        expect(failed && error.includes(WEBGPU_UNAVAILABLE) && error.includes(PIXELS_FALLBACK_ADVICE),
+            `${label}: without navigator.gpu or a canvas the worker fails, telling the page to use ${PIXELS_FALLBACK_ADVICE} (${error})`);
+        expect(page.terminated && display.frames === 0, `${label}: the page ended the worker and no frame arrived`);
+        expect(page.fetched.length === 0, `${label}: it failed before fetching any asset (${page.fetched.length} fetched)`);
+        expect(page.errors.length === 0, `${label}: no uncaught worker errors${page.errors.length > 0 ? ": " + page.errors.join(" | ") : ""}`);
+    } finally {
+        page.dispose();
+    }
+}
+
 async function main(): Promise<void> {
     if (typeof (globalThis as {Worker?: unknown}).Worker !== "function") {
         log("world worker check: skipped, this runtime has no Web Worker global");
@@ -411,6 +431,7 @@ async function main(): Promise<void> {
     const pixels3d = new PixelFrameDisplay(PIXEL_START);
     await verify3d({label: "3D pixels isolated", entry: workerEntry("world3d-pixels"), display: pixels3d, isolated: ISOLATED, resize: () => pixels3d.resize(PIXEL_RESIZED)}, manifest);
     await verify3d({label: "3D pixels not isolated", entry: workerEntry("world3d-pixels"), display: new PixelFrameDisplay(PIXEL_START), isolated: NOT_ISOLATED}, manifest);
+    await verifyGpuWithoutWebGpu("3D gpu", workerEntry("world3d-gpu"));
 
     if (failures > 0) {
         console.error(`${failures} world worker failures`);

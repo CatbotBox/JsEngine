@@ -3,7 +3,7 @@ export type {PixelFrame} from "./pixelFrame";
 export type {PixelPresenter, PixelPresenterSize} from "./pixelPresenter";
 export {PixelPresenterResource} from "./pixelPresenterResource";
 export {MemoryPixelPresenter} from "./memoryPixelPresenter";
-export {PixelFramebuffer, mixRgb, pixelOfRgb, rgbOfPixel} from "./pixelFramebuffer";
+export {OPAQUE_ALPHA, PixelFramebuffer, TRANSPARENT_ALPHA, mixRgb, pixelOfRgb, rgbOfPixel} from "./pixelFramebuffer";
 export {PixelRenderSettings, backgroundColorOf, pixelsPerScreenUnitXOf} from "./pixelRenderSettings";
 export {PixelRenderSystemGroup} from "./pixelRenderSystemGroup";
 export {PixelCameraSizingSystem} from "./pixelCameraSizingSystem";

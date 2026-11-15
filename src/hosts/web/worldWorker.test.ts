@@ -3,8 +3,8 @@ import {browserWorkerFactory, browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorker, BrowserWorkerHost} from "./browserWorkers";
 import {PageConnection} from "./worldWorkerPlatform";
 import type {WorldWorkerScope} from "./worldWorkerPlatform";
-import {connectWorldWorker, STOPPED_STATUS, startingStatus, surfaceMismatchMessage} from "./worldWorkerPage";
-import type {CellWorldDisplay, PixelWorldDisplay, WorldWorker} from "./worldWorkerPage";
+import {connectWorldWorker, displayBackendOf, STOPPED_STATUS, startingStatus, surfaceMismatchMessage} from "./worldWorkerPage";
+import type {CellWorldDisplay, GpuWorldDisplay, PageTransferable, PixelWorldDisplay, WorldWorker} from "./worldWorkerPage";
 import {
     DEFAULT_RENDER_BACKEND,
     FIXED_FRAMEBUFFER_LIMITS,
@@ -239,11 +239,11 @@ class FakePixelDisplay extends FakeDisplaySurface<PixelFrame> implements PixelWo
 
 class FakeWorldWorker implements WorldWorker {
     public readonly posted: PageToWorldMessage[] = [];
-    public readonly transfers: (readonly ArrayBuffer[])[] = [];
+    public readonly transfers: (readonly PageTransferable[])[] = [];
     public terminated = false;
     private readonly listeners = new Map<string, ((event: never) => void)[]>();
 
-    public postMessage(message: PageToWorldMessage, transfer: ArrayBuffer[]): void {
+    public postMessage(message: PageToWorldMessage, transfer: PageTransferable[]): void {
         this.posted.push(message);
         this.transfers.push(transfer);
     }
@@ -943,5 +943,120 @@ describe("connectWorldWorker (the page's end)", () => {
         worker.emit({type: "error", message: "manifest missing"});
         expect(display.shown[2]).toBe("error: Could not start the 3D demo: manifest missing");
         expect(worker.terminated).toBe(true);
+    });
+});
+
+class FakeOffscreenCanvas {
+}
+
+function withOffscreenCanvasGlobal<T>(body: () => T): T {
+    const scope = globalThis as {OffscreenCanvas?: unknown};
+    const previous = scope.OffscreenCanvas;
+    scope.OffscreenCanvas = FakeOffscreenCanvas;
+    try {
+        return body();
+    } finally {
+        if (previous === undefined) delete scope.OffscreenCanvas;
+        else scope.OffscreenCanvas = previous;
+    }
+}
+
+function offscreenCanvas(): OffscreenCanvas {
+    return new FakeOffscreenCanvas() as unknown as OffscreenCanvas;
+}
+
+class FakeGpuDisplay extends FakeDisplaySurface<never> implements GpuWorldDisplay {
+    public readonly canvas = offscreenCanvas();
+    public readonly screenUnits: [number, number][] = [];
+    public transfers = 0;
+
+    public surfaceSize(): PixelSurfaceSize {
+        return PIXEL_SURFACE;
+    }
+
+    public transferCanvas(): OffscreenCanvas {
+        this.transfers++;
+        return this.canvas;
+    }
+
+    public showScreenUnit(pixelsPerScreenUnitX: number, pixelsPerScreenUnitY: number): void {
+        this.screenUnits.push([pixelsPerScreenUnitX, pixelsPerScreenUnitY]);
+    }
+}
+
+describe("the gpu backend's plumbing", () => {
+    test("?backend=gpu is a backend of its own; the default stays cells", () => {
+        expect(renderBackendFromQuery("?backend=gpu")).toBe("gpu");
+        expect(renderBackendFromQuery("?backend=gpu", "pixels")).toBe("gpu");
+        expect(renderBackendFromQuery("?backend=GPU")).toBe(DEFAULT_RENDER_BACKEND);
+        expect(DEFAULT_RENDER_BACKEND).toBe("cells");
+    });
+
+    test("init may carry an OffscreenCanvas and nothing else in its place; screen units are positive finite scales", () => {
+        expect(isPageToWorldMessage({...PIXEL_INIT, canvas: {}})).toBe(false);
+        withOffscreenCanvasGlobal(() => {
+            expect(isPageToWorldMessage({...PIXEL_INIT, canvas: offscreenCanvas()})).toBe(true);
+            expect(isPageToWorldMessage({...PIXEL_INIT, canvas: {}})).toBe(false);
+            expect(isPageToWorldMessage({...PIXEL_INIT, canvas: null})).toBe(false);
+        });
+        expect(isPageToWorldMessage(PIXEL_INIT)).toBe(true);
+        expect(isWorldToPageMessage({type: "screenUnit", pixelsPerScreenUnitX: 8, pixelsPerScreenUnitY: 16})).toBe(true);
+        expect(isWorldToPageMessage({type: "screenUnit", pixelsPerScreenUnitX: 0, pixelsPerScreenUnitY: 16})).toBe(false);
+        expect(isWorldToPageMessage({type: "screenUnit", pixelsPerScreenUnitX: 8, pixelsPerScreenUnitY: Number.POSITIVE_INFINITY})).toBe(false);
+        expect(isWorldToPageMessage({type: "screenUnit", pixelsPerScreenUnitX: "8", pixelsPerScreenUnitY: 16})).toBe(false);
+        expect(isPageToWorldMessage({type: "screenUnit", pixelsPerScreenUnitX: 8, pixelsPerScreenUnitY: 16})).toBe(false);
+    });
+
+    test("a gpu display transfers its canvas in init, receives screen units, and is shown as gpu in mismatch errors", () => {
+        const display = new FakeGpuDisplay();
+        const worker = new FakeWorldWorker();
+        connectWorldWorker(display, worker, {name: "the 3D demo (experimental WebGPU)", requestedRasterWorkers: 2});
+        expect(display.transfers).toBe(1);
+        expect(worker.posted[0]).toEqual({type: "init", surface: PIXEL_SURFACE, requestedRasterWorkers: 2, canvas: display.canvas});
+        expect(worker.transfers[0]).toEqual([display.canvas]);
+        expect(withOffscreenCanvasGlobal(() => isPageToWorldMessage(worker.posted[0]))).toBe(true);
+        expect(displayBackendOf(display)).toBe("gpu");
+
+        worker.emit({type: "screenUnit", pixelsPerScreenUnitX: PIXELS_PER_SCREEN_UNIT_X, pixelsPerScreenUnitY: PIXELS_PER_SCREEN_UNIT_Y});
+        expect(display.screenUnits).toEqual([[PIXELS_PER_SCREEN_UNIT_X, PIXELS_PER_SCREEN_UNIT_Y]]);
+        worker.emit({type: "pixelFrame", frame: pixelFrame(2, 1)});
+        expect(display.shown[display.shown.length - 1]).toBe(`error: ${surfaceMismatchMessage("the 3D demo (experimental WebGPU)", "pixels", "gpu")}`);
+        expect(worker.terminated).toBe(true);
+    });
+
+    test("screen units sent to a pixel page are a mismatch, and pixel displays transfer nothing in init", () => {
+        const pixels = new FakePixelDisplay();
+        const worker = new FakeWorldWorker();
+        connectWorldWorker(pixels, worker, {name: "the 3D demo"});
+        expect(worker.transfers[0]).toEqual([]);
+        expect("canvas" in worker.posted[0]).toBe(false);
+        worker.emit({type: "screenUnit", pixelsPerScreenUnitX: PIXELS_PER_SCREEN_UNIT_X, pixelsPerScreenUnitY: PIXELS_PER_SCREEN_UNIT_Y});
+        expect(pixels.shown[pixels.shown.length - 1]).toBe(`error: ${surfaceMismatchMessage("the 3D demo", "gpu", "pixels")}`);
+        expect(worker.terminated).toBe(true);
+    });
+
+    test("the worker hands out the page's canvas, or says the page must be opened with ?backend=gpu", async () => {
+        const withoutCanvas = await openPixelConnection();
+        expect(() => withoutCanvas.gpuCanvas()).toThrow("a gpu world needs the page opened with ?backend=gpu");
+        const canvas = offscreenCanvas();
+        const scope = new FakeScope();
+        const opening = PageConnection.open(scope, new MemoryFileSource());
+        withOffscreenCanvasGlobal(() => scope.send({...PIXEL_INIT, canvas} as PageToWorldMessage));
+        const connection = await opening;
+        expect(connection.gpuCanvas()).toBe(canvas);
+        expect(connection.pixelPresenter().size()).toEqual({widthPx: PIXEL_SURFACE.widthPx, heightPx: PIXEL_SURFACE.heightPx});
+    });
+
+    test("the worker posts a screen unit only when it changes", async () => {
+        const scope = new FakeScope();
+        const connection = await openPixelConnection(scope);
+        connection.showScreenUnit(PIXELS_PER_SCREEN_UNIT_X, PIXELS_PER_SCREEN_UNIT_Y);
+        connection.showScreenUnit(PIXELS_PER_SCREEN_UNIT_X, PIXELS_PER_SCREEN_UNIT_Y);
+        connection.showScreenUnit(PIXELS_PER_SCREEN_UNIT_X / 2, PIXELS_PER_SCREEN_UNIT_Y / 2);
+        expect(scope.posted).toEqual([
+            {type: "screenUnit", pixelsPerScreenUnitX: PIXELS_PER_SCREEN_UNIT_X, pixelsPerScreenUnitY: PIXELS_PER_SCREEN_UNIT_Y},
+            {type: "screenUnit", pixelsPerScreenUnitX: PIXELS_PER_SCREEN_UNIT_X / 2, pixelsPerScreenUnitY: PIXELS_PER_SCREEN_UNIT_Y / 2},
+        ]);
+        expect(scope.posted.every(isWorldToPageMessage)).toBe(true);
     });
 });

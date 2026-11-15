@@ -4,18 +4,19 @@ export type {BrowserWorker, BrowserWorkerHost} from "./browserWorkers";
 export {PageConnection} from "./worldWorkerPlatform";
 export type {WorldWorkerScope} from "./worldWorkerPlatform";
 export {runWorldWorker} from "./worldWorker";
-export {connectWorldWorker, startingStatus, STOPPED_STATUS, surfaceMismatchMessage} from "./worldWorkerPage";
+export {connectWorldWorker, displayBackendOf, startingStatus, STOPPED_STATUS, surfaceMismatchMessage} from "./worldWorkerPage";
 export {CanvasDisplayShell, currentDevicePixelRatio} from "./canvasDisplayShell";
 export {CellCanvasDisplay, cellCanvasDisplayFromQuery} from "./cellCanvasDisplay";
-export {PixelCanvasDisplay, pixelCanvasDisplayFromQuery} from "./pixelCanvasDisplay";
-export type {PixelCanvasDisplayOptions} from "./pixelCanvasDisplay";
+export {fitFramebuffer, PixelCanvasDisplay, pixelCanvasDisplayFromQuery, pixelCanvasDisplayOptionsFromQuery} from "./pixelCanvasDisplay";
+export type {ContainerSize, FramebufferFit, PixelCanvasDisplayOptions, ScreenUnitPx} from "./pixelCanvasDisplay";
+export {GpuCanvasDisplay, gpuCanvasDisplayFromQuery} from "./gpuCanvasDisplay";
 export {startWorldPage} from "./worldPage";
 export type {PageDisplay, PageDisplayFactory} from "./worldPage";
-export {loadRenderBackendScript} from "./renderBackendBootstrap";
-export type {RenderBackendScriptOptions} from "./renderBackendBootstrap";
+export {chooseRenderBackend, gpuFallbackWarning, loadRenderBackendScript, webGpuUsable} from "./renderBackendBootstrap";
+export type {GpuAvailability, OffscreenTransferCanvas, RenderBackendChoice, RenderBackendScriptOptions, RenderBackendScripts, WebGpuNavigator} from "./renderBackendBootstrap";
 export {installDomInput} from "./domInput";
 export type {CellArea, DomInputOptions, DomInputTarget, DomKeyboardEvent, DomPointerEvent, DomWheelEvent} from "./domInput";
-export type {CellWorldDisplay, PixelWorldDisplay, WorldDisplay, WorldWorker, WorldWorkerPage, WorldWorkerPageOptions} from "./worldWorkerPage";
+export type {CellWorldDisplay, GpuWorldDisplay, PageTransferable, PixelWorldDisplay, WorldDisplay, WorldWorker, WorldWorkerPage, WorldWorkerPageOptions} from "./worldWorkerPage";
 export {
     DEFAULT_RENDER_BACKEND,
     FIXED_FRAMEBUFFER_LIMITS,
@@ -43,6 +44,7 @@ export type {
     PresentedMessage,
     RenderBackend,
     ResizeMessage,
+    ScreenUnitMessage,
     StatusMessage,
     SurfaceSize,
     WorldToPageMessage,

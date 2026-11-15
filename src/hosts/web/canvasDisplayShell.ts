@@ -12,7 +12,7 @@ export function currentDevicePixelRatio(): number {
 
 export class CanvasDisplayShell<Frame> {
     public readonly canvas = document.createElement("canvas");
-    public readonly context: CanvasRenderingContext2D;
+    private context: CanvasRenderingContext2D | undefined;
     private readonly status = document.createElement("div");
     private readonly pendingAcknowledgements: (() => void)[] = [];
     private pendingFrame: Frame | undefined;
@@ -20,9 +20,13 @@ export class CanvasDisplayShell<Frame> {
     private showingError = false;
 
     public constructor(private readonly container: HTMLElement, private readonly draw: (frame: Frame) => void) {
+    }
+
+    public context2d(): CanvasRenderingContext2D {
+        if (this.context !== undefined) return this.context;
         const context = this.canvas.getContext("2d", OPAQUE_CANVAS);
         if (context === null) throw new Error("This browser cannot draw on a 2D canvas");
-        this.context = context;
+        return this.context = context;
     }
 
     public mount(fit: () => void): void {
@@ -42,8 +46,12 @@ export class CanvasDisplayShell<Frame> {
         return this.container.getBoundingClientRect();
     }
 
-    public present(frame: Frame, onPresented: () => void): void {
+    public hideStatus(): void {
         if (!this.showingError) this.status.hidden = true;
+    }
+
+    public present(frame: Frame, onPresented: () => void): void {
+        this.hideStatus();
         this.pendingFrame = frame;
         this.pendingAcknowledgements.push(onPresented);
         if (this.drawRequested) return;

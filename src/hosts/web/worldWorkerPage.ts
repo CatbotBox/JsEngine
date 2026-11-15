@@ -20,10 +20,18 @@ export interface PixelWorldDisplay extends WorldDisplaySurface {
     presentPixels(frame: PixelFrame, onPresented: () => void): void;
 }
 
-export type WorldDisplay = CellWorldDisplay | PixelWorldDisplay;
+export interface GpuWorldDisplay extends WorldDisplaySurface {
+    surfaceSize(): PixelSurfaceSize;
+    transferCanvas(): OffscreenCanvas;
+    showScreenUnit(pixelsPerScreenUnitX: number, pixelsPerScreenUnitY: number): void;
+}
+
+export type WorldDisplay = CellWorldDisplay | PixelWorldDisplay | GpuWorldDisplay;
+
+export type PageTransferable = ArrayBuffer | OffscreenCanvas;
 
 export interface WorldWorker {
-    postMessage(message: PageToWorldMessage, transfer: ArrayBuffer[]): void;
+    postMessage(message: PageToWorldMessage, transfer: PageTransferable[]): void;
     addEventListener(type: "message", listener: (event: {readonly data: unknown}) => void): void;
     addEventListener(type: "error", listener: (event: {readonly message?: string}) => void): void;
     terminate(): void;
@@ -42,6 +50,8 @@ export interface WorldWorkerPage {
 
 export const STOPPED_STATUS = "Stopped. Reload the page to restart.";
 
+const GPU_BACKEND: RenderBackend = "gpu";
+
 export function startingStatus(name: string): string {
     return `Starting ${name}...`;
 }
@@ -50,10 +60,18 @@ export function surfaceMismatchMessage(name: string, sent: RenderBackend, shown:
     return `${name} sent ${sent} frames, but this page shows ${shown}`;
 }
 
+function isGpuDisplay(display: WorldDisplay): display is GpuWorldDisplay {
+    return "transferCanvas" in display;
+}
+
+export function displayBackendOf(display: WorldDisplay): RenderBackend {
+    return isGpuDisplay(display) ? GPU_BACKEND : display.surfaceSize().kind;
+}
+
 export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, options: WorldWorkerPageOptions): WorldWorkerPage {
     let stopWatchingResize: (() => void) | undefined;
     let closed = false;
-    const post = (message: PageToWorldMessage, transfer: ArrayBuffer[] = []): void => {
+    const post = (message: PageToWorldMessage, transfer: PageTransferable[] = []): void => {
         if (!closed) worker.postMessage(message, transfer);
     };
     const pendingInput: InputEvent[] = [];
@@ -81,7 +99,7 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
     };
     const failOnMismatch = (sent: RenderBackend): void => {
         close();
-        display.showError(surfaceMismatchMessage(options.name, sent, display.surfaceSize().kind));
+        display.showError(surfaceMismatchMessage(options.name, sent, displayBackendOf(display)));
     };
 
     worker.addEventListener("message", event => {
@@ -99,6 +117,10 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
             case "status":
                 display.showStatus(message.text);
                 break;
+            case "screenUnit":
+                if (isGpuDisplay(display)) display.showScreenUnit(message.pixelsPerScreenUnitX, message.pixelsPerScreenUnitY);
+                else failOnMismatch(GPU_BACKEND);
+                break;
             case "quit":
                 close();
                 display.showStatus(STOPPED_STATUS);
@@ -115,7 +137,13 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
     });
 
     display.showStatus(startingStatus(options.name));
-    post({type: "init", surface: display.surfaceSize(), requestedRasterWorkers: options.requestedRasterWorkers});
+    const init = {type: "init", surface: display.surfaceSize(), requestedRasterWorkers: options.requestedRasterWorkers} as const;
+    if (isGpuDisplay(display)) {
+        const canvas = display.transferCanvas();
+        post({...init, canvas}, [canvas]);
+    } else {
+        post(init);
+    }
     stopWatchingResize = display.onResize(() => post({type: "resize", surface: display.surfaceSize()}));
 
     return {
