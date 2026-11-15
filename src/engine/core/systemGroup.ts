@@ -7,9 +7,30 @@ export abstract class SystemGroup extends System {
 
     private _systems: System[] = [];
 
+    protected blocksPresentation(): boolean {
+        return false;
+    }
+
+    public override update(): void {
+        if (!this.blocksPresentation()) {
+            super.update();
+            return;
+        }
+        const barriers = this.world.presentationBarriers;
+        barriers.enter();
+        try {
+            super.update();
+        } finally {
+            barriers.exit();
+        }
+    }
+
     public onUpdate(): void {
-        for (const system of this._systems) {
-            system.update();
+        const systems = this._systems;
+        const barriers = this.world.presentationBarriers;
+        for (let index = 0; index < systems.length; index++) {
+            if (index !== 0) barriers.atSystemBoundary();
+            systems[index].update();
         }
     }
 

@@ -1,5 +1,6 @@
 import type {FileSource, Platform, WorkerFactory} from "../../engine/platform/platform";
 import {WORKER_ENTRY_POINT} from "../../engine/platform/platform";
+import {timerFrameScheduler} from "../../engine/platform/timerFrameScheduler";
 
 interface NodeProcess {
     readonly env: Readonly<Record<string, string | undefined>>;
@@ -58,14 +59,16 @@ export function nodePlatform(): Platform {
 }
 
 function createNodePlatform(): Platform {
+    const now = (): number => performance.now();
     return {
         files: createNodeFiles(),
         inflate: nodeInflate,
         workers: createNodeWorkers(),
         hardwareConcurrency,
         requestedRasterWorkers,
-        now: () => performance.now(),
+        now,
         onExit,
+        frameScheduler: timerFrameScheduler(now),
     };
 }
 

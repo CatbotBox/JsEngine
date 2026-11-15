@@ -107,7 +107,6 @@ export function disposeEditorWorlds(): void {
 export function editorWorld(populate: (world: World) => void = () => undefined, options: EditorWorldOptions = {}): Harnessed {
     const platform = new MemoryPlatform({files: {[SPRITE_PATH]: encodePpm(1, 1, RED_PIXEL_RGBA), ...options.files}});
     const world = options.debugWorld === true ? new DebugWorld({platform}) : new World({platform});
-    world.targetDeltaTimeMs = options.tickMs ?? TICK_MS;
     world.ensureSystemExists(EntityCommandBufferSystem);
     const probe = world.getOrCreateSystem(RenderProbeSystem);
     const counter = world.getOrCreateSystem(GameplayCounterSystem);
@@ -129,6 +128,7 @@ export function editorWorld(populate: (world: World) => void = () => undefined, 
         postMessage: message => toPage.deliver(message),
         addEventListener: (_type, listener) => toWorld.listen(listener),
     }, world, registry, {
+        tickIntervalMs: options.tickMs ?? TICK_MS,
         preloadAssets: async paths => {
             preloaded.push([...paths]);
             await sleep(PRELOAD_DELAY_MS);

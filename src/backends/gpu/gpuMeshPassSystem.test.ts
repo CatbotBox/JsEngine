@@ -2,8 +2,6 @@ import {afterEach, describe, expect, test} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
 import {DebugWorld, World} from "../../engine/core";
 import {RootSystemGroup} from "../../engine/core/rootSystemGroup";
-import {consoleOverride} from "../../engine/debugging";
-import {originalConsole} from "../../engine/debugging/originalConsole";
 import {Vec} from "../../engine/math/types/vec";
 import {Camera} from "../../engine/rendering/camera";
 import {Mesh, MeshBuilder} from "../../engine/rendering/3d/mesh";
@@ -24,10 +22,14 @@ import {GPU_BACKEND_EXPERIMENTAL_NOTICE, GpuMeshPassSystem} from "./gpuMeshPassS
 import {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, MULTISAMPLE_COUNT, NEAREST_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import type {GpuTextureFiltering} from "./gpuMeshPassSettings";
 import {clearColorOf} from "./gpuFrame";
-import {INSTANCE_FLOATS} from "./gpuInstanceBatcher";
-import {MATERIAL_BIND_GROUP, MATERIAL_SAMPLER_BINDING, MATERIAL_TEXTURED_OFFSET, MATERIAL_UNTEXTURED} from "./shaders/basicLitShader";
-import {FakeCanvas, FakeCanvasContext, FakeGpuDevice} from "./testing/fakeGpuDevice";
+import {INSTANCE_FLOATS, INSTANCE_PARAMS_OFFSET} from "./gpuInstanceBatcher";
+import {FRAME_TIME_OFFSET, FRAME_UNIFORM_FLOATS} from "./gpuCamera";
+import {GpuShaderLibrary, unknownSurfaceShaderMessage} from "./gpuShaderLibrary";
+import {GpuSurfaceShader, LIT_SURFACE_SHADER, SURFACE_SHADER_PARAMS} from "./gpuSurfaceShader";
+import {MATERIAL_BIND_GROUP, MATERIAL_SAMPLER_BINDING, MATERIAL_TEXTURED_OFFSET, MATERIAL_UNTEXTURED, SURFACE_FUNCTION_SIGNATURE} from "./shaders/basicLitShader";
+import {compilationError, FakeCanvas, FakeCanvasContext, FakeGpuDevice} from "./testing/fakeGpuDevice";
 import type {FakeRenderPass, FakeGpuTextureView} from "./testing/fakeGpuDevice";
+import {ConsoleRecorder} from "./testing/consoleRecorder";
 
 const FORMAT: GPUTextureFormat = "bgra8unorm";
 const SIZE = {widthPx: 64, heightPx: 48};
@@ -60,38 +62,66 @@ interface LodSettings {
 
 const LOD_ON: LodSettings = {lod: true, lodBias: 0};
 
-type ConsoleMethod = (...args: unknown[]) => void;
+const TOON = "toon";
+const BROKEN = "broken";
+const UNREGISTERED = "unregistered";
+const TOON_PARAMS = [1, 2, 3, 4, 5, 6, 7, 8];
+const TOON_SOURCE = `${SURFACE_FUNCTION_SIGNATURE} {
+    return vec4f(input.lit.rgb * input.params[0], 1.0);
+}`;
+const BROKEN_SOURCE = `${SURFACE_FUNCTION_SIGNATURE} {
+    return oops;
+}`;
+const BROKEN_TOKEN = "oops";
+const BROKEN_COLUMN = 12;
+const MANY_FRAMES = 8;
+const CLOCK_ADVANCE_MS = 20;
+const MS_PER_SECOND = 1000;
+const HALF = 2;
 
 function ignore(): void {
 }
 
-class WarningRecorder {
-    public readonly warnings: string[] = [];
-    private readonly listener: Console;
+const recorders: ConsoleRecorder[] = [];
 
-    public constructor() {
-        const methods: Record<string, ConsoleMethod> = {};
-        for (const key in originalConsole) methods[key] = ignore;
-        methods.warn = (...args: unknown[]) => this.warnings.push(args.map(String).join(" "));
-        this.listener = methods as unknown as Console;
-        consoleOverride.addConsoleEventListener(this.listener);
-    }
+function recordConsole(): ConsoleRecorder {
+    const recorder = new ConsoleRecorder();
+    recorders.push(recorder);
+    return recorder;
+}
 
-    public experimentalNotices(): number {
-        return this.warnings.filter(warning => warning === GPU_BACKEND_EXPERIMENTAL_NOTICE).length;
-    }
+function experimentalNotices(recorder: ConsoleRecorder): number {
+    return recorder.warnings.filter(warning => warning === GPU_BACKEND_EXPERIMENTAL_NOTICE).length;
+}
 
-    public detach(): void {
-        consoleOverride.removeConsoleEventListener(this.listener);
+function lineOf(code: string, token: string): number {
+    return code.split("\n").findIndex(line => line.includes(token)) + 1;
+}
+
+function failWhereBroken(device: FakeGpuDevice): void {
+    device.compilationMessages = code => code.includes(BROKEN_TOKEN) ? [compilationError(`unresolved value '${BROKEN_TOKEN}'`, lineOf(code, BROKEN_TOKEN), BROKEN_COLUMN)] : [];
+}
+
+function pipelineLabels(pass: FakeRenderPass): string[] {
+    return pass.callsOf("setPipeline").map(call => (call.args[0] as GPURenderPipelineDescriptor).label ?? "");
+}
+
+function drawsWithLitOnly(pass: FakeRenderPass): boolean {
+    return pipelineLabels(pass).every(label => label.startsWith(`${LIT_SURFACE_SHADER}|`));
+}
+
+function addShadedQuads(world: World, mesh: Mesh, count: number, shader: () => GpuSurfaceShader): void {
+    for (let i = 0; i < count; i++) {
+        world.entityManager.createEntity("shaded quad", [new RenderMesh(mesh), new LocalToWorld(), new LocalPosition(i, 0, QUAD_DISTANCE), shader()]);
     }
 }
 
-const recorders: WarningRecorder[] = [];
+function lastInstanceWrite(device: FakeGpuDevice): Float32Array {
+    return device.queue.bufferWrites.filter(write => write.buffer.descriptor.label === "instances").at(-1)!.data as Float32Array;
+}
 
-function recordWarnings(): WarningRecorder {
-    const recorder = new WarningRecorder();
-    recorders.push(recorder);
-    return recorder;
+function frameUniformWrites(device: FakeGpuDevice): Float32Array[] {
+    return device.queue.bufferWrites.filter(write => write.buffer.descriptor.label === "frame uniforms").map(write => write.data as Float32Array);
 }
 
 afterEach(() => {
@@ -215,15 +245,15 @@ function lastScenePass(device: FakeGpuDevice): FakeRenderPass | undefined {
 
 describe("GpuMeshPassSystem", () => {
     test("warns once per system instance that the backend is experimental, however many frames run", async () => {
-        const recorder = recordWarnings();
+        const recorder = recordConsole();
         const first = gpuWorld();
         first.world.getOrCreateSystem(GpuMeshPassSystem);
         await step(first, SETTLE_STEPS);
-        expect(recorder.experimentalNotices()).toBe(1);
+        expect(experimentalNotices(recorder)).toBe(1);
         const second = gpuWorld();
         second.world.getOrCreateSystem(GpuMeshPassSystem);
         await step(second, SETTLE_STEPS);
-        expect(recorder.experimentalNotices()).toBe(2);
+        expect(experimentalNotices(recorder)).toBe(2);
         expect([...first.errors, ...second.errors]).toEqual([]);
     });
 
@@ -254,7 +284,7 @@ describe("GpuMeshPassSystem", () => {
         await step(rig, SETTLE_STEPS);
         const draws = lastScenePass(device)!.callsOf("drawIndexed").map(call => [call.args[1], call.args[4]]);
         expect(draws).toEqual([[2, 0], [1, 2]]);
-        const cullModes = device.pipelines.filter(pipeline => pipeline.label?.startsWith("basicLit")).map(pipeline => pipeline.primitive?.cullMode);
+        const cullModes = device.pipelines.filter(pipeline => pipeline.label?.startsWith(`${LIT_SURFACE_SHADER}|`)).map(pipeline => pipeline.primitive?.cullMode);
         expect(cullModes).toEqual(["back", "none"]);
     });
 
@@ -356,5 +386,73 @@ describe("GpuMeshPassSystem", () => {
         expect(await filterAfter(LINEAR_TEXTURE_FILTERING)).toBe("linear");
         expect(await filterAfter(NEAREST_TEXTURE_FILTERING)).toBe("nearest");
         expect(rig.errors).toEqual([]);
+    });
+
+    test("a GpuSurfaceShader draws its entities with the registered shader once its pipeline is ready, in a batch of their own with their params", async () => {
+        const rig = gpuWorld();
+        const {world, device, errors} = rig;
+        world.resources.getOrCreate(GpuShaderLibrary).register(TOON, TOON_SOURCE);
+        world.getOrCreateSystem(GpuMeshPassSystem);
+        const mesh = quad();
+        addQuads(world, mesh, 2);
+        addShadedQuads(world, mesh, 1, () => new GpuSurfaceShader(TOON, TOON_PARAMS));
+        await step(rig);
+        expect(drawsWithLitOnly(lastScenePass(device)!)).toBe(true);
+        await step(rig, SETTLE_STEPS);
+        expect(errors).toEqual([]);
+        const scene = lastScenePass(device)!;
+        expect(pipelineLabels(scene).map(label => label.split("|")[0])).toEqual([LIT_SURFACE_SHADER, TOON]);
+        expect(scene.callsOf("drawIndexed").map(call => [call.args[1], call.args[4]])).toEqual([[2, 0], [1, 2]]);
+        const instances = lastInstanceWrite(device);
+        const toonParams = INSTANCE_FLOATS * 2 + INSTANCE_PARAMS_OFFSET;
+        expect(Array.from(instances.subarray(toonParams, toonParams + SURFACE_SHADER_PARAMS))).toEqual(TOON_PARAMS);
+        expect(Array.from(instances.subarray(INSTANCE_PARAMS_OFFSET, INSTANCE_PARAMS_OFFSET + SURFACE_SHADER_PARAMS))).toEqual(new Array(SURFACE_SHADER_PARAMS).fill(0));
+    });
+
+    test("an unregistered shader name warns once and its entities draw with the built-in lit shader", async () => {
+        const recorder = recordConsole();
+        const rig = gpuWorld();
+        const {world, device, errors} = rig;
+        world.getOrCreateSystem(GpuMeshPassSystem);
+        addShadedQuads(world, quad(), QUADS, () => new GpuSurfaceShader(UNREGISTERED));
+        await step(rig, MANY_FRAMES);
+        expect(errors).toEqual([]);
+        expect(recorder.warnings.filter(warning => warning === unknownSurfaceShaderMessage(UNREGISTERED)).length).toBe(1);
+        const scene = lastScenePass(device)!;
+        expect(drawsWithLitOnly(scene)).toBe(true);
+        expect(scene.callsOf("drawIndexed").map(call => call.args[1])).toEqual([QUADS]);
+    });
+
+    test("a shader that does not compile logs one error naming it and its entities keep drawing with the built-in lit shader", async () => {
+        const recorder = recordConsole();
+        const rig = gpuWorld();
+        const {world, device, errors} = rig;
+        failWhereBroken(device);
+        world.resources.getOrCreate(GpuShaderLibrary).register(BROKEN, BROKEN_SOURCE);
+        world.getOrCreateSystem(GpuMeshPassSystem);
+        addShadedQuads(world, quad(), QUADS, () => new GpuSurfaceShader(BROKEN));
+        await step(rig, MANY_FRAMES);
+        expect(errors).toEqual([]);
+        expect(recorder.errors.length).toBe(1);
+        expect(recorder.errors[0].includes(`"${BROKEN}"`) && recorder.errors[0].includes(`unresolved value '${BROKEN_TOKEN}'`)).toBe(true);
+        expect(device.asyncPipelines.length).toBe(0);
+        const scene = lastScenePass(device)!;
+        expect(drawsWithLitOnly(scene)).toBe(true);
+        expect(scene.callsOf("drawIndexed").map(call => call.args[1])).toEqual([QUADS]);
+    });
+
+    test("the frame uniforms carry the seconds elapsed since the pass was created", async () => {
+        const rig = gpuWorld();
+        const {world, device} = rig;
+        world.getOrCreateSystem(GpuMeshPassSystem);
+        addQuads(world, quad(), 1);
+        await step(rig);
+        await new Promise<void>(done => setTimeout(done, CLOCK_ADVANCE_MS));
+        await step(rig);
+        const writes = frameUniformWrites(device);
+        const first = writes[0][FRAME_TIME_OFFSET], last = writes.at(-1)![FRAME_TIME_OFFSET];
+        expect(writes[0].length).toBe(FRAME_UNIFORM_FLOATS);
+        expect(first >= 0).toBe(true);
+        expect(last - first).toBeGreaterThan(CLOCK_ADVANCE_MS / HALF / MS_PER_SECOND);
     });
 });

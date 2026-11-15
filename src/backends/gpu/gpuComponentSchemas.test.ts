@@ -8,11 +8,22 @@ import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import {registerPixelsComponentSchemas} from "../pixels/pixelsComponentSchemas";
 import {registerGpuComponentSchemas} from "./gpuComponentSchemas";
 import {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
+import {GpuSurfaceShader, LIT_SURFACE_SHADER} from "./gpuSurfaceShader";
 
 const DEPTH_RANGE = 250;
 const EVICT_AFTER_FRAMES = 30;
 const LOD_BIAS = -1;
 const LOD_TRIANGLES_PER_PIXEL = 0.5;
+const HOLOGRAM = "hologram";
+const HOLOGRAM_PARAMS = [0.25, 0.5, 1, 1.75, -2, 0, 8, 0.125];
+
+function registry(): ComponentSchemaRegistry {
+    const result = new ComponentSchemaRegistry();
+    registerEngineComponentSchemas(result);
+    registerPixelsComponentSchemas(result);
+    registerGpuComponentSchemas(result);
+    return result;
+}
 
 describe("gpu component schemas", () => {
     test("GpuMeshPassSettings round-trips at non-default values", () => {
@@ -44,5 +55,26 @@ describe("gpu component schemas", () => {
         expect([loadedSettings.sampleCount, loadedSettings.textures, loadedSettings.textureFiltering]).toEqual([SINGLE_SAMPLE_COUNT, false, LINEAR_TEXTURE_FILTERING]);
         expect([loadedSettings.lod, loadedSettings.lodBias, loadedSettings.lodTrianglesPerPixel]).toEqual([false, LOD_BIAS, LOD_TRIANGLES_PER_PIXEL]);
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
+    });
+
+    test("GpuSurfaceShader saves its name and its eight params, and loads them back", () => {
+        const schemas = registry();
+        const source = new World({platform: new MemoryPlatform()});
+        source.entityManager.createEntity("hologram", [new GpuSurfaceShader(HOLOGRAM, HOLOGRAM_PARAMS)]);
+        source.entityManager.createEntity("default", [new GpuSurfaceShader()]);
+        const saved = serializeWorld(source, schemas);
+        expect(saved.document.entities[0].components.GpuSurfaceShader).toEqual({
+            name: HOLOGRAM,
+            param0: HOLOGRAM_PARAMS[0], param1: HOLOGRAM_PARAMS[1], param2: HOLOGRAM_PARAMS[2], param3: HOLOGRAM_PARAMS[3],
+            param4: HOLOGRAM_PARAMS[4], param5: HOLOGRAM_PARAMS[5], param6: HOLOGRAM_PARAMS[6], param7: HOLOGRAM_PARAMS[7],
+        });
+
+        const target = new World({platform: new MemoryPlatform()});
+        const loaded = deserializeInto(target, schemas, parseSceneDocument(JSON.stringify(saved.document)));
+        const hologram = target.entityManager.getComponent<GpuSurfaceShader>(loaded.entities[0], GpuSurfaceShader)!;
+        const fallback = target.entityManager.getComponent<GpuSurfaceShader>(loaded.entities[1], GpuSurfaceShader)!;
+        expect([hologram.name, Array.from(hologram.params)]).toEqual([HOLOGRAM, HOLOGRAM_PARAMS]);
+        expect([fallback.name, Array.from(fallback.params)]).toEqual([LIT_SURFACE_SHADER, new Array(HOLOGRAM_PARAMS.length).fill(0)]);
+        expect(serializeWorld(target, schemas).document).toEqual(saved.document);
     });
 });

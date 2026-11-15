@@ -3,12 +3,14 @@ import {HudTextSpritePixelPassSystem, PixelRenderSettings} from "../../../src/ba
 import {
     GpuMeshPassSettings,
     GpuMeshPassSystem,
+    GpuShaderLibrary,
     LINEAR_TEXTURE_FILTERING,
     MULTISAMPLE_COUNT,
     NEAREST_TEXTURE_FILTERING,
     SINGLE_SAMPLE_COUNT,
 } from "../../../src/backends/gpu";
 import type {Demo3dRenderControls} from "../game";
+import {DemoSurfaceShaderSystem, registerDemoSurfaceShaders} from "./gpuSurfaceShaders";
 
 const SINGLE_SAMPLE_PER_PIXEL = 1;
 
@@ -21,8 +23,10 @@ export function installGpuRendering3d(world: DebugWorld): Demo3dRenderControls {
     const settingsEntity = buffer.createEntity("renderSettings", [new PixelRenderSettings()]);
     const settings = buffer.addTrackedComponent(settingsEntity, new GpuMeshPassSettings());
 
+    registerDemoSurfaceShaders(world.resources.getOrCreate(GpuShaderLibrary));
     world.ensureSystemExists(GpuMeshPassSystem);
     world.ensureSystemExists(HudTextSpritePixelPassSystem);
+    world.ensureSystemExists(DemoSurfaceShaderSystem);
 
     return {
         toggleMeshPass: () => toggle(world.tryGetSystem(GpuMeshPassSystem)),
@@ -36,6 +40,7 @@ export function installGpuRendering3d(world: DebugWorld): Demo3dRenderControls {
         setSupersample: (x, y) => {
             settings.sampleCount = x * y > SINGLE_SAMPLE_PER_PIXEL ? MULTISAMPLE_COUNT : SINGLE_SAMPLE_COUNT;
         },
+        cycleSurfaceShader: () => world.tryGetSystem(DemoSurfaceShaderSystem)?.cycle(),
         stats: () => world.tryGetSystem(GpuMeshPassSystem),
     };
 }

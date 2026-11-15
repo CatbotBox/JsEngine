@@ -58,6 +58,7 @@ export interface EditorServiceScope {
 
 export interface EditorWorldServiceOptions {
     readonly preloadAssets?: (paths: readonly string[]) => Promise<void>;
+    readonly tickIntervalMs?: number;
 }
 
 const SCENE_TEXT_INDENT_SPACES = 2;
@@ -427,7 +428,7 @@ export class EditorWorldService {
         this.gate.resume();
         this.views.setView("game");
         this._mode = "play";
-        this.lastPlayTickMs = performance.now() - this.world.targetDeltaTimeMs;
+        this.lastPlayTickMs = performance.now() - this.tickIntervalMs();
     }
 
     private pause(): void {
@@ -484,7 +485,11 @@ export class EditorWorldService {
 
     private startTicking(): void {
         if (this.ticker !== undefined) return;
-        this.ticker = setInterval(() => this.tick(), this.world.targetDeltaTimeMs);
+        this.ticker = setInterval(() => this.tick(), this.tickIntervalMs());
+    }
+
+    private tickIntervalMs(): number {
+        return this.options.tickIntervalMs ?? this.world.loopTiming.tickDeltaMs;
     }
 
     private stopTicking(): void {

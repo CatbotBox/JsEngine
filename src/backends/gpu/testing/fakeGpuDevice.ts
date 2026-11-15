@@ -18,6 +18,35 @@ export class FakeGpuBuffer {
     }
 }
 
+export type CompilationMessages = (code: string) => readonly GPUCompilationMessage[];
+export type PipelineCreationFailure = (descriptor: GPURenderPipelineDescriptor) => string | undefined;
+
+const NO_COMPILATION_MESSAGES: CompilationMessages = () => [];
+const PIPELINES_ALWAYS_CREATED: PipelineCreationFailure = () => undefined;
+const COMPILATION_ERROR: GPUCompilationMessageType = "error";
+
+export function compilationError(message: string, lineNum: number, linePos: number): GPUCompilationMessage {
+    return {message, type: COMPILATION_ERROR, lineNum, linePos, offset: 0, length: 0} as GPUCompilationMessage;
+}
+
+export class FakeGpuShaderModule {
+    public constructor(public readonly descriptor: GPUShaderModuleDescriptor, public readonly messages: readonly GPUCompilationMessage[]) {
+    }
+
+    public get hasErrors(): boolean {
+        return this.messages.some(message => message.type === COMPILATION_ERROR);
+    }
+
+    public getCompilationInfo(): Promise<GPUCompilationInfo> {
+        return Promise.resolve({messages: this.messages} as unknown as GPUCompilationInfo);
+    }
+}
+
+export class FakeGpuError {
+    public constructor(public readonly message: string) {
+    }
+}
+
 export class FakeGpuTextureView {
     public constructor(public readonly texture: FakeGpuTexture) {
     }
@@ -177,7 +206,11 @@ export class FakeGpuDevice implements GpuDevice {
     public readonly pipelineLayouts: GPUPipelineLayoutDescriptor[] = [];
     public readonly shaderModules: GPUShaderModuleDescriptor[] = [];
     public readonly pipelines: GPURenderPipelineDescriptor[] = [];
+    public readonly asyncPipelines: GPURenderPipelineDescriptor[] = [];
     public readonly encoders: FakeCommandEncoder[] = [];
+    public compilationMessages: CompilationMessages = NO_COMPILATION_MESSAGES;
+    public pipelineCreationFailure: PipelineCreationFailure = PIPELINES_ALWAYS_CREATED;
+    private readonly errorScopes: (FakeGpuError | null)[] = [];
 
     public createBuffer(descriptor: GPUBufferDescriptor): GPUBuffer {
         const buffer = new FakeGpuBuffer(descriptor);
@@ -213,12 +246,34 @@ export class FakeGpuDevice implements GpuDevice {
 
     public createShaderModule(descriptor: GPUShaderModuleDescriptor): GPUShaderModule {
         this.shaderModules.push(descriptor);
-        return descriptor as unknown as GPUShaderModule;
+        const module = new FakeGpuShaderModule(descriptor, this.compilationMessages(descriptor.code));
+        if (module.hasErrors && this.errorScopes.length > 0 && this.errorScopes.at(-1) === null) {
+            this.errorScopes[this.errorScopes.length - 1] = new FakeGpuError(`Invalid ShaderModule "${descriptor.label}"`);
+        }
+        return module as unknown as GPUShaderModule;
     }
 
     public createRenderPipeline(descriptor: GPURenderPipelineDescriptor): GPURenderPipeline {
         this.pipelines.push(descriptor);
         return descriptor as unknown as GPURenderPipeline;
+    }
+
+    public createRenderPipelineAsync(descriptor: GPURenderPipelineDescriptor): Promise<GPURenderPipeline> {
+        this.asyncPipelines.push(descriptor);
+        const failure = this.pipelineCreationFailure(descriptor);
+        if (failure !== undefined) return Promise.reject(new Error(failure));
+        this.pipelines.push(descriptor);
+        return Promise.resolve(descriptor as unknown as GPURenderPipeline);
+    }
+
+    public pushErrorScope(_filter: GPUErrorFilter): undefined {
+        this.errorScopes.push(null);
+        return undefined;
+    }
+
+    public popErrorScope(): Promise<GPUError | null> {
+        if (this.errorScopes.length === 0) return Promise.reject(new Error("popErrorScope without a pushed scope"));
+        return Promise.resolve(this.errorScopes.pop() as unknown as GPUError | null);
     }
 
     public createCommandEncoder(): GPUCommandEncoder {

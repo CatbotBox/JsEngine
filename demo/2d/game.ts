@@ -246,7 +246,8 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
             }
             if (!this._toggle) return;
             this._query.enabledEntityCount();
-            this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTimeMs)
+            const frameDeltaMs = this.world.time.frameDeltaTimeMs;
+            if (frameDeltaMs > 0) this._fpsCounter.add(MS_PER_SECOND / frameDeltaMs)
             fpsCounterImage.image = [
                 'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
             ]

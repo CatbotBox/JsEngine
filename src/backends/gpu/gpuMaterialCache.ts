@@ -2,13 +2,12 @@ import type {Material} from "../../engine/rendering/3d/material";
 import type {Texture} from "../../engine/rendering/3d/texture";
 import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, RED_SHIFT} from "../../engine/rendering/packedRgb";
 import {asGpuBufferSource, GPU_BUFFER_USAGE} from "./gpuTypes";
-import type {GpuDevice, GpuShader} from "./gpuTypes";
+import type {GpuDevice} from "./gpuTypes";
 import type {GpuTextureCache} from "./gpuTextureCache";
 import {FLOAT_BYTES} from "./gpuLightPacking";
 import {LINEAR_TEXTURE_FILTERING} from "./gpuMeshPassSettings";
 import type {GpuTextureFiltering} from "./gpuMeshPassSettings";
 import {
-    BASIC_LIT,
     MATERIAL_DIFFUSE_OFFSET,
     MATERIAL_EMISSIVE_OFFSET,
     MATERIAL_SAMPLER_BINDING,
@@ -34,7 +33,6 @@ export type GpuMaterialDevice = Pick<GpuDevice, "createBuffer" | "createBindGrou
 export interface GpuMaterial {
     readonly uniformBuffer: GPUBuffer;
     readonly bindGroup: GPUBindGroup;
-    readonly shader: GpuShader;
 }
 
 interface MaterialEntry extends GpuMaterial {
@@ -99,10 +97,6 @@ export class GpuMaterialCache {
         return this.entries.size;
     }
 
-    public shaderOf(_material: Material): GpuShader {
-        return BASIC_LIT;
-    }
-
     public prepare(material: Material, texturesEnabled: boolean, filtering: GpuTextureFiltering): GpuMaterial {
         packMaterial(material, texturesEnabled, this.packed);
         const sampler = this.samplerFor(filtering);
@@ -119,7 +113,6 @@ export class GpuMaterialCache {
                 boundTexture: material.diffuseTexture,
                 boundSpecularTexture: material.specularTexture,
                 boundSampler: sampler,
-                shader: this.shaderOf(material),
                 written: this.packed.slice(),
             };
             this.entries.set(material, entry);

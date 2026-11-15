@@ -21,13 +21,15 @@ import {backgroundColorOf, PixelRenderSettings} from "../pixels/pixelRenderSetti
 import {asGpuBufferSource, GPU_BUFFER_USAGE} from "./gpuTypes";
 import type {GpuDevice} from "./gpuTypes";
 import {GpuDeviceResource} from "./gpuDeviceResource";
-import {FRAME_UNIFORM_FLOATS, frameViewMatrix, perspectiveFocalLength, writeFrameUniforms} from "./gpuCamera";
+import {FRAME_UNIFORM_FLOATS, frameViewMatrix, perspectiveFocalLength, writeFrameTime, writeFrameUniforms} from "./gpuCamera";
 import {FLOAT_BYTES, GpuLightPacking, packSceneLights} from "./gpuLightPacking";
 import {GpuInstanceBatcher, INSTANCE_FLOATS} from "./gpuInstanceBatcher";
 import {GpuMeshCache} from "./gpuMeshCache";
 import {GpuTextureCache} from "./gpuTextureCache";
 import {GpuMaterialCache} from "./gpuMaterialCache";
 import {GpuPipelineCache} from "./gpuPipelineCache";
+import {GpuShaderLibrary} from "./gpuShaderLibrary";
+import {GpuSurfaceShader, LIT_SURFACE_SHADER, NO_SURFACE_SHADER_PARAMS, sameSurfaceShader} from "./gpuSurfaceShader";
 import {GpuMeshPassSettings, MULTISAMPLE_COUNT, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import type {GpuSampleCount} from "./gpuMeshPassSettings";
 import {
@@ -54,10 +56,14 @@ const ROW_LEVEL_GROWTH_FACTOR = 2;
 const NO_RASTER_WORKERS = 0;
 const NO_BASE_VERTEX = 0;
 const INDEX_FORMAT: GPUIndexFormat = "uint32";
+const MS_PER_SECOND = 1000;
 
-type MeshSpan = ColumnSpan<"renderMesh" | "localToWorld">;
-type BoundedMeshSpan = ColumnSpan<"renderMesh" | "localToWorld" | "bounds">;
-type RunVisitor = (mesh: Mesh, level: number, culling: FaceCulling, color: number, matrices: Float32Array, startRow: number, endRow: number) => void;
+type MeshSpan = ColumnSpan<"renderMesh" | "localToWorld" | "surfaceShader">;
+type BoundedMeshSpan = ColumnSpan<"renderMesh" | "localToWorld" | "bounds" | "surfaceShader">;
+type RunVisitor = (
+    mesh: Mesh, level: number, culling: FaceCulling, color: number, surfaceShader: string, params: ArrayLike<number>,
+    matrices: Float32Array, startRow: number, endRow: number,
+) => void;
 
 export class GpuMeshPassSystem extends System {
     public trianglesDrawn = 0;
@@ -79,6 +85,7 @@ export class GpuMeshPassSystem extends System {
     private _frameNumber = 0;
     private _cameraMatrix: ReadonlyVec16 | undefined;
     private _cameraFieldOfView: number | undefined;
+    private _startTimeMs = 0;
 
     private _gpu!: GpuDeviceResource;
     private _frameBindGroupLayout!: GPUBindGroupLayout;
@@ -128,6 +135,7 @@ export class GpuMeshPassSystem extends System {
         this._materials = new GpuMaterialCache(device, materialBindGroupLayout, this._textures);
         this._meshes = new GpuMeshCache(device);
         this._pipelines = new GpuPipelineCache(device, pipelineLayout);
+        this._startTimeMs = this.world.time.elapsedTimeMs;
     }
 
     override update(): void {
@@ -149,6 +157,7 @@ export class GpuMeshPassSystem extends System {
 
         writeFrameUniforms(this._frameUniforms, this._cameraMatrix!, this._cameraFieldOfView, widthPx, heightPx,
             SQUARE_PIXEL_HEIGHT_PER_WIDTH, settings.orthographicDepthRange);
+        writeFrameTime(this._frameUniforms, (this.world.time.elapsedTimeMs - this._startTimeMs) / MS_PER_SECOND);
         device.queue.writeBuffer(this._frameUniformBuffer, 0, asGpuBufferSource(this._frameUniforms));
         const view = frameViewMatrix(this._frameUniforms);
         packSceneLights(this.world.resources.tryGet(SceneLights), view, this._lights);
@@ -160,7 +169,7 @@ export class GpuMeshPassSystem extends System {
 
         const background = backgroundColorOf(this._renderSettingsQuery.tryGetSingleton({settings: PixelRenderSettings})?.settings);
         const pass = this._gpu.frame.beginScene(background, sampleCount, widthPx, heightPx);
-        this.drawBatches(pass, settings, sampleCount);
+        this.drawBatches(pass, settings, sampleCount, this.world.resources.getOrCreate(GpuShaderLibrary));
         pass.end();
         this._meshes.evictUnused(this._frameNumber, settings.evictUnusedMeshAfterFrames);
     }
@@ -212,8 +221,9 @@ export class GpuMeshPassSystem extends System {
 
     private batchInstances(): void {
         this._batcher.begin();
-        const unbounded = this._unboundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld}});
-        const bounded = this._boundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld, bounds: WorldSpaceRenderBounds}});
+        const surface = {surfaceShader: GpuSurfaceShader};
+        const unbounded = this._unboundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld}, optional: surface});
+        const bounded = this._boundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld, bounds: WorldSpaceRenderBounds}, optional: surface});
         unbounded.consumeSpans(this.countUnboundedSpan);
         this._rowLevelCursor = 0;
         bounded.consumeSpans(this.countBoundedSpan);
@@ -223,15 +233,15 @@ export class GpuMeshPassSystem extends System {
         bounded.consumeSpans(this.fillBoundedSpan);
     }
 
-    private readonly countRun: RunVisitor = (mesh, level, culling, _color, _matrices, startRow, endRow) => {
+    private readonly countRun: RunVisitor = (mesh, level, culling, _color, surfaceShader, _params, _matrices, startRow, endRow) => {
         const instances = endRow - startRow;
-        this._batcher.count(mesh, culling, instances);
+        this._batcher.count(mesh, culling, surfaceShader, instances);
         this.trianglesDrawn += mesh.triangleCount * instances;
         if (level < this.lodLevelCounts.length) this.lodLevelCounts[level] += instances;
     };
 
-    private readonly fillRun: RunVisitor = (mesh, _level, culling, color, matrices, startRow, endRow) => {
-        this._batcher.addRows(mesh, culling, matrices, startRow, endRow, color);
+    private readonly fillRun: RunVisitor = (mesh, _level, culling, color, surfaceShader, params, matrices, startRow, endRow) => {
+        this._batcher.addRows(mesh, culling, surfaceShader, matrices, startRow, endRow, color, params);
     };
 
     private readonly countUnboundedSpan = (span: MeshSpan): void => visitRuns(span, undefined, NO_ROW_LEVEL_OFFSET, this.countRun);
@@ -300,7 +310,7 @@ export class GpuMeshPassSystem extends System {
         device.queue.writeBuffer(this._instanceBuffer, 0, asGpuBufferSource(batcher.instanceData), 0, batcher.instanceCount * INSTANCE_FLOATS);
     }
 
-    private drawBatches(pass: GPURenderPassEncoder, settings: GpuMeshPassSettings, sampleCount: GpuSampleCount): void {
+    private drawBatches(pass: GPURenderPassEncoder, settings: GpuMeshPassSettings, sampleCount: GpuSampleCount, library: GpuShaderLibrary): void {
         const instanceBuffer = this._instanceBuffer;
         if (instanceBuffer === undefined || this._batcher.instanceCount === 0) return;
         pass.setBindGroup(FRAME_BIND_GROUP, this._frameBindGroup);
@@ -308,17 +318,17 @@ export class GpuMeshPassSystem extends System {
         const format = this._gpu.format;
         let currentPipeline: GPURenderPipeline | undefined;
         for (const batch of this._batcher.batches) {
+            const pipeline = this._pipelines.pipelineFor(library.shaderNamed(batch.surfaceShader), batch.culling, format, sampleCount);
+            if (pipeline !== currentPipeline) {
+                pass.setPipeline(pipeline);
+                currentPipeline = pipeline;
+            }
             const mesh = batch.mesh;
             const gpuMesh = this._meshes.ensure(mesh, this._frameNumber);
             pass.setVertexBuffer(MESH_VERTEX_BUFFER_SLOT, gpuMesh.vertexBuffer);
             pass.setIndexBuffer(gpuMesh.indexBuffer, INDEX_FORMAT);
             for (const range of gpuMesh.ranges) {
                 const material = this._materials.prepare(mesh.materials[range.material], settings.textures, settings.textureFiltering);
-                const pipeline = this._pipelines.pipelineFor(material.shader, batch.culling, format, sampleCount);
-                if (pipeline !== currentPipeline) {
-                    pass.setPipeline(pipeline);
-                    currentPipeline = pipeline;
-                }
                 pass.setBindGroup(MATERIAL_BIND_GROUP, material.bindGroup);
                 pass.drawIndexed(range.indexCount, batch.instanceCount, range.firstIndex, NO_BASE_VERTEX, batch.firstInstance);
             }
@@ -328,6 +338,7 @@ export class GpuMeshPassSystem extends System {
 
 function visitRuns({start, end, stores, cols}: MeshSpan, levels: Int32Array | undefined, firstLevel: number, visit: RunVisitor): void {
     const renderMeshes = stores.renderMesh!;
+    const surfaceShaders = stores.surfaceShader;
     const matrices = cols.localToWorld!;
     const levelOffset = firstLevel - start;
     let row = start;
@@ -335,14 +346,20 @@ function visitRuns({start, end, stores, cols}: MeshSpan, levels: Int32Array | un
         const level = levels === undefined ? BASE_LOD_LEVEL : levels[levelOffset + row];
         const first = renderMeshes.get(row) as RenderMesh;
         const mesh = first.mesh, culling = first.faceCulling, color = first.color;
+        const surface = surfaceShaders?.get(row) as GpuSurfaceShader | undefined;
         let runEnd = row + 1;
         while (runEnd < end) {
             const next = renderMeshes.get(runEnd) as RenderMesh;
             if (next.mesh !== mesh || next.faceCulling !== culling || next.color !== color) break;
             if (levels !== undefined && levels[levelOffset + runEnd] !== level) break;
+            if (surface !== undefined && !sameSurfaceShader(surface, surfaceShaders!.get(runEnd) as GpuSurfaceShader)) break;
             runEnd++;
         }
-        if (mesh !== undefined && level !== CULLED) visit(mesh.lods[level], level, culling, color, matrices, row, runEnd);
+        if (mesh !== undefined && level !== CULLED) {
+            const surfaceShader = surface === undefined ? LIT_SURFACE_SHADER : surface.name;
+            const params = surface === undefined ? NO_SURFACE_SHADER_PARAMS : surface.params;
+            visit(mesh.lods[level], level, culling, color, surfaceShader, params, matrices, row, runEnd);
+        }
         row = runEnd;
     }
 }

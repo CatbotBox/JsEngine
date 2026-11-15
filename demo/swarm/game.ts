@@ -747,9 +747,9 @@ class SwarmHudSystem extends System {
     }
 
     private refreshStats(label: TextSprite): void {
-        const deltaTimeMs = this.world.time.deltaTimeMs;
-        if (deltaTimeMs > 0) this._fps.add(MS_PER_SECOND / deltaTimeMs);
-        this._sinceStatsRefreshMs += deltaTimeMs;
+        const time = this.world.time;
+        if (time.frameDeltaTimeMs > 0) this._fps.add(MS_PER_SECOND / time.frameDeltaTimeMs);
+        this._sinceStatsRefreshMs += time.deltaTimeMs;
         if (this._sinceStatsRefreshMs < STATS_REFRESH_MS) return;
         this._sinceStatsRefreshMs = 0;
         label.image = [["ENEMIES " + this._enemies.enabledEntityCount(), "FPS " + Math.round(this._fps.getAvg())].join(STATUS_SEPARATOR)];

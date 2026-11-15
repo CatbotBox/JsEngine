@@ -109,7 +109,7 @@ export class VertexLighting {
                 viewZ = -pz * invDistance;
                 const glossTexture = specularTextures[material];
                 if (glossTexture !== undefined && uvs !== undefined) {
-                    const texel = sampleBaseLevel(glossTexture, uvs[j], uvs[j + 1]);
+                    const texel = sampleBaseLevel(glossTexture, uvs[j], 1 - uvs[j + 1]);
                     glossR = ((texel >> RED_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX;
                     glossG = ((texel >> GREEN_SHIFT) & CHANNEL_MASK) / CHANNEL_MAX;
                     glossB = (texel & CHANNEL_MASK) / CHANNEL_MAX;

@@ -1,4 +1,4 @@
-import type {FileSource, FileStat, Inflate, Platform, WorkerFactory} from "../platform/platform";
+import type {FileSource, FileStat, FrameScheduler, Inflate, Platform, WorkerFactory} from "../platform/platform";
 import {normalizePath} from "../platform/paths";
 
 const DEFAULT_COLUMNS = 80;
@@ -156,11 +156,13 @@ export interface MemoryPlatformOptions {
     readonly hardwareConcurrency?: number;
     readonly requestedRasterWorkers?: number;
     readonly now?: number;
+    readonly frameScheduler?: FrameScheduler;
 }
 
 export class MemoryPlatform implements Platform {
     public readonly files: FileSource;
     public readonly workers?: WorkerFactory;
+    public readonly frameScheduler?: FrameScheduler;
 
     private readonly _inflate?: Inflate;
     private readonly _hardwareConcurrency: number;
@@ -171,6 +173,7 @@ export class MemoryPlatform implements Platform {
     public constructor(options: MemoryPlatformOptions = {}) {
         this.files = options.fileSource ?? new MemoryFileSource(options.files ?? {});
         this.workers = options.workers;
+        this.frameScheduler = options.frameScheduler;
         this._inflate = options.inflate;
         this._hardwareConcurrency = options.hardwareConcurrency ?? 1;
         this._requestedRasterWorkers = options.requestedRasterWorkers;

@@ -3,6 +3,8 @@ import {browserWorkerFactory, browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorker, BrowserWorkerHost} from "./browserWorkers";
 import {PageConnection} from "./worldWorkerPlatform";
 import type {WorldWorkerScope} from "./worldWorkerPlatform";
+import type {MaybeAnimationFrameHost} from "./animationFrameScheduler";
+import {displayPacing} from "../../engine/platform/framePacing";
 import {connectWorldWorker, displayBackendOf, STOPPED_STATUS, startingStatus, surfaceMismatchMessage} from "./worldWorkerPage";
 import type {CellWorldDisplay, GpuWorldDisplay, PageTransferable, PixelWorldDisplay, WorldWorker} from "./worldWorkerPage";
 import {
@@ -56,7 +58,7 @@ class FakeScope implements WorldWorkerScope {
     public readonly navigator = {hardwareConcurrency: 6};
     private readonly listeners: ((event: {readonly data: unknown}) => void)[] = [];
 
-    public constructor(host: BrowserWorkerHost = {}) {
+    public constructor(host: BrowserWorkerHost & MaybeAnimationFrameHost = {}) {
         Object.assign(this, host);
     }
 
@@ -1045,6 +1047,24 @@ describe("the gpu backend's plumbing", () => {
         const connection = await opening;
         expect(connection.gpuCanvas()).toBe(canvas);
         expect(connection.pixelPresenter().size()).toEqual({widthPx: PIXEL_SURFACE.widthPx, heightPx: PIXEL_SURFACE.heightPx});
+    });
+
+    test("only a gpu page's worker paces display frames with requestAnimationFrame; cell and pixel pages keep timers", async () => {
+        let requestedFrames = 0;
+        const animationFrames: MaybeAnimationFrameHost = {
+            requestAnimationFrame: () => ++requestedFrames,
+            cancelAnimationFrame: () => undefined,
+        };
+        const gpuScope = new FakeScope(animationFrames);
+        const opening = PageConnection.open(gpuScope, new MemoryFileSource());
+        withOffscreenCanvasGlobal(() => gpuScope.send({...PIXEL_INIT, canvas: offscreenCanvas()} as PageToWorldMessage));
+        const stopGpuFrames = (await opening).platform.frameScheduler!.start(displayPacing(), () => undefined);
+        stopGpuFrames();
+        expect(requestedFrames).toBe(1);
+        const pixelConnection = await openPixelConnection(new FakeScope(animationFrames));
+        const stopPixelFrames = pixelConnection.platform.frameScheduler!.start(displayPacing(), () => undefined);
+        stopPixelFrames();
+        expect(requestedFrames).toBe(1);
     });
 
     test("the worker posts a screen unit only when it changes", async () => {
