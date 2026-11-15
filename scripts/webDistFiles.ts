@@ -11,6 +11,7 @@ const PAGES: Readonly<Record<string, string>> = {
     "swarm": "swarm.html?backend=cells",
     "swarm-pixels": "swarm.html",
     "editor": "editor.html",
+    "editor-gpu": "editor.html?backend=gpu",
 };
 
 const PROJECT_FLAG_PREFIX = "--project=";

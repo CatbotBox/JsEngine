@@ -1,12 +1,19 @@
-import type {World} from "../../src/engine/core";
+import type {DebugWorld, World} from "../../src/engine/core";
 import {meshCachePathFor, Mesh} from "../../src/engine/rendering/3d";
 import type {ComponentSchemaRegistry} from "../../src/engine/scene";
-import type {ProjectAssetFiles, ProjectHost} from "../../src/editor/project/projectEntry";
+import type {ProjectAssetFiles, ProjectHost, ProjectRenderBackend} from "../../src/editor/project/projectEntry";
 import {requireDebugWorld} from "../_shared/debugWorld";
 import {setupDemo3d} from "./game";
-import type {DemoModel, DemoModelFiles} from "./game";
+import type {Demo3dRenderControls, DemoModel, DemoModelFiles} from "./game";
 import {DEFAULT_LAZY_MODEL_BYTES, demoModelsAmong} from "./projectModels";
 import {installPixelRendering3d} from "./launch/pixelRendering";
+import {installGpuRendering3d} from "./launch/gpuRendering";
+
+const GPU_BACKEND: ProjectRenderBackend = "gpu";
+
+function installRendering(world: DebugWorld, host: ProjectHost): Demo3dRenderControls {
+    return host.renderBackend === GPU_BACKEND ? installGpuRendering3d(world) : installPixelRendering3d(world);
+}
 
 export function registerProjectSchemas(registry: ComponentSchemaRegistry): void {
 }
@@ -40,7 +47,7 @@ export async function setupProject(world: World, host: ProjectHost): Promise<voi
         fetch: (model, onProgress) => load(model, onProgress),
     };
     setupDemo3d(debugWorld, {
-        render: installPixelRendering3d(debugWorld),
+        render: installRendering(debugWorld, host),
         listModels: () => projectModels(files),
         modelFiles,
         quit: () => host.quit(),

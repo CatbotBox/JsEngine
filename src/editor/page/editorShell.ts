@@ -32,6 +32,12 @@ const CONNECTING_TEXT = "Waiting for the game…";
 const ACTIVE_CLASS = "active";
 const DRAGGING_CLASS = "resizing";
 const SCENE_PLAY_HINT = "The Scene view is not available while the game plays; pause first";
+const RENDER_BACKEND_CLASS = "view-tabs-renderer";
+const RENDER_BACKEND_HINT = "The renderer that draws the Scene and Game views; pick it with ?backend= in the page address";
+
+export interface EditorShellOptions {
+    readonly renderBackendLabel?: string;
+}
 
 interface ShellLayout {
     readonly root: HTMLElement;
@@ -184,7 +190,7 @@ class EditorShellImplementation implements EditorShell {
     private readonly bottomTabButtons = new Map<BottomTab, HTMLButtonElement>();
     private readonly viewTabButtons = new Map<EditorView, HTMLButtonElement>();
 
-    public constructor(body: HTMLElement) {
+    public constructor(body: HTMLElement, private readonly options: EditorShellOptions) {
         this.document = body.ownerDocument;
         this.layout = buildLayout(body);
         this.viewport = this.layout.viewport;
@@ -253,6 +259,12 @@ class EditorShellImplementation implements EditorShell {
             button.setAttribute("role", "tab");
             this.viewTabButtons.set(view, button);
             this.layout.viewTabs.append(button);
+        }
+        const renderBackendLabel = this.options.renderBackendLabel;
+        if (renderBackendLabel !== undefined) {
+            const label = createElement(document, "span", RENDER_BACKEND_CLASS, renderBackendLabel);
+            label.title = RENDER_BACKEND_HINT;
+            this.layout.viewTabs.append(label);
         }
         for (const tab of BOTTOM_TABS) {
             const button = createButton(document, {className: "editor-tab", text: BOTTOM_TAB_LABELS[tab], title: `Show the ${BOTTOM_TAB_LABELS[tab]}`, onClick: () => this.showBottomTab(tab)});
@@ -384,6 +396,6 @@ class EditorShellImplementation implements EditorShell {
     }
 }
 
-export function createEditorShell(body: HTMLElement): EditorShell {
-    return new EditorShellImplementation(body);
+export function createEditorShell(body: HTMLElement, options: EditorShellOptions = {}): EditorShell {
+    return new EditorShellImplementation(body, options);
 }
