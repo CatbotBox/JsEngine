@@ -2,7 +2,7 @@ import {afterEach, beforeEach, describe, expect, test} from "../../engine/testin
 import type * as Fs from "fs";
 import type * as Os from "os";
 import type * as Path from "path";
-import {createProjectServer, describeBuildErrors} from "./projectServer";
+import {createProjectServer, describeBuildErrors, externalOpenCommand, splitCommandLine} from "./projectServer";
 import type {ProjectServer} from "./projectServer";
 import {PROJECT_MANIFEST_FILE, STARTER_ENTRY_FILE} from "../../editor/project/projectManifest";
 import type {OpenProjectResult} from "../../editor/project/projectServerApi";
@@ -21,6 +21,7 @@ const HTTP_CONFLICT = 409;
 
 let folder = "";
 let server: ProjectServer;
+let openedExternally: string[] = [];
 
 function request(route: string, init: RequestInit = {}): Promise<Response> {
     return server.handle(new Request(`${ORIGIN}/__project/${route}`, init));
@@ -36,7 +37,15 @@ async function opened(target: string): Promise<OpenProjectResult> {
 
 beforeEach(() => {
     folder = fs.mkdtempSync(path.join(os.tmpdir(), "jsengine-project-"));
-    server = createProjectServer({bun: {unavailableReason: "no bun in tests"}, browse: true, allowedHostnames: ["localhost"]});
+    openedExternally = [];
+    server = createProjectServer({
+        bun: {unavailableReason: "no bun in tests"},
+        browse: true,
+        allowedHostnames: ["localhost"],
+        openExternally: async absolutePath => {
+            openedExternally.push(absolutePath);
+        },
+    });
 });
 
 afterEach(() => {
@@ -93,6 +102,22 @@ describe("project server", () => {
         expect(fs.existsSync(path.join(folder, "..", "escape.txt"))).toBe(false);
     });
 
+    test("open-external hands the launcher the absolute path of a file inside the folder only", async () => {
+        const {id} = await opened(folder);
+        await request(`${id}/file/src/game.ts`, {method: "PUT", body: "export {};"});
+        expect((await post(`${id}/open-external`, {path: "src/game.ts"})).status).toBe(HTTP_OK);
+        expect(openedExternally).toEqual([path.join(fs.realpathSync(folder), "src", "game.ts")]);
+        for (const escaping of ["../escape.ts", "..\\escape.ts", "src/../../escape.ts", "C:/Windows/notepad.exe", "/etc/passwd"]) {
+            expect((await post(`${id}/open-external`, {path: escaping})).status).toBe(HTTP_BAD_REQUEST);
+        }
+        expect((await post(`${id}/open-external`, {path: "src/missing.ts"})).status).toBe(HTTP_NOT_FOUND);
+        expect((await post(`${id}/open-external`, {path: "src"})).status).toBe(HTTP_NOT_FOUND);
+        expect((await post(`${id}/open-external`, {})).status).toBe(HTTP_BAD_REQUEST);
+        expect((await request(`${id}/open-external`)).status).toBe(HTTP_METHOD_NOT_ALLOWED);
+        expect((await post(`${id}/open-external`, {path: "src/game.ts"}, {Origin: "http://evil.example"})).status).toBe(HTTP_FORBIDDEN);
+        expect(openedExternally.length).toBe(1);
+    });
+
     test("a link pointing outside the folder is not followed", async () => {
         const outside = fs.mkdtempSync(path.join(os.tmpdir(), "jsengine-outside-"));
         try {
@@ -136,6 +161,28 @@ describe("project server", () => {
         expect(browsed.directories.map((directory: {name: string}) => directory.name)).toEqual(["child"]);
         expect(browsed.parent).toBe(path.dirname(folder));
         expect(browsed.roots.length).toBeGreaterThan(1);
+    });
+});
+
+describe("external editor command", () => {
+    const file = "/project/src/game.ts";
+
+    test("JSENGINE_EDITOR wins over VISUAL and EDITOR, and its quoted parts stay whole", () => {
+        expect(externalOpenCommand(file, {JSENGINE_EDITOR: `"C:\\Program Files\\Editor\\editor.exe" --reuse-window`, VISUAL: "vim", EDITOR: "nano"}, "win32"))
+            .toEqual({command: "C:\\Program Files\\Editor\\editor.exe", args: ["--reuse-window", file]});
+        expect(externalOpenCommand(file, {VISUAL: "subl -w", EDITOR: "nano"}, "linux")).toEqual({command: "subl", args: ["-w", file]});
+        expect(externalOpenCommand(file, {JSENGINE_EDITOR: "  ", EDITOR: "nano"}, "linux")).toEqual({command: "nano", args: [file]});
+    });
+
+    test("without an editor variable the platform's default handler opens the file", () => {
+        expect(externalOpenCommand(file, {}, "win32")).toEqual({command: "explorer.exe", args: [file]});
+        expect(externalOpenCommand(file, {}, "darwin")).toEqual({command: "open", args: [file]});
+        expect(externalOpenCommand(file, {}, "linux")).toEqual({command: "xdg-open", args: [file]});
+    });
+
+    test("command lines split on unquoted whitespace", () => {
+        expect(splitCommandLine(`code  --wait 'a b' "" x"y z"w`)).toEqual(["code", "--wait", "a b", "", "xy zw"]);
+        expect(splitCommandLine("   ")).toEqual([]);
     });
 });
 

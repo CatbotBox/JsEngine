@@ -19,6 +19,7 @@ import {
     joinProjectPath,
     normalizeProjectPath,
     parentFolderOf,
+    PROJECT_FILE_KIND_TITLES,
     projectFileKind,
     renamedPath,
     ROOT_FOLDER_PATH,
@@ -26,11 +27,12 @@ import {
     uniqueChildPath,
 } from "./projectFiles";
 import type {ProjectFileKind, ProjectFolder} from "./projectFiles";
+import {EXTERNAL_EDITOR_UNAVAILABLE_TEXT, ProjectFilePreview} from "./projectPreview";
 
 type ItemKind = ProjectFileKind | "folder";
 
-const ICON_TEXT: Readonly<Record<ItemKind, string>> = {folder: "DIR", scene: "SCN", prefab: "PFB", mesh: "OBJ", image: "IMG", other: "FILE"};
-const KIND_TITLES: Readonly<Record<ItemKind, string>> = {folder: "Folder", scene: "Scene", prefab: "Prefab", mesh: "Mesh", image: "Image", other: "File"};
+const ICON_TEXT: Readonly<Record<ItemKind, string>> = {folder: "DIR", scene: "SCN", prefab: "PFB", mesh: "OBJ", image: "IMG", code: "CODE", other: "FILE"};
+const KIND_TITLES: Readonly<Record<ItemKind, string>> = {folder: "Folder", ...PROJECT_FILE_KIND_TITLES};
 const DRAG_TEXT_TYPE = "text/plain";
 const DROP_TARGET_CLASS = "drop-target";
 const SELECTED_CLASS = "selected";
@@ -42,6 +44,7 @@ export class ProjectView {
     private readonly tree: HTMLElement;
     private readonly grid: HTMLElement;
     private readonly breadcrumb: HTMLElement;
+    private readonly preview: ProjectFilePreview;
     private readonly expanded = new Set<string>([ROOT_FOLDER_PATH]);
     private entries: readonly ProjectEntry[] = [];
     private root: ProjectFolder = buildProjectTree([]);
@@ -66,7 +69,8 @@ export class ProjectView {
         this.tree.setAttribute("role", "tree");
         this.grid = createElement(document, "div", "project-grid");
         this.grid.setAttribute("role", "listbox");
-        body.append(this.tree, this.grid);
+        this.preview = new ProjectFilePreview(document, workspace);
+        body.append(this.tree, this.grid, this.preview.element);
         container.replaceChildren(toolbar, body);
         this.installFolderDrop(this.grid, () => this.currentFolder);
         this.grid.addEventListener("contextmenu", event => {
@@ -83,6 +87,7 @@ export class ProjectView {
 
     public rebind(): void {
         this.unsubscribeFiles();
+        this.preview.clear();
         this.unsubscribeFiles = this.workspace.session.files.onChange(change => {
             void this.reload();
             for (const path of change.paths) {
@@ -131,6 +136,12 @@ export class ProjectView {
         this.renderBreadcrumb();
         this.tree.replaceChildren(this.folderNode(this.root, 0));
         this.renderGrid();
+        this.showSelectedFile();
+    }
+
+    private showSelectedFile(): void {
+        const selected = this.selectedPath;
+        this.preview.show(selected === undefined ? undefined : this.entries.find(entry => entry.kind === "file" && normalizeProjectPath(entry.path) === selected));
     }
 
     private renderBreadcrumb(): void {
@@ -196,6 +207,7 @@ export class ProjectView {
             this.selectedPath = path;
             for (const selected of this.grid.querySelectorAll(`.${SELECTED_CLASS}`)) selected.classList.remove(SELECTED_CLASS);
             item.classList.add(SELECTED_CLASS);
+            this.showSelectedFile();
         });
         item.addEventListener("dblclick", () => this.activate(path, kind));
         item.addEventListener("contextmenu", event => {
@@ -226,6 +238,20 @@ export class ProjectView {
     private activate(path: string, kind: ItemKind): void {
         if (kind === "folder") this.openFolder(path);
         else if (kind === "scene" || kind === "prefab") void this.workspace.openDocument(path);
+        else if (kind === "code") void this.openExternally(path);
+    }
+
+    private async openExternally(path: string): Promise<void> {
+        const files = this.workspace.session.files;
+        if (files.openExternally === undefined) {
+            this.workspace.notice("warn", EXTERNAL_EDITOR_UNAVAILABLE_TEXT);
+            return;
+        }
+        try {
+            await files.openExternally(path);
+        } catch (error) {
+            this.workspace.reportError(error);
+        }
     }
 
     private installFolderDrop(element: HTMLElement, folderOf: () => string): void {
@@ -289,6 +315,7 @@ export class ProjectView {
         }
         const items: MenuItem[] = [];
         if (kind === "scene" || kind === "prefab") items.push({label: "Open", run: () => void this.workspace.openDocument(path)});
+        else items.push({label: "Open in Editor", run: () => void this.openExternally(path)});
         if (isAssetKind(kind)) items.push({label: "Add to Scene", run: () => void this.workspace.instantiateAsset(path, {target: {parent: null, before: null}})});
         if (items.length > 0) items.push(MENU_SEPARATOR);
         items.push({label: "Rename", run: () => void this.rename(path)}, {label: "Delete", run: () => void this.remove(path)});

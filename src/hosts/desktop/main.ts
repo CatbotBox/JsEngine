@@ -1,4 +1,4 @@
-import {app, BrowserWindow, dialog, Menu, protocol} from "electron";
+import {app, BrowserWindow, dialog, Menu, protocol, screen} from "electron";
 import {existsSync, readFileSync} from "fs";
 import {readFile, writeFile} from "fs/promises";
 import {join} from "path";
@@ -14,8 +14,9 @@ const RENDER_BACKEND_SCRIPT_TIMEOUT_MS = 10_000;
 const RENDER_BACKEND_SCRIPT_POLL_MS = 50;
 const EDITOR_LOADING_STATE = "loading";
 const EDITOR_READY_STATE = "ready";
-const WINDOW_WIDTH_PX = 1280;
-const WINDOW_HEIGHT_PX = 800;
+const MIN_WINDOW_WIDTH_PX = 1280;
+const MIN_WINDOW_HEIGHT_PX = 800;
+const WINDOW_WORK_AREA_FRACTION = 0.8;
 const HTTP_NOT_FOUND = 404;
 const BITMAP_BYTES_PER_PIXEL = 4;
 const ARGV_APP_ARGS_START_UNPACKAGED = 2;
@@ -134,12 +135,18 @@ async function pressPlay(window: BrowserWindow): Promise<void> {
     await window.webContents.executeJavaScript(`document.getElementById("play")?.click()`, AS_USER_GESTURE);
 }
 
+function initialWindowSize(): {readonly width: number, readonly height: number} {
+    const workArea = screen.getPrimaryDisplay().workAreaSize;
+    const fitted = (minimum: number, available: number): number => Math.min(available, Math.max(minimum, Math.round(available * WINDOW_WORK_AREA_FRACTION)));
+    return {width: fitted(MIN_WINDOW_WIDTH_PX, workArea.width), height: fitted(MIN_WINDOW_HEIGHT_PX, workArea.height)};
+}
+
 async function openWindow(): Promise<void> {
     protocol.handle(SCHEME, respond);
     Menu.setApplicationMenu(null);
     const window = new BrowserWindow({
-        width: WINDOW_WIDTH_PX,
-        height: WINDOW_HEIGHT_PX,
+        ...initialWindowSize(),
+        center: true,
         backgroundColor: "#000000",
         show: !smoke,
         title: launch?.title,
