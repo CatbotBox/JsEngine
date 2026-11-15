@@ -4,7 +4,8 @@ import {GPU_SHADER_STAGE} from "../gpuTypes";
 import type {GpuShader} from "../gpuTypes";
 import {FLOAT_BYTES, LIGHTS_UNLIT, VEC4_FLOATS} from "../gpuLightPacking";
 import {MESH_NORMAL_OFFSET, MESH_POSITION_OFFSET, MESH_UV_OFFSET, MESH_VERTEX_FLOATS} from "../gpuMeshPacking";
-import {INSTANCE_FLOATS, INSTANCE_MATRIX_OFFSET, INSTANCE_TINT_OFFSET} from "../gpuInstanceBatcher";
+import {INSTANCE_FLOATS, INSTANCE_MATRIX_OFFSET, INSTANCE_PARAMS_OFFSET, INSTANCE_TINT_OFFSET} from "../gpuInstanceBatcher";
+import {LIT_SURFACE_SHADER, SURFACE_SHADER_PARAMS} from "../gpuSurfaceShader";
 import {wgslFloat} from "./wgsl";
 
 export const FRAME_BIND_GROUP = 0;
@@ -24,6 +25,8 @@ export const UV_LOCATION = 2;
 export const INSTANCE_MATRIX_FIRST_LOCATION = 3;
 export const INSTANCE_MATRIX_COLUMNS = 4;
 export const INSTANCE_TINT_LOCATION = INSTANCE_MATRIX_FIRST_LOCATION + INSTANCE_MATRIX_COLUMNS;
+export const INSTANCE_PARAMS_FIRST_LOCATION = INSTANCE_TINT_LOCATION + 1;
+export const INSTANCE_PARAMS_VECTORS = SURFACE_SHADER_PARAMS / VEC4_FLOATS;
 
 export const MATERIAL_DIFFUSE_OFFSET = 0;
 export const MATERIAL_EMISSIVE_OFFSET = MATERIAL_DIFFUSE_OFFSET + VEC4_FLOATS;
@@ -41,10 +44,14 @@ export const SMALLEST_HIGHLIGHT_BASE = 1e-30;
 export const SPECULAR_TEXTURE_MIP_LEVEL = 0;
 const SINGULAR_NORMAL_MATRIX_EPSILON = 1e-12;
 
+export const SURFACE_VERTEX_ENTRY_POINT = "vertexMain";
+export const SURFACE_FRAGMENT_ENTRY_POINT = "fragmentMain";
+export const SURFACE_FUNCTION_SIGNATURE = "fn surface(input: SurfaceInput) -> vec4f";
+
 export const FRAME_BIND_GROUP_LAYOUT: GPUBindGroupLayoutDescriptor = {
     label: "frame",
     entries: [
-        {binding: FRAME_UNIFORMS_BINDING, visibility: GPU_SHADER_STAGE.VERTEX, buffer: {type: "uniform"}},
+        {binding: FRAME_UNIFORMS_BINDING, visibility: GPU_SHADER_STAGE.VERTEX | GPU_SHADER_STAGE.FRAGMENT, buffer: {type: "uniform"}},
         {binding: LIGHTS_BINDING, visibility: GPU_SHADER_STAGE.FRAGMENT, buffer: {type: "read-only-storage"}},
     ],
 };
@@ -59,12 +66,8 @@ export const MATERIAL_BIND_GROUP_LAYOUT: GPUBindGroupLayoutDescriptor = {
     ],
 };
 
-function instanceMatrixColumn(column: number): GPUVertexAttribute {
-    return {
-        shaderLocation: INSTANCE_MATRIX_FIRST_LOCATION + column,
-        offset: (INSTANCE_MATRIX_OFFSET + column * VEC4_FLOATS) * FLOAT_BYTES,
-        format: "float32x4",
-    };
+function instanceVector(shaderLocation: number, floatOffset: number): GPUVertexAttribute {
+    return {shaderLocation, offset: floatOffset * FLOAT_BYTES, format: "float32x4"};
 }
 
 export const BASIC_LIT_VERTEX_BUFFERS: readonly GPUVertexBufferLayout[] = [
@@ -81,13 +84,16 @@ export const BASIC_LIT_VERTEX_BUFFERS: readonly GPUVertexBufferLayout[] = [
         arrayStride: INSTANCE_FLOATS * FLOAT_BYTES,
         stepMode: "instance",
         attributes: [
-            ...Array.from({length: INSTANCE_MATRIX_COLUMNS}, (_, column) => instanceMatrixColumn(column)),
-            {shaderLocation: INSTANCE_TINT_LOCATION, offset: INSTANCE_TINT_OFFSET * FLOAT_BYTES, format: "float32x4"},
+            ...Array.from({length: INSTANCE_MATRIX_COLUMNS}, (_, column) =>
+                instanceVector(INSTANCE_MATRIX_FIRST_LOCATION + column, INSTANCE_MATRIX_OFFSET + column * VEC4_FLOATS)),
+            instanceVector(INSTANCE_TINT_LOCATION, INSTANCE_TINT_OFFSET),
+            ...Array.from({length: INSTANCE_PARAMS_VECTORS}, (_, vector) =>
+                instanceVector(INSTANCE_PARAMS_FIRST_LOCATION + vector, INSTANCE_PARAMS_OFFSET + vector * VEC4_FLOATS)),
         ],
     },
 ];
 
-const BASIC_LIT_WGSL = `
+const SURFACE_PRELUDE_WGSL = `
 const LIGHT_KIND_DIRECTIONAL: f32 = ${wgslFloat(LIGHT_KIND_DIRECTIONAL)};
 const ALPHA_TEST_THRESHOLD: f32 = ${wgslFloat(ALPHA_TEST_THRESHOLD)};
 const SINGULAR_NORMAL_MATRIX_EPSILON: f32 = ${wgslFloat(SINGULAR_NORMAL_MATRIX_EPSILON)};
@@ -96,10 +102,13 @@ const HIGHEST_NORMAL_DOT_HALF: f32 = ${wgslFloat(HIGHEST_NORMAL_DOT_HALF)};
 const SMALLEST_HIGHLIGHT_BASE: f32 = ${wgslFloat(SMALLEST_HIGHLIGHT_BASE)};
 const SPECULAR_TEXTURE_MIP_LEVEL: f32 = ${wgslFloat(SPECULAR_TEXTURE_MIP_LEVEL)};
 const LIGHTS_UNLIT: u32 = ${LIGHTS_UNLIT}u;
+const SURFACE_SHADER_PARAMS: u32 = ${SURFACE_SHADER_PARAMS}u;
+const UNTEXTURED_TEXEL: vec4f = vec4f(1.0);
 
 struct Frame {
     view: mat4x4f,
     projection: mat4x4f,
+    time: f32,
 }
 
 struct Light {
@@ -143,6 +152,8 @@ struct VertexInput {
     @location(${INSTANCE_MATRIX_FIRST_LOCATION + 2}) model2: vec4f,
     @location(${INSTANCE_MATRIX_FIRST_LOCATION + 3}) model3: vec4f,
     @location(${INSTANCE_TINT_LOCATION}) tint: vec4f,
+    @location(${INSTANCE_PARAMS_FIRST_LOCATION}) params0: vec4f,
+    @location(${INSTANCE_PARAMS_FIRST_LOCATION + 1}) params1: vec4f,
 }
 
 struct VertexOutput {
@@ -151,6 +162,8 @@ struct VertexOutput {
     @location(1) viewNormal: vec3f,
     @location(2) uv: vec2f,
     @location(3) tint: vec4f,
+    @location(4) @interpolate(flat) params0: vec4f,
+    @location(5) @interpolate(flat) params1: vec4f,
 }
 
 fn inverseTranspose(m: mat3x3f) -> mat3x3f {
@@ -165,7 +178,7 @@ fn inverseTranspose(m: mat3x3f) -> mat3x3f {
 }
 
 @vertex
-fn vertexMain(input: VertexInput) -> VertexOutput {
+fn ${SURFACE_VERTEX_ENTRY_POINT}(input: VertexInput) -> VertexOutput {
     let model = mat4x4f(input.model0, input.model1, input.model2, input.model3);
     let modelView = frame.view * model;
     let viewPosition = modelView * vec4f(input.position, 1.0);
@@ -176,6 +189,8 @@ fn vertexMain(input: VertexInput) -> VertexOutput {
     output.viewNormal = normalMatrix * input.normal;
     output.uv = input.uv;
     output.tint = input.tint;
+    output.params0 = input.params0;
+    output.params1 = input.params1;
     return output;
 }
 
@@ -185,6 +200,57 @@ fn unitOrZero(v: vec3f) -> vec3f {
         return v * inverseSqrt(lengthSquared);
     }
     return vec3f(0.0);
+}
+
+struct SurfaceInput {
+    pixelPosition: vec2f,
+    viewPosition: vec3f,
+    viewNormal: vec3f,
+    toCamera: vec3f,
+    uv: vec2f,
+    texel: vec4f,
+    gloss: vec3f,
+    tint: vec4f,
+    diffuseColor: vec3f,
+    emissiveColor: vec3f,
+    specularColor: vec3f,
+    shininess: f32,
+    lit: vec4f,
+    params: array<f32, SURFACE_SHADER_PARAMS>,
+    time: f32,
+}
+
+struct SurfaceLight {
+    toLight: vec3f,
+    color: vec3f,
+    attenuation: f32,
+}
+
+fn sceneIsLit() -> bool {
+    return sceneLights.lit != LIGHTS_UNLIT;
+}
+
+fn ambientLight() -> vec3f {
+    return sceneLights.ambient.rgb;
+}
+
+fn sceneLightCount() -> u32 {
+    return sceneLights.count;
+}
+
+fn sceneLight(index: u32, viewPosition: vec3f) -> SurfaceLight {
+    let entry = sceneLights.lights[index];
+    if (entry.kindRangeSquared.x == LIGHT_KIND_DIRECTIONAL) {
+        return SurfaceLight(entry.vector.xyz, entry.color.rgb, 1.0);
+    }
+    let offset = entry.vector.xyz - viewPosition;
+    let distanceSquared = dot(offset, offset);
+    let rangeSquared = entry.kindRangeSquared.y;
+    if (distanceSquared >= rangeSquared || distanceSquared == 0.0) {
+        return SurfaceLight(vec3f(0.0), entry.color.rgb, 0.0);
+    }
+    let falloff = 1.0 - distanceSquared / rangeSquared;
+    return SurfaceLight(offset * inverseSqrt(distanceSquared), entry.color.rgb, falloff * falloff);
 }
 
 struct LightSums {
@@ -206,68 +272,101 @@ fn highlight(normal: vec3f, toLight: vec3f, toCamera: vec3f) -> f32 {
 }
 
 fn lightSums(normal: vec3f, viewPosition: vec3f, specular: bool) -> LightSums {
-    var sums = LightSums(sceneLights.ambient.rgb, vec3f(0.0));
+    var sums = LightSums(ambientLight(), vec3f(0.0));
     var toCamera = vec3f(0.0);
     if (specular) {
         toCamera = unitOrZero(-viewPosition);
     }
-    for (var i = 0u; i < sceneLights.count; i++) {
-        let entry = sceneLights.lights[i];
-        var toLight: vec3f;
-        var attenuation = 1.0;
-        if (entry.kindRangeSquared.x == LIGHT_KIND_DIRECTIONAL) {
-            toLight = entry.vector.xyz;
-        } else {
-            let offset = entry.vector.xyz - viewPosition;
-            let distanceSquared = dot(offset, offset);
-            let rangeSquared = entry.kindRangeSquared.y;
-            if (distanceSquared >= rangeSquared || distanceSquared == 0.0) {
-                continue;
-            }
-            let falloff = 1.0 - distanceSquared / rangeSquared;
-            toLight = offset * inverseSqrt(distanceSquared);
-            attenuation = falloff * falloff;
-        }
-        let diffuse = dot(normal, toLight) * attenuation;
+    for (var i = 0u; i < sceneLightCount(); i++) {
+        let light = sceneLight(i, viewPosition);
+        let diffuse = dot(normal, light.toLight) * light.attenuation;
         if (diffuse > 0.0) {
-            sums.diffuse += entry.color.rgb * diffuse;
+            sums.diffuse += light.color * diffuse;
             if (specular) {
-                sums.specular += entry.color.rgb * highlight(normal, toLight, toCamera) * attenuation;
+                sums.specular += light.color * highlight(normal, light.toLight, toCamera) * light.attenuation;
             }
         }
     }
     return sums;
 }
 
+fn materialHasSpecular() -> bool {
+    return material.specularCutoff <= HIGHEST_NORMAL_DOT_HALF;
+}
+
+fn lightDiffuse(input: SurfaceInput) -> vec3f {
+    if (!sceneIsLit()) {
+        return vec3f(1.0);
+    }
+    return lightSums(input.viewNormal, input.viewPosition, false).diffuse;
+}
+
+fn lightSpecular(input: SurfaceInput) -> vec3f {
+    if (!sceneIsLit() || !materialHasSpecular()) {
+        return vec3f(0.0);
+    }
+    return lightSums(input.viewNormal, input.viewPosition, true).specular;
+}
+
+fn litColor(input: SurfaceInput) -> vec4f {
+    let albedo = input.diffuseColor * input.tint.rgb;
+    var rgb = albedo;
+    var highlightRgb = vec3f(0.0);
+    if (sceneIsLit()) {
+        let specular = materialHasSpecular();
+        let sums = lightSums(input.viewNormal, input.viewPosition, specular);
+        rgb = saturate(sums.diffuse * albedo + input.emissiveColor * input.tint.rgb);
+        if (specular) {
+            highlightRgb = sums.specular * input.gloss * input.specularColor * input.tint.rgb;
+        }
+    }
+    rgb *= input.texel.rgb;
+    return vec4f(rgb + highlightRgb, 1.0);
+}
+
 @fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+fn ${SURFACE_FRAGMENT_ENTRY_POINT}(input: VertexOutput) -> @location(0) vec4f {
     let texel = textureSample(materialTexture, materialSampler, input.uv);
     let textured = material.textured != MATERIAL_UNTEXTURED;
     if (textured && texel.a < ALPHA_TEST_THRESHOLD) {
         discard;
     }
-    let albedo = material.diffuse.rgb * input.tint.rgb;
-    var rgb = albedo;
-    var highlightRgb = vec3f(0.0);
-    if (sceneLights.lit != LIGHTS_UNLIT) {
-        let specular = material.specularCutoff <= HIGHEST_NORMAL_DOT_HALF;
-        let sums = lightSums(unitOrZero(input.viewNormal), input.viewPosition, specular);
-        rgb = saturate(sums.diffuse * albedo + material.emissive.rgb * input.tint.rgb);
-        if (specular) {
-            let gloss = textureSampleLevel(specularTexture, materialSampler, input.uv, SPECULAR_TEXTURE_MIP_LEVEL).rgb;
-            highlightRgb = sums.specular * gloss * material.specularShininess.rgb * input.tint.rgb;
-        }
-    }
-    if (textured) {
-        rgb *= texel.rgb;
-    }
-    return vec4f(rgb + highlightRgb, 1.0);
+    var surfaceInput: SurfaceInput;
+    surfaceInput.pixelPosition = input.clip.xy;
+    surfaceInput.viewPosition = input.viewPosition;
+    surfaceInput.viewNormal = unitOrZero(input.viewNormal);
+    surfaceInput.toCamera = unitOrZero(-input.viewPosition);
+    surfaceInput.uv = input.uv;
+    surfaceInput.texel = select(UNTEXTURED_TEXEL, texel, textured);
+    surfaceInput.gloss = textureSampleLevel(specularTexture, materialSampler, input.uv, SPECULAR_TEXTURE_MIP_LEVEL).rgb;
+    surfaceInput.tint = input.tint;
+    surfaceInput.diffuseColor = material.diffuse.rgb;
+    surfaceInput.emissiveColor = material.emissive.rgb;
+    surfaceInput.specularColor = material.specularShininess.rgb;
+    surfaceInput.shininess = material.specularShininess.w;
+    surfaceInput.params = array<f32, SURFACE_SHADER_PARAMS>(
+        input.params0.x, input.params0.y, input.params0.z, input.params0.w,
+        input.params1.x, input.params1.y, input.params1.z, input.params1.w
+    );
+    surfaceInput.time = frame.time;
+    surfaceInput.lit = litColor(surfaceInput);
+    return surface(surfaceInput);
 }
 `;
 
-export const BASIC_LIT: GpuShader = {
-    name: "basicLit",
-    code: BASIC_LIT_WGSL,
-    vertexEntryPoint: "vertexMain",
-    fragmentEntryPoint: "fragmentMain",
-};
+export const LIT_SURFACE_WGSL = `
+${SURFACE_FUNCTION_SIGNATURE} {
+    return input.lit;
+}
+`;
+
+export function assembleSurfaceShader(name: string, surfaceSource: string): GpuShader {
+    return {
+        name,
+        code: SURFACE_PRELUDE_WGSL + surfaceSource,
+        vertexEntryPoint: SURFACE_VERTEX_ENTRY_POINT,
+        fragmentEntryPoint: SURFACE_FRAGMENT_ENTRY_POINT,
+    };
+}
+
+export const BASIC_LIT: GpuShader = assembleSurfaceShader(LIT_SURFACE_SHADER, LIT_SURFACE_WGSL);

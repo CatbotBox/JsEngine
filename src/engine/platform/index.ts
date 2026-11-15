@@ -7,6 +7,19 @@ export type {
     WorkerFactory,
     WorkerHandle,
     WorkerPort,
+    FramePacing,
+    FrameCallback,
+    FrameScheduler,
 } from "./platform";
 export {WORKER_ENTRY_POINT} from "./platform";
 export {joinPath, dirname, normalizePath, isAbsolutePath} from "./paths";
+export {
+    ASSUMED_DISPLAY_INTERVAL_MS,
+    UNCAPPED_PACING,
+    intervalPacing,
+    displayPacing,
+    samePacing,
+    minimumFrameIntervalMs,
+    interleavedFrameIntervalMs,
+} from "./framePacing";
+export {timerFrameScheduler} from "./timerFrameScheduler";

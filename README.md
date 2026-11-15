@@ -30,6 +30,8 @@ Run the demo in a real terminal: `bun demo/3d/index.ts` (keys are listed in its 
 Every demo runs on four runtimes: `bun run demo:3d:bun` / `demo:3d:node` (terminal), `demo:3d:web` (browser, served
 locally with cross-origin isolation) and `demo:3d:window` (Electron window); the same scripts exist for `2d`.
 
+`?backend=gpu` (`demo:3d:gpu:web`, `demo:3d:gpu:window`) is an experimental WebGPU renderer for the 3D demo; it supports custom WGSL surface shaders, registered with `GpuShaderLibrary` and chosen per entity with `GpuSurfaceShader` (`o` cycles lit, toon and hologram in the demo).
+
 2D sprites and HUD elements render alongside 3D through the same screen buffer.
 
 ## Deploying the web build

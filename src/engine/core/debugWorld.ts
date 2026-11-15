@@ -72,7 +72,7 @@ export class DebugWorld extends World {
             `entities: ${this.enabledEntityCount} enabled` +
             (disabled > 0 ? ` (+${disabled} disabled)` : "") +
             ` | archetypes: ${occupied} occupied / ${archetypes} total` +
-            ` | frame budget: ${this.targetDeltaTimeMs.toFixed(2)}ms`
+            ` | tick budget: ${this.loopTiming.tickDeltaMs.toFixed(2)}ms`
         );
         this.logGroupTree(this._rootSystemGroup, ROOT_GROUP_RUNNING);
     }

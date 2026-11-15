@@ -4,26 +4,22 @@ import {EntityManager} from "./entityManager";
 import {Entity} from "./entity";
 import {SystemGroup} from "./systemGroup";
 import {RootSystemGroup} from "./rootSystemGroup";
+import {Time} from "./time";
+import {PresentationBarriers} from "./presentationBarriers";
 import {GcSystem} from "./gcSystem";
 import {InputSystem} from "../input/inputSystem";
 import {WorldSource} from "./worldSource";
 import {ResourceManager} from "./resourceManager";
 import type {Platform} from "../platform/platform";
 import {ChangeStampCounter} from "./changeStampCounter";
+import {EntityQuery} from "./entityQuery";
+import {FrameLoopSettings, LoopTimingResolver} from "./frameLoopSettings";
+import type {LoopTiming} from "./frameLoopSettings";
+import {FrameRunner} from "./frameRunner";
+import {timerFrameScheduler} from "../platform/timerFrameScheduler";
 import {Event} from "../util/event";
 
-const MS_PER_SECOND = 1000;
-const DEFAULT_TARGET_FPS = 60;
-const LOOP_POLLS_PER_FRAME = 10;
-
-class Time {
-    public deltaTimeMs: number = 0;
-
-    public get elapsedTimeMs(): number {
-        return performance.now();
-    }
-
-}
+const NO_TICK_PROGRESS = 0;
 
 export interface WorldOptions {
     readonly platform: Platform;
@@ -40,9 +36,10 @@ export class World extends WorldSource {
     private _archetypes: EntityArchetypeMap = new EntityArchetypeMap(this.changeStamps);
     private _resources: ResourceManager = new ResourceManager();
     protected _systems: Map<SystemCtor<System>, System> = new Map();
-    protected _rootSystemGroup: SystemGroup;
+    protected _rootSystemGroup: RootSystemGroup;
     private _entityManager: EntityManager | undefined;
     public time: Time = new Time();
+    public readonly presentationBarriers: PresentationBarriers = new PresentationBarriers();
 
     get archetypes(): EntityArchetypeMap {
         return this._archetypes;
@@ -60,8 +57,10 @@ export class World extends WorldSource {
         return this._rootSystemGroup;
     }
 
-    private _loopHandle: ReturnType<typeof setInterval> | null = null;
-    protected _targetDeltaTimeMs: number = MS_PER_SECOND / DEFAULT_TARGET_FPS;
+    private _frames: FrameRunner | undefined;
+    private readonly _frameLoopSettingsQuery = new EntityQuery(this, [FrameLoopSettings]);
+    private readonly _defaultFrameLoopSettings = new FrameLoopSettings();
+    private readonly _loopTimingResolver = new LoopTimingResolver();
 
     constructor(options: WorldOptions) {
         super(undefined!);
@@ -113,38 +112,16 @@ export class World extends WorldSource {
     }
 
     public startLoop(): void {
-        if (this._loopHandle !== null) {
+        const frames = this._frames ??= this.createFrameRunner();
+        if (frames.running) {
             console.warn("World loop already started");
             return;
         }
-        const time = this.time
-        let updateInProgress = false;
-        let prevCycle = performance.now();
-        this._loopHandle = setInterval(() => {
-            if (updateInProgress) {
-                console.warn("Update in progress, skipping current update cycle");
-                return;
-            }
-            updateInProgress = true
-            const now = performance.now();
-            const delta = now - prevCycle;
-            if (delta < this._targetDeltaTimeMs) {
-                updateInProgress = false;
-                return;
-            }
-            prevCycle = now;
-            time.deltaTimeMs = delta;
-            this.update();
-            updateInProgress = false;
-
-        }, this._targetDeltaTimeMs / LOOP_POLLS_PER_FRAME);
+        frames.start();
     }
 
     public pause(): void {
-        if (this._loopHandle !== null) {
-            clearInterval(this._loopHandle);
-            this._loopHandle = null;
-        }
+        this._frames?.stop();
     }
 
     public stop(error?: unknown): void {
@@ -153,36 +130,69 @@ export class World extends WorldSource {
         this.onStopped.invoke({error});
     }
 
-    public get targetDeltaTimeMs(): number {
-        return this._targetDeltaTimeMs;
+    public get loopTiming(): LoopTiming {
+        const settings = this._frameLoopSettingsQuery.tryGetSingleton({settings: FrameLoopSettings})?.settings ?? this._defaultFrameLoopSettings;
+        return this._loopTimingResolver.resolve(settings);
     }
 
-    public set targetDeltaTimeMs(value: number) {
-        if (value === this._targetDeltaTimeMs) return;
-        this._targetDeltaTimeMs = value;
-        if (this._loopHandle !== null) {
-            this.pause();
-            this.startLoop();
+    public step(deltaTimeMs: number = this.loopTiming.tickDeltaMs): void {
+        this.requirePaused("step");
+        const time = this.time;
+        time.deltaTimeMs = deltaTimeMs;
+        time.tickDeltaTimeMs = deltaTimeMs;
+        time.frameDeltaTimeMs = deltaTimeMs;
+        time.tickAlpha = NO_TICK_PROGRESS;
+        time.tickCount++;
+        time.frameCount++;
+        this._rootSystemGroup.update();
+    }
+
+    public stepSimulation(deltaTimeMs: number = this.loopTiming.tickDeltaMs): void {
+        this.requirePaused("stepSimulation");
+        this.simulateTick(deltaTimeMs);
+    }
+
+    public renderFrame(deltaTimeMs: number, tickAlpha: number = NO_TICK_PROGRESS): void {
+        this.requirePaused("renderFrame");
+        this.presentFrame(deltaTimeMs, tickAlpha);
+    }
+
+    private requirePaused(action: string): void {
+        if (this._frames?.running === true) throw new Error(`World.${action}: the loop is running; pause() the world before stepping it`);
+    }
+
+    private simulateTick(tickDeltaMs: number): void {
+        const time = this.time;
+        time.deltaTimeMs = tickDeltaMs;
+        time.tickDeltaTimeMs = tickDeltaMs;
+        time.tickCount++;
+        this._rootSystemGroup.updateSimulation();
+    }
+
+    private presentFrame(frameDeltaMs: number, tickAlpha: number): void {
+        const time = this.time;
+        time.deltaTimeMs = frameDeltaMs;
+        time.frameDeltaTimeMs = frameDeltaMs;
+        time.tickAlpha = tickAlpha;
+        time.frameCount++;
+        try {
+            this._rootSystemGroup.updatePresentation();
+        } finally {
+            time.deltaTimeMs = time.tickDeltaTimeMs;
         }
     }
 
-    public get targetFramerate(): number {
-        return MS_PER_SECOND / this._targetDeltaTimeMs;
-    }
-
-    public set targetFramerate(value: number) {
-        if (value <= 0) throw new Error("Framerate must be positive and non-zero");
-        this.targetDeltaTimeMs = MS_PER_SECOND / value;
-    }
-
-    public step(deltaTimeMs: number = this._targetDeltaTimeMs): void {
-        if (this._loopHandle !== null) throw new Error("World.step: the loop is running; pause() the world before stepping it");
-        this.time.deltaTimeMs = deltaTimeMs;
-        this.update();
-    }
-
-    private update(): void {
-        this._rootSystemGroup.update();
+    private createFrameRunner(): FrameRunner {
+        const platform = this.platform;
+        const now = (): number => platform.now();
+        return new FrameRunner({
+            now,
+            scheduler: platform.frameScheduler ?? timerFrameScheduler(now),
+            barriers: this.presentationBarriers,
+            loopTiming: () => this.loopTiming,
+            simulate: tickDeltaMs => this.simulateTick(tickDeltaMs),
+            present: (frameDeltaMs, tickAlpha) => this.presentFrame(frameDeltaMs, tickAlpha),
+        });
     }
 
     public* systems(): IterableIterator<System> {

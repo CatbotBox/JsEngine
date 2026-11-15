@@ -6,6 +6,18 @@ export interface Platform {
     readonly requestedRasterWorkers?: () => number | undefined;
     readonly now: () => number;
     readonly onExit: (callback: () => void) => () => void;
+    readonly frameScheduler?: FrameScheduler;
+}
+
+export type FramePacing =
+    | {readonly kind: "interval", readonly intervalMs: number}
+    | {readonly kind: "uncapped"}
+    | {readonly kind: "display", readonly capIntervalMs?: number};
+
+export type FrameCallback = (frameTimeMs: number) => void;
+
+export interface FrameScheduler {
+    start(pacing: FramePacing, onFrame: FrameCallback): () => void;
 }
 
 export interface FileStat {

@@ -1,8 +1,10 @@
 import {
     EntityCommandBufferSystem,
+    FrameLoopSettings,
     System,
     DebugWorld,
-    Resource
+    Resource,
+    UNCAPPED_RENDER_RATE
 } from "../../src/engine/core";
 import {Input, Key, PointerButton} from "../../src/engine/input";
 import type {InputEvent} from "../../src/engine/input";
@@ -11,7 +13,6 @@ import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor, Te
 
 import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../../src/engine/translation";
 
-import {AverageStat} from "../../src/engine/datatypes";
 import {
     AmbientLight,
     DirectionalLight,
@@ -50,6 +51,7 @@ export interface Demo3dRenderControls {
     toggleLod(): void;
     changeLodBias(levels: number): void;
     setSupersample(x: number, y: number): void;
+    cycleSurfaceShader?(): void;
     stats(): Demo3dRenderStats | undefined;
 }
 
@@ -63,7 +65,8 @@ export interface Demo3dHost {
 const BYTES_PER_MB = 1024 * 1024;
 const COMPACT_DIGITS = 3;
 const UNIT_STEP = 1000;
-const FPS_AVERAGE_FRAMES = 10;
+const RATE_WINDOW_MS = 500;
+const CAPPED_RENDER_RATE = 60;
 const MS_PER_SECOND = 1000;
 const LOD_LEVELS_SHOWN = 5;
 const MOVE_STEP = 0.05;
@@ -90,6 +93,18 @@ interface Command {
     readonly keys: readonly Key[];
     readonly run: () => void;
 }
+
+interface RenderPacingPreset {
+    readonly label: string;
+    readonly renderRate: number;
+    readonly matchDisplay: boolean;
+}
+
+const RENDER_PACING_PRESETS: readonly RenderPacingPreset[] = [
+    {label: CAPPED_RENDER_RATE + " fps", renderRate: CAPPED_RENDER_RATE, matchDisplay: false},
+    {label: "uncapped", renderRate: UNCAPPED_RENDER_RATE, matchDisplay: false},
+    {label: "display", renderRate: UNCAPPED_RENDER_RATE, matchDisplay: true},
+];
 
 const formatCompact = (num: number): string => {
     const abs = Math.abs(num);
@@ -139,6 +154,15 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     const lampEntity = buffer.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalToWorld(), new LocalPosition(3, 2, -4)]);
 
     const ambientEntity = buffer.createEntity("ambient", [new AmbientLight(WHITE_RGB, 0.12)]);
+
+    const frameLoopSettings = buffer.addTrackedComponent(buffer.createEntity("frameLoopSettings"), new FrameLoopSettings());
+    let renderPacingIndex = 0;
+    const renderPacing = () => RENDER_PACING_PRESETS[renderPacingIndex];
+    const cycleRenderPacing = () => {
+        renderPacingIndex = (renderPacingIndex + 1) % RENDER_PACING_PRESETS.length;
+        frameLoopSettings.renderRate = renderPacing().renderRate;
+        frameLoopSettings.matchDisplay = renderPacing().matchDisplay;
+    };
 
     let lightsEnabled = true;
     let lampEnabled = true;
@@ -201,7 +225,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
     controlsImage.image = [
         'camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit',
         'models  space spawn  bksp despawn  n next  r reload  arrows rotate  [ ] scale',
-        'render  1-4 aa  b halfblock  t textures  m filter  f lod  - = detail  v 3d  tab hud  g order',
+        'render  1-4 aa  b halfblock  t textures  m filter  f lod  - = detail  o shader  v 3d  tab hud  g order  y pacing',
         'lights  h all  p lamp  i/k j/l sun',
     ];
 
@@ -485,6 +509,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         {action: "logSystemOrder", keys: [Key.G], run: () => world.logSystemUpdateOrder()},
         {action: "toggleTextures", keys: [Key.T], run: () => render.toggleTextures()},
         {action: "toggleTextureFiltering", keys: [Key.M], run: () => render.toggleTextureFiltering?.()},
+        {action: "cycleSurfaceShader", keys: [Key.O], run: () => render.cycleSurfaceShader?.()},
         {action: "toggleHalfBlock", keys: [Key.B], run: () => render.toggleHalfBlockCells?.()},
         {action: "toggleLod", keys: [Key.F], run: () => render.toggleLod()},
         {action: "lessDetail", keys: [Key.Minus], run: () => render.changeLodBias(LESS_DETAIL_LOD_LEVELS)},
@@ -494,6 +519,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             keys: [key],
             run: () => render.setSupersample(x, y),
         })),
+        {action: "cycleRenderPacing", keys: [Key.Y], run: () => cycleRenderPacing()},
         {action: "toggleLights", keys: [Key.H], run: () => {
             lightsEnabled = !lightsEnabled;
             applyLightEnabledState();
@@ -568,11 +594,16 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
 
     class DebugSystem extends System {
         private _toggle = true;
-        private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
+        private _rateWindowStartMs = 0;
+        private _rateWindowFrames = 0;
+        private _rateWindowTicks = 0;
+        private _framesPerSecond = 0;
+        private _ticksPerSecond = 0;
         private _entityCounterImage!: TextSprite;
         private _fpsCounterImage!: TextSprite;
 
         protected onCreate() {
+            this._rateWindowStartMs = this.world.time.elapsedTimeMs;
             const buffer = this.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
 
 
@@ -582,9 +613,10 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
 
         onUpdate() {
             if (!this._toggle) return;
-            this._fpsCounter.add(MS_PER_SECOND / this.world.time.deltaTimeMs)
+            this.measureRates();
             this._fpsCounterImage.image = [
-                'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
+                'FPS: ' + this._framesPerSecond.toFixed(1) + '  ticks/s: ' + this._ticksPerSecond.toFixed(1),
+                'render: ' + renderPacing().label,
             ]
 
             const stats = render.stats();
@@ -596,6 +628,18 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
                 'Triangles: ' + formatCompact(drawn) + ' drawn / ' + formatCompact(this.world.resources.getOrCreate(SceneStats).sourceTriangles) + ' source' + levels,
                 'Raster workers: ' + (rasterWorkers === 0 ? 'none (single-threaded)' : rasterWorkers),
             ]
+        }
+
+        private measureRates(): void {
+            const time = this.world.time;
+            const nowMs = time.elapsedTimeMs;
+            const windowMs = nowMs - this._rateWindowStartMs;
+            if (windowMs < RATE_WINDOW_MS) return;
+            this._framesPerSecond = (time.frameCount - this._rateWindowFrames) * MS_PER_SECOND / windowMs;
+            this._ticksPerSecond = (time.tickCount - this._rateWindowTicks) * MS_PER_SECOND / windowMs;
+            this._rateWindowStartMs = nowMs;
+            this._rateWindowFrames = time.frameCount;
+            this._rateWindowTicks = time.tickCount;
         }
     }
 

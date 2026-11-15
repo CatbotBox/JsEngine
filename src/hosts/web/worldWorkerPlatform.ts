@@ -12,8 +12,11 @@ import {browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorkerHost} from "./browserWorkers";
 import {inflate} from "../../engine/assets/image/inflate";
 import {PixelFrameBufferPool} from "./pixelFrameBufferPool";
+import {timerFrameScheduler} from "../../engine/platform/timerFrameScheduler";
+import {displayFrameScheduler} from "./animationFrameScheduler";
+import type {MaybeAnimationFrameHost} from "./animationFrameScheduler";
 
-export interface WorldWorkerScope extends BrowserWorkerHost {
+export interface WorldWorkerScope extends BrowserWorkerHost, MaybeAnimationFrameHost {
     postMessage(message: WorldToPageMessage, transfer?: ArrayBuffer[]): void;
     addEventListener(type: "message", listener: (event: {readonly data: unknown}) => void): void;
     readonly navigator?: {readonly hardwareConcurrency?: number};
@@ -53,13 +56,16 @@ export class PageConnection {
         this.surface = init.surface;
         this.canvas = init.canvas;
         const requestedRasterWorkers = init.requestedRasterWorkers;
+        const now = (): number => performance.now();
+        const canvasDrivesDisplayFrames = init.canvas !== undefined;
         this.platform = {
             files,
             inflate,
             workers: browserWorkersIfIsolated(scope),
             hardwareConcurrency: () => scope.navigator?.hardwareConcurrency ?? 1,
             requestedRasterWorkers: () => requestedRasterWorkers,
-            now: () => performance.now(),
+            now,
+            frameScheduler: canvasDrivesDisplayFrames ? displayFrameScheduler(scope, now) : timerFrameScheduler(now),
             onExit: callback => {
                 const entry = () => callback();
                 this.exitCallbacks.add(entry);

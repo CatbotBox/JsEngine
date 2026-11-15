@@ -7,6 +7,10 @@ export class TranslationSystemGroup extends SystemGroup {
     public maxCascadeIterationsPerUpdate: number = DEFAULT_MAX_CASCADE_ITERATIONS;
     private _parentQuery = this.createEntityQuery([ParentTransform])
 
+    protected override blocksPresentation(): boolean {
+        return true;
+    }
+
     onUpdate() {
         let cyclesLeft = this.maxCascadeIterationsPerUpdate;
         do {

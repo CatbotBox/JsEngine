@@ -8,7 +8,17 @@ export type {ScreenUnitReport} from "./gpuCanvasPixelPresenter";
 export {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, MULTISAMPLE_COUNT, NEAREST_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 export type {GpuSampleCount, GpuTextureFiltering} from "./gpuMeshPassSettings";
 export {GpuMeshPassSystem, GPU_BACKEND_EXPERIMENTAL_NOTICE} from "./gpuMeshPassSystem";
-export {FRAME_PROJECTION_OFFSET, FRAME_UNIFORM_FLOATS, FRAME_VIEW_OFFSET, frameProjectionMatrix, frameViewMatrix, perspectiveFocalLength, writeFrameUniforms} from "./gpuCamera";
+export {
+    FRAME_PROJECTION_OFFSET,
+    FRAME_TIME_OFFSET,
+    FRAME_UNIFORM_FLOATS,
+    FRAME_VIEW_OFFSET,
+    frameProjectionMatrix,
+    frameViewMatrix,
+    perspectiveFocalLength,
+    writeFrameTime,
+    writeFrameUniforms,
+} from "./gpuCamera";
 export {GpuLightPacking, packSceneLights} from "./gpuLightPacking";
 export {packMeshForGpu} from "./gpuMeshPacking";
 export type {GpuMaterialRange, PackedGpuMesh} from "./gpuMeshPacking";
@@ -17,10 +27,12 @@ export type {GpuMesh} from "./gpuMeshCache";
 export {GpuTextureCache, packTextureLevel} from "./gpuTextureCache";
 export {GpuMaterialCache, materialSamplerDescriptor, packMaterial, specularCutoffOf} from "./gpuMaterialCache";
 export type {GpuMaterial} from "./gpuMaterialCache";
-export {GpuPipelineCache, cullModeOf} from "./gpuPipelineCache";
-export {GpuInstanceBatcher, INSTANCE_FLOATS} from "./gpuInstanceBatcher";
+export {GpuPipelineCache, cullModeOf, describeCompilationErrors, surfaceShaderFailureMessage} from "./gpuPipelineCache";
+export {GpuInstanceBatcher, INSTANCE_FLOATS, INSTANCE_PARAMS_OFFSET} from "./gpuInstanceBatcher";
 export type {GpuInstanceBatch} from "./gpuInstanceBatcher";
 export {GpuOverlayPass} from "./gpuOverlayPass";
-export {BASIC_LIT} from "./shaders/basicLitShader";
+export {GpuShaderLibrary, unknownSurfaceShaderMessage} from "./gpuShaderLibrary";
+export {GpuSurfaceShader, LIT_SURFACE_SHADER, NO_SURFACE_SHADER_PARAMS, SURFACE_SHADER_PARAMS, sameSurfaceShader} from "./gpuSurfaceShader";
+export {assembleSurfaceShader, BASIC_LIT, LIT_SURFACE_WGSL, SURFACE_FUNCTION_SIGNATURE} from "./shaders/basicLitShader";
 export {OVERLAY} from "./shaders/overlayShader";
 export {registerGpuComponentSchemas} from "./gpuComponentSchemas";

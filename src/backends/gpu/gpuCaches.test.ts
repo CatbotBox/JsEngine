@@ -1,4 +1,4 @@
-import {describe, expect, test} from "../../engine/testing/harness";
+import {afterEach, describe, expect, test} from "../../engine/testing/harness";
 import {Vec} from "../../engine/math/types/vec";
 import {Mesh, MeshBuilder} from "../../engine/rendering/3d/mesh";
 import {Material} from "../../engine/rendering/3d/material";
@@ -8,7 +8,11 @@ import {GpuMeshCache} from "./gpuMeshCache";
 import {GpuMaterialCache, materialSamplerDescriptor, packMaterial, specularCutoffOf} from "./gpuMaterialCache";
 import {GpuTextureCache} from "./gpuTextureCache";
 import {cullModeOf, GpuPipelineCache, SOFTWARE_FRONT_FACE} from "./gpuPipelineCache";
+import {GpuShaderLibrary} from "./gpuShaderLibrary";
+import {LIT_SURFACE_SHADER} from "./gpuSurfaceShader";
+import type {GpuShader} from "./gpuTypes";
 import {
+    assembleSurfaceShader,
     BASIC_LIT,
     HIGHEST_NORMAL_DOT_HALF,
     MATERIAL_SAMPLER_BINDING,
@@ -19,10 +23,13 @@ import {
     MATERIAL_TEXTURED_OFFSET,
     MATERIAL_UNIFORM_FLOATS,
     MATERIAL_UNTEXTURED,
+    SURFACE_FUNCTION_SIGNATURE,
 } from "./shaders/basicLitShader";
 import {LINEAR_TEXTURE_FILTERING, MULTISAMPLE_COUNT, NEAREST_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import type {GpuTextureFiltering} from "./gpuMeshPassSettings";
-import {FakeGpuDevice, FakeGpuTextureView} from "./testing/fakeGpuDevice";
+import {compilationError, FakeGpuDevice, FakeGpuTextureView} from "./testing/fakeGpuDevice";
+import type {FakeGpuShaderModule} from "./testing/fakeGpuDevice";
+import {ConsoleRecorder} from "./testing/consoleRecorder";
 
 const EVICT_AFTER_FRAMES = 3;
 const FORMAT: GPUTextureFormat = "bgra8unorm";
@@ -31,6 +38,73 @@ const TEXTURE_SIDE = 2;
 const RGBA_BYTES = 4;
 const SHININESS = 32;
 const UNKNOWN_FILTERING = "anisotropic" as GpuTextureFiltering;
+const TOON = "toon";
+const PULSE = "pulse";
+const BROKEN = "broken";
+const UNLINKABLE = "unlinkable";
+const TOON_SOURCE = `${SURFACE_FUNCTION_SIGNATURE} {
+    return vec4f(input.lit.rgb * 0.5, 1.0);
+}`;
+const PULSE_SOURCE = `${SURFACE_FUNCTION_SIGNATURE} {
+    return vec4f(input.lit.rgb * sin(input.time), 1.0);
+}`;
+const PULSE_FASTER_SOURCE = `${SURFACE_FUNCTION_SIGNATURE} {
+    return vec4f(input.lit.rgb * sin(input.time * 2.0), 1.0);
+}`;
+const BROKEN_SOURCE = `${SURFACE_FUNCTION_SIGNATURE} {
+    return oops;
+}`;
+const BROKEN_TOKEN = "oops";
+const BROKEN_COLUMN = 12;
+const PIPELINE_FAILURE = "entry point not found";
+const SETTLE_TASKS = 3;
+const MANY_FRAMES = 6;
+
+const recorders: ConsoleRecorder[] = [];
+
+function recordConsole(): ConsoleRecorder {
+    const recorder = new ConsoleRecorder();
+    recorders.push(recorder);
+    return recorder;
+}
+
+afterEach(() => {
+    for (const recorder of recorders.splice(0)) recorder.detach();
+});
+
+const nextTask = () => new Promise<void>(done => setTimeout(done, 0));
+
+async function settle(): Promise<void> {
+    for (let i = 0; i < SETTLE_TASKS; i++) await nextTask();
+}
+
+function pipelineCache(device: FakeGpuDevice): GpuPipelineCache {
+    return new GpuPipelineCache(device, device.createPipelineLayout({bindGroupLayouts: []}));
+}
+
+function descriptorOf(pipeline: GPURenderPipeline): GPURenderPipelineDescriptor {
+    return pipeline as unknown as GPURenderPipelineDescriptor;
+}
+
+function shaderNameOf(pipeline: GPURenderPipeline): string {
+    return descriptorOf(pipeline).label!.split("|")[0];
+}
+
+function codeOf(pipeline: GPURenderPipeline): string {
+    return (descriptorOf(pipeline).vertex.module as unknown as FakeGpuShaderModule).descriptor.code;
+}
+
+async function readyPipeline(cache: GpuPipelineCache, shader: GpuShader, culling: FaceCulling = FaceCulling.BackFaces): Promise<GPURenderPipeline> {
+    cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT);
+    await settle();
+    cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT);
+    await settle();
+    return cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT);
+}
+
+function lineOf(code: string, token: string): number {
+    return code.split("\n").findIndex(line => line.includes(token)) + 1;
+}
 
 function triangle(): Mesh {
     const builder = new MeshBuilder();
@@ -143,7 +217,6 @@ describe("GpuMaterialCache", () => {
         const after = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING);
         expect(after.bindGroup).not.toBe(before);
         expect(device.buffers.length).toBe(1);
-        expect(cache.shaderOf(material)).toBe(BASIC_LIT);
     });
 
     test("packs the material as diffuse, emissive, specular with shininess, then the textured flag and the specular cutoff", () => {
@@ -233,5 +306,86 @@ describe("GpuPipelineCache", () => {
         ]);
         expect([cullModeOf(FaceCulling.BackFaces), cullModeOf(FaceCulling.FrontFaces), cullModeOf(FaceCulling.None)]).toEqual(["back", "front", "none"]);
         expect(device.pipelines[0].depthStencil?.depthCompare).toBe("greater");
+    });
+});
+
+describe("GpuPipelineCache with custom surface shaders", () => {
+    test("a custom shader draws with the built-in lit pipeline until its module compiles and its pipeline resolves, then with its own", async () => {
+        const device = new FakeGpuDevice();
+        const cache = pipelineCache(device);
+        const toon = assembleSurfaceShader(TOON, TOON_SOURCE);
+        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+        await settle();
+        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+        await settle();
+        const own = cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT);
+        expect([shaderNameOf(own), codeOf(own)]).toEqual([TOON, toon.code]);
+        expect(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT)).toBe(own);
+        expect([device.asyncPipelines.length, cache.size]).toEqual([1, 2]);
+        expect(device.shaderModules.map(module => module.label)).toEqual([TOON, LIT_SURFACE_SHADER]);
+    });
+
+    test("the key includes the shader: two shaders at the same culling, format and samples get their own pipelines, one module each", async () => {
+        const device = new FakeGpuDevice();
+        const cache = pipelineCache(device);
+        const library = new GpuShaderLibrary();
+        const toon = await readyPipeline(cache, library.register(TOON, TOON_SOURCE));
+        const pulse = await readyPipeline(cache, library.register(PULSE, PULSE_SOURCE));
+        const lit = cache.pipelineFor(library.shaderNamed(LIT_SURFACE_SHADER), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT);
+        expect([shaderNameOf(toon), shaderNameOf(pulse), shaderNameOf(lit)]).toEqual([TOON, PULSE, LIT_SURFACE_SHADER]);
+        expect(new Set([toon, pulse, lit]).size).toBe(3);
+        const toonUnculled = await readyPipeline(cache, library.shaderNamed(TOON), FaceCulling.None);
+        expect([descriptorOf(toonUnculled).primitive?.cullMode, codeOf(toonUnculled)]).toEqual(["none", library.shaderNamed(TOON).code]);
+        expect(device.shaderModules.filter(module => module.label === TOON).length).toBe(1);
+    });
+
+    test("re-registering a name replaces its shader: its pipelines are dropped, it draws lit while the new one compiles, then with the new code", async () => {
+        const device = new FakeGpuDevice();
+        const cache = pipelineCache(device);
+        const library = new GpuShaderLibrary();
+        const first = await readyPipeline(cache, library.register(PULSE, PULSE_SOURCE));
+        expect(codeOf(first).endsWith(PULSE_SOURCE)).toBe(true);
+        const sizeBefore = cache.size;
+        library.register(PULSE, PULSE_FASTER_SOURCE);
+        expect(shaderNameOf(cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+        expect(cache.size).toBe(sizeBefore - 1);
+        const second = await readyPipeline(cache, library.shaderNamed(PULSE));
+        expect(second).not.toBe(first);
+        expect(codeOf(second).endsWith(PULSE_FASTER_SOURCE)).toBe(true);
+        expect(device.shaderModules.filter(module => module.label === PULSE).length).toBe(2);
+    });
+
+    test("a shader that does not compile logs one error with the shader name, the message and the offending line, and keeps drawing lit", async () => {
+        const recorder = recordConsole();
+        const device = new FakeGpuDevice();
+        device.compilationMessages = code => code.includes(BROKEN_TOKEN) ? [compilationError(`unresolved value '${BROKEN_TOKEN}'`, lineOf(code, BROKEN_TOKEN), BROKEN_COLUMN)] : [];
+        const cache = pipelineCache(device);
+        const broken = assembleSurfaceShader(BROKEN, BROKEN_SOURCE);
+        for (let frame = 0; frame < MANY_FRAMES; frame++) {
+            expect(shaderNameOf(cache.pipelineFor(broken, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+            await settle();
+        }
+        expect(recorder.errors.length).toBe(1);
+        const [error] = recorder.errors;
+        const line = lineOf(broken.code, BROKEN_TOKEN);
+        expect([error.includes(`"${BROKEN}"`), error.includes(`line ${line}:${BROKEN_COLUMN}: unresolved value '${BROKEN_TOKEN}'`), error.includes("return oops;")]).toEqual([true, true, true]);
+        expect(device.asyncPipelines.length).toBe(0);
+        expect(device.shaderModules.filter(module => module.label === BROKEN).length).toBe(1);
+    });
+
+    test("a pipeline that cannot be created logs one error and the shader keeps drawing lit", async () => {
+        const recorder = recordConsole();
+        const device = new FakeGpuDevice();
+        device.pipelineCreationFailure = descriptor => descriptor.label?.startsWith(UNLINKABLE) ? PIPELINE_FAILURE : undefined;
+        const cache = pipelineCache(device);
+        const unlinkable = assembleSurfaceShader(UNLINKABLE, TOON_SOURCE);
+        for (let frame = 0; frame < MANY_FRAMES; frame++) {
+            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+            await settle();
+        }
+        expect(recorder.errors.length).toBe(1);
+        expect(recorder.errors[0].includes(`"${UNLINKABLE}"`) && recorder.errors[0].includes(PIPELINE_FAILURE)).toBe(true);
+        expect(device.asyncPipelines.map(descriptor => descriptor.primitive?.cullMode)).toEqual(["back", "none"]);
     });
 });

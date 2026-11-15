@@ -30,6 +30,9 @@ export type GpuDevice = Pick<GPUDevice,
     | "createPipelineLayout"
     | "createShaderModule"
     | "createRenderPipeline"
+    | "createRenderPipelineAsync"
+    | "pushErrorScope"
+    | "popErrorScope"
     | "createCommandEncoder"> & {readonly queue: GpuQueue};
 
 export type GpuBufferDevice = Pick<GpuDevice, "createBuffer" | "queue">;
