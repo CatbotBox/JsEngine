@@ -3,14 +3,24 @@ import type {Entity, World, WorldStoppedEvent} from "../../engine/core";
 import {
     applySceneInPlace,
     deserializeInto,
+    parentEntityOf,
     parseSceneDocument,
-    platformSceneAssetLoader,
     sceneAssetPaths,
+    SceneManager,
     serializeEntities,
     serializeWorld,
     instantiateDocument,
+    withoutSceneMembership,
 } from "../../engine/scene";
-import type {ComponentSchemaRegistry, SceneAssetLoader, SceneDocument, SceneJsonObject, SceneLoadResult, SceneSnapshot} from "../../engine/scene";
+import type {
+    ComponentSchemaRegistry,
+    SceneAssetLoader,
+    SceneDocument,
+    SceneJsonObject,
+    SceneLoadResult,
+    ScenePreload,
+    SceneSnapshot,
+} from "../../engine/scene";
 import {EDITOR_MESSAGE_TYPE, isEditorRequestMessage, requestIdOfMalformedEditorRequest} from "../editorProtocol";
 import type {
     EditorEvent,
@@ -27,6 +37,7 @@ import type {
     ImportSnapshotResult,
     InstantiateEntitiesRequest,
     InstantiateEntitiesResult,
+    LoadSceneRequest,
     LoadSceneResult,
     SaveSceneResult,
 } from "../editorProtocol";
@@ -57,8 +68,9 @@ export interface EditorServiceScope {
 }
 
 export interface EditorWorldServiceOptions {
-    readonly preloadAssets?: (paths: readonly string[]) => Promise<void>;
+    readonly preloadAssets?: ScenePreload;
     readonly tickIntervalMs?: number;
+    readonly scenes?: SceneManager;
 }
 
 const SCENE_TEXT_INDENT_SPACES = 2;
@@ -67,6 +79,12 @@ const NO_ENTITIES: readonly Entity[] = [];
 const PLAIN_STOP_TEXT = "The world was stopped";
 const SKIPPED_UNKNOWN_TYPES = "skip";
 const REPORTED_SCHEMA_CHANGES = "report";
+const OPENED_SCENE_MODE = "single";
+const OPENED_SCENE_PERSISTENT_ENTITIES = "destroy";
+
+export function editorSceneManager(world: World, registry: ComponentSchemaRegistry, preload?: ScenePreload): SceneManager {
+    return new SceneManager(world, registry, {preload, unknownComponentTypes: SKIPPED_UNKNOWN_TYPES, schemaChanges: REPORTED_SCHEMA_CHANGES});
+}
 
 function errorText(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -91,6 +109,7 @@ export class EditorWorldService {
     private stoppedError: string | undefined;
     private readonly gate: GameplaySystemGate;
     private readonly tickCounter: GameplayTickCounterSystem;
+    private readonly scenes: SceneManager;
     private readonly assets: SceneAssetLoader;
     private readonly views: EditorViews;
     private readonly prefabs: PrefabLibrary;
@@ -105,7 +124,8 @@ export class EditorWorldService {
     ) {
         this.gate = new GameplaySystemGate(world);
         this.tickCounter = world.getOrCreateSystem(GameplayTickCounterSystem);
-        this.assets = platformSceneAssetLoader(world.platform);
+        this.scenes = options.scenes ?? editorSceneManager(world, registry, options.preloadAssets);
+        this.assets = this.scenes.assets;
         this.views = new EditorViews(world);
         this.prefabs = new PrefabLibrary(world, registry, this.assets);
         this.consoleForwarder = new ConsoleForwarder(event => this.postEvent(event));
@@ -298,7 +318,7 @@ export class EditorWorldService {
             case "saveScene":
                 return this.inGameView(() => this.saveScene());
             case "loadScene":
-                return await this.loadScene(request.sceneText);
+                return await this.loadScene(request);
             case "exportSnapshot":
                 return this.inGameView(() => this.exportSnapshot());
             case "importSnapshot":
@@ -311,7 +331,7 @@ export class EditorWorldService {
     }
 
     private async instantiateEntities(request: InstantiateEntitiesRequest): Promise<InstantiateEntitiesResult> {
-        const document = parseSceneDocument(request.documentText);
+        const document = withoutSceneMembership(parseSceneDocument(request.documentText));
         await this.preloadDocument(document);
         return this.inGameView(() => {
             const parent = request.parent ?? null;
@@ -333,17 +353,21 @@ export class EditorWorldService {
 
     private saveScene(): SaveSceneResult {
         const saved = serializeWorld(this.world, this.registry);
-        return {sceneText: documentText(saved.document), report: saved.report};
+        return {sceneText: documentText(withoutSceneMembership(saved.document)), report: saved.report};
     }
 
     private exportSnapshot(): ExportSnapshotResult {
         return exportWorldSnapshot(this.world, this.registry, {mode: this._mode, gameplayTicks: this.gameplayTicks, editSnapshot: this.snapshot});
     }
 
-    private replaceWorldWith(document: SceneDocument): SceneLoadResult {
+    private abandonPlay(): void {
         this.snapshot = undefined;
         this.stop();
         this.discardPendingCommands();
+    }
+
+    private replaceWorldWith(document: SceneDocument): SceneLoadResult {
+        this.abandonPlay();
         const previous = entitiesInCreationOrder(this.world);
         const loaded = deserializeInto(this.world, this.registry, document, {
             assets: this.assets,
@@ -356,11 +380,17 @@ export class EditorWorldService {
         return loaded;
     }
 
-    private async loadScene(sceneText: string): Promise<LoadSceneResult> {
-        const document = parseSceneDocument(sceneText);
+    private async loadScene(request: LoadSceneRequest): Promise<LoadSceneResult> {
+        const document = parseSceneDocument(request.sceneText);
         await this.preloadDocument(document);
         return this.inGameView(() => this.changeMode(() => {
-            const loaded = this.replaceWorldWith(document);
+            this.abandonPlay();
+            const loaded = this.scenes.loadDocument(document, {
+                mode: OPENED_SCENE_MODE,
+                persistentEntities: OPENED_SCENE_PERSISTENT_ENTITIES,
+                path: request.path,
+            });
+            this.clearWorldStop();
             return {entityCount: loaded.entities.length, report: loaded.report};
         }));
     }
@@ -415,8 +445,17 @@ export class EditorWorldService {
         }
     }
 
+    private moveUnownedRootsToActiveScene(): void {
+        const active = this.scenes.active();
+        if (active === undefined) return;
+        for (const entity of entitiesInCreationOrder(this.world)) {
+            if (parentEntityOf(this.world, entity) === undefined && this.scenes.sceneOf(entity) === undefined) this.scenes.moveToScene(entity, active);
+        }
+    }
+
     private leaveEditMode(): void {
         if (this._mode !== "edit") return;
+        this.moveUnownedRootsToActiveScene();
         this.snapshot = serializeWorld(this.world, this.registry);
         this.viewBeforePlay = this.views.view;
     }

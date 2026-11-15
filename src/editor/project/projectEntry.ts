@@ -1,5 +1,6 @@
 import type {World} from "../../engine/core";
 import type {ComponentSchemaRegistry} from "../../engine/scene/componentSchemaRegistry";
+import type {SceneManager} from "../../engine/scene/sceneManager";
 
 export interface ProjectAssetFile {
     readonly path: string;
@@ -28,6 +29,7 @@ export type ProjectRenderBackend = "pixels" | "gpu";
 export interface ProjectHost {
     readonly files: ProjectAssetFiles;
     readonly renderBackend: ProjectRenderBackend;
+    readonly scenes: SceneManager;
 
     quit(): void;
 }

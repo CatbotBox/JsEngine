@@ -10,7 +10,7 @@ import {registerGpuComponentSchemas} from "../../backends/gpu/gpuComponentSchema
 import {PageConnection} from "../../hosts/web/worldWorkerPlatform";
 import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
 import {gpuCanvasPresenter, requestGpuDevice} from "../../hosts/web/gpuWorldDevice";
-import {attachEditorWorldService} from "../world/editorWorldService";
+import {attachEditorWorldService, editorSceneManager} from "../world/editorWorldService";
 import type {EditorServiceScope} from "../world/editorWorldService";
 import {ProjectFileSource} from "../project/projectFileSource";
 import type {ProjectFilesChannel} from "../project/projectFileSource";
@@ -115,11 +115,11 @@ async function startProjectWorld(scope: ProjectEditorWorkerScope, page: PageConn
     await files.whenListed();
     page.connectInput(world.resources.getOrCreate(Input));
     const assetFiles = new SetupStatusAssetFiles(files, page);
-    await entry.setupProject(world, {files: assetFiles, renderBackend, quit: () => page.quit()});
+    const preloadAssets = (paths: readonly string[]) => preloadProjectAssets(files, world.platform, paths);
+    const scenes = editorSceneManager(world, registry, preloadAssets);
+    await entry.setupProject(world, {files: assetFiles, renderBackend, scenes, quit: () => page.quit()});
     assetFiles.stopReporting();
-    attachEditorWorldService(scope, world, registry, {
-        preloadAssets: paths => preloadProjectAssets(files, world.platform, paths),
-    });
+    attachEditorWorldService(scope, world, registry, {preloadAssets, scenes});
 }
 
 export function runProjectEditorWorker(entry: ProjectEntryModule): void {

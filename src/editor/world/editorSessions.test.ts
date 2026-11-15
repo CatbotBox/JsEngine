@@ -205,6 +205,9 @@ describe("editor snapshots", () => {
 
     test("describeSchemas lists registered resources", async () => {
         const harnessed = editorWorld(() => undefined, {register: registerScoreboard});
-        expect((await ask(harnessed, {op: "describeSchemas"})).resources).toEqual([{typeName: "Scoreboard", fields: [{key: "wave", kind: "integer"}]}]);
+        expect((await ask(harnessed, {op: "describeSchemas"})).resources).toEqual([
+            {typeName: "ActiveScene", fields: [{key: "sceneId", kind: "integer"}, {key: "path", kind: "string", nullable: true}]},
+            {typeName: "Scoreboard", fields: [{key: "wave", kind: "integer"}]},
+        ]);
     });
 });

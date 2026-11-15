@@ -1,5 +1,6 @@
 import type {Entity} from "../../engine/core";
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
+import {withoutSceneMembership} from "../../engine/scene";
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
 import type {
     EditorComponentDescription,
@@ -606,7 +607,7 @@ export class EditorWorkspace implements UndoContext {
         await this.run(async () => {
             const files = this.currentSession.files;
             const serialized = await this.request({op: "serializeEntities", entities: [entity]});
-            const document = withoutPrefabInstances(parseSceneDocument(serialized.documentText));
+            const document = withoutSceneMembership(withoutPrefabInstances(parseSceneDocument(serialized.documentText)));
             if (documentRootCount(document) !== 1) throw new Error("A prefab needs exactly one root entity");
             const documentText = sceneDocumentText(document);
             const summary = this.summaries.get(entity);
@@ -669,7 +670,7 @@ export class EditorWorkspace implements UndoContext {
     public async loadDocument(path: string): Promise<void> {
         await this.run(async () => {
             const sceneText = await this.currentSession.files.readText(path);
-            const loaded = await this.request({op: "loadScene", sceneText});
+            const loaded = await this.request({op: "loadScene", sceneText, path});
             this.afterLoad(path);
             this.notice("info", `${sceneLoadStatus(loaded)} from ${path}`);
         });

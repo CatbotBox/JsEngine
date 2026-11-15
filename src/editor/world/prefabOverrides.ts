@@ -1,4 +1,4 @@
-import {isSceneJsonObject, PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY} from "../../engine/scene";
+import {isSceneJsonObject, PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY, SCENE_INSTANCE_COMPONENT_NAME} from "../../engine/scene";
 import type {ComponentSchemaRegistry, SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonValue} from "../../engine/scene";
 
 export const PREFAB_INSTANCE_COMPONENT_NAME = "PrefabInstance";
@@ -81,7 +81,7 @@ export function entityPathsOf(document: SceneDocument, tree: DocumentTree = docu
 }
 
 export function isComparedComponent(typeName: string, isRoot: boolean): boolean {
-    if (typeName === PARENT_COMPONENT_NAME || typeName === PREFAB_INSTANCE_COMPONENT_NAME) return false;
+    if (typeName === PARENT_COMPONENT_NAME || typeName === PREFAB_INSTANCE_COMPONENT_NAME || typeName === SCENE_INSTANCE_COMPONENT_NAME) return false;
     return !isRoot || !ROOT_DEFAULT_OVERRIDE_TYPES.includes(typeName);
 }
 
