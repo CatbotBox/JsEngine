@@ -1,4 +1,5 @@
 import {Resource} from "../../src/engine/core";
+import {resourceSchema} from "../../src/engine/scene/componentSchemaBuilder";
 import {
     FALLBACK_ARENA_HEIGHT_UNITS,
     FALLBACK_ARENA_WIDTH_UNITS,
@@ -29,6 +30,14 @@ export const SwarmPhase = {
 export type SwarmPhase = typeof SwarmPhase[keyof typeof SwarmPhase];
 
 export class SwarmState extends Resource {
+    public static readonly schema = resourceSchema(SwarmState, "SwarmState")
+        .enum("phase", SwarmPhase)
+        .number("score").number("kills").number("wave").number("lives").number("bombs")
+        .number("invulnerableRemainingMs").number("fireCooldownMs").number("intermissionRemainingMs")
+        .number("waveEnemyTarget").number("waveEnemiesSpawned").number("spawnBudget").boolean("lastClearEarnedBomb")
+        .number("shipX").number("shipY").number("arenaHalfWidthUnits").number("arenaHalfHeightUnits")
+        .build();
+
     public phase: SwarmPhase = SwarmPhase.Title;
     public score = 0;
     public kills = 0;
@@ -94,3 +103,5 @@ export class SeededRandom extends Resource {
         return Math.floor(this.next() * length);
     }
 }
+
+export const SWARM_RESOURCES = [SwarmState];

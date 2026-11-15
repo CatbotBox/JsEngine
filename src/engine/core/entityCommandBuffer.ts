@@ -10,7 +10,7 @@ import {EntityQuery} from "./entityQuery";
 import {World} from "./world";
 import {NO_SOURCE_COLUMN} from "./entityArchetype";
 import type {EntityArchetype} from "./entityArchetype";
-import {allocEntityHandle, requireOwner, setOwner} from "./ownership";
+import {allocEntityHandle, freeEntityHandle, requireOwner, setOwner} from "./ownership";
 
 const INITIAL_MOVE_COLUMN_CAPACITY = 16;
 const ENABLED_BY_DEFAULT = true;
@@ -140,6 +140,11 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         this.reset()
     }
 
+    public discard(): void {
+        for (const entity of this.createOps) freeEntityHandle(entity);
+        this.reset();
+    }
+
     private playbackDestroy(entityManager: EntityManager) {
         for (const e of this.destroyOps) {
             entityManager.destroyEntity(e);
@@ -193,7 +198,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
             columnMap[i] = given === undefined ? from : NO_SOURCE_COLUMN;
             supplied[i] = given;
         }
-        arch.moveRowWith(entity, target, columnMap, supplied, world.time);
+        arch.moveRowWith(entity, target, columnMap, supplied);
         setOwner(world, entity, target);
         for (let i = 0; i < types.length; i++) supplied[i] = undefined;
     }
@@ -211,7 +216,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
         const row = arch.getIndexOfEntity(entity)!;
         const next = new Map<AnyCT, Component>();
         for (const t of arch.componentTypes) next.set(t, pending.set.get(t) ?? arch.getColumn(t)!.get(row));
-        arch.setEntity(entity, next, undefined, world.time);
+        arch.setEntity(entity, next, undefined);
     }
 
     private pendingFor(entity: Entity): Pending {

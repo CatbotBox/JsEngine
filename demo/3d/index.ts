@@ -22,7 +22,7 @@ const terminalInput = new TerminalInput({
     sink: world.resources.getOrCreate(Input),
     mouse: true,
     hideCursor: true,
-}).start();
+});
 
 setupDemo3d(world, {
     render: installCellRendering3d(world),
@@ -33,4 +33,5 @@ setupDemo3d(world, {
     },
 });
 
-world.startLoop()
+world.startLoop();
+terminalInput.start();

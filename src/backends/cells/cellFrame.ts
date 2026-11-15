@@ -26,6 +26,7 @@ export interface CellFrame {
     readonly glyph: Uint32Array;
     readonly foreground: Uint32Array;
     readonly background: Uint32Array;
+    // For RgbSplit cells `rgb` is the bottom half and `rgbTop` the top.
     readonly rgb: Int32Array;
     readonly rgbTop: Int32Array;
     readonly backgroundStyle: CellBackgroundStyle;

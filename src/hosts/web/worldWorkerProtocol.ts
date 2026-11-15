@@ -45,11 +45,16 @@ export interface InputEventsMessage {
     readonly events: readonly InputEvent[];
 }
 
+export interface PresentedMessage {
+    readonly type: "presented";
+    readonly returnedBuffer?: ArrayBuffer;
+}
+
 export type PageToWorldMessage =
     | InitMessage
     | InputEventsMessage
     | ResizeMessage
-    | {readonly type: "presented"}
+    | PresentedMessage
     | {readonly type: "exit"};
 
 export interface FrameMessage {
@@ -100,13 +105,15 @@ export function isSurfaceSize(value: unknown): value is SurfaceSize {
 
 export function isPageToWorldMessage(message: unknown): message is PageToWorldMessage {
     if (!hasType(message, PAGE_TO_WORLD_TYPES)) return false;
-    const fields = message as {type: string, events?: unknown, surface?: unknown};
+    const fields = message as {type: string, events?: unknown, surface?: unknown, returnedBuffer?: unknown};
     switch (fields.type) {
         case "inputEvents":
             return Array.isArray(fields.events) && fields.events.every(isInputEvent);
         case "init":
         case "resize":
             return isSurfaceSize(fields.surface);
+        case "presented":
+            return fields.returnedBuffer === undefined || fields.returnedBuffer instanceof ArrayBuffer;
         default:
             return true;
     }
@@ -133,9 +140,9 @@ export function requestedRasterWorkersFromQuery(search: string): number | undefi
     return wholeNumberFromQuery(search, "threads", 0, Number.POSITIVE_INFINITY);
 }
 
-export function renderBackendFromQuery(search: string): RenderBackend {
+export function renderBackendFromQuery(search: string, defaultBackend: RenderBackend = DEFAULT_RENDER_BACKEND): RenderBackend {
     const value = new URLSearchParams(search).get("backend")?.trim();
-    return isRenderBackend(value) ? value : DEFAULT_RENDER_BACKEND;
+    return isRenderBackend(value) ? value : defaultBackend;
 }
 
 export interface FixedTerminalSize {

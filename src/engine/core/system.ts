@@ -17,15 +17,15 @@ export abstract class System extends WorldSource {
     private _enabled = true;
     private _requiredAnyForUpdate: EntityQuery[] | undefined;
     private _requiredAllForUpdate: EntityQuery[] | undefined;
-    private _lastUpdateTime: number = 0;
+    private _lastUpdateStamp: number = 0;
     private _isCreated: boolean = false;
 
-    protected get lastUpdateTime(): number {
-        return this._lastUpdateTime;
+    protected get lastUpdateStamp(): number {
+        return this._lastUpdateStamp;
     }
 
-    protected updateLastUpdateTime() {
-        this._lastUpdateTime = this.world.time.elapsedTimeMs;
+    protected updateLastUpdateStamp() {
+        this._lastUpdateStamp = this.world.changeStamps.advance();
     }
 
     public constructor() {
@@ -101,7 +101,7 @@ export abstract class System extends WorldSource {
         if (!isRootGroupCreatingItself) updateGroup.addSystemInstance(this);
         this._isCreated = true;
         this.onCreate();
-        if (this.enabled) this.onEnable();
+        if (this.isEnabledInHierarchy()) this.onEnable();
     }
 
     protected onCreate(): void {
@@ -119,7 +119,10 @@ export abstract class System extends WorldSource {
     }
 
     private isEnabledInHierarchy(): boolean {
-        if (!this._enabled) return false;
+        return this._enabled && this.isGroupEnabledInHierarchy();
+    }
+
+    private isGroupEnabledInHierarchy(): boolean {
         const updateGroup = this.resolveUpdateGroup(EXISTING_GROUP_ONLY);
         if (updateGroup === undefined || (updateGroup as System) === this) return true;
         return (updateGroup as System).isEnabledInHierarchy();
@@ -141,7 +144,7 @@ export abstract class System extends WorldSource {
             if (!update) return;
         }
         this.onUpdate();
-        this._lastUpdateTime = this.world.time.elapsedTimeMs;
+        this._lastUpdateStamp = this.world.changeStamps.advance();
     }
 
     public get enabled(): boolean {
@@ -150,11 +153,12 @@ export abstract class System extends WorldSource {
 
     public set enabled(v: boolean) {
         if (v === this.enabled) return;
+        const groupEnabled = this.isGroupEnabledInHierarchy();
         if (v) {
             this._enabled = true;
-            this.onEnable();
+            if (groupEnabled) this.onEnable();
         } else {
-            this.onDisable();
+            if (groupEnabled) this.onDisable();
             this._enabled = false;
         }
     }

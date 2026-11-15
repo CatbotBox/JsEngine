@@ -1,4 +1,7 @@
-import type {Component, ComponentCtor} from "../core";
+import type {Component, ComponentCtor, Resource} from "../core";
+import type {ResourceCtor} from "../core/resource";
+
+export const DEFAULT_COMPONENT_CATEGORY = "Game";
 
 export type FieldKind =
     | "number"
@@ -56,8 +59,22 @@ export interface ComponentSchema<T extends Component = Component> {
     readonly ctor: ComponentCtor<T>;
     readonly persistence: ComponentPersistence;
     readonly fields: readonly FieldSchema[];
+    readonly category?: string;
+    readonly inferred?: boolean;
 
     create(): T;
+}
+
+export interface ResourceSchema<T extends Resource = Resource> {
+    readonly name: string;
+    readonly ctor: ResourceCtor<T>;
+    readonly fields: readonly FieldSchema[];
+
+    create(): T;
+}
+
+export function categoryOf(schema: ComponentSchema): string {
+    return schema.category ?? DEFAULT_COMPONENT_CATEGORY;
 }
 
 export function isEntityField(field: FieldSchema): field is EntityFieldSchema {

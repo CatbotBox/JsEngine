@@ -60,6 +60,7 @@ export class PixelCanvasDisplay implements PixelWorldDisplay {
         this.shell.showError(text);
     }
 
+    // The screen unit comes from the last drawn frame, so before the first frame the area is 0x0 units.
     public cellArea(): CellArea {
         const canvas = this.shell.canvas;
         const bounds = canvas.getBoundingClientRect();

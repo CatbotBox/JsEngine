@@ -3,7 +3,7 @@ import type {CellPresenter} from "../../backends/cells/cellPresenter";
 import {cellFrameBuffers, copyCellFrame} from "../../backends/cells/cellFrame";
 import type {CellFrame} from "../../backends/cells/cellFrame";
 import type {PixelPresenter} from "../../backends/pixels/pixelPresenter";
-import {copyPixelFrame, pixelFrameBuffers} from "../../backends/pixels/pixelFrame";
+import {pixelFrameBuffers} from "../../backends/pixels/pixelFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import type {InputEventSink} from "../../engine/input";
 import type {CellSurfaceSize, InitMessage, PageToWorldMessage, PixelSurfaceSize, RenderBackend, SurfaceSize, WorldToPageMessage} from "./worldWorkerProtocol";
@@ -11,6 +11,7 @@ import {isPageToWorldMessage} from "./worldWorkerProtocol";
 import {browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorkerHost} from "./browserWorkers";
 import {inflate} from "../../engine/assets/image/inflate";
+import {PixelFrameBufferPool} from "./pixelFrameBufferPool";
 
 export interface WorldWorkerScope extends BrowserWorkerHost {
     postMessage(message: WorldToPageMessage, transfer?: ArrayBuffer[]): void;
@@ -35,6 +36,7 @@ export class PageConnection {
     private readonly resizeListeners = new Set<() => void>();
     private readonly exitCallbacks = new Set<() => void>();
     private framesInFlight = 0;
+    private readonly returnedPixelBuffers = new PixelFrameBufferPool(MAX_FRAMES_IN_FLIGHT);
 
     private constructor(private readonly scope: WorldWorkerScope, init: InitMessage, files: FileSource) {
         this.surface = init.surface;
@@ -148,7 +150,7 @@ export class PageConnection {
     }
 
     private postPixelFrame(frame: PixelFrame): void {
-        const copy = copyPixelFrame(frame);
+        const copy = this.returnedPixelBuffers.copy(frame);
         this.framesInFlight++;
         this.scope.postMessage({type: "pixelFrame", frame: copy}, pixelFrameBuffers(copy));
     }
@@ -161,12 +163,14 @@ export class PageConnection {
                 break;
             }
             case "resize":
+                // A page's surface kind never changes, so a resize of the other kind is ignored.
                 if (message.surface.kind !== this.surface.kind) break;
                 this.surface = message.surface;
                 for (const listener of [...this.resizeListeners]) listener();
                 break;
             case "presented":
                 this.framesInFlight = Math.max(0, this.framesInFlight - 1);
+                if (message.returnedBuffer !== undefined) this.returnedPixelBuffers.give(message.returnedBuffer);
                 break;
             case "exit": {
                 const callbacks = [...this.exitCallbacks];

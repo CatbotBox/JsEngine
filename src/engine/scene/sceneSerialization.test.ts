@@ -31,6 +31,7 @@ import {PointLight} from "../rendering/3d/lighting/pointLight";
 import {encodePpm} from "../assets/image/ppm";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {registerEngineComponentSchemas} from "./engineComponentSchemas";
+import {PrefabInstance} from "./prefabInstance";
 import {platformSceneAssetLoader, sceneAssetPaths} from "./sceneAssets";
 import {parseSceneDocument, SCENE_DOCUMENT_FORMAT} from "./sceneDocument";
 import type {SceneDocument, SceneFieldValues, SceneJsonValue} from "./sceneDocument";
@@ -51,6 +52,8 @@ const MATRIX_COLUMN_STRIDE = 4;
 const TRANSLATION_COLUMN = 12;
 const ENABLED = true;
 const DISABLED = false;
+const PREFAB_PATH = "prefabs/hud.prefab.json";
+const EMPTY_LOAD_REPORT = {skippedComponentTypes: [], skippedResourceTypes: [], danglingEntityRefs: [], droppedComponents: [], changedSchemas: []};
 
 class GameTag extends Component {
     public score = 3;
@@ -120,7 +123,7 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     text.background = TextColor.rgb(1, 2, 3);
     const anchor = new ScreenAnchor();
     anchor.anchorPosition = "bottom-left";
-    const hud = em.createEntity("hud", [text, new HudElement(), anchor]);
+    const hud = em.createEntity("hud", [text, new HudElement(), anchor, new PrefabInstance(PREFAB_PATH, ["/TextSprite.image"])]);
 
     const sunRotation = new LocalRotation();
     sunRotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.7, -0.6, 0));
@@ -182,7 +185,7 @@ describe("scene serialization", () => {
         const fillers: Entity[] = [];
         for (let i = 0; i < FILLER_ENTITIES; i++) fillers.push(target.entityManager.createEntity("filler", [new LocalPosition(i, i, i)]));
         const loaded = deserializeInto(target, registry, parseSceneDocument(JSON.stringify(saved.document)), {assets: platformSceneAssetLoader(platform)});
-        expect(loaded.report).toEqual({skippedComponentTypes: [], danglingEntityRefs: [], droppedComponents: []});
+        expect(loaded.report).toEqual(EMPTY_LOAD_REPORT);
         for (const filler of fillers) target.entityManager.destroyEntity(filler);
 
         expect(loaded.entities.filter(entity => saved.entities.includes(entity))).toEqual([]);
@@ -408,7 +411,7 @@ describe("scene serialization", () => {
         em.destroyEntity(built.meshHolder);
 
         const result = applySceneInPlace(world, registry, snapshot, {assets: platformSceneAssetLoader(platform)});
-        expect(result.report).toEqual({skippedComponentTypes: [], danglingEntityRefs: [], droppedComponents: []});
+        expect(result.report).toEqual(EMPTY_LOAD_REPORT);
 
         expect(em.exists(bullet)).toBe(false);
         expect(em.getComponent<Children>(built.root, Children)!.has(bullet)).toBe(false);

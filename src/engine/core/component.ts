@@ -5,14 +5,16 @@ import {ComponentType} from "./componentType";
 export {ComponentType} from "./componentType";
 export type {ComponentCtor, ComponentOf} from "./componentType";
 
+const CHANGE_SIGNAL: unique symbol = Symbol("changeSignal");
+
 export abstract class Component {
 
     // noinspection JSUnusedLocalSymbols
-    private set trackingProxySetTrapTrigger(value: void) {
+    private set trackingProxySetTrapTrigger(value: typeof CHANGE_SIGNAL) {
     }
 
     protected notifyChanged() {
-        this.trackingProxySetTrapTrigger = undefined;
+        this.trackingProxySetTrapTrigger = CHANGE_SIGNAL;
     }
 
     public setup(entity: Entity, writeOnlyEntityManager: EntityWriteOptions): void {

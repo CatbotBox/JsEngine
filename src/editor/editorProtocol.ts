@@ -3,11 +3,31 @@ import type {ComponentPersistence, PlainFieldKind, SceneJsonObject, SceneJsonVal
 
 export const EDITOR_MESSAGE_TYPE = "jsengine-editor";
 
+// Handles are 32-bit (20-bit index, 12-bit generation); anything at or above 2^32 is not a handle.
 export const ENTITY_HANDLE_LIMIT = 2 ** 32;
+
+export const MAX_FIELD_OF_VIEW_DEGREES = 180;
+
+const VEC3_LENGTH = 3;
+const QUATERNION_LENGTH = 4;
 
 export type EditorMode = "edit" | "play" | "paused";
 
 export const EDITOR_MODES: readonly EditorMode[] = ["edit", "play", "paused"];
+
+export type EditorView = "scene" | "game";
+
+export const EDITOR_VIEWS: readonly EditorView[] = ["scene", "game"];
+
+export type EditorProjection = "orthographic" | "perspective";
+
+export type EditorConsoleLevel = "log" | "info" | "warn" | "error" | "debug";
+
+export const EDITOR_CONSOLE_LEVELS: readonly EditorConsoleLevel[] = ["log", "info", "warn", "error", "debug"];
+
+export type EditorVec3 = readonly [number, number, number];
+
+export type EditorQuaternion = readonly [number, number, number, number];
 
 export interface DescribeSchemasRequest {
     readonly op: "describeSchemas";
@@ -28,6 +48,18 @@ export interface SetFieldRequest {
     readonly typeName: string;
     readonly key: string;
     readonly value: SceneJsonValue;
+}
+
+export interface EditorFieldEdit {
+    readonly entity: Entity;
+    readonly typeName: string;
+    readonly key: string;
+    readonly value: SceneJsonValue;
+}
+
+export interface SetFieldsRequest {
+    readonly op: "setFields";
+    readonly edits: readonly EditorFieldEdit[];
 }
 
 export interface AddComponentRequest {
@@ -60,6 +92,84 @@ export interface SetEnabledRequest {
     readonly enabled: boolean;
 }
 
+export interface RenameEntityRequest {
+    readonly op: "renameEntity";
+    readonly entity: Entity;
+    readonly name: string | null;
+}
+
+export interface SetParentRequest {
+    readonly op: "setParent";
+    readonly entity: Entity;
+    readonly parent: Entity | null;
+    readonly siblingIndex?: number;
+}
+
+export interface DuplicateEntitiesRequest {
+    readonly op: "duplicateEntities";
+    readonly entities: readonly Entity[];
+}
+
+export interface SerializeEntitiesRequest {
+    readonly op: "serializeEntities";
+    readonly entities: readonly Entity[];
+}
+
+export interface InstantiateEntitiesRequest {
+    readonly op: "instantiateEntities";
+    readonly documentText: string;
+    readonly parent?: Entity | null;
+    readonly siblingIndex?: number;
+    readonly prefabSourcePath?: string;
+}
+
+export interface GetPrefabOverridesRequest {
+    readonly op: "getPrefabOverrides";
+    readonly entity: Entity;
+}
+
+export interface RevertPrefabInstanceRequest {
+    readonly op: "revertPrefabInstance";
+    readonly entity: Entity;
+    readonly paths?: readonly string[];
+}
+
+export interface ApplyPrefabInstanceRequest {
+    readonly op: "applyPrefabInstance";
+    readonly entity: Entity;
+}
+
+export interface UpdatePrefabInstancesRequest {
+    readonly op: "updatePrefabInstances";
+    readonly sourcePath: string;
+    readonly documentText: string;
+}
+
+export interface PickEntitiesRequest {
+    readonly op: "pickEntities";
+    readonly x: number;
+    readonly y: number;
+    readonly view: EditorView;
+}
+
+export interface SetViewRequest {
+    readonly op: "setView";
+    readonly view: EditorView;
+}
+
+export interface SetEditorCameraRequest {
+    readonly op: "setEditorCamera";
+    readonly position: EditorVec3;
+    readonly rotation: EditorQuaternion;
+    readonly fieldOfViewDegrees?: number;
+}
+
+export interface GetViewInfoRequest {
+    readonly op: "getViewInfo";
+    readonly view: EditorView;
+    readonly entities?: readonly Entity[];
+}
+
 export interface SaveSceneRequest {
     readonly op: "saveScene";
 }
@@ -67,6 +177,19 @@ export interface SaveSceneRequest {
 export interface LoadSceneRequest {
     readonly op: "loadScene";
     readonly sceneText: string;
+}
+
+export interface ExportSnapshotRequest {
+    readonly op: "exportSnapshot";
+}
+
+export interface ImportSnapshotRequest {
+    readonly op: "importSnapshot";
+    readonly documentText: string;
+    readonly editSnapshotText?: string;
+    readonly editSnapshotRecords?: readonly number[];
+    readonly mode: EditorMode;
+    readonly gameplayTicks?: number;
 }
 
 export interface SetModeRequest {
@@ -83,13 +206,29 @@ export type EditorRequest =
     | ListEntitiesRequest
     | GetEntityRequest
     | SetFieldRequest
+    | SetFieldsRequest
     | AddComponentRequest
     | RemoveComponentRequest
     | CreateEntityRequest
     | DestroyEntityRequest
     | SetEnabledRequest
+    | RenameEntityRequest
+    | SetParentRequest
+    | DuplicateEntitiesRequest
+    | SerializeEntitiesRequest
+    | InstantiateEntitiesRequest
+    | GetPrefabOverridesRequest
+    | RevertPrefabInstanceRequest
+    | ApplyPrefabInstanceRequest
+    | UpdatePrefabInstancesRequest
+    | PickEntitiesRequest
+    | SetViewRequest
+    | SetEditorCameraRequest
+    | GetViewInfoRequest
     | SaveSceneRequest
     | LoadSceneRequest
+    | ExportSnapshotRequest
+    | ImportSnapshotRequest
     | SetModeRequest
     | StepRequest;
 
@@ -118,10 +257,18 @@ export interface EditorComponentDescription {
     readonly typeName: string;
     readonly persistence: ComponentPersistence;
     readonly fields: readonly EditorFieldDescription[];
+    readonly inferred: boolean;
+    readonly category: string;
+}
+
+export interface EditorResourceDescription {
+    readonly typeName: string;
+    readonly fields: readonly EditorFieldDescription[];
 }
 
 export interface DescribeSchemasResult {
     readonly components: readonly EditorComponentDescription[];
+    readonly resources: readonly EditorResourceDescription[];
 }
 
 export interface EditorEntitySummary {
@@ -129,6 +276,8 @@ export interface EditorEntitySummary {
     readonly name: string | null;
     readonly enabled: boolean;
     readonly parent: Entity | null;
+    readonly siblingIndex: number;
+    readonly prefabSourcePath: string | null;
     readonly componentTypeNames: readonly string[];
 }
 
@@ -145,6 +294,7 @@ export type EditorFieldValue = SceneJsonValue | InlineSpriteImageSummary;
 export interface EditorComponentDetails {
     readonly typeName: string;
     readonly inspectable: boolean;
+    readonly inferred: boolean;
     readonly fields: {readonly [key: string]: EditorFieldValue};
 }
 
@@ -153,6 +303,8 @@ export interface EditorEntityDetails {
     readonly name: string | null;
     readonly enabled: boolean;
     readonly parent: Entity | null;
+    readonly siblingIndex: number;
+    readonly prefabSourcePath: string | null;
     readonly components: readonly EditorComponentDetails[];
 }
 
@@ -160,8 +312,70 @@ export interface SetFieldResult {
     readonly value: EditorFieldValue;
 }
 
+export interface SetFieldsResult {
+    readonly values: readonly EditorFieldValue[];
+}
+
 export interface DestroyEntityResult {
     readonly destroyed: readonly Entity[];
+}
+
+export interface DuplicateEntitiesResult {
+    readonly roots: readonly Entity[];
+}
+
+export interface SerializeEntitiesResult {
+    readonly documentText: string;
+    readonly report: SceneSaveReport;
+}
+
+export interface InstantiateEntitiesResult {
+    readonly roots: readonly Entity[];
+    readonly entities: readonly Entity[];
+    readonly report: SceneLoadReport;
+}
+
+export interface PrefabOverridesResult {
+    readonly sourcePath: string;
+    readonly overrides: readonly string[];
+}
+
+export interface ApplyPrefabInstanceResult {
+    readonly documentText: string;
+}
+
+export interface UpdatePrefabInstancesResult {
+    readonly updated: readonly Entity[];
+}
+
+export interface PickEntitiesResult {
+    readonly entities: readonly Entity[];
+}
+
+export interface EditorViewState {
+    readonly view: EditorView;
+}
+
+export interface EditorCameraPose {
+    readonly position: EditorVec3;
+    readonly rotation: EditorQuaternion;
+    readonly fieldOfViewDegrees?: number;
+}
+
+export interface EditorEntityBounds {
+    readonly entity: Entity;
+    readonly min: EditorVec3;
+    readonly max: EditorVec3;
+}
+
+export interface EditorViewInfo {
+    readonly view: EditorView;
+    readonly projection: EditorProjection;
+    readonly worldToScreen: readonly number[];
+    readonly screenWidth: number;
+    readonly screenHeight: number;
+    readonly camera: EditorCameraPose;
+    readonly bounds: readonly EditorEntityBounds[];
 }
 
 export interface SaveSceneResult {
@@ -174,9 +388,28 @@ export interface LoadSceneResult {
     readonly report: SceneLoadReport;
 }
 
+export interface ExportSnapshotResult {
+    readonly documentText: string;
+    readonly mode: EditorMode;
+    readonly gameplayTicks: number;
+    readonly entities: readonly Entity[];
+    readonly editSnapshotText?: string;
+    readonly editSnapshotRecords?: readonly number[];
+}
+
+export interface ImportSnapshotResult {
+    readonly entities: readonly Entity[];
+    readonly report: SceneLoadReport;
+}
+
 export interface EditorPlayState {
     readonly mode: EditorMode;
     readonly gameplayTicks: number;
+}
+
+export interface EditorServiceState extends EditorPlayState {
+    readonly view: EditorView;
+    readonly worldStoppedError: string | null;
 }
 
 export interface EditorResultByOp {
@@ -184,20 +417,57 @@ export interface EditorResultByOp {
     readonly listEntities: ListEntitiesResult;
     readonly getEntity: EditorEntityDetails;
     readonly setField: SetFieldResult;
+    readonly setFields: SetFieldsResult;
     readonly addComponent: EditorEntityDetails;
     readonly removeComponent: EditorEntityDetails;
     readonly createEntity: EditorEntityDetails;
     readonly destroyEntity: DestroyEntityResult;
     readonly setEnabled: EditorEntityDetails;
+    readonly renameEntity: EditorEntityDetails;
+    readonly setParent: EditorEntityDetails;
+    readonly duplicateEntities: DuplicateEntitiesResult;
+    readonly serializeEntities: SerializeEntitiesResult;
+    readonly instantiateEntities: InstantiateEntitiesResult;
+    readonly getPrefabOverrides: PrefabOverridesResult;
+    readonly revertPrefabInstance: PrefabOverridesResult;
+    readonly applyPrefabInstance: ApplyPrefabInstanceResult;
+    readonly updatePrefabInstances: UpdatePrefabInstancesResult;
+    readonly pickEntities: PickEntitiesResult;
+    readonly setView: EditorViewState;
+    readonly setEditorCamera: EditorViewInfo;
+    readonly getViewInfo: EditorViewInfo;
     readonly saveScene: SaveSceneResult;
     readonly loadScene: LoadSceneResult;
-    readonly setMode: EditorPlayState;
-    readonly step: EditorPlayState;
+    readonly exportSnapshot: ExportSnapshotResult;
+    readonly importSnapshot: ImportSnapshotResult;
+    readonly setMode: EditorServiceState;
+    readonly step: EditorServiceState;
 }
 
 export type EditorResultOf<R extends EditorRequest> = EditorResultByOp[R["op"]];
 
 export type EditorResult = EditorResultByOp[EditorOp];
+
+export interface EditorConsoleEvent {
+    readonly kind: "console";
+    readonly level: EditorConsoleLevel;
+    readonly text: string;
+    readonly timeMs: number;
+}
+
+export interface EditorWorldStoppedEvent {
+    readonly kind: "worldStopped";
+    readonly error: string;
+}
+
+export interface EditorModeChangedEvent {
+    readonly kind: "modeChanged";
+    readonly mode: EditorMode;
+    readonly gameplayTicks: number;
+    readonly view: EditorView;
+}
+
+export type EditorEvent = EditorConsoleEvent | EditorWorldStoppedEvent | EditorModeChangedEvent;
 
 export interface EditorRequestMessage {
     readonly type: typeof EDITOR_MESSAGE_TYPE;
@@ -221,6 +491,13 @@ export interface EditorFailureMessage {
 
 export type EditorResponseMessage = EditorSuccessMessage | EditorFailureMessage;
 
+export interface EditorEventMessage {
+    readonly type: typeof EDITOR_MESSAGE_TYPE;
+    readonly event: EditorEvent;
+}
+
+export type EditorWorldMessage = EditorResponseMessage | EditorEventMessage;
+
 type MessageFields = {readonly [key: string]: unknown};
 
 function isRecord(value: unknown): value is MessageFields {
@@ -235,12 +512,52 @@ function isEntityHandle(value: unknown): value is Entity {
     return typeof value === "number" && Number.isInteger(value) && value >= 0 && value < ENTITY_HANDLE_LIMIT;
 }
 
+function isNullableEntityHandle(value: unknown): boolean {
+    return value === null || isEntityHandle(value);
+}
+
+function isEntityList(value: unknown): boolean {
+    return Array.isArray(value) && value.every(isEntityHandle);
+}
+
 function isEditorMode(value: unknown): value is EditorMode {
     return EDITOR_MODES.some(mode => mode === value);
 }
 
+function isEditorView(value: unknown): value is EditorView {
+    return EDITOR_VIEWS.some(view => view === value);
+}
+
+function isConsoleLevel(value: unknown): value is EditorConsoleLevel {
+    return EDITOR_CONSOLE_LEVELS.some(level => level === value);
+}
+
 function isString(value: unknown): value is string {
     return typeof value === "string";
+}
+
+function isStringList(value: unknown): boolean {
+    return Array.isArray(value) && value.every(isString);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === "number" && Number.isFinite(value);
+}
+
+function isWholeNumber(value: unknown): value is number {
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isRecordIndexList(value: unknown): boolean {
+    return Array.isArray(value) && value.every(index => typeof index === "number" && Number.isSafeInteger(index) && index >= -1);
+}
+
+function isFiniteTuple(value: unknown, length: number): boolean {
+    return Array.isArray(value) && value.length === length && value.every(isFiniteNumber);
+}
+
+function isFieldOfViewDegrees(value: unknown): boolean {
+    return isFiniteNumber(value) && value > 0 && value < MAX_FIELD_OF_VIEW_DEGREES;
 }
 
 function isAbsentOr(value: unknown, guard: (present: unknown) => boolean): boolean {
@@ -251,19 +568,28 @@ function targetsComponent(request: MessageFields): boolean {
     return isEntityHandle(request.entity) && isString(request.typeName);
 }
 
+function isFieldEdit(value: unknown): boolean {
+    return isRecord(value) && targetsComponent(value) && isString(value.key) && value.value !== undefined;
+}
+
 export function isEditorRequest(value: unknown): value is EditorRequest {
     if (!isRecord(value)) return false;
     switch (value.op) {
         case "describeSchemas":
         case "listEntities":
         case "saveScene":
+        case "exportSnapshot":
         case "step":
             return true;
         case "getEntity":
         case "destroyEntity":
+        case "getPrefabOverrides":
+        case "applyPrefabInstance":
             return isEntityHandle(value.entity);
         case "setField":
-            return targetsComponent(value) && isString(value.key) && value.value !== undefined;
+            return isFieldEdit(value);
+        case "setFields":
+            return Array.isArray(value.edits) && value.edits.every(isFieldEdit);
         case "addComponent":
             return targetsComponent(value) && isAbsentOr(value.values, isRecord);
         case "removeComponent":
@@ -272,10 +598,56 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
             return isAbsentOr(value.name, isString) && isAbsentOr(value.parent, isEntityHandle);
         case "setEnabled":
             return isEntityHandle(value.entity) && typeof value.enabled === "boolean";
+        case "renameEntity":
+            return isEntityHandle(value.entity) && (value.name === null || isString(value.name));
+        case "setParent":
+            return isEntityHandle(value.entity) && isNullableEntityHandle(value.parent) && isAbsentOr(value.siblingIndex, isWholeNumber);
+        case "duplicateEntities":
+        case "serializeEntities":
+            return isEntityList(value.entities);
+        case "instantiateEntities":
+            return isString(value.documentText)
+                && isAbsentOr(value.parent, isNullableEntityHandle)
+                && isAbsentOr(value.siblingIndex, isWholeNumber)
+                && isAbsentOr(value.prefabSourcePath, isString);
+        case "revertPrefabInstance":
+            return isEntityHandle(value.entity) && isAbsentOr(value.paths, isStringList);
+        case "updatePrefabInstances":
+            return isString(value.sourcePath) && isString(value.documentText);
+        case "pickEntities":
+            return isFiniteNumber(value.x) && isFiniteNumber(value.y) && isEditorView(value.view);
+        case "setView":
+            return isEditorView(value.view);
+        case "setEditorCamera":
+            return isFiniteTuple(value.position, VEC3_LENGTH)
+                && isFiniteTuple(value.rotation, QUATERNION_LENGTH)
+                && isAbsentOr(value.fieldOfViewDegrees, isFieldOfViewDegrees);
+        case "getViewInfo":
+            return isEditorView(value.view) && isAbsentOr(value.entities, isEntityList);
         case "loadScene":
             return isString(value.sceneText);
+        case "importSnapshot":
+            return isString(value.documentText)
+                && isEditorMode(value.mode)
+                && isAbsentOr(value.editSnapshotText, isString)
+                && isAbsentOr(value.editSnapshotRecords, isRecordIndexList)
+                && isAbsentOr(value.gameplayTicks, isWholeNumber);
         case "setMode":
             return isEditorMode(value.mode);
+        default:
+            return false;
+    }
+}
+
+export function isEditorEvent(value: unknown): value is EditorEvent {
+    if (!isRecord(value)) return false;
+    switch (value.kind) {
+        case "console":
+            return isConsoleLevel(value.level) && isString(value.text) && isFiniteNumber(value.timeMs);
+        case "worldStopped":
+            return isString(value.error);
+        case "modeChanged":
+            return isEditorMode(value.mode) && isWholeNumber(value.gameplayTicks) && isEditorView(value.view);
         default:
             return false;
     }
@@ -293,6 +665,10 @@ export function isEditorResponseMessage(message: unknown): message is EditorResp
     if (!isEditorMessage(message)) return false;
     if (message.ok === true) return "result" in message;
     return message.ok === false && isString(message.error);
+}
+
+export function isEditorEventMessage(message: unknown): message is EditorEventMessage {
+    return isRecord(message) && message.type === EDITOR_MESSAGE_TYPE && !("requestId" in message) && isEditorEvent(message.event);
 }
 
 export function requestIdOfMalformedEditorRequest(message: unknown): number | undefined {

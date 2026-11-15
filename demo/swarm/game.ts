@@ -128,6 +128,7 @@ const HUD_PRIORITY = -5;
 const HALF = 0.5;
 const UNSCALED = 1;
 const FULL_TURN_RAD = 2 * Math.PI;
+// Speeds, radii and the grid are in screen-unit widths; scale y by this so motion is isotropic on both backends.
 const WIDTH_UNITS_PER_SCREEN_UNIT_Y = SCREEN_UNIT_HEIGHT_PER_WIDTH;
 const POSITION_STRIDE = LocalPosition.f32Width;
 const POSITION_X = 0;
@@ -261,6 +262,7 @@ function spawnSparks(buffer: EntityCommandBuffer, random: SeededRandom, x: numbe
     }
 }
 
+// Zero HP and hide now: other hits this frame skip the enemy before the ECB destroys it.
 function removeEnemyAt(buffer: EntityCommandBuffer, grid: EnemyGrid, index: number): void {
     grid.enemies[index].hitPoints = DEFEATED_HIT_POINTS;
     grid.sprites[index].opacity = HIDDEN_OPACITY;
@@ -313,6 +315,7 @@ class SwarmControlSystem extends System {
             return;
         }
         if (input.actionPressed(Action.ToggleHud)) host.render.toggleHud();
+        // Starting lasts one frame: the ECB destroyed the old entities at the end of the frame that queued it, so reset only now.
         if (state.phase === SwarmPhase.Starting) {
             state.resetForNewGame();
             return;
@@ -395,6 +398,7 @@ class ShipWeaponSystem extends System {
             return;
         }
         if (state.fireCooldownMs > 0) return;
+        // Carry the overshoot into the next interval so the fire rate does not depend on frame timing.
         state.fireCooldownMs = Math.max(0, state.fireCooldownMs + FIRE_INTERVAL_MS);
 
         const speed = BULLET_SPEED_UNITS_PER_SECOND / Math.hypot(right, down);
@@ -573,6 +577,7 @@ class LifetimeSystem extends System {
     }
 }
 
+// Never gated: a frame with no enemies must still reset the grid, or consumers would see last frame's enemies.
 class EnemyBroadphaseSystem extends System {
     private _enemies = this.createEntityQuery([Enemy, LocalPosition, Sprite]);
 

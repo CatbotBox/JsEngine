@@ -4,6 +4,7 @@ import type {PixelFontGlyph} from "./pixelFont";
 export const FONT8X8_BASIC_FIRST_CODE_POINT = 0x20;
 export const FONT8X8_BASIC_GLYPH_SIZE_PX = 8;
 
+// Daniel Hepper's public-domain font8x8_basic, U+0020-U+007E; entry i is code point 0x20 + i.
 export const FONT8X8_BASIC_PUBLIC_DOMAIN_ROWS: readonly (readonly number[])[] = [
     [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
     [0x18, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x18, 0x00],

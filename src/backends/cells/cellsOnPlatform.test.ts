@@ -28,15 +28,18 @@ class RecordingPresenter implements CellPresenter {
     public disposals = 0;
     private columns: number;
     private rows: number;
+    private readonly reservedRows: number | undefined;
     private readonly resizeListeners = new Set<() => void>();
 
     public constructor(size: CellPresenterSize = {columns: DEFAULT_COLUMNS, rows: DEFAULT_ROWS}) {
         this.columns = size.columns;
         this.rows = size.rows;
+        this.reservedRows = size.reservedRows;
     }
 
     public size(): CellPresenterSize {
-        return {columns: this.columns, rows: this.rows};
+        const reserved = this.reservedRows === undefined ? {} : {reservedRows: this.reservedRows};
+        return {columns: this.columns, rows: this.rows, ...reserved};
     }
 
     public onResize(listener: () => void): () => void {
@@ -150,9 +153,28 @@ describe("CellRenderSystemGroup frames", () => {
             root.update();
             expect(presenter.frames.map(entry => entry.repaint)).toEqual(["full", "changes", "changes"]);
             const {frame} = presenter.frames[1];
-            expect([frame.width, frame.height]).toEqual([12, 5]);
+            expect([frame.width, frame.height]).toEqual([12, 6]);
             expect(frame.backgroundStyle).toEqual(CellRenderSettings.DEFAULT_BACKGROUND_STYLE);
             expect(Array.from(frame.kind).every(kind => kind === CellKind.Background)).toBe(true);
+        } finally {
+            group.enabled = false;
+        }
+    });
+
+    test("rows the presenter reserves are left out of the frame and the camera's screen size", () => {
+        const presenter = new RecordingPresenter({columns: 12, rows: 6, reservedRows: 1});
+        const world = worldPresentingOn(presenter);
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const em = world.entityManager;
+        const camera = em.createEntity("camera");
+        em.addComponent(camera, new Camera());
+        const group = world.getOrCreateSystem(CellRenderSystemGroup);
+        try {
+            root.update();
+            const {frame} = presenter.frames[presenter.frames.length - 1];
+            expect([frame.width, frame.height]).toEqual([12, 5]);
+            const size = em.getComponent<ScreenSize>(camera, ScreenSize)!;
+            expect([size.x, size.y]).toEqual([12, 5]);
         } finally {
             group.enabled = false;
         }
@@ -194,7 +216,7 @@ describe("CellRenderSystemGroup frames", () => {
             group.update();
             const {frame, repaint} = presenter.frames[presenter.frames.length - 1];
             expect(repaint).toBe("full");
-            expect([frame.width, frame.height]).toEqual([50, 3]);
+            expect([frame.width, frame.height]).toEqual([50, 4]);
             expect(frameText(frame, 0)).toBe("ERROR: MULTIPLE CAMERA ENTITIES FOUND (2)");
             expect(probe.frames).toBe(0);
         } finally {
@@ -215,12 +237,12 @@ describe("CellCameraSizingSystem", () => {
         root.update();
         const size = em.getComponent<ScreenSize>(camera, ScreenSize)!;
         expect(size.x).toBe(120);
-        expect(size.y).toBe(39);
+        expect(size.y).toBe(40);
 
         terminal.resize(100, 30);
         root.update();
         expect(size.x).toBe(100);
-        expect(size.y).toBe(29);
+        expect(size.y).toBe(30);
 
         sizing.destroy();
         expect(terminal.resizeListenerCount).toBe(0);

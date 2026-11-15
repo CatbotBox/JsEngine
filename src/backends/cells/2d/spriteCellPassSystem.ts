@@ -6,7 +6,7 @@ import {LocalToWorld} from "../../../engine/translation";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
 import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {Sprite} from "../../../engine/rendering/2d/sprite";
-import {TextSpriteCellPassSettings} from "./textSpriteCellPassSettings";
+import {SpriteCellPassSettings} from "./spriteCellPassSettings";
 import {SpriteCellRasterizer} from "./spriteCellRasterizer";
 import {SpriteBoundsSystem} from "../../../engine/rendering/2d/spriteBoundsSystem";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
@@ -18,7 +18,7 @@ const CAMERA_DEPTH_EXTENT = 1000;
 const HALF_ROWS_PER_CELL = 2;
 
 export class SpriteCellPassSystem extends System {
-    private _settingsQuery = this.createEntityQuery([TextSpriteCellPassSettings]);
+    private _settingsQuery = this.createEntityQuery([SpriteCellPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
     private _objectQuery = this.createEntityQuery([Sprite, WorldSpaceRenderBounds], [HudElement]);
 
@@ -55,7 +55,7 @@ export class SpriteCellPassSystem extends System {
         const dualScreenBuffer = this.world.resources.tryGet(CellGrid);
         if (!dualScreenBuffer) return;
 
-        const settings = this._settingsQuery.getSingleton({settings: TextSpriteCellPassSettings}).settings;
+        const settings = this._settingsQuery.getSingleton({settings: SpriteCellPassSettings}).settings;
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,
             screenSize: ScreenSize,

@@ -51,6 +51,7 @@ function textColorEscape(color: TextColor, codes: SgrColorCodes): string {
     return `\x1b[${codes.reset}m`;
 }
 
+// A default colour adds no escape, so a style with no colours emits only its glyph.
 function backgroundStyleEscape(color: TextColor, codes: SgrColorCodes): string {
     return TextColor.isDefault(color) ? "" : textColorEscape(color, codes);
 }

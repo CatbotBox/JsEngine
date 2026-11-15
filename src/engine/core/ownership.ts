@@ -12,6 +12,7 @@ const worldOf: unknown[] = [];
 const archOf: unknown[] = [];
 const rowOf: number[] = [];
 const nameOf: (string | undefined)[] = [];
+// Scenes save entities in creation order (recycled indices would scramble index order), so save -> load -> save is identical.
 const creationOrderOf: number[] = [];
 const freeIndices: number[] = [];
 let nextIndex = 0;
@@ -99,6 +100,12 @@ export function getEntityName(entity: Entity): string | undefined {
     const i = entity & ENTITY_INDEX_MASK;
     if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return undefined;
     return nameOf[i];
+}
+
+export function setEntityName(entity: Entity, name: string | undefined): void {
+    const i = entity & ENTITY_INDEX_MASK;
+    if (generations[i] !== entity >>> ENTITY_INDEX_BITS) return;
+    nameOf[i] = name;
 }
 
 export function getEntityCreationOrder(entity: Entity): number | undefined {

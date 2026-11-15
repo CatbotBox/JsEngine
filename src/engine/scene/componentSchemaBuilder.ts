@@ -1,9 +1,11 @@
-import type {Component, ComponentCtor, Entity} from "../core";
+import type {Component, ComponentCtor, Entity, Resource} from "../core";
+import type {ResourceCtor} from "../core/resource";
 import type {Vec3, Vec4} from "../math/types/vec";
 import type {TextColor} from "../rendering/textColor";
 import type {Mesh} from "../rendering/3d/mesh";
 import type {SpriteImage} from "../rendering/2d/spriteImage";
-import type {ComponentPersistence, ComponentSchema, EnumMember, EnumValue, FieldSchema, PlainFieldKind} from "./fieldSchema";
+import {DEFAULT_COMPONENT_CATEGORY} from "./fieldSchema";
+import type {ComponentPersistence, ComponentSchema, EnumMember, EnumValue, FieldSchema, PlainFieldKind, ResourceSchema} from "./fieldSchema";
 
 type SameModifiers<X, Y> = (<G>() => G extends X ? 1 : 2) extends (<G>() => G extends Y ? 1 : 2) ? true : false;
 
@@ -11,6 +13,7 @@ export type KeysOfType<T, V> = {
     [K in keyof T]-?: [T[K]] extends [V] ? ([V] extends [T[K]] ? K : never) : never
 }[keyof T];
 
+// A key is writable when its one-key slice is identical to the same slice with readonly stripped; SameModifiers sees modifiers that extends ignores.
 export type WritableKeys<T> = {
     [K in keyof T]-?: SameModifiers<{ [Q in K]: T[K] }, { -readonly [Q in K]: T[K] }> extends true ? K : never
 }[keyof T];
@@ -23,14 +26,8 @@ export interface EntityFieldOptions {
 
 const NULLABLE_ENTITY_FIELD: EntityFieldOptions = {nullable: true};
 
-export class ComponentSchemaBuilder<T extends Component> {
-    private readonly _fields: FieldSchema[] = [];
-    private _persistence: ComponentPersistence = "fields";
-    private _create: () => T;
-
-    public constructor(private readonly _ctor: ComponentCtor<T>, private readonly _name: string) {
-        this._create = () => new _ctor();
-    }
+export abstract class FieldListBuilder<T extends object> {
+    protected readonly _fields: FieldSchema[] = [];
 
     public number(key: FieldKey<T, number>): this {
         return this.plain(key, "number");
@@ -93,6 +90,22 @@ export class ComponentSchemaBuilder<T extends Component> {
         return this.plain(key, "spriteImage");
     }
 
+    private plain(key: string, kind: PlainFieldKind): this {
+        this._fields.push({key, kind});
+        return this;
+    }
+}
+
+export class ComponentSchemaBuilder<T extends Component> extends FieldListBuilder<T> {
+    private _persistence: ComponentPersistence = "fields";
+    private _category: string = DEFAULT_COMPONENT_CATEGORY;
+    private _create: () => T;
+
+    public constructor(private readonly _ctor: ComponentCtor<T>, private readonly _name: string) {
+        super();
+        this._create = () => new _ctor();
+    }
+
     public presenceOnly(): this {
         this._persistence = "presenceOnly";
         return this;
@@ -100,6 +113,11 @@ export class ComponentSchemaBuilder<T extends Component> {
 
     public implied(): this {
         this._persistence = "implied";
+        return this;
+    }
+
+    public category(category: string): this {
+        this._category = category;
         return this;
     }
 
@@ -114,16 +132,40 @@ export class ComponentSchemaBuilder<T extends Component> {
             ctor: this._ctor,
             persistence: this._persistence,
             fields: Object.freeze([...this._fields]),
+            category: this._category,
+            inferred: false,
             create: this._create,
         });
     }
+}
 
-    private plain(key: string, kind: PlainFieldKind): this {
-        this._fields.push({key, kind});
+export class ResourceSchemaBuilder<T extends Resource> extends FieldListBuilder<T> {
+    private _create: () => T;
+
+    public constructor(private readonly _ctor: ResourceCtor<T>, private readonly _name: string) {
+        super();
+        this._create = () => new _ctor();
+    }
+
+    public create(factory: () => T): this {
+        this._create = factory;
         return this;
+    }
+
+    public build(): ResourceSchema<T> {
+        return Object.freeze({
+            name: this._name,
+            ctor: this._ctor,
+            fields: Object.freeze([...this._fields]),
+            create: this._create,
+        });
     }
 }
 
 export function componentSchema<T extends Component>(ctor: ComponentCtor<T>, name: string): ComponentSchemaBuilder<T> {
     return new ComponentSchemaBuilder(ctor, name);
+}
+
+export function resourceSchema<T extends Resource>(ctor: ResourceCtor<T>, name: string): ResourceSchemaBuilder<T> {
+    return new ResourceSchemaBuilder(ctor, name);
 }

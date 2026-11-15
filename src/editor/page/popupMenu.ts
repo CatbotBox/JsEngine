@@ -1,0 +1,69 @@
+import {createElement} from "./dom";
+
+export interface MenuAction {
+    readonly label: string;
+    readonly shortcut?: string;
+    readonly disabled?: boolean;
+    readonly run: () => void;
+}
+
+export const MENU_SEPARATOR = "separator";
+
+export type MenuItem = MenuAction | typeof MENU_SEPARATOR;
+
+const VIEWPORT_MARGIN_PX = 4;
+const openMenus = new WeakMap<Document, () => void>();
+
+export function closePopupMenu(document: Document): void {
+    openMenus.get(document)?.();
+}
+
+export function showPopupMenu(document: Document, clientX: number, clientY: number, items: readonly MenuItem[]): void {
+    closePopupMenu(document);
+    const menu = createElement(document, "div", "popup-menu");
+    menu.setAttribute("role", "menu");
+    menu.tabIndex = -1;
+    const close = (): void => {
+        menu.remove();
+        document.removeEventListener("pointerdown", onOutside, true);
+        document.removeEventListener("keydown", onKey, true);
+        if (openMenus.get(document) === close) openMenus.delete(document);
+    };
+    const onOutside = (event: Event): void => {
+        if (event.target instanceof Node && menu.contains(event.target)) return;
+        close();
+    };
+    const onKey = (event: KeyboardEvent): void => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+    };
+    for (const item of items) {
+        if (item === MENU_SEPARATOR) {
+            menu.append(createElement(document, "div", "popup-menu-separator"));
+            continue;
+        }
+        const entry = createElement(document, "button", "popup-menu-item");
+        entry.type = "button";
+        entry.setAttribute("role", "menuitem");
+        entry.disabled = item.disabled === true;
+        entry.append(createElement(document, "span", "popup-menu-label", item.label));
+        if (item.shortcut !== undefined) entry.append(createElement(document, "span", "popup-menu-shortcut", item.shortcut));
+        entry.addEventListener("click", () => {
+            close();
+            item.run();
+        });
+        menu.append(entry);
+    }
+    document.body.append(menu);
+    const view = document.defaultView;
+    const maxLeft = (view?.innerWidth ?? clientX + menu.offsetWidth) - menu.offsetWidth - VIEWPORT_MARGIN_PX;
+    const maxTop = (view?.innerHeight ?? clientY + menu.offsetHeight) - menu.offsetHeight - VIEWPORT_MARGIN_PX;
+    menu.style.left = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(clientX, maxLeft))}px`;
+    menu.style.top = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(clientY, maxTop))}px`;
+    openMenus.set(document, close);
+    document.addEventListener("pointerdown", onOutside, true);
+    document.addEventListener("keydown", onKey, true);
+    menu.focus();
+}

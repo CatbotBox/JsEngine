@@ -1,4 +1,4 @@
-export {TextSpriteCellPassSettings} from "./textSpriteCellPassSettings";
+export {SpriteCellPassSettings} from "./spriteCellPassSettings";
 export {SpriteCellPassSystem} from "./spriteCellPassSystem";
 export {HudSpriteCellPassSystem} from "./hudSpriteCellPassSystem";
 export {SpriteCellRasterizer} from "./spriteCellRasterizer";

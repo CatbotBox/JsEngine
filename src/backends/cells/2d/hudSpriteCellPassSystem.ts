@@ -7,7 +7,7 @@ import {anchorFractionX, anchorFractionY, ScreenAnchor} from "../../../engine/re
 import {RenderBoundsOffset} from "../../../engine/rendering/renderBoundsOffset";
 import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {Sprite} from "../../../engine/rendering/2d/sprite";
-import {TextSpriteCellPassSettings} from "./textSpriteCellPassSettings";
+import {SpriteCellPassSettings} from "./spriteCellPassSettings";
 import {SpriteCellRasterizer} from "./spriteCellRasterizer";
 
 const DEFAULT_ANCHOR = new ScreenAnchor();
@@ -16,7 +16,7 @@ const PRIORITY_BEFORE_TEXT_HUD = 99;
 const HALF_ROWS_PER_CELL = 2;
 
 export class HudSpriteCellPassSystem extends System {
-    private _settingsQuery = this.createEntityQuery([TextSpriteCellPassSettings]);
+    private _settingsQuery = this.createEntityQuery([SpriteCellPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _hudObjectQuery = this.createEntityQuery([Sprite, HudElement]);
 
@@ -40,7 +40,7 @@ export class HudSpriteCellPassSystem extends System {
         const dualScreenBuffer = this.world.resources.tryGet(CellGrid);
         if (!dualScreenBuffer) return;
 
-        const settings = this._settingsQuery.getSingleton({settings: TextSpriteCellPassSettings}).settings;
+        const settings = this._settingsQuery.getSingleton({settings: SpriteCellPassSettings}).settings;
         const cameraEntity = this._cameraQuery.getSingleton({
             screenSize: ScreenSize,
         });

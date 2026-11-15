@@ -2,6 +2,7 @@ import {describe, expect, test} from "../engine/testing/harness";
 import {
     EDITOR_MESSAGE_TYPE,
     ENTITY_HANDLE_LIMIT,
+    isEditorEventMessage,
     isEditorRequest,
     isEditorRequestMessage,
     isEditorResponseMessage,
@@ -36,6 +37,30 @@ describe("editor protocol guards", () => {
             {op: "setMode", mode: "play"},
             {op: "setMode", mode: "paused"},
             {op: "step"},
+            {op: "renameEntity", entity: ENTITY, name: "box"},
+            {op: "renameEntity", entity: ENTITY, name: null},
+            {op: "setFields", edits: []},
+            {op: "setFields", edits: [{entity: ENTITY, typeName: "LocalPosition", key: "xyz", value: [1, 2, 3]}]},
+            {op: "setParent", entity: ENTITY, parent: null},
+            {op: "setParent", entity: ENTITY, parent: ENTITY, siblingIndex: 0},
+            {op: "duplicateEntities", entities: [ENTITY]},
+            {op: "serializeEntities", entities: []},
+            {op: "instantiateEntities", documentText: "{}"},
+            {op: "instantiateEntities", documentText: "{}", parent: null, siblingIndex: 2, prefabSourcePath: "a.prefab.json"},
+            {op: "getPrefabOverrides", entity: ENTITY},
+            {op: "revertPrefabInstance", entity: ENTITY},
+            {op: "revertPrefabInstance", entity: ENTITY, paths: ["0/LocalPosition.xyz"]},
+            {op: "applyPrefabInstance", entity: ENTITY},
+            {op: "updatePrefabInstances", sourcePath: "a.prefab.json", documentText: "{}"},
+            {op: "pickEntities", x: 1.5, y: -2, view: "scene"},
+            {op: "setView", view: "game"},
+            {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, 1]},
+            {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, 1], fieldOfViewDegrees: 60},
+            {op: "getViewInfo", view: "scene"},
+            {op: "getViewInfo", view: "game", entities: [ENTITY]},
+            {op: "exportSnapshot"},
+            {op: "importSnapshot", documentText: "{}", mode: "edit"},
+            {op: "importSnapshot", documentText: "{}", editSnapshotText: "{}", editSnapshotRecords: [0, -1], mode: "play", gameplayTicks: 4},
         ];
         expect(requests.filter(request => !isEditorRequest(request))).toEqual([]);
         expect(requests.every(request => isEditorRequestMessage(message(request)))).toBe(true);
@@ -62,6 +87,30 @@ describe("editor protocol guards", () => {
             {op: "setEnabled", entity: ENTITY, enabled: "yes"},
             {op: "loadScene", sceneText: {}},
             {op: "setMode", mode: "stopped"},
+            {op: "renameEntity", entity: ENTITY},
+            {op: "renameEntity", entity: ENTITY, name: 3},
+            {op: "setFields"},
+            {op: "setFields", edits: [{entity: ENTITY, typeName: "LocalPosition", key: "xyz"}]},
+            {op: "setParent", entity: ENTITY},
+            {op: "setParent", entity: ENTITY, parent: null, siblingIndex: -1},
+            {op: "setParent", entity: ENTITY, parent: null, siblingIndex: 0.5},
+            {op: "duplicateEntities", entities: [ENTITY, "x"]},
+            {op: "serializeEntities"},
+            {op: "instantiateEntities"},
+            {op: "instantiateEntities", documentText: "{}", parent: "root"},
+            {op: "instantiateEntities", documentText: "{}", prefabSourcePath: 1},
+            {op: "revertPrefabInstance", entity: ENTITY, paths: [1]},
+            {op: "updatePrefabInstances", documentText: "{}"},
+            {op: "pickEntities", x: Number.NaN, y: 0, view: "scene"},
+            {op: "pickEntities", x: 0, y: 0, view: "top"},
+            {op: "setView", view: "both"},
+            {op: "setEditorCamera", position: [0, 1], rotation: [0, 0, 0, 1]},
+            {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, Number.POSITIVE_INFINITY]},
+            {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, 1], fieldOfViewDegrees: 180},
+            {op: "getViewInfo", view: "game", entities: ENTITY},
+            {op: "importSnapshot", documentText: "{}"},
+            {op: "importSnapshot", documentText: "{}", mode: "edit", editSnapshotRecords: [-2]},
+            {op: "importSnapshot", documentText: "{}", mode: "edit", gameplayTicks: -1},
         ];
         expect(requests.filter(request => isEditorRequest(request))).toEqual([]);
     });
@@ -85,6 +134,31 @@ describe("editor protocol guards", () => {
         expect(isEditorResponseMessage({type: "frame", requestId: REQUEST_ID, ok: true, result: 1})).toBe(false);
         expect(isEditorResponseMessage(message({op: "listEntities"}))).toBe(false);
         expect(isEditorRequestMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: true, result: {}})).toBe(false);
+    });
+
+    test("event messages carry a typed event and no request id, and are neither requests nor responses", () => {
+        const events: unknown[] = [
+            {kind: "console", level: "warn", text: "careful", timeMs: 12},
+            {kind: "worldStopped", error: "boom"},
+            {kind: "modeChanged", mode: "play", gameplayTicks: 3, view: "game"},
+        ];
+        for (const event of events) {
+            const eventMessage = {type: EDITOR_MESSAGE_TYPE, event};
+            expect(isEditorEventMessage(eventMessage)).toBe(true);
+            expect(isEditorResponseMessage(eventMessage)).toBe(false);
+            expect(isEditorRequestMessage(eventMessage)).toBe(false);
+            expect(requestIdOfMalformedEditorRequest(eventMessage)).toBeUndefined();
+        }
+        const malformed: unknown[] = [
+            {kind: "console", level: "trace", text: "x", timeMs: 1},
+            {kind: "console", level: "log", text: 1, timeMs: 1},
+            {kind: "worldStopped"},
+            {kind: "modeChanged", mode: "play", gameplayTicks: 3},
+            {kind: "explode"},
+        ];
+        expect(malformed.filter(event => isEditorEventMessage({type: EDITOR_MESSAGE_TYPE, event}))).toEqual([]);
+        expect(isEditorEventMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, event: events[1]})).toBe(false);
+        expect(isEditorEventMessage({type: "status", event: events[1]})).toBe(false);
     });
 
     test("only an editor message with a request id but no valid request counts as malformed", () => {

@@ -12,6 +12,7 @@ export interface MemoryTerminalOptions {
     readonly interactive?: boolean;
 }
 
+// Satisfies the terminal host's TerminalOutput and TerminalInputSource structurally: engine/testing may not import hosts.
 export class MemoryTerminal {
     public readonly chunks: string[] = [];
     public interactive: boolean;

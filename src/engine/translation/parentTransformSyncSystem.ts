@@ -29,11 +29,11 @@ export class ParentTransformSyncSystem extends System {
 
     onUpdate() {
         const token = this._parentTransformToken;
-        const now = performance.now();
+        const stamp = this.world.changeStamps.current;
 
         this._parentQuery.stream({read: {children: Children, localToWorld: LocalToWorld}},
             {
-                filterLastUpdated: this.lastUpdateTime,
+                filterLastUpdated: this.lastUpdateStamp,
             })
             .consumeSpans(({start, end, cols, stores}) => {
                 const l2w = cols.localToWorld!;
@@ -60,7 +60,7 @@ export class ParentTransformSyncSystem extends System {
                         }
                         if (same) continue;
                         for (let k = 0; k < MAT4_FLOATS; k++) pt[cOff + k] = l2w[pOff + k];
-                        ptStore.markBlockAt(row, now);
+                        ptStore.markBlockAt(row, stamp);
                     }
                 }
             })

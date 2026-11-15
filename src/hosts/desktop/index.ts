@@ -1,1 +1,14 @@
 export type {PackagedLaunch} from "./main";
+export {contentTypeOf, distFileFor, ISOLATION_HEADERS, QUERY_OR_FRAGMENT} from "./webDistFiles";
+export {
+    buildProjectEditorWorker,
+    createProjectServer,
+    isInsideDirectory,
+    locateBun,
+    LOOPBACK_HOSTNAMES,
+    projectBuildDirectory,
+    ProjectServer,
+} from "./projectServer";
+export type {BunLocation, ProjectBuildOutcome, ProjectBuildRequest, ProjectServerOptions, ProjectWorkerBuildError, ProjectWorkerBuildReport} from "./projectServer";
+export {SERVER_SENT_EVENT_HEARTBEAT_MS, ServerSentEventChannel, serverSentEventText} from "./serverSentEvents";
+export type {ServerSentEventChannelOptions} from "./serverSentEvents";

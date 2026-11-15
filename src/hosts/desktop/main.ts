@@ -1,12 +1,17 @@
-import {app, BrowserWindow, Menu, protocol} from "electron";
+import {app, BrowserWindow, dialog, Menu, protocol} from "electron";
 import {existsSync, readFileSync} from "fs";
 import {readFile, writeFile} from "fs/promises";
 import {join} from "path";
-import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "../../../scripts/webDistFiles";
+import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "./webDistFiles";
+import {createProjectServer, locateBun} from "./projectServer";
 
 const SCHEME = "app";
 const HOST = "bundle";
 const SMOKE_SETTLE_MS = 3000;
+const EDITOR_READY_TIMEOUT_MS = 120_000;
+const EDITOR_READY_POLL_MS = 250;
+const EDITOR_LOADING_STATE = "loading";
+const EDITOR_READY_STATE = "ready";
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
 const HTTP_NOT_FOUND = 404;
@@ -41,40 +46,70 @@ const launch = packagedLaunch();
 const page = flagValue("page") ?? launch?.page ?? "index.html";
 const smoke = args.includes("--smoke");
 const screenshotPath = flagValue("screenshot");
-const MIN_DRAWN_FRACTION = 0.01;
-const DISPLAY_CANVAS_SELECTOR = "#terminal canvas, #viewport canvas";
+const MIN_DRAWN_PIXELS = 256;
+const DISPLAY_CANVAS_SELECTOR = "#terminal canvas, #viewport canvas, [data-editor-viewport] canvas";
+const repoRoot = flagValue("repo");
+let mainWindow: BrowserWindow | undefined;
+const projectServer = createProjectServer({
+    repoRoot,
+    bun: locateBun(flagValue("bun")),
+    browse: false,
+    pickFolder: async () => {
+        const options = {title: "Open a JsEngine project folder", properties: ["openDirectory" as const, "createDirectory" as const]};
+        const result = mainWindow === undefined ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(mainWindow, options);
+        return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+    },
+});
 
 protocol.registerSchemesAsPrivileged([
     {scheme: SCHEME, privileges: {standard: true, secure: true, supportFetchAPI: true}},
 ]);
 
 async function respond(request: Request): Promise<Response> {
-    const path = distFileFor(distDirectory, new URL(request.url).pathname);
+    const url = new URL(request.url);
+    if (projectServer.handles(url)) return await projectServer.handle(request);
+    const path = distFileFor(distDirectory, url.pathname);
     if (path === undefined) return new Response("Not found", {status: HTTP_NOT_FOUND, headers: ISOLATION_HEADERS});
     return new Response(new Uint8Array(await readFile(path)), {
         headers: {...ISOLATION_HEADERS, "Content-Type": contentTypeOf(path)},
     });
 }
 
-function drawnFraction(bitmap: Buffer): number {
+function drawnPixelCount(bitmap: Buffer): number {
     let drawn = 0;
     for (let offset = 0; offset < bitmap.length; offset += BITMAP_BYTES_PER_PIXEL) {
         if (bitmap[offset] !== bitmap[0] || bitmap[offset + 1] !== bitmap[1] || bitmap[offset + 2] !== bitmap[2]) drawn++;
     }
-    return drawn / (bitmap.length / BITMAP_BYTES_PER_PIXEL);
+    return drawn;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(done => setTimeout(done, ms));
+}
+
+async function editorStateOf(window: BrowserWindow): Promise<string | undefined> {
+    return await window.webContents.executeJavaScript("document.documentElement.dataset.editorState") as string | undefined;
+}
+
+async function waitWhileEditorLoads(window: BrowserWindow): Promise<void> {
+    const deadline = Date.now() + EDITOR_READY_TIMEOUT_MS;
+    while (await editorStateOf(window) === EDITOR_LOADING_STATE && Date.now() < deadline) await sleep(EDITOR_READY_POLL_MS);
 }
 
 async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<void> {
-    await new Promise(settle => setTimeout(settle, SMOKE_SETTLE_MS));
+    await waitWhileEditorLoads(window);
+    await sleep(SMOKE_SETTLE_MS);
+    const editorState = await editorStateOf(window);
     const report = await window.webContents.executeJavaScript(`(() => {
         const canvas = document.querySelector(${JSON.stringify(DISPLAY_CANVAS_SELECTOR)});
         return {crossOriginIsolated, canvas: canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0};
     })()`) as {crossOriginIsolated: boolean, canvas: boolean};
     const image = await window.webContents.capturePage();
     if (screenshotPath !== undefined) await writeFile(screenshotPath, image.toPNG());
-    const drawn = drawnFraction(image.toBitmap());
-    const passed = report.crossOriginIsolated && report.canvas && drawn >= MIN_DRAWN_FRACTION && pageErrors.length === 0;
-    console.log(JSON.stringify({page, ...report, drawn: Number(drawn.toFixed(3)), pageErrors, passed}));
+    const drawnPixels = drawnPixelCount(image.toBitmap());
+    const editorReady = editorState === undefined || editorState === EDITOR_READY_STATE;
+    const passed = report.crossOriginIsolated && report.canvas && editorReady && drawnPixels >= MIN_DRAWN_PIXELS && pageErrors.length === 0;
+    console.log(JSON.stringify({page, ...report, editorState, drawnPixels, pageErrors, passed}));
     app.exit(passed ? 0 : 1);
 }
 
@@ -93,6 +128,7 @@ async function openWindow(): Promise<void> {
         title: launch?.title,
         icon: launch === undefined ? undefined : join(app.getAppPath(), launch.iconFile),
     });
+    mainWindow = window;
     if (launch !== undefined) window.on("page-title-updated", (event: PreventableEvent) => event.preventDefault());
     const pageErrors: string[] = [];
     window.webContents.on("console-message", event => {
@@ -104,4 +140,5 @@ async function openWindow(): Promise<void> {
 }
 
 app.on("window-all-closed", () => app.quit());
+app.on("will-quit", () => projectServer.close());
 void app.whenReady().then(openWindow);

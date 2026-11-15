@@ -2,7 +2,6 @@ import type {PreloadedFileSource, PreloadProgress} from "../../../src/hosts/web/
 import type {PageConnection} from "../../../src/hosts/web/worldWorkerPlatform";
 import type {DemoModel, DemoModelFiles} from "../game";
 import type {Demo3dManifest} from "../assets";
-import {normalizePath} from "../../../src/engine/platform";
 
 const MANIFEST_URL = "3d-manifest.json";
 
@@ -43,9 +42,4 @@ export function manifestModelFiles(manifest: Demo3dManifest, files: PreloadedFil
         ready: model => !pathsOf(model).some(path => files.isPending(path)),
         fetch: (model, onProgress) => files.ensureLoaded(pathsOf(model), progress => onProgress(progress.loadedBytes, progress.totalBytes)),
     };
-}
-
-export function manifestFilesForAssets(manifest: Demo3dManifest, paths: readonly string[]): string[] {
-    const filesByModel = new Map(manifest.models.map(model => [normalizePath(model.path), model.files]));
-    return paths.flatMap(path => filesByModel.get(normalizePath(path)) ?? [path]);
 }

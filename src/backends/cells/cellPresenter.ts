@@ -3,6 +3,7 @@ import type {CellFrame} from "./cellFrame";
 export interface CellPresenterSize {
     readonly columns: number;
     readonly rows: number;
+    readonly reservedRows?: number;
 }
 
 export type CellRepaint = "full" | "changes";

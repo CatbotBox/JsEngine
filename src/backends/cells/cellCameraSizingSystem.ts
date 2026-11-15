@@ -6,7 +6,7 @@ import {ScreenSize} from "../../engine/rendering/screenSize";
 import {CellPresenterResource} from "./cellPresenterResource";
 import type {CellPresenterSize} from "./cellPresenter";
 
-const PROMPT_ROWS = 1;
+const NO_RESERVED_ROWS = 0;
 
 export interface CellFrameSize {
     readonly x: number;
@@ -20,8 +20,8 @@ export class CellCameraSizingSystem extends System {
     private _sizeStale: boolean = true;
     private _stopWatchingResize: (() => void) | undefined;
 
-    public static frameSizeFor({columns, rows}: CellPresenterSize): CellFrameSize {
-        return {x: columns, y: rows - PROMPT_ROWS};
+    public static frameSizeFor({columns, rows, reservedRows = NO_RESERVED_ROWS}: CellPresenterSize): CellFrameSize {
+        return {x: columns, y: rows - reservedRows};
     }
 
     override systemGroup() {

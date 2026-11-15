@@ -3,6 +3,9 @@ import {joinPath, normalizePath} from "../../src/engine/platform";
 import {Mesh} from "../../src/engine/rendering/3d";
 import type {DemoModel} from "./game";
 import {findDemoModels} from "./models";
+import {DEFAULT_LAZY_MODEL_BYTES} from "./projectModels";
+
+export {DEFAULT_LAZY_MODEL_BYTES};
 
 export interface ManifestFile {
     readonly path: string;
@@ -26,7 +29,6 @@ export interface Demo3dManifestOptions {
     readonly lazyModelBytes?: number;
 }
 
-export const DEFAULT_LAZY_MODEL_BYTES = 16 * 1024 * 1024;
 const WRITABLE = true;
 
 export class RecordingFileSource implements FileSource {

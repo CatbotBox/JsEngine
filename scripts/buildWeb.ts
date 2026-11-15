@@ -6,6 +6,7 @@ import type {Demo3dManifest, ManifestFile} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
 import type {RenderBackend} from "../src/hosts/web/worldWorkerProtocol";
 import {EDITOR_MESSAGE_TYPE} from "../src/editor/editorProtocol";
+import {DEV_RELOAD_DEFINE} from "../src/hosts/web/devReload";
 
 const ROOT = resolve(__dirname, "..");
 const WEB = join(ROOT, "src", "hosts", "web");
@@ -40,8 +41,6 @@ const ENTRY_POINTS: readonly EntryPoint[] = [
     {source: join(WEB, "swarm-pixels.ts"), output: "swarm-pixels", backend: "pixels"},
     {source: join(DEMO, "swarm", "launch", "web.worker.ts"), output: "worldswarm.worker", backend: "cells"},
     {source: join(DEMO, "swarm", "launch", "pixelWeb.worker.ts"), output: "worldswarm-pixels.worker", backend: "pixels"},
-    {source: join(DEMO, "2d", "launch", "editor.worker.ts"), output: "editor2d.worker", backend: "pixels", role: "editor"},
-    {source: join(DEMO, "3d", "launch", "editor.worker.ts"), output: "editor3d.worker", backend: "pixels", role: "editor"},
     {source: join(EDITOR_LAUNCH, "editor.ts"), output: "editor", backend: "pixels", role: "editor"},
 ];
 const DEFAULT_BUNDLE_ROLE: BundleRole = "game";
@@ -56,7 +55,7 @@ const PRESENTER_MISSING_MESSAGES: Readonly<Record<RenderBackend, string>> = {
 const STATIC_FILES: readonly [from: string, to: string][] =
     ["index.html", "2d.html", "3d.html", "swarm.html", "demo.css", "coi-serviceworker.js", "_headers"].map((name): [string, string] => [join(WEB, name), name]);
 const EDITOR_STATIC_FILES: readonly [from: string, to: string][] =
-    ["editor.html", "editor.css"].map((name): [string, string] => [join(EDITOR_LAUNCH, name), name]);
+    ["editor.html", "editor.css", "editorStart.css"].map((name): [string, string] => [join(EDITOR_LAUNCH, name), name]);
 const COPIED_STATIC_FILES = WITH_EDITOR ? [...STATIC_FILES, ...EDITOR_STATIC_FILES] : STATIC_FILES;
 const GITHUB_PAGES_NO_JEKYLL = ".nojekyll";
 
@@ -77,8 +76,8 @@ const FIRST_LOADS: readonly FirstLoad[] = [
     {page: "2d.html?backend=pixels", files: ["2d.html", "demo.css", "2d.js", "2d-pixels.js", "world2d-pixels.worker.js"], fetchesDemo3dAssets: false},
     {page: "3d.html", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-cells.js", "world3d.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
     {page: "3d.html?backend=pixels", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-pixels.js", "world3d-pixels.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
-    {page: "swarm.html", files: ["swarm.html", "demo.css", "swarm.js", "swarm-cells.js", "worldswarm.worker.js"], fetchesDemo3dAssets: false},
-    {page: "swarm.html?backend=pixels", files: ["swarm.html", "demo.css", "swarm.js", "swarm-pixels.js", "worldswarm-pixels.worker.js"], fetchesDemo3dAssets: false},
+    {page: "swarm.html?backend=cells", files: ["swarm.html", "demo.css", "swarm.js", "swarm-cells.js", "worldswarm.worker.js"], fetchesDemo3dAssets: false},
+    {page: "swarm.html", files:["swarm.html", "demo.css", "swarm.js", "swarm-pixels.js", "worldswarm-pixels.worker.js"], fetchesDemo3dAssets: false},
 ];
 
 const MIN_GZIP_SAVING_FRACTION = 0.1;
@@ -131,6 +130,7 @@ function otherBackendsIn(entry: EntryPoint, text: string): string[] {
         .map(backend => `${siteRelative(bundlePath(entry))}: the ${backend} presenter is in a ${entry.backend ?? BOOTSTRAP_BUNDLE} bundle ("${PRESENTER_MISSING_MESSAGES[backend]}")`);
 }
 
+// The leak check matches presenter messages by text; fail if a backend's own bundles lack its message, i.e. the source message changed.
 function backendMarkersNotFound(textByEntry: ReadonlyMap<EntryPoint, string>): string[] {
     return RENDER_BACKENDS
         .filter(backend => ![...textByEntry].some(([entry, text]) => entry.backend === backend && text.includes(PRESENTER_MISSING_MESSAGES[backend])))
@@ -246,6 +246,7 @@ async function buildEachEntrySeparately(): Promise<void> {
             target: "browser",
             sourcemap: "linked",
             minify: PROD,
+            define: {[DEV_RELOAD_DEFINE]: JSON.stringify(!PROD)},
         });
         if (!result.success) {
             for (const message of result.logs) console.error(message);

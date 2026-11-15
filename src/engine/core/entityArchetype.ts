@@ -5,6 +5,7 @@ import {Entity} from "./entity";
 import {AnyCT} from "../util/tokenUtils";
 import {getEntityName, getEntityRow, getOwner, setEntityRow} from "./ownership";
 import {WorldSource} from "./worldSource";
+import type {ChangeStampCounter} from "./changeStampCounter";
 
 export class ComponentLookup<T extends Component, CT extends ComponentType<T> = ComponentType<T>, MISC extends AnyCT[] = []> {
     private readonly _token: ComponentType<T>
@@ -26,7 +27,7 @@ export class ComponentLookup<T extends Component, CT extends ComponentType<T> = 
         const componentStore = archetype.getColumn(this._token);
         if (!componentStore) return undefined;
         if (this._options && this._options.filterLastUpdated !== undefined &&
-            (archetype.lastStructuralChangeTime > this._options.filterLastUpdated || componentStore.lastUpdatedTime > this._options.filterLastUpdated)) {
+            (archetype.lastStructuralChangeStamp >= this._options.filterLastUpdated || componentStore.lastChangeStamp >= this._options.filterLastUpdated)) {
             return undefined;
         }
         const id = archetype.getIndexOfEntity(entity);
@@ -93,18 +94,18 @@ export class ComponentStore<CT extends ComponentType<any>> {
         return view;
     }
 
-    private _lastUpdatedTime: number = 0;
+    private _lastChangeStamp: number = 0;
 
-    private _blockTimes = new Float64Array(INITIAL_BLOCK_CAPACITY);
+    private _blockStamps = new Float64Array(INITIAL_BLOCK_CAPACITY);
 
-    public get lastUpdatedTime(): number {
-        return this._lastUpdatedTime;
+    public get lastChangeStamp(): number {
+        return this._lastChangeStamp;
     }
 
-    public set lastUpdatedTime(value: number) {
-        if (this._lastUpdatedTime > value) return;
-        this._lastUpdatedTime = value;
-        this._blockTimes.fill(value, 0, this.blockCount);
+    public set lastChangeStamp(value: number) {
+        if (this._lastChangeStamp > value) return;
+        this._lastChangeStamp = value;
+        this._blockStamps.fill(value, 0, this.blockCount);
     }
 
     public get blockCount(): number {
@@ -112,23 +113,23 @@ export class ComponentStore<CT extends ComponentType<any>> {
     }
 
     private ensureBlocks(count: number) {
-        if (count <= this._blockTimes.length) return;
-        let cap = this._blockTimes.length || INITIAL_BLOCK_CAPACITY;
+        if (count <= this._blockStamps.length) return;
+        let cap = this._blockStamps.length || INITIAL_BLOCK_CAPACITY;
         while (cap < count) cap *= 2;
         const grown = new Float64Array(cap);
-        grown.set(this._blockTimes);
-        this._blockTimes = grown;
+        grown.set(this._blockStamps);
+        this._blockStamps = grown;
     }
 
-    public markBlockAt(index: number, time: number) {
+    public markBlockAt(index: number, stamp: number) {
         const b = index >> BLOCK_SHIFT;
         this.ensureBlocks(b + 1);
-        if (this._blockTimes[b] < time) this._blockTimes[b] = time;
-        if (this._lastUpdatedTime < time) this._lastUpdatedTime = time;
+        if (this._blockStamps[b] < stamp) this._blockStamps[b] = stamp;
+        if (this._lastChangeStamp < stamp) this._lastChangeStamp = stamp;
     }
 
     public blockChangedSince(b: number, since: number): boolean {
-        return this._blockTimes[b] >= since;
+        return this._blockStamps[b] >= since;
     }
 
     public swapValues(indexA: number, indexB: number) {
@@ -150,7 +151,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
         }
     }
 
-    public add(component: ComponentOf<CT>, time: number) {
+    public add(component: ComponentOf<CT>, stamp: number) {
         const index = this._componentData.length;
         if (this._f32Width > 0) {
             this.ensureF32Capacity(index + 1);
@@ -162,10 +163,10 @@ export class ComponentStore<CT extends ComponentType<any>> {
             backed.writeF32(this._f32!, off);
             backed.bindF32(this.rowView(index));
         }
-        this.markBlockAt(index, time);
+        this.markBlockAt(index, stamp);
     }
 
-    public addFrom(source: ComponentStore<CT>, row: number, time: number) {
+    public addFrom(source: ComponentStore<CT>, row: number, stamp: number) {
         const index = this._componentData.length;
         const component = source._componentData[row];
         const width = this._f32Width;
@@ -177,7 +178,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
             for (let k = 0; k < width; k++) dst[off + k] = src[srcOff + k];
             (component as unknown as F32Backed).bindF32(this.rowView(index));
         }
-        this.markBlockAt(index, time);
+        this.markBlockAt(index, stamp);
     }
 
     public moveValue(from: number, to: number) {
@@ -201,21 +202,21 @@ export class ComponentStore<CT extends ComponentType<any>> {
         this._componentData.pop();
     }
 
-    public removeAll(time: number) {
+    public removeAll(stamp: number) {
         if (this._f32Width > 0) {
             const data = this._componentData;
             for (let i = 0; i < data.length; i++) (data[i] as unknown as F32Backed).detachF32();
         }
         this._componentData.length = 0;
-        this._blockTimes.fill(0);
-        this._lastUpdatedTime = time;
+        this._blockStamps.fill(0);
+        this._lastChangeStamp = stamp;
     }
 
     public get(index: number): ComponentOf<CT> {
         return this._componentData[index];
     }
 
-    public set(index: number, value: ComponentOf<CT>, time: number) {
+    public set(index: number, value: ComponentOf<CT>, stamp: number) {
         const old = this._componentData[index];
         this._componentData[index] = value;
         if (this._f32Width > 0) {
@@ -225,7 +226,7 @@ export class ComponentStore<CT extends ComponentType<any>> {
             backed.writeF32(this._f32!, off);
             backed.bindF32(this.rowView(index));
         }
-        this.markBlockAt(index, time);
+        this.markBlockAt(index, stamp);
     }
 }
 
@@ -249,9 +250,9 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     private _entities: Entity[] = [];
     private _enabledCount: number = 0;
 
-    private _lastStructuralChangeTime: number = 0;
+    private _lastStructuralChangeStamp: number = 0;
 
-    private _lastEntityAddedTime: number = 0;
+    private _lastEntityAddedStamp: number = 0;
 
     public get enabledEntityCount(): number {
         return this._enabledCount;
@@ -261,12 +262,12 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         return this._entities.length;
     }
 
-    public get lastStructuralChangeTime(): number {
-        return this._lastStructuralChangeTime;
+    public get lastStructuralChangeStamp(): number {
+        return this._lastStructuralChangeStamp;
     }
 
-    public get lastEntityAddedTime(): number {
-        return this._lastEntityAddedTime;
+    public get lastEntityAddedStamp(): number {
+        return this._lastEntityAddedStamp;
     }
 
     public columnIndexOf(token: CT): number {
@@ -279,7 +280,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         return this._componentData[index];
     }
 
-    public constructor(types: CT[]) {
+    public constructor(types: CT[], public readonly changeStamps: ChangeStampCounter) {
         const seen = new Set<CT>();
         const uniqueTypes = types.filter(t => (seen.has(t) ? false : (seen.add(t) || true)));
         const map = new Map<CT, number>();
@@ -292,73 +293,65 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         this.sortedTypeIds = Int32Array.from(uniqueTypes, t => t.id).sort();
     }
 
-    public addEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined, time: {
-        elapsedTimeMs: number
-    }) {
-        const now = time.elapsedTimeMs;
+    public addEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined) {
+        const stamp = this.changeStamps.current;
         const row = this.pushEntity(entity);
         this._uniqueTypes.forEach((type, idx) => {
             const component = components.get(type);
             if (!component) throw new Error("component of required type is missing");
-            this._componentData[idx].add(component, now);
+            this._componentData[idx].add(component, stamp);
         });
-        this.commitAppendedRow(row, enabled, now);
+        this.commitAppendedRow(row, enabled, stamp);
     }
 
-    public addEntityFromList(entity: Entity, tokens: readonly CT[], components: readonly ComponentOf<CT>[], enabled: boolean | undefined, time: {
-        elapsedTimeMs: number
-    }) {
-        const now = time.elapsedTimeMs;
+    public addEntityFromList(entity: Entity, tokens: readonly CT[], components: readonly ComponentOf<CT>[], enabled: boolean | undefined) {
+        const stamp = this.changeStamps.current;
         const row = this.pushEntity(entity);
         const types = this._uniqueTypes, cols = this._componentData;
         for (let i = 0; i < types.length; i++) {
             const at = tokens.indexOf(types[i]);
             if (at < 0) throw new Error("component of required type is missing");
-            cols[i].add(components[at], now);
+            cols[i].add(components[at], stamp);
         }
-        this.commitAppendedRow(row, enabled, now);
+        this.commitAppendedRow(row, enabled, stamp);
     }
 
-    public moveRowTo(entity: Entity, target: EntityArchetype<CT>, edge: ArchetypeEdge<CT>, added: ComponentOf<CT> | undefined, time: {
-        elapsedTimeMs: number
-    }) {
-        const now = time.elapsedTimeMs;
+    public moveRowTo(entity: Entity, target: EntityArchetype<CT>, edge: ArchetypeEdge<CT>, added: ComponentOf<CT> | undefined) {
+        const stamp = this.changeStamps.current;
         const row = this.getIndexOfEntity(entity);
         if (row === undefined) throw new Error("Entity does not exist");
         const columnMap = edge.columnMap;
         if (columnMap.length < this._componentData.length) this.detachDroppedAt(row, columnMap, columnMap.length);
-        target.appendRowFrom(entity, this, row, columnMap, added, undefined, row < this._enabledCount, now);
+        target.appendRowFrom(entity, this, row, columnMap, added, undefined, row < this._enabledCount, stamp);
         this.vacateRow(row);
-        this._lastStructuralChangeTime = now;
+        this._lastStructuralChangeStamp = stamp;
     }
 
-    public moveRowWith(entity: Entity, target: EntityArchetype<CT>, columnMap: Int32Array, supplied: readonly (ComponentOf<CT> | undefined)[], time: {
-        elapsedTimeMs: number
-    }) {
+    public moveRowWith(entity: Entity, target: EntityArchetype<CT>, columnMap: Int32Array, supplied: readonly (ComponentOf<CT> | undefined)[]) {
         if (target === this) throw new Error("moveRowWith needs a different archetype; rewrite the row in place instead");
-        const now = time.elapsedTimeMs;
+        const stamp = this.changeStamps.current;
         const row = this.getIndexOfEntity(entity);
         if (row === undefined) throw new Error("Entity does not exist");
         this.detachDroppedAt(row, columnMap, target._componentData.length);
-        target.appendRowFrom(entity, this, row, columnMap, undefined, supplied, row < this._enabledCount, now);
+        target.appendRowFrom(entity, this, row, columnMap, undefined, supplied, row < this._enabledCount, stamp);
         this.vacateRow(row);
-        this._lastStructuralChangeTime = now;
+        this._lastStructuralChangeStamp = stamp;
     }
 
-    private appendRowFrom(entity: Entity, source: EntityArchetype<CT>, sourceRow: number, columnMap: Int32Array, added: ComponentOf<CT> | undefined, supplied: readonly (ComponentOf<CT> | undefined)[] | undefined, enabled: boolean, now: number) {
+    private appendRowFrom(entity: Entity, source: EntityArchetype<CT>, sourceRow: number, columnMap: Int32Array, added: ComponentOf<CT> | undefined, supplied: readonly (ComponentOf<CT> | undefined)[] | undefined, enabled: boolean, stamp: number) {
         const row = this.pushEntity(entity);
         const cols = this._componentData, sourceCols = source._componentData;
         for (let i = 0; i < cols.length; i++) {
             const from = columnMap[i];
             if (from >= 0) {
-                cols[i].addFrom(sourceCols[from], sourceRow, now);
+                cols[i].addFrom(sourceCols[from], sourceRow, stamp);
                 continue;
             }
             const component = supplied !== undefined ? supplied[i] : added;
             if (component === undefined) throw new Error("component of required type is missing");
-            cols[i].add(component, now);
+            cols[i].add(component, stamp);
         }
-        this.commitAppendedRow(row, enabled, now);
+        this.commitAppendedRow(row, enabled, stamp);
     }
 
     private detachDroppedAt(row: number, columnMap: Int32Array, mappedColumns: number) {
@@ -375,46 +368,44 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         return row;
     }
 
-    private commitAppendedRow(row: number, enabled: boolean | undefined, now: number) {
+    private commitAppendedRow(row: number, enabled: boolean | undefined, stamp: number) {
         if (enabled !== undefined) {
-            this.setEnabledStateAtIndex(row, enabled, now);
+            this.setEnabledStateAtIndex(row, enabled, stamp);
         }
 
-        this._lastStructuralChangeTime = now;
-        this._lastEntityAddedTime = now;
+        this._lastStructuralChangeStamp = stamp;
+        this._lastEntityAddedStamp = stamp;
     }
 
-    public setEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined, time: {
-        elapsedTimeMs: number
-    }) {
+    public setEntity(entity: Entity, components: Map<CT, ComponentOf<CT>>, enabled: boolean | undefined) {
         const index = this.getIndexOfEntity(entity);
         if (index === undefined) throw new Error("Entity does not exist");
 
-        const now = time.elapsedTimeMs;
+        const stamp = this.changeStamps.current;
         if (enabled !== undefined) {
-            this.setEnabledStateAtIndex(index, enabled, now);
+            this.setEnabledStateAtIndex(index, enabled, stamp);
         }
 
         this._uniqueTypes.forEach((type, idx) => {
             const component = components.get(type);
             if (!component) throw new Error("component of required type is missing");
-            this._componentData[idx].set(index, component, now);
+            this._componentData[idx].set(index, component, stamp);
         });
 
-        this._lastStructuralChangeTime = now;
-        this._lastEntityAddedTime = now;
+        this._lastStructuralChangeStamp = stamp;
+        this._lastEntityAddedStamp = stamp;
     }
 
-    public removeAll(time: { elapsedTimeMs: number }) {
-        const now = time.elapsedTimeMs;
+    public removeAll() {
+        const stamp = this.changeStamps.current;
         for (let i = 0; i < this._entities.length; i++) setEntityRow(this._entities[i], -1);
         this._entities.length = 0;
         this._enabledCount = 0;
-        this._componentData.forEach((component) => component.removeAll(now));
-        this._lastStructuralChangeTime = now;
+        this._componentData.forEach((component) => component.removeAll(stamp));
+        this._lastStructuralChangeStamp = stamp;
     }
 
-    public removeEntity(entity: Entity, time: { elapsedTimeMs: number }) {
+    public removeEntity(entity: Entity) {
         const index = this.getIndexOfEntity(entity);
         if (index === undefined) throw new Error("Entity does not exist");
 
@@ -422,7 +413,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         for (let i = 0; i < cols.length; i++) cols[i].detachAt(index);
         setEntityRow(entity, -1);
         this.vacateRow(index);
-        this._lastStructuralChangeTime = time.elapsedTimeMs;
+        this._lastStructuralChangeStamp = this.changeStamps.current;
     }
 
     private vacateRow(row: number) {
@@ -448,9 +439,9 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         setEntityRow(moved, to);
     }
 
-    private markAllColumnsAt(index: number, time: number) {
+    private markAllColumnsAt(index: number, stamp: number) {
         const cols = this._componentData;
-        for (let i = 0; i < cols.length; i++) cols[i].markBlockAt(index, time);
+        for (let i = 0; i < cols.length; i++) cols[i].markBlockAt(index, stamp);
     }
 
     private swapDataAtIndices(a: number, b: number) {
@@ -466,24 +457,24 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         setEntityRow(eb, a);
     }
 
-    setEnabledStateForAll(enabled: boolean, time: { elapsedTimeMs: number }) {
-        const now = time.elapsedTimeMs;
+    setEnabledStateForAll(enabled: boolean) {
+        const stamp = this.changeStamps.current;
         if (enabled) this._enabledCount = this._entities.length;
         else this._enabledCount = 0;
-        this._lastStructuralChangeTime = now;
+        this._lastStructuralChangeStamp = stamp;
         if (enabled) {
-            this._lastEntityAddedTime = now;
-            for (const col of this._componentData) col.lastUpdatedTime = now;
+            this._lastEntityAddedStamp = stamp;
+            for (const col of this._componentData) col.lastChangeStamp = stamp;
         }
     }
 
-    public setEnabledState(entity: Entity, enabled: boolean, time: { elapsedTimeMs: number }): boolean {
+    public setEnabledState(entity: Entity, enabled: boolean): boolean {
         const entityIndex = this.getIndexOfEntity(entity);
         if (entityIndex === undefined) throw new Error("invalid entity");
-        return this.setEnabledStateAtIndex(entityIndex, enabled, time.elapsedTimeMs);
+        return this.setEnabledStateAtIndex(entityIndex, enabled, this.changeStamps.current);
     }
 
-    public setEnabledStateAtIndex(index: number, enabled: boolean, timestamp: number): boolean {
+    public setEnabledStateAtIndex(index: number, enabled: boolean, stamp: number): boolean {
         if (index < 0 || index >= this._entities.length) throw new Error("Index out of bounds");
         let boundary: number;
         if (enabled) {
@@ -497,10 +488,10 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
             this.swapDataAtIndices(index, boundary);
             this._enabledCount--;
         }
-        this._lastStructuralChangeTime = timestamp;
-        this.markAllColumnsAt(index, timestamp);
-        this.markAllColumnsAt(boundary, timestamp);
-        if (enabled) this._lastEntityAddedTime = timestamp;
+        this._lastStructuralChangeStamp = stamp;
+        this.markAllColumnsAt(index, stamp);
+        this.markAllColumnsAt(boundary, stamp);
+        if (enabled) this._lastEntityAddedStamp = stamp;
         return true;
     }
 

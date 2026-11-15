@@ -22,6 +22,7 @@ const REPEAT_COUNT_FIELD = 5;
 const ABSENT_FIELD_VALUE = 0;
 const ABSENT_REPEAT_COUNT = 1;
 const MIN_REPEAT_COUNT = 1;
+// The repeat count is a 16-bit field (KEY_EVENT_RECORD.wRepeatCount).
 const MAX_REPEAT_COUNT = 0xffff;
 const KEY_DOWN = 1;
 const LAST_UTF16_CODE_UNIT = 0xffff;

@@ -51,12 +51,6 @@ function expectViewsOwnRow(e: Entity, ctor: ComponentCtor<Component>, values: Fl
     expect(values.byteOffset).toBe(arch.getIndexOfEntity(e)! * col.f32Width * Float32Array.BYTES_PER_ELEMENT);
 }
 
-function timestampAfterPriorStamps(): number {
-    const clockReadingBefore = performance.now();
-    while (performance.now() === clockReadingBefore) {}
-    return performance.now();
-}
-
 describe("SoA column storage", () => {
     test("column-backed types declare their width on the token", () => {
         expect(ComponentType.of(LocalPosition).f32Width).toBe(3);
@@ -207,7 +201,7 @@ describe("consumeSpans (column query path)", () => {
             em.addComponent(e, new LocalPosition(i, 0, 0));
         }
         const q = new EntityQuery(world, [LocalPosition]);
-        const before = performance.now();
+        const before = world.changeStamps.advance();
 
         q.stream({write: {pos: LocalPosition}}).consumeSpans(() => Unchanged);
         let visited = 0;
@@ -390,14 +384,14 @@ describe("column-mapped moves (moveRowTo)", () => {
         };
         const moved = stayers[150];
 
-        let mark = timestampAfterPriorStamps();
+        let mark = world.changeStamps.advance();
         em.addComponent(moved, new ObjectBacked());
         let woken = visitedSince(mark, [LocalPosition, ObjectBacked]);
         expect(woken.includes(moved)).toBe(true);
         expect(woken.length).toBeLessThan(BLOCK_SIZE);
         expect(visitedSince(mark, [LocalPosition], [ObjectBacked]).length).toBe(0);
 
-        mark = timestampAfterPriorStamps();
+        mark = world.changeStamps.advance();
         em.removeComponent(moved, ObjectBacked);
         woken = visitedSince(mark, [LocalPosition], [ObjectBacked]);
         expect(woken.includes(moved)).toBe(true);
@@ -575,7 +569,7 @@ describe("command-buffer moves (moveRowWith)", () => {
         };
         const moved = stayers[150];
 
-        const mark = timestampAfterPriorStamps();
+        const mark = world.changeStamps.advance();
         const ecb = new EntityCommandBuffer();
         ecb.addComponent(moved, new ObjectBacked());
         ecb.addComponent(moved, new OtherObjectBacked());

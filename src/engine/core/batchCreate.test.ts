@@ -155,12 +155,11 @@ describe("EntityCommandBuffer playback semantics", () => {
         ecb.playback(em);
 
         const column = ownerOf(e).getColumn(ComponentType.of(Position))!;
-        const before = column.lastUpdatedTime;
-        const t = performance.now();
-        while (performance.now() === t) {}
+        const before = column.lastChangeStamp;
+        world.changeStamps.advance();
         handle.x = 42;
 
-        expect(column.lastUpdatedTime > before).toBe(true);
+        expect(column.lastChangeStamp > before).toBe(true);
         expect(em.getComponent<Position>(e, Position)!.x).toBe(42);
     });
 
@@ -382,13 +381,13 @@ describe("EntityManager.addComponents", () => {
     test("nothing new is a no-op", () => {
         const e = em.createEntity(undefined, [new Position(1)]);
         const arch = ownerOf(e);
-        const stamp = arch.lastStructuralChangeTime;
+        const stamp = arch.lastStructuralChangeStamp;
 
         em.addComponents(e, [new Position(2)]);
         em.addComponents(e, []);
 
         expect(ownerOf(e)).toBe(arch);
-        expect(arch.lastStructuralChangeTime).toBe(stamp);
+        expect(arch.lastStructuralChangeStamp).toBe(stamp);
         expect(em.getComponent<Position>(e, Position)!.x).toBe(1);
     });
 });

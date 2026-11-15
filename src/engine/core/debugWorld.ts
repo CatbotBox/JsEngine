@@ -48,8 +48,9 @@ export class DebugWorld extends World {
             } catch (err) {
                 const end = performance.now();
                 statTracker.add(end - start);
-                world.stop();
-                console.error("error while running system: " + systemClass.name + " Error: " + err);
+                const message = "error while running system: " + systemClass.name + " Error: " + err;
+                world.stop(message);
+                console.error(message);
             }
         } as System['onUpdate'];
 

@@ -8,6 +8,7 @@ const EMPTY_ROW_BITS = 0;
 
 export type PixelFontGlyph = readonly [codePoint: number, rowBits: ArrayLike<number>];
 
+// One byte per glyph row; bit x lights column x (bit 0 = leftmost).
 export function isGlyphColumnLit(rowBits: number, column: number): boolean {
     return ((rowBits >> column) & COLUMN_BIT) !== 0;
 }

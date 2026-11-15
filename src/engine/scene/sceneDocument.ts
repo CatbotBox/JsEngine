@@ -16,6 +16,7 @@ export interface SceneEntityRecord {
     id: number;
     name: string | null;
     enabled: boolean;
+    siblingIndex?: number;
     components: { [componentName: string]: SceneFieldValues };
 }
 
@@ -23,6 +24,7 @@ export interface SceneDocument {
     format: typeof SCENE_DOCUMENT_FORMAT;
     version: typeof SCENE_DOCUMENT_VERSION;
     entities: SceneEntityRecord[];
+    resources?: { [resourceName: string]: SceneFieldValues };
 }
 
 export function describeJson(value: unknown): string {
@@ -71,15 +73,23 @@ function parseEntityRecord(value: unknown, path: string): SceneEntityRecord {
     if (name !== null && typeof name !== "string") throw documentError(`${path}.name`, "a string or null", name);
     const enabled = value.enabled ?? true;
     if (typeof enabled !== "boolean") throw documentError(`${path}.enabled`, "true or false", enabled);
-    const components = value.components ?? {};
-    if (!isSceneJsonObject(components)) throw documentError(`${path}.components`, "an object", components);
-    const parsedComponents: { [componentName: string]: SceneFieldValues } = {};
-    for (const componentName of Object.keys(components)) {
-        const fields = components[componentName];
-        if (!isSceneJsonObject(fields)) throw documentError(`${path}.components.${componentName}`, "an object of field values", fields);
-        parsedComponents[componentName] = fields;
+    const siblingIndex = value.siblingIndex;
+    if (siblingIndex !== undefined && (typeof siblingIndex !== "number" || !Number.isSafeInteger(siblingIndex) || siblingIndex < 0)) {
+        throw documentError(`${path}.siblingIndex`, "a whole number >= 0", siblingIndex);
     }
-    return {id, name, enabled, components: parsedComponents};
+    const components = parseFieldValueGroups(value.components ?? {}, `${path}.components`);
+    return siblingIndex === undefined ? {id, name, enabled, components} : {id, name, enabled, siblingIndex, components};
+}
+
+function parseFieldValueGroups(groups: SceneJsonValue, path: string): { [typeName: string]: SceneFieldValues } {
+    if (!isSceneJsonObject(groups)) throw documentError(path, "an object", groups);
+    const parsed: { [typeName: string]: SceneFieldValues } = {};
+    for (const typeName of Object.keys(groups)) {
+        const fields = groups[typeName];
+        if (!isSceneJsonObject(fields)) throw documentError(`${path}.${typeName}`, "an object of field values", fields);
+        parsed[typeName] = fields;
+    }
+    return parsed;
 }
 
 export function parseSceneDocument(source: unknown): SceneDocument {
@@ -104,5 +114,7 @@ export function parseSceneDocument(source: unknown): SceneDocument {
         }
         indexById.set(record.id, index);
     });
-    return {format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: records};
+    const document: SceneDocument = {format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: records};
+    if (value.resources !== undefined) document.resources = parseFieldValueGroups(value.resources, "resources");
+    return document;
 }

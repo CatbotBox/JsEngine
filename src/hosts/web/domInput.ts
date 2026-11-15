@@ -150,6 +150,7 @@ class DomInput {
     public constructor(private readonly target: DomInputTarget, private readonly options: DomInputOptions) {
     }
 
+    // Capture phase, and every handled event stops propagating, so the game consumes its input before page listeners can act on it too.
     public install(): void {
         const target = this.target;
         target.addEventListener("keydown", this.onKeyDown, CAPTURE);
