@@ -52,6 +52,7 @@ describe("HttpProjectFileSystem", () => {
         await files.remove("old.txt");
         await files.rename("a.txt", "dir/b.txt");
         await files.makeDirectory("new/folder");
+        await files.openExternally("src/game.ts");
         expect(requests.map(request => `${request.method} ${request.url}`)).toEqual([
             "GET /__project/p1/files",
             "GET /__project/p1/file/dir/a%20b.png",
@@ -59,10 +60,12 @@ describe("HttpProjectFileSystem", () => {
             "DELETE /__project/p1/file/old.txt",
             "POST /__project/p1/rename",
             "POST /__project/p1/mkdir",
+            "POST /__project/p1/open-external",
         ]);
         expect(requests[2].body).toBe("{}");
         expect(JSON.parse(requests[4].body as string)).toEqual({from: "a.txt", to: "dir/b.txt"});
         expect(JSON.parse(requests[5].body as string)).toEqual({path: "new/folder"});
+        expect(JSON.parse(requests[6].body as string)).toEqual({path: "src/game.ts"});
     });
 
     test("server errors become errors naming the operation and the server's reason", async () => {

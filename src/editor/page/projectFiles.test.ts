@@ -25,13 +25,17 @@ function folder(path: string): ProjectEntry {
 }
 
 describe("project file typing", () => {
-    test("scenes, prefabs, meshes and images are told apart by extension, case-insensitively", () => {
+    test("scenes, prefabs, meshes, images and code are told apart by extension, case-insensitively", () => {
         expect(projectFileKind("scenes/Main.scene.json")).toBe("scene");
         expect(projectFileKind("prefabs/Ship.PREFAB.JSON")).toBe("prefab");
         expect(projectFileKind("models/cube.obj")).toBe("mesh");
         expect(projectFileKind("art/a.png")).toBe("image");
         expect(projectFileKind("art/b.JPEG")).toBe("image");
         expect(projectFileKind("art/c.ppm")).toBe("image");
+        expect(projectFileKind("project.ts")).toBe("code");
+        expect(projectFileKind("src/Hud.TSX")).toBe("code");
+        expect(projectFileKind("src/legacy.js")).toBe("code");
+        expect(projectFileKind("src/module.mjs")).toBe("code");
         expect(projectFileKind("jsengine.project.json")).toBe("other");
         expect(projectFileKind("models/cube.mtl")).toBe("other");
     });

@@ -1,7 +1,7 @@
 import type {ProjectEntry, ProjectFileChange, ProjectFileSystem} from "./projectFileSystem";
 import {requireProjectRelativePath} from "./projectPaths";
-import {isFilesChangedEvent, PROJECT_EVENT_FILES_CHANGED, projectApiUrl, projectFileRoute} from "./projectServerApi";
-import type {MakeDirectoryRequest, ProjectApiError, RenameRequest} from "./projectServerApi";
+import {isFilesChangedEvent, PROJECT_EVENT_FILES_CHANGED, PROJECT_OPEN_EXTERNALLY_ROUTE, projectApiUrl, projectFileRoute} from "./projectServerApi";
+import type {MakeDirectoryRequest, OpenExternallyRequest, ProjectApiError, RenameRequest} from "./projectServerApi";
 
 export interface HttpRequestInit {
     readonly method?: string;
@@ -89,6 +89,11 @@ export class HttpProjectFileSystem implements ProjectFileSystem {
     public async makeDirectory(path: string): Promise<void> {
         const body: MakeDirectoryRequest = {path: requireProjectRelativePath(path)};
         await this.request(`create the folder ${path}`, "mkdir", {method: "POST", body: JSON.stringify(body), headers: JSON_HEADERS});
+    }
+
+    public async openExternally(path: string): Promise<void> {
+        const body: OpenExternallyRequest = {path: requireProjectRelativePath(path)};
+        await this.request(`open ${path} in an external editor`, PROJECT_OPEN_EXTERNALLY_ROUTE, {method: "POST", body: JSON.stringify(body), headers: JSON_HEADERS});
     }
 
     public onChange(listener: (change: ProjectFileChange) => void): () => void {

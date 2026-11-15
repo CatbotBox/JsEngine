@@ -92,6 +92,8 @@ const STEP_UP: StepDirection = 1;
 const STEP_DOWN: StepDirection = -1;
 const ASSET_KIND_BY_FIELD: Readonly<Record<string, ProjectFileKind>> = {mesh: "mesh", spriteImage: "image"};
 
+const TYPING = true;
+
 let nextGestureId = 1;
 
 function gestureKey(prefix: string): string {
@@ -249,9 +251,35 @@ function stepperButtons(document: Document, ariaLabel: string, step: (direction:
 abstract class FieldEditorBase implements FieldEditor {
     public readonly element: HTMLElement;
     protected values: readonly EditorFieldValue[] = [];
+    protected focusKey = gestureKey("focus");
+    private readonly typingSender = new LatestOnly();
 
     protected constructor(protected readonly context: FieldEditorContext, protected readonly document: Document) {
         this.element = createElement(document, "div", `field-editor kind-${context.field.kind}`);
+    }
+
+    protected trackFocusGesture(control: HTMLElement): void {
+        control.addEventListener("focus", () => this.focusKey = gestureKey("focus"));
+        control.addEventListener("blur", () => {
+            const key = this.focusKey;
+            this.typingSender.whenDrained(() => this.endGesture(key));
+        });
+    }
+
+    protected sendWhileTyping(control: HTMLElement, send: (coalesceKey: string) => Promise<unknown> | undefined): void {
+        this.trackFocusGesture(control);
+        control.addEventListener("input", () => this.typingSender.run(() => send(this.focusKey) ?? Promise.resolve()));
+    }
+
+    protected commitParsedWhileTyping(control: HTMLInputElement | HTMLTextAreaElement, parse: (text: string) => ParsedFieldText): void {
+        this.sendWhileTyping(control, key => {
+            const parsed = parse(control.value);
+            return parsed.valid ? this.commitEach(() => parsed.value, key, TYPING) : undefined;
+        });
+    }
+
+    protected afterTyping(commit: () => void): void {
+        this.typingSender.whenDrained(commit);
     }
 
     protected get fieldLabel(): string {
@@ -287,10 +315,12 @@ abstract class FieldEditorBase implements FieldEditor {
         }
     }
 
-    protected commitEach(map: (current: EditorFieldValue, index: number) => SceneJsonValue, coalesceKey?: string): Promise<unknown> {
-        const mapped = this.mapValues(map);
+    protected commitEach(map: (current: EditorFieldValue, index: number) => SceneJsonValue, coalesceKey?: string, typing = false): Promise<unknown> {
+        const mapped = typing ? this.mapValuesQuietly(map) : this.mapValues(map);
         if (mapped === undefined || mapped.length === 0) return Promise.resolve();
-        if (coalesceKey === undefined && mapped.every((value, index) => fieldValuesEqual(value, this.values[index]))) {
+        const unchanged = mapped.every((value, index) => fieldValuesEqual(value, this.values[index]));
+        if (unchanged && typing) return Promise.resolve();
+        if (unchanged && coalesceKey === undefined) {
             this.revert();
             return Promise.resolve();
         }
@@ -298,22 +328,32 @@ abstract class FieldEditorBase implements FieldEditor {
         this.values = mapped;
         return this.context.commit(before, mapped, coalesceKey).then(stored => {
             if (stored === undefined) {
-                this.revert();
+                this.values = before;
+                if (!typing) this.revert();
                 return;
             }
             this.stored(stored, mapped);
             this.values = stored;
-            if (!this.hasFocus() || coalesceKey !== undefined) this.render(stored);
+            if (!this.hasFocus() || (coalesceKey !== undefined && !typing)) this.render(stored);
         });
     }
 
     protected commitAll(value: SceneJsonValue): void {
-        void this.commitEach(() => value);
+        this.afterTyping(() => void this.commitEach(() => value));
     }
 
     protected commitParsed(parsed: ParsedFieldText): void {
         if (parsed.valid) this.commitAll(parsed.value);
-        else this.rejectText(parsed.reason);
+        else this.afterTyping(() => this.rejectText(parsed.reason));
+    }
+
+    private mapValuesQuietly(map: (current: EditorFieldValue, index: number) => SceneJsonValue): SceneJsonValue[] | undefined {
+        try {
+            return this.values.map(map);
+        } catch (error) {
+            if (error instanceof InvalidFieldText) return undefined;
+            throw error;
+        }
     }
 
     protected stored(_stored: readonly EditorFieldValue[], _sent: readonly SceneJsonValue[]): void {
@@ -332,17 +372,16 @@ abstract class FieldEditorBase implements FieldEditor {
 class NumberFieldEditor extends FieldEditorBase {
     private readonly input: HTMLInputElement;
     private readonly scrubKind: ScrubKind;
-    private stepKey = gestureKey("step");
 
-    public constructor(context: FieldEditorContext, document: Document, private readonly integer: boolean) {
+    public constructor(context: FieldEditorContext, document: Document, integer: boolean) {
         super(context, document);
         this.scrubKind = integer ? "integer" : "number";
         this.input = numberInput(document, this.fieldLabel, integer ? NUMERIC_INPUT_MODE : DECIMAL_INPUT_MODE);
-        this.input.addEventListener("change", () => this.commitParsed(integer ? parseIntegerText(this.input.value) : parseNumberText(this.input.value)));
-        this.input.addEventListener("focus", () => this.stepKey = gestureKey("step"));
-        this.input.addEventListener("blur", () => this.endGesture(this.stepKey));
+        const parse = integer ? parseIntegerText : parseNumberText;
+        this.commitParsedWhileTyping(this.input, parse);
+        this.input.addEventListener("change", () => this.commitParsed(parse(this.input.value)));
         const step = (direction: StepDirection, modifiers: StepModifiers): void => {
-            void this.commitEach(current => wireNumber(steppedValue(numericOf(current), direction, modifiers, this.scrubKind)), this.stepKey);
+            void this.commitEach(current => wireNumber(steppedValue(numericOf(current), direction, modifiers, this.scrubKind)), this.focusKey);
         };
         installStepping(this.input, step);
         installScrub(context.label, {
@@ -364,19 +403,25 @@ class NumberFieldEditor extends FieldEditorBase {
 
 abstract class AxisFieldEditor extends FieldEditorBase {
     protected readonly inputs: HTMLInputElement[];
-    private stepKeys: string[];
 
     protected constructor(context: FieldEditorContext, document: Document, private readonly scrubKind: ScrubKind, unitSuffix: string) {
         super(context, document);
-        this.stepKeys = AXIS_NAMES.map(() => gestureKey("step"));
         this.inputs = AXIS_NAMES.map((axis, index) => {
             const label = createElement(document, "span", `axis-label ${AXIS_CLASSES[index]}`, axis);
             const input = numberInput(document, `${this.fieldLabel} ${axis}${unitSuffix}`, DECIMAL_INPUT_MODE);
-            input.addEventListener("change", () => this.commitAxisText(index, input.value));
-            input.addEventListener("focus", () => this.stepKeys[index] = gestureKey("step"));
-            input.addEventListener("blur", () => this.endGesture(this.stepKeys[index]));
+            this.sendWhileTyping(input, key => {
+                const parsed = this.parseAxisText(input.value);
+                return parsed.valid ? this.commitAxisValue(index, parsed.value, key, TYPING) : undefined;
+            });
+            input.addEventListener("change", () => {
+                const parsed = this.parseAxisText(input.value);
+                this.afterTyping(() => {
+                    if (parsed.valid) void this.commitAxisValue(index, parsed.value);
+                    else this.rejectText(parsed.reason);
+                });
+            });
             installStepping(input, (direction, modifiers) => {
-                void this.commitAxisNumbers(index, current => steppedValue(current, direction, modifiers, this.scrubKind), this.stepKeys[index]);
+                void this.commitAxisNumbers(index, current => steppedValue(current, direction, modifiers, this.scrubKind), this.focusKey);
             });
             installScrub(label, {
                 kind: this.scrubKind,
@@ -394,7 +439,9 @@ abstract class AxisFieldEditor extends FieldEditorBase {
 
     protected abstract commitAxisNumbers(index: number, map: (current: number, entityIndex: number) => number, coalesceKey?: string): Promise<unknown>;
 
-    protected abstract commitAxisText(index: number, text: string): void;
+    protected abstract parseAxisText(text: string): ParsedFieldText;
+
+    protected abstract commitAxisValue(index: number, value: SceneJsonValue, coalesceKey?: string, typing?: boolean): Promise<unknown>;
 }
 
 class Vec3FieldEditor extends AxisFieldEditor {
@@ -418,13 +465,12 @@ class Vec3FieldEditor extends AxisFieldEditor {
         return this.commitEach((current, entityIndex) => withComponent(current, index, wireNumber(map(numericOf(vectorComponents(current)[index]), entityIndex))), coalesceKey);
     }
 
-    protected commitAxisText(index: number, text: string): void {
-        const parsed = parseNumberText(text);
-        if (!parsed.valid) {
-            this.rejectText(parsed.reason);
-            return;
-        }
-        void this.commitEach(current => withComponent(current, index, parsed.value));
+    protected parseAxisText(text: string): ParsedFieldText {
+        return parseNumberText(text);
+    }
+
+    protected commitAxisValue(index: number, value: SceneJsonValue, coalesceKey?: string, typing = false): Promise<unknown> {
+        return this.commitEach(current => withComponent(current, index, value), coalesceKey, typing);
     }
 }
 
@@ -450,27 +496,26 @@ class RotationFieldEditor extends AxisFieldEditor {
         return this.degreesOf(this.values).map(entry => entry[index]);
     }
 
-    protected commitAxisNumbers(index: number, map: (current: number, entityIndex: number) => number, coalesceKey?: string): Promise<unknown> {
+    protected commitAxisNumbers(index: number, map: (current: number, entityIndex: number) => number, coalesceKey?: string, typing = false): Promise<unknown> {
         const degrees = this.degreesOf(this.values).map((entry, entityIndex): EulerDegrees => {
             const updated: [number, number, number] = [entry[0], entry[1], entry[2]];
             updated[index] = map(entry[index], entityIndex);
             return updated;
         });
         if (!degrees.every(entry => entry.every(Number.isFinite))) {
-            this.rejectText("A rotation needs finite angles");
+            if (!typing) this.rejectText("A rotation needs finite angles");
             return Promise.resolve();
         }
         this.pendingDegrees = degrees;
-        return this.commitEach((_, entityIndex) => quaternionOfEulerDegrees(degrees[entityIndex]), coalesceKey);
+        return this.commitEach((_, entityIndex) => quaternionOfEulerDegrees(degrees[entityIndex]), coalesceKey, typing);
     }
 
-    protected commitAxisText(index: number, text: string): void {
-        const parsed = parseFiniteNumberText(text);
-        if (!parsed.valid) {
-            this.rejectText(parsed.reason);
-            return;
-        }
-        void this.commitAxisNumbers(index, () => parsed.value as number);
+    protected parseAxisText(text: string): ParsedFieldText {
+        return parseFiniteNumberText(text);
+    }
+
+    protected commitAxisValue(index: number, value: SceneJsonValue, coalesceKey?: string, typing = false): Promise<unknown> {
+        return this.commitAxisNumbers(index, () => value as number, coalesceKey, typing);
     }
 
     protected override stored(stored: readonly EditorFieldValue[]): void {
@@ -501,6 +546,7 @@ class RgbFieldEditor extends FieldEditorBase {
         this.input = createElement(document, "input", "field-input color");
         this.input.type = "color";
         this.input.setAttribute("aria-label", this.fieldLabel);
+        this.commitParsedWhileTyping(this.input, parseRgbText);
         this.input.addEventListener("change", () => this.commitParsed(parseRgbText(this.input.value)));
         this.element.append(this.input);
     }
@@ -527,6 +573,7 @@ class TextColorFieldEditor extends FieldEditorBase {
             this.updateInputState();
             this.commitParts();
         });
+        this.commitParsedWhileTyping(this.input, text => parseTextColorParts({mode: this.selectedMode(), text}));
         this.input.addEventListener("change", () => this.commitParts());
         this.element.append(this.mode, this.input);
     }
@@ -586,6 +633,7 @@ class StringFieldEditor extends FieldEditorBase {
         super(context, document);
         this.input = textInput(document, this.fieldLabel);
         if (nullable) this.input.dataset.placeholder = NULL_STRING_PLACEHOLDER;
+        this.sendWhileTyping(this.input, key => this.commitEach(() => parseStringText(this.input.value, {nullable: this.nullable}), key, TYPING));
         this.input.addEventListener("change", () => this.commitAll(parseStringText(this.input.value, {nullable: this.nullable})));
         this.element.append(this.input);
     }
@@ -605,6 +653,7 @@ class TextLinesFieldEditor extends FieldEditorBase {
         this.textarea.spellcheck = false;
         this.textarea.wrap = "off";
         this.textarea.setAttribute("aria-label", this.fieldLabel);
+        this.sendWhileTyping(this.textarea, key => this.commitEach(() => parseTextLinesText(this.textarea.value), key, TYPING));
         this.textarea.addEventListener("change", () => this.commitAll(parseTextLinesText(this.textarea.value)));
         this.element.append(this.textarea);
     }
