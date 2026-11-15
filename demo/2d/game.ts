@@ -8,7 +8,8 @@ import {
 } from "../../src/engine/core";
 import {Input, Key} from "../../src/engine/input";
 
-import {Camera, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextColor, WHITE_RGB} from "../../src/engine/rendering";
+import {Camera, CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextColor, WHITE_RGB} from "../../src/engine/rendering";
+import {componentSchema} from "../../src/engine/scene/componentSchemaBuilder";
 
 import {LocalPosition, LocalToWorld, Parent} from "../../src/engine/translation";
 
@@ -31,7 +32,9 @@ function packRgb(r: number, g: number, b: number): number {
 }
 
 const HUD_CROSS_RGB = 0x00FFCC;
-const FADE_TARGET_RGB: readonly [number, number, number] = [255, 183, 206];
+const FADE_TARGET_RGB = 0xFFB7CE;
+const DEMO_2D_CATEGORY = "Demo 2D";
+const BLUE_SHIFT = 0;
 const FADE_MIN_MS = 5000, FADE_JITTER_MS = 5000;
 const PIXELS_PER_SPAWN = 1_000;
 const SPAWN_AREA_CELLS = 100;
@@ -50,21 +53,41 @@ const CROSS_IMAGE = SpriteImage.fromPattern([
 ], {'#': WHITE_RGB});
 const PIXEL_IMAGE = SpriteImage.solid(1, 1, WHITE_RGB);
 
-class FadeToColor extends Component {
-    public color: [number, number, number] = [255, 255, 255];
+export class FadeToColor extends Component {
+    public static readonly schema = componentSchema(FadeToColor, "FadeToColor")
+        .rgb("rgb").number("fadeTime").number("currentFadeTime").category(DEMO_2D_CATEGORY).build();
+
+    public rgb: number = WHITE_RGB;
     public fadeTime: number = 0;
     public currentFadeTime: number = 0;
 }
 
-class OriginalColor extends Component {
-    public color: [number, number, number] = [255, 255, 255];
+export class OriginalColor extends Component {
+    public static readonly schema = componentSchema(OriginalColor, "OriginalColor").rgb("rgb").category(DEMO_2D_CATEGORY).build();
+
+    public rgb: number = WHITE_RGB;
 }
 
-class PlayerTag extends Component {
-
+export class PlayerTag extends Component {
+    public static readonly schema = componentSchema(PlayerTag, "PlayerTag").category(DEMO_2D_CATEGORY).build();
 }
 
-const FADE_SCRATCH: [number, number, number] = [0, 0, 0];
+export const DEMO_2D_COMPONENTS = [FadeToColor, OriginalColor, PlayerTag];
+
+function channelOf(rgb: number, shift: number): number {
+    return (rgb >> shift) & CHANNEL_MASK;
+}
+
+function interpolateChannel(from: number, to: number, shift: number, scale: number): number {
+    const start = channelOf(from, shift);
+    return Math.round(start + (channelOf(to, shift) - start) * scale);
+}
+
+function interpolateRgb(from: number, to: number, scale: number): number {
+    if (scale >= 1) return to;
+    if (scale <= 0) return from;
+    return packRgb(interpolateChannel(from, to, RED_SHIFT, scale), interpolateChannel(from, to, GREEN_SHIFT, scale), interpolateChannel(from, to, BLUE_SHIFT, scale));
+}
 
 export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
     const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
@@ -93,7 +116,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
         const g = Math.round(Math.random() * CHANNEL_MAX)
         const b = Math.round(Math.random() * CHANNEL_MAX)
         const originalColor = new OriginalColor()
-        originalColor.color = [r, g, b];
+        originalColor.rgb = packRgb(r, g, b);
         const localToWorld = new LocalToWorld();
         const components: Component[] = [originalColor, new Sprite(PIXEL_IMAGE, packRgb(r, g, b)), localToWorld];
         if (parent) {
@@ -133,7 +156,7 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
             newPos.y = y + Vec.y(localToWorld.position)
             newPos.z = Math.random()
             const fadeToColor = new FadeToColor();
-            fadeToColor.color = [...FADE_TARGET_RGB]
+            fadeToColor.rgb = FADE_TARGET_RGB
             fadeToColor.fadeTime = Math.random() * FADE_JITTER_MS + FADE_MIN_MS;
             createPixel(newPos, undefined, undefined, fadeToColor);
         }
@@ -190,27 +213,6 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
             return this._query.enabledEntityCount()
         }
 
-        private interpolate(color1: readonly [number, number, number], color2: readonly [number, number, number], scale: number): [number, number, number] {
-            const out = FADE_SCRATCH;
-            if (scale >= 1) {
-                out[0] = color2[0];
-                out[1] = color2[1];
-                out[2] = color2[2];
-                return out;
-            }
-            if (scale <= 0) {
-                out[0] = color1[0];
-                out[1] = color1[1];
-                out[2] = color1[2];
-                return out;
-            }
-            out[0] = Math.round(color1[0] + (color2[0] - color1[0]) * scale);
-            out[1] = Math.round(color1[1] + (color2[1] - color1[1]) * scale);
-            out[2] = Math.round(color1[2] + (color2[2] - color1[2]) * scale);
-            return out;
-
-        }
-
         onUpdate(): void {
             const deltaTimeMs = this.world.time.deltaTimeMs;
             this._query.stream({
@@ -221,10 +223,9 @@ export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
                 fadeToColor.currentFadeTime += deltaTimeMs;
 
                 const scale = fadeToColor.currentFadeTime / fadeToColor.fadeTime;
-                const finalColor = this.interpolate(originalColor.color, fadeToColor.color, scale)
-                sprite.tint = packRgb(finalColor[0], finalColor[1], finalColor[2]);
+                sprite.tint = interpolateRgb(originalColor.rgb, fadeToColor.rgb, scale);
                 if (fadeToColor.currentFadeTime >= fadeToColor.fadeTime) {
-                    originalColor.color = fadeToColor.color;
+                    originalColor.rgb = fadeToColor.rgb;
                     buffer.removeComponent(entity, FadeToColor);
                     buffer.removeComponent(entity, OriginalColor);
                 }

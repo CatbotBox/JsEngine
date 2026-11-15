@@ -111,7 +111,7 @@ function runDemo2dOnCells(): void {
     log(`saved ${saved.document.entities.length} entities; skipped types: ${describeSkipped(saved)}`);
     expect(saved.report.unsavedAssets.length === 0, "the 2D scene has no unsaved assets");
     expect(saved.report.danglingEntityRefs.length === 0, "the 2D scene has no dangling entity references");
-    expect(saved.document.entities.some(record => record.components.TextSpriteCellPassSettings !== undefined), "the cells settings entity was saved");
+    expect(saved.document.entities.some(record => record.components.SpriteCellPassSettings !== undefined), "the cells settings entity was saved");
 
     const output = new MemoryTerminal(CELLS);
     const screen = new TerminalScreen(CELLS.columns, CELLS.rows);

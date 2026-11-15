@@ -22,13 +22,13 @@ export abstract class SystemGroup extends System {
 
     public onEnable(): void {
         for (const system of this._systems) {
-            system.onEnable();
+            if (system.enabled) system.onEnable();
         }
     }
 
     public onDisable(): void {
         for (const system of this._systems) {
-            system.onDisable()
+            if (system.enabled) system.onDisable();
         }
     }
 

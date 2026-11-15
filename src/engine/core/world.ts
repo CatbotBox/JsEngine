@@ -9,6 +9,8 @@ import {InputSystem} from "../input/inputSystem";
 import {WorldSource} from "./worldSource";
 import {ResourceManager} from "./resourceManager";
 import type {Platform} from "../platform/platform";
+import {ChangeStampCounter} from "./changeStampCounter";
+import {Event} from "../util/event";
 
 const MS_PER_SECOND = 1000;
 const DEFAULT_TARGET_FPS = 60;
@@ -27,9 +29,15 @@ export interface WorldOptions {
     readonly platform: Platform;
 }
 
+export interface WorldStoppedEvent {
+    readonly error: unknown;
+}
+
 export class World extends WorldSource {
     public readonly platform: Platform;
-    private _archetypes: EntityArchetypeMap = new EntityArchetypeMap();
+    public readonly changeStamps: ChangeStampCounter = new ChangeStampCounter();
+    public readonly onStopped: Event<WorldStoppedEvent> = new Event();
+    private _archetypes: EntityArchetypeMap = new EntityArchetypeMap(this.changeStamps);
     private _resources: ResourceManager = new ResourceManager();
     protected _systems: Map<SystemCtor<System>, System> = new Map();
     protected _rootSystemGroup: SystemGroup;
@@ -139,9 +147,10 @@ export class World extends WorldSource {
         }
     }
 
-    public stop(): void {
+    public stop(error?: unknown): void {
         this.pause();
         this._rootSystemGroup.destroy();
+        this.onStopped.invoke({error});
     }
 
     public get targetDeltaTimeMs(): number {

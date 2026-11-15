@@ -9,13 +9,27 @@ export type {
     FieldSchema,
     PlainFieldKind,
     PlainFieldSchema,
+    ResourceSchema,
     StringFieldSchema,
 } from "./fieldSchema";
-export {hasEntityFields, isEntityField} from "./fieldSchema";
-export {ComponentSchemaBuilder, componentSchema} from "./componentSchemaBuilder";
+export {categoryOf, DEFAULT_COMPONENT_CATEGORY, hasEntityFields, isEntityField} from "./fieldSchema";
+export {ComponentSchemaBuilder, componentSchema, FieldListBuilder, ResourceSchemaBuilder, resourceSchema} from "./componentSchemaBuilder";
 export type {EntityFieldOptions, FieldKey, KeysOfType, WritableKeys} from "./componentSchemaBuilder";
-export {ComponentSchemaRegistry} from "./componentSchemaRegistry";
-export {registerEngineComponentSchemas} from "./engineComponentSchemas";
+export {ComponentSchemaRegistry, STATIC_SCHEMA_KEY} from "./componentSchemaRegistry";
+export {ENGINE_COMPONENT_CATEGORIES, registerEngineComponentSchemas} from "./engineComponentSchemas";
+export {assignInferredFieldValue, inferComponentSchema} from "./inferredSchema";
+export {EditorOnly} from "./editorOnly";
+export {PrefabInstance} from "./prefabInstance";
+export {
+    childEntitiesOf,
+    orderedSceneRoots,
+    parentEntityOf,
+    SceneRootOrder,
+    setSceneRootOrder,
+    siblingOrderOf,
+    untrackedComponentOf,
+} from "./sceneHierarchy";
+export type {SiblingOrder} from "./sceneHierarchy";
 export {decodeFieldValue, encodeFieldValue, readSceneEntityId} from "./fieldValueCodec";
 export type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 export {
@@ -29,13 +43,27 @@ export {
 export type {SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonObject, SceneJsonValue} from "./sceneDocument";
 export {platformSceneAssetLoader, sceneAssetPaths} from "./sceneAssets";
 export type {SceneAssetKind, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
-export {applySceneInPlace, deserializeInto, serializeWorld} from "./sceneSerialization";
+export {
+    applySceneInPlace,
+    deserializeInto,
+    instantiateDocument,
+    isSceneEntity,
+    PARENT_COMPONENT_NAME,
+    PARENT_ENTITY_KEY,
+    sceneEntitiesInCreationOrder,
+    serializeEntities,
+    serializeWorld,
+} from "./sceneSerialization";
 export type {
+    InstantiatedDocument,
+    InstantiateOptions,
     SceneLoadOptions,
     SceneLoadReport,
     SceneLoadResult,
     SceneSaveReport,
     SceneSnapshot,
+    SchemaChange,
+    SchemaChangePolicy,
     SerializedScene,
     SkippedComponentType,
     UnknownComponentTypePolicy,

@@ -58,7 +58,7 @@ export class HierarchySyncSystem extends System {
         this._parentQuery.stream({write: {children: Children}},
             {
                 includeEntity: true,
-                filterLastUpdated: this.lastUpdateTime,
+                filterLastUpdated: this.lastUpdateStamp,
             })
             .consume(({children, entity}) => {
                 const childEntities = children.children;
@@ -85,7 +85,7 @@ export class HierarchySyncSystem extends System {
         this._childQuery.stream({read: {parent: Parent}},
             {
                 includeEntity: true,
-                filterLastUpdated: this.lastUpdateTime,
+                filterLastUpdated: this.lastUpdateStamp,
             })
             .consume(({parent, entity}) => {
                 if (!entityManager.exists(parent.entity)) {

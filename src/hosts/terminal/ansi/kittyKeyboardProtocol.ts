@@ -9,6 +9,7 @@ const DISAMBIGUATE_ESCAPE_CODES_FLAG = 0b1;
 const REPORT_EVENT_TYPES_FLAG = 0b10;
 const REPORT_ALL_KEYS_AS_ESCAPE_CODES_FLAG = 0b1000;
 const REPORT_ASSOCIATED_TEXT_FLAG = 0b10000;
+// 27 = 1 + 2 + 8 + 16. 8 sends plain keys (letters, Enter) as escape codes too, so they report releases; 16 keeps their typed text.
 const PUSHED_FLAGS = DISAMBIGUATE_ESCAPE_CODES_FLAG | REPORT_EVENT_TYPES_FLAG
     | REPORT_ALL_KEYS_AS_ESCAPE_CODES_FLAG | REPORT_ASSOCIATED_TEXT_FLAG;
 
@@ -180,6 +181,7 @@ function associatedText(field: string): string | undefined {
     return codePoints.length === 0 ? undefined : String.fromCodePoint(...codePoints);
 }
 
+// Fallback for terminals that ignore flag 16 and send no text field: an unmodified printable key types itself.
 function unmodifiedKeyText(keyCode: number, modifiers: Modifiers): string | undefined {
     if (modifiers.shift || modifiers.ctrl || modifiers.alt || modifiers.meta) return undefined;
     if (!isCodePoint(keyCode) || !isPrintableCodePoint(keyCode) || isPrivateUseCodePoint(keyCode)) return undefined;

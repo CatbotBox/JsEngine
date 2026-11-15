@@ -20,7 +20,7 @@ const terminalInput = new TerminalInput({
     platform: world.platform,
     sink: world.resources.getOrCreate(Input),
     mouse: true,
-}).start();
+});
 
 setupDemo2d(world, {
     render: installCellRendering2d(world),
@@ -30,4 +30,5 @@ setupDemo2d(world, {
     },
 });
 
-world.startLoop()
+world.startLoop();
+terminalInput.start();

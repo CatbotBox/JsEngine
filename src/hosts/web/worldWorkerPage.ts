@@ -23,7 +23,7 @@ export interface PixelWorldDisplay extends WorldDisplaySurface {
 export type WorldDisplay = CellWorldDisplay | PixelWorldDisplay;
 
 export interface WorldWorker {
-    postMessage(message: PageToWorldMessage): void;
+    postMessage(message: PageToWorldMessage, transfer: ArrayBuffer[]): void;
     addEventListener(type: "message", listener: (event: {readonly data: unknown}) => void): void;
     addEventListener(type: "error", listener: (event: {readonly message?: string}) => void): void;
     terminate(): void;
@@ -53,8 +53,8 @@ export function surfaceMismatchMessage(name: string, sent: RenderBackend, shown:
 export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, options: WorldWorkerPageOptions): WorldWorkerPage {
     let stopWatchingResize: (() => void) | undefined;
     let closed = false;
-    const post = (message: PageToWorldMessage): void => {
-        if (!closed) worker.postMessage(message);
+    const post = (message: PageToWorldMessage, transfer: ArrayBuffer[] = []): void => {
+        if (!closed) worker.postMessage(message, transfer);
     };
     const pendingInput: InputEvent[] = [];
     const flushInput = (): void => {
@@ -75,6 +75,10 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
         worker.terminate();
     };
     const acknowledge = (): void => post({type: "presented"});
+    const acknowledgeReturningBufferOf = (frame: PixelFrame) => (): void => {
+        const returnedBuffer = frame.rgba.buffer as ArrayBuffer;
+        post({type: "presented", returnedBuffer}, [returnedBuffer]);
+    };
     const failOnMismatch = (sent: RenderBackend): void => {
         close();
         display.showError(surfaceMismatchMessage(options.name, sent, display.surfaceSize().kind));
@@ -89,7 +93,7 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
                 else failOnMismatch("cells");
                 break;
             case "pixelFrame":
-                if ("presentPixels" in display) display.presentPixels(message.frame, acknowledge);
+                if ("presentPixels" in display) display.presentPixels(message.frame, acknowledgeReturningBufferOf(message.frame));
                 else failOnMismatch("pixels");
                 break;
             case "status":

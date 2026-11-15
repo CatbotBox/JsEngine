@@ -77,6 +77,7 @@ export class MeshPixelPassSystem extends System {
         this._resolveTarget.begin(framebuffer, framebufferPixelsPerRasterPixel);
         this._drawer.draw({
             target: this._resolveTarget,
+            // ceil: a partial block at the right/bottom edge still covers the framebuffer's last pixels (the resolve clips it).
             width: Math.ceil(framebuffer.widthPx / framebufferPixelsPerRasterPixel),
             height: Math.ceil(framebuffer.heightPx / framebufferPixelsPerRasterPixel),
             rasterPixelHeightPerWidth: SQUARE_PIXEL_HEIGHT_PER_WIDTH,

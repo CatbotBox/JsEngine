@@ -1,200 +1,60 @@
 import {afterEach, describe, expect, test} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
-import {Component, EntityCommandBufferSystem, NULL_ENTITY, System, World} from "../../engine/core";
+import {Component, NULL_ENTITY, World} from "../../engine/core";
 import type {Entity} from "../../engine/core";
 import {Children} from "../../engine/translation/children";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Parent, ParentTransform} from "../../engine/translation/parent";
-import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {Sprite} from "../../engine/rendering/2d/sprite";
 import {SpriteImage} from "../../engine/rendering/2d/spriteImage";
-import {encodePpm} from "../../engine/assets/image/ppm";
 import {Vec} from "../../engine/math/types/vec";
-import {ComponentSchemaRegistry, registerEngineComponentSchemas} from "../../engine/scene";
 import type {SceneJsonValue} from "../../engine/scene";
-import {EDITOR_MESSAGE_TYPE} from "../editorProtocol";
-import type {EditorEntityDetails, EditorEntitySummary, EditorRequest, EditorResultOf} from "../editorProtocol";
-import {EditorClient, EditorRequestError} from "../page/editorClient";
-import {attachEditorWorldService} from "./editorWorldService";
-import {subtreeOf} from "./entityEditing";
-import type {EditorWorldService} from "./editorWorldService";
+import {EDITOR_MESSAGE_TYPE, isEditorEventMessage} from "../editorProtocol";
+import type {EditorMode, EditorRequest, EditorServiceState, EditorView} from "../editorProtocol";
+import {subtreeOf} from "./hierarchyEditing";
+import {
+    ask,
+    byName,
+    childrenOf,
+    disposeEditorWorlds,
+    editorWorld,
+    failureOf,
+    fieldsOf,
+    framesPass,
+    SETTLE_FRAMES,
+    sleep,
+    SPRITE_PATH,
+    TICK_MS,
+    waitUntil,
+} from "./editorServiceTestHarness";
 
-const TICK_MS = 2;
-const WAIT_TIMEOUT_MS = 3_000;
-const POLL_INTERVAL_MS = 2;
-const SETTLE_FRAMES = 5;
 const PLAY_RUNS = 3;
-const SPRITE_PATH = "sprites/dot.ppm";
-const RED_PIXEL_RGBA = new Uint8Array([255, 0, 0, 255]);
 const INLINE_SPRITE_WIDTH = 2;
 const INLINE_SPRITE_HEIGHT = 3;
 const GREEN_RGB = 0x00FF00;
-const DELIVERY_DELAY_MS = 0;
 const DISABLED = false;
-const PRELOAD_DELAY_MS = 10;
-
-class GameplayCounterSystem extends System {
-    public runs = 0;
-
-    public onUpdate(): void {
-        this.runs++;
-    }
-}
-
-class SwitchedOffGameplaySystem extends System {
-    public runs = 0;
-
-    public onUpdate(): void {
-        this.runs++;
-    }
-}
-
-class RenderProbeSystem extends System {
-    public frames = 0;
-
-    override systemGroup() {
-        return RenderingSystemGroup;
-    }
-
-    public onUpdate(): void {
-        this.frames++;
-    }
-}
 
 class UnregisteredTag extends Component {
 }
 
-type MessageListener = (event: {readonly data: unknown}) => void;
+afterEach(disposeEditorWorlds);
 
-class MessagePipe {
-    public failingDeliveries = 0;
-    private readonly listeners: MessageListener[] = [];
-
-    public listen(listener: MessageListener): void {
-        this.listeners.push(listener);
-    }
-
-    public deliver(message: unknown): void {
-        if (this.failingDeliveries > 0) {
-            this.failingDeliveries--;
-            throw new Error("DataCloneError: simulated");
-        }
-        const data = structuredClone(message);
-        setTimeout(() => {
-            for (const listener of this.listeners) listener({data});
-        }, DELIVERY_DELAY_MS);
-    }
-}
-
-interface Harnessed {
-    readonly world: World;
-    readonly service: EditorWorldService;
-    readonly client: EditorClient;
-    readonly counter: GameplayCounterSystem;
-    readonly switchedOff: SwitchedOffGameplaySystem;
-    readonly probe: RenderProbeSystem;
-    readonly toWorld: MessagePipe;
-    readonly toPage: MessagePipe;
-    readonly preloaded: string[][];
-}
-
-const running: Harnessed[] = [];
-
-const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
-
-afterEach(() => {
-    for (const harnessed of running.splice(0)) {
-        harnessed.client.close();
-        harnessed.service.detach();
-    }
-});
-
-function editorWorld(populate: (world: World) => void = () => undefined): Harnessed {
-    const platform = new MemoryPlatform({files: {[SPRITE_PATH]: encodePpm(1, 1, RED_PIXEL_RGBA)}});
-    const world = new World({platform});
-    world.targetDeltaTimeMs = TICK_MS;
-    world.ensureSystemExists(EntityCommandBufferSystem);
-    const probe = world.getOrCreateSystem(RenderProbeSystem);
-    const counter = world.getOrCreateSystem(GameplayCounterSystem);
-    const switchedOff = world.getOrCreateSystem(SwitchedOffGameplaySystem);
-    switchedOff.enabled = false;
-    populate(world);
-
-    const registry = new ComponentSchemaRegistry();
-    registerEngineComponentSchemas(registry);
-    const toWorld = new MessagePipe();
-    const toPage = new MessagePipe();
-    const preloaded: string[][] = [];
-    const service = attachEditorWorldService({
-        postMessage: message => toPage.deliver(message),
-        addEventListener: (_type, listener) => toWorld.listen(listener),
-    }, world, registry, {
-        preloadAssets: async paths => {
-            preloaded.push([...paths]);
-            await sleep(PRELOAD_DELAY_MS);
-        },
-    });
-    const client = new EditorClient({
-        postMessage: message => toWorld.deliver(message),
-        addEventListener: (_type, listener) => toPage.listen(listener),
-    });
-    const harnessed = {world, service, client, counter, switchedOff, probe, toWorld, toPage, preloaded};
-    running.push(harnessed);
-    return harnessed;
-}
-
-function ask<R extends EditorRequest>(harnessed: Harnessed, request: R): Promise<EditorResultOf<R>> {
-    return harnessed.client.request(request);
-}
-
-async function failureOf(promise: Promise<unknown>): Promise<string> {
-    try {
-        await promise;
-    } catch (error) {
-        expect(error).toBeInstanceOf(EditorRequestError);
-        return (error as Error).message;
-    }
-    throw new Error("expected the editor request to fail");
-}
-
-async function waitUntil(condition: () => boolean): Promise<boolean> {
-    const deadline = performance.now() + WAIT_TIMEOUT_MS;
-    while (!condition()) {
-        if (performance.now() > deadline) return false;
-        await sleep(POLL_INTERVAL_MS);
-    }
-    return true;
-}
-
-async function framesPass(harnessed: Harnessed, frames: number = SETTLE_FRAMES): Promise<boolean> {
-    const target = harnessed.probe.frames + frames;
-    return waitUntil(() => harnessed.probe.frames >= target);
-}
-
-function byName(entities: readonly EditorEntitySummary[], name: string): EditorEntitySummary | undefined {
-    return entities.find(entity => entity.name === name);
-}
-
-function fieldsOf(details: EditorEntityDetails, typeName: string): {readonly [key: string]: unknown} | undefined {
-    return details.components.find(component => component.typeName === typeName)?.fields;
-}
-
-function childrenOf(world: World, parent: Entity): readonly Entity[] {
-    return world.entityManager.getComponent<Children>(parent, Children)?.children ?? [];
+function serviceState(mode: EditorMode, gameplayTicks: number, view: EditorView): EditorServiceState {
+    return {mode, gameplayTicks, view, worldStoppedError: null};
 }
 
 describe("EditorWorldService requests", () => {
-    test("describeSchemas lists every registered type with its persistence, field kinds, nullability and enum names", async () => {
+    test("describeSchemas lists every registered type with its persistence, field kinds, nullability, enum names and category", async () => {
         const harnessed = editorWorld();
         const {components} = await ask(harnessed, {op: "describeSchemas"});
         const described = (typeName: string) => components.find(component => component.typeName === typeName);
-        expect(described("LocalPosition")).toEqual({typeName: "LocalPosition", persistence: "fields", fields: [{key: "xyz", kind: "vec3"}]});
-        expect(described("Parent")).toEqual({typeName: "Parent", persistence: "fields", fields: [{key: "entity", kind: "entity", nullable: false}]});
+        expect(described("LocalPosition")).toEqual({typeName: "LocalPosition", persistence: "fields", fields: [{key: "xyz", kind: "vec3"}], inferred: false, category: "Transform"});
+        expect(described("Parent")).toEqual({typeName: "Parent", persistence: "fields", fields: [{key: "entity", kind: "entity", nullable: false}], inferred: false, category: "Transform"});
         expect(described("RenderMesh")?.fields.find(field => field.key === "faceCulling"))
             .toEqual({key: "faceCulling", kind: "enum", enumNames: ["BackFaces", "FrontFaces", "None"]});
         expect(described("TextSprite")?.fields.find(field => field.key === "transparentChar")).toEqual({key: "transparentChar", kind: "string", nullable: true});
-        expect(described("LocalToWorld")).toEqual({typeName: "LocalToWorld", persistence: "presenceOnly", fields: []});
+        expect(described("LocalToWorld")).toEqual({typeName: "LocalToWorld", persistence: "presenceOnly", fields: [], inferred: false, category: "Transform"});
         expect(described("Children")?.persistence).toBe("implied");
     });
 
@@ -215,7 +75,7 @@ describe("EditorWorldService requests", () => {
         expect([root.enabled, child.enabled, hidden.enabled]).toEqual([true, true, false]);
     });
 
-    test("getEntity encodes registered fields, summarises inline sprite images and lists unregistered components as not inspectable", async () => {
+    test("getEntity encodes registered fields, summarises inline sprite images and lists unregistered components as inferred", async () => {
         let entity = NULL_ENTITY;
         const harnessed = editorWorld(world => {
             const sprite = new Sprite(SpriteImage.solid(INLINE_SPRITE_WIDTH, INLINE_SPRITE_HEIGHT, GREEN_RGB), GREEN_RGB);
@@ -223,14 +83,14 @@ describe("EditorWorldService requests", () => {
         });
         const details = await ask(harnessed, {op: "getEntity", entity});
         expect([details.entity, details.name, details.enabled, details.parent]).toEqual([entity, "dot", true, null]);
-        expect(details.components.map(component => [component.typeName, component.inspectable]))
+        expect(details.components.map(component => [component.typeName, component.inspectable, component.inferred]))
             .toEqual([
-                ["LocalPosition", true],
-                ["Sprite", true],
-                ["LocalToWorld", false],
-                ["RenderBounds", false],
-                ["WorldSpaceRenderBounds", false],
-                ["UnregisteredTag", false],
+                ["LocalPosition", true, false],
+                ["Sprite", true, false],
+                ["LocalToWorld", false, false],
+                ["RenderBounds", false, false],
+                ["WorldSpaceRenderBounds", false, false],
+                ["UnregisteredTag", true, true],
             ]);
         expect(fieldsOf(details, "LocalPosition")).toEqual({xyz: [1, 2, 3]});
         expect(fieldsOf(details, "Sprite")).toEqual({image: {inline: {width: INLINE_SPRITE_WIDTH, height: INLINE_SPRITE_HEIGHT}}, tint: "#00ff00", opacity: 1});
@@ -422,7 +282,9 @@ describe("EditorWorldService requests", () => {
     test("a malformed editor request gets an error response and other messages are ignored", async () => {
         const harnessed = editorWorld();
         const answers: unknown[] = [];
-        harnessed.toPage.listen(event => answers.push(event.data));
+        harnessed.toPage.listen(event => {
+            if (!isEditorEventMessage(event.data)) answers.push(event.data);
+        });
         harnessed.toWorld.deliver({type: EDITOR_MESSAGE_TYPE, requestId: 99, request: {op: "explode"}});
         harnessed.toWorld.deliver({type: "init", surface: {kind: "pixels", widthPx: 1, heightPx: 1}});
         harnessed.toWorld.deliver({type: EDITOR_MESSAGE_TYPE, requestId: 100, ok: true, result: {}});
@@ -435,18 +297,18 @@ describe("EditorWorldService requests", () => {
 describe("EditorWorldService modes", () => {
     test("edit never runs gameplay systems, play does, paused does not, step runs them exactly once, and earlier enabled states return", async () => {
         const harnessed = editorWorld();
-        const {counter, switchedOff, service, world} = harnessed;
+        const {counter, switchedOff, service} = harnessed;
         expect(service.mode).toBe("edit");
         expect(await framesPass(harnessed)).toBe(true);
         expect(counter.runs).toBe(0);
         expect([counter.enabled, switchedOff.enabled]).toEqual([false, false]);
 
-        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual({mode: "play", gameplayTicks: 0});
+        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 0, "game"));
         expect(counter.enabled).toBe(true);
         expect(switchedOff.enabled).toBe(false);
         expect(await waitUntil(() => counter.runs >= PLAY_RUNS)).toBe(true);
         expect(switchedOff.runs).toBe(0);
-        expect(() => world.step()).toThrow("the loop is running");
+        expect(service.gameplayTicks).toBeGreaterThan(0);
 
         const paused = await ask(harnessed, {op: "setMode", mode: "paused"});
         expect(paused.mode).toBe("paused");
@@ -456,20 +318,20 @@ describe("EditorWorldService modes", () => {
         expect(counter.runs).toBe(runsWhenPaused);
 
         const stepped = await ask(harnessed, {op: "step"});
-        expect(stepped).toEqual({mode: "paused", gameplayTicks: paused.gameplayTicks + 1});
+        expect(stepped).toEqual(serviceState("paused", paused.gameplayTicks + 1, "game"));
         expect(counter.runs).toBe(runsWhenPaused + 1);
         expect(await framesPass(harnessed)).toBe(true);
         expect(counter.runs).toBe(runsWhenPaused + 1);
 
-        expect(await ask(harnessed, {op: "setMode", mode: "edit"})).toEqual({mode: "edit", gameplayTicks: 0});
+        expect(await ask(harnessed, {op: "setMode", mode: "edit"})).toEqual(serviceState("edit", 0, "scene"));
         expect(await framesPass(harnessed)).toBe(true);
         expect(counter.runs).toBe(runsWhenPaused + 1);
 
         const fromEdit = await ask(harnessed, {op: "step"});
-        expect(fromEdit).toEqual({mode: "paused", gameplayTicks: 1});
+        expect(fromEdit).toEqual(serviceState("paused", 1, "scene"));
         expect(counter.runs).toBe(runsWhenPaused + 2);
 
-        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual({mode: "play", gameplayTicks: 1});
+        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 1, "game"));
         await ask(harnessed, {op: "setMode", mode: "edit"});
         service.detach();
         expect([counter.enabled, switchedOff.enabled]).toEqual([true, false]);

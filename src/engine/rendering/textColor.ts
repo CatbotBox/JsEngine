@@ -3,6 +3,7 @@ export declare enum TextColorBrand {}
 
 export type TextColor = TextColorBrand;
 
+// Packed as tag << 24 | payload: tag 0 = default (whole value 0), 1 = palette (payload = index 0-255), 2 = rgb (payload = 0xRRGGBB).
 const TAG_SHIFT = 24;
 const TAG_DEFAULT = 0;
 const TAG_PALETTE = 1;

@@ -7,7 +7,7 @@ import type {EntityArchetype} from "./entityArchetype";
 import {AnyCT, TokenOrCtor, TokensOfList} from "../util/tokenUtils";
 import {EntityQuery} from "./entityQuery";
 import {EntityWriteOptions} from "./entityWriteOptions";
-import {allocEntityHandle, freeEntityHandle, getEntityName, getOwner, requireOwner, setOwner} from "./ownership";
+import {allocEntityHandle, freeEntityHandle, getEntityName, getOwner, requireOwner, setEntityName, setOwner} from "./ownership";
 import {EntityReadOptions} from "./entityReadOptions";
 
 const PLACE_ENABLED = true;
@@ -32,7 +32,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
         const tokens = components.map(EntityManager.tokenOf);
         const arch = this._world.archetypes.getOrCreate(tokens);
-        arch.addEntityFromList(entity, tokens, components, PLACE_ENABLED, this._world.time);
+        arch.addEntityFromList(entity, tokens, components, PLACE_ENABLED);
         setOwner(this._world, entity, arch);
         for (let i = 0; i < components.length; i++) {
             if (tokens.indexOf(tokens[i]) === i) components[i].setup(entity, this);
@@ -42,7 +42,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     public attachEntity(entity: Entity, components: Map<AnyCT, Component> = EntityManager.emptyMap, enabled: boolean = true): Entity {
         const arch = this._world.archetypes.getOrCreate(components.size === 0 ? EntityManager.noTypes : [...components.keys()]);
-        arch.addEntity(entity, components, enabled, this._world.time);
+        arch.addEntity(entity, components, enabled);
         setOwner(this._world, entity, arch as EntityArchetype<AnyCT>);
         return entity;
     }
@@ -50,7 +50,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
     public destroyEntity(entity: Entity): void {
         const arch = getOwner(this._world, entity);
         if (arch) {
-            arch.removeEntity(entity, this._world.time);
+            arch.removeEntity(entity);
             setOwner(this._world, entity, undefined);
         }
         freeEntityHandle(entity);
@@ -64,7 +64,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
                 setOwner(this._world, e, undefined);
                 freeEntityHandle(e);
             }
-            archetype.removeAll(this._world.time);
+            archetype.removeAll();
         }
     }
 
@@ -95,8 +95,8 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         for (const i of added) data.set(tokens[i], components[i]);
         const target = this._world.archetypes.getOrCreate([...data.keys()]);
         const enabled = currentArch.isEntityEnabled(entity);
-        currentArch.removeEntity(entity, this._world.time);
-        target.addEntity(entity, data, enabled, this._world.time);
+        currentArch.removeEntity(entity);
+        target.addEntity(entity, data, enabled);
         setOwner(this._world, entity, target);
 
         for (const i of added) components[i].setup(entity, this);
@@ -104,12 +104,12 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     public setEnabledState(entity: Entity, enabled: boolean): void {
         const arch = requireOwner(this._world, entity);
-        arch.setEnabledState(entity, enabled, this._world.time);
+        arch.setEnabledState(entity, enabled);
     }
 
     public setEnabledStateForQuery(entityQuery: EntityQuery<TokensOfList<any[]>, TokensOfList<any[]>>, enabled: boolean): void {
         for (const archetype of entityQuery.archetypes) {
-            archetype.setEnabledStateForAll(enabled, this._world.time);
+            archetype.setEnabledStateForAll(enabled);
         }
     }
 
@@ -120,7 +120,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
             return;
         }
         const edge = this._world.archetypes.withAdded(currentArch, token);
-        currentArch.moveRowTo(entity, edge.target, edge, component, this._world.time);
+        currentArch.moveRowTo(entity, edge.target, edge, component);
         setOwner(this._world, entity, edge.target);
 
         component.setup(entity, this);
@@ -136,7 +136,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         }
         const index = currentArch.getIndexOfEntity(entity)!;
 
-        componentStore.set(index, component, this._world.time.elapsedTimeMs);
+        componentStore.set(index, component, this._world.changeStamps.current);
         component.setup(entity, this);
     }
 
@@ -145,7 +145,7 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
         const currentArch = requireOwner(this._world, entity);
         if (currentArch.getColumn(token) === undefined) return;
         const edge = this._world.archetypes.withRemoved(currentArch, token);
-        currentArch.moveRowTo(entity, edge.target, edge, undefined, this._world.time);
+        currentArch.moveRowTo(entity, edge.target, edge, undefined);
         setOwner(this._world, entity, edge.target);
     }
 
@@ -181,6 +181,11 @@ export class EntityManager implements EntityWriteOptions, EntityReadOptions {
 
     public nameOf(entity: Entity): string | undefined {
         return getEntityName(entity);
+    }
+
+    public setName(entity: Entity, name: string | undefined): void {
+        requireOwner(this._world, entity);
+        setEntityName(entity, name);
     }
 
     private static tokenOf(component: Component): AnyCT {

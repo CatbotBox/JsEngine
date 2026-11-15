@@ -15,12 +15,12 @@ export class TranslationSystemGroup extends SystemGroup {
             const changed = this._parentQuery.stream({
                 read: {parentTransform: ParentTransform},
             }, {
-                filterLastUpdated: this.lastUpdateTime,
+                filterLastUpdated: this.lastUpdateStamp,
             }).hasAny();
             if (!changed) {
                 return;
             }
-            this.updateLastUpdateTime();
+            this.updateLastUpdateStamp();
         }
         while (cyclesLeft > 0)
 

@@ -16,10 +16,10 @@ describe("editor toolbar status text", () => {
     });
 
     test("load status counts entities and lists what was dropped", () => {
-        expect(sceneLoadStatus({entityCount: 1, report: {skippedComponentTypes: [], danglingEntityRefs: [], droppedComponents: []}})).toBe("Loaded 1 entity");
+        expect(sceneLoadStatus({entityCount: 1, report: {skippedComponentTypes: [], skippedResourceTypes: [], danglingEntityRefs: [], droppedComponents: [], changedSchemas: []}})).toBe("Loaded 1 entity");
         expect(sceneLoadStatus({
             entityCount: 12,
-            report: {skippedComponentTypes: [], danglingEntityRefs: ["entities[2].Parent.entity"], droppedComponents: ["entities[2].Parent"]},
+            report: {skippedComponentTypes: [], skippedResourceTypes: [], danglingEntityRefs: ["entities[2].Parent.entity"], droppedComponents: ["entities[2].Parent"], changedSchemas: []},
         })).toBe("Loaded 12 entities; 1 dangling reference loaded as null: entities[2].Parent.entity; 1 dropped component: entities[2].Parent");
     });
 

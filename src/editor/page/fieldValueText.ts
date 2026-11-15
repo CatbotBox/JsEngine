@@ -89,6 +89,7 @@ export function numberText(value: EditorFieldValue): string {
     return fallbackText(value);
 }
 
+// Stored values are float32: show the shortest decimal that rounds back to the same float32, not its float64 expansion.
 export function float32Text(value: number): string {
     if (!Number.isFinite(value) || Math.fround(value) !== value) return String(value);
     for (let digits = 1; digits < FLOAT32_MAX_SIGNIFICANT_DIGITS; digits++) {

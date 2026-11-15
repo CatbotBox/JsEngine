@@ -34,7 +34,7 @@ export class TextSpriteBoundsSystem extends System {
             write: {bounds: RenderBounds},
             optional: {anchor: ScreenAnchor},
         }, {
-            filterLastUpdated: this.lastUpdateTime,
+            filterLastUpdated: this.lastUpdateStamp,
             structuralFilter: "additions",
             filterBlackList: [RenderBounds]
         }).consumeSpans(({start, end, cols, stores}) => {

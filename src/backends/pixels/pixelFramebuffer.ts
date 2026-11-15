@@ -5,6 +5,7 @@ import {RGBA_BYTES_PER_PIXEL} from "./pixelFrame";
 import type {PixelFrame} from "./pixelFrame";
 import type {PixelPresenterSize} from "./pixelPresenter";
 
+// Pixels are 0xAABBGGRR as read through the little-endian Uint32 view, i.e. R, G, B, A in byte order.
 const PIXEL_RED_SHIFT = 0;
 const PIXEL_GREEN_SHIFT = 8;
 const PIXEL_BLUE_SHIFT = 16;

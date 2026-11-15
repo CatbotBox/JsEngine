@@ -239,11 +239,13 @@ class FakePixelDisplay extends FakeDisplaySurface<PixelFrame> implements PixelWo
 
 class FakeWorldWorker implements WorldWorker {
     public readonly posted: PageToWorldMessage[] = [];
+    public readonly transfers: (readonly ArrayBuffer[])[] = [];
     public terminated = false;
     private readonly listeners = new Map<string, ((event: never) => void)[]>();
 
-    public postMessage(message: PageToWorldMessage): void {
+    public postMessage(message: PageToWorldMessage, transfer: ArrayBuffer[]): void {
         this.posted.push(message);
+        this.transfers.push(transfer);
     }
 
     public addEventListener(type: "message" | "error", listener: (event: never) => void): void {
@@ -301,6 +303,13 @@ describe("world worker protocol", () => {
         expect(renderBackendFromQuery("?backend=webgl")).toBe("cells");
     });
 
+    test("a page's own default backend applies when ?backend= names none", () => {
+        expect(renderBackendFromQuery("", "pixels")).toBe("pixels");
+        expect(renderBackendFromQuery("?backend=webgl", "pixels")).toBe("pixels");
+        expect(renderBackendFromQuery("?backend=cells", "pixels")).toBe("cells");
+        expect(renderBackendFromQuery("?backend=pixels", "pixels")).toBe("pixels");
+    });
+
     test("?scale= is a whole number of device pixels per framebuffer pixel within its limits", () => {
         const {min, max} = PIXEL_SCALE_LIMITS;
         expect(pixelScaleFromQuery("?scale=3")).toBe(3);
@@ -330,6 +339,10 @@ describe("world worker protocol", () => {
         const frame = frameWithText(2, 1);
         expect(isPageToWorldMessage({type: "init", surface: {kind: "cells", columns: 1, rows: 1}})).toBe(true);
         expect(isPageToWorldMessage({type: "presented"})).toBe(true);
+        expect(isPageToWorldMessage({type: "presented", returnedBuffer: new ArrayBuffer(8)})).toBe(true);
+        expect(isPageToWorldMessage({type: "presented", returnedBuffer: new Uint8ClampedArray(8)})).toBe(false);
+        expect(isPageToWorldMessage({type: "presented", returnedBuffer: "pixels"})).toBe(false);
+        expect(isPageToWorldMessage({type: "presented", returnedBuffer: null})).toBe(false);
         expect(isPageToWorldMessage({type: "frame", frame})).toBe(false);
         expect(isPageToWorldMessage({type: "pixelFrame", frame: pixelFrame(1, 1)})).toBe(false);
         expect(isWorldToPageMessage({type: "frame", frame})).toBe(true);
@@ -527,6 +540,26 @@ describe("PageConnection (the world worker's platform)", () => {
         expect(message.frame.rgba[0]).toBe(FIRST_RED);
     });
 
+    test("a pixel buffer the page returns with presented carries the next frame of its size", async () => {
+        const scope = new FakeScope();
+        const presenter = (await openPixelConnection(scope)).pixelPresenter();
+        const returned = new ArrayBuffer(4 * 2 * RGBA_BYTES_PER_PIXEL);
+        scope.send({type: "presented", returnedBuffer: returned});
+        const frame = pixelFrame(4, 2);
+        presenter.present(frame);
+        const {message, transfer} = scope.sent[0];
+        if (message.type !== "pixelFrame") throw new Error(`expected a pixel frame, got ${message.type}`);
+        expect(transfer).toEqual([returned]);
+        expect(message.frame.rgba.buffer).toBe(returned);
+        expect(message.frame).toEqual(frame);
+
+        scope.send({type: "presented", returnedBuffer: new ArrayBuffer(2 * 2 * RGBA_BYTES_PER_PIXEL)});
+        presenter.present(frame);
+        const resized = scope.sent[1].transfer[0];
+        expect(resized.byteLength).toBe(frame.rgba.length);
+        expect(resized).not.toBe(returned);
+    });
+
     test("statuses, quit and fail are posted in order", async () => {
         const scope = new FakeScope();
         const connection = await openConnection(scope);
@@ -626,7 +659,7 @@ describe("CellRenderSystemGroup on the page connection", () => {
 
             const last = scope.posted[scope.posted.length - 1];
             if (last.type !== "frame") throw new Error(`expected a frame, got ${last.type}`);
-            expect([last.frame.width, last.frame.height]).toEqual([100, 29]);
+            expect([last.frame.width, last.frame.height]).toEqual([100, 30]);
             expect(last.frame.kind.every(kind => kind === CellKind.Background)).toBe(true);
         } finally {
             group.enabled = false;
@@ -792,9 +825,11 @@ describe("connectWorldWorker (the page's end)", () => {
         expect(worker.posted).toEqual([
             {type: "init", surface: {kind: "pixels", widthPx: 320, heightPx: 160}, requestedRasterWorkers: 2},
             {type: "resize", surface: {kind: "pixels", widthPx: 640, heightPx: 384}},
-            {type: "presented"},
-            {type: "presented"},
+            {type: "presented", returnedBuffer: first.rgba.buffer as ArrayBuffer},
+            {type: "presented", returnedBuffer: second.rgba.buffer as ArrayBuffer},
         ]);
+        expect(worker.transfers.slice(2)).toEqual([[first.rgba.buffer as ArrayBuffer], [second.rgba.buffer as ArrayBuffer]]);
+        expect(worker.posted.every(isPageToWorldMessage)).toBe(true);
     });
 
     test("frames of the other backend are an error: the page says so and ends the worker", () => {

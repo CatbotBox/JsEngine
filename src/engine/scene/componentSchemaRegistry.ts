@@ -1,9 +1,20 @@
 import {ComponentType} from "../core/componentType";
-import type {Component} from "../core";
+import type {Component, ComponentCtor, Resource} from "../core";
+import type {ResourceCtor} from "../core/resource";
 import type {AnyCT} from "../util/tokenUtils";
-import type {ComponentSchema, FieldKind, FieldSchema} from "./fieldSchema";
+import type {ComponentSchema, FieldKind, FieldSchema, ResourceSchema} from "./fieldSchema";
 import {encodeFieldValue} from "./fieldValueCodec";
 import type {FieldEncodeContext} from "./fieldValueCodec";
+
+export const STATIC_SCHEMA_KEY = "schema";
+
+interface FieldHolderSchema {
+    readonly name: string;
+    readonly ctor: Function;
+    readonly fields: readonly FieldSchema[];
+
+    create(): object;
+}
 
 function isFieldKind(kind: unknown): kind is FieldKind {
     switch (kind) {
@@ -63,7 +74,16 @@ function validateFieldShape(field: FieldSchema, label: string): void {
     }
 }
 
-function validateFieldAccess(instance: object, schema: ComponentSchema, label: string): void {
+function validateFieldList(schema: FieldHolderSchema, label: string): void {
+    const keys = new Set<string>();
+    for (const field of schema.fields) {
+        validateFieldShape(field, label);
+        if (keys.has(field.key)) throw new Error(`${label}: field "${field.key}" is listed twice`);
+        keys.add(field.key);
+    }
+}
+
+function validateFieldAccess(instance: object, schema: FieldHolderSchema, label: string): void {
     const unknownKeys: string[] = [];
     for (const field of schema.fields) {
         const descriptor = findPropertyDescriptor(instance, field.key);
@@ -81,7 +101,7 @@ function validateFieldAccess(instance: object, schema: ComponentSchema, label: s
     }
 }
 
-function validateDefaultValues(instance: object, schema: ComponentSchema, label: string): void {
+function validateDefaultValues(instance: object, schema: FieldHolderSchema, label: string): void {
     const values = instance as Record<string, unknown>;
     for (const field of schema.fields) {
         try {
@@ -93,25 +113,50 @@ function validateDefaultValues(instance: object, schema: ComponentSchema, label:
     }
 }
 
+function validateCreatedInstance(schema: FieldHolderSchema, label: string): void {
+    const instance = schema.create();
+    if (!(instance instanceof schema.ctor)) throw new Error(`${label}: create() must return a ${schema.ctor.name}`);
+    validateFieldAccess(instance, schema, label);
+    validateDefaultValues(instance, schema, label);
+}
+
 function validateSchema(schema: ComponentSchema): void {
     if (typeof schema.name !== "string" || schema.name.length === 0) throw new Error("Component schema: the name must be a non-empty string");
     const label = `Component schema "${schema.name}"`;
     if (typeof schema.ctor !== "function") throw new Error(`${label}: ctor must be a component class`);
     if (!isPersistence(schema.persistence)) throw new Error(`${label}: unknown persistence ${JSON.stringify(schema.persistence)}`);
+    if (schema.category !== undefined && (typeof schema.category !== "string" || schema.category.length === 0)) {
+        throw new Error(`${label}: the category must be a non-empty string`);
+    }
     if (schema.persistence !== "fields" && schema.fields.length > 0) {
         throw new Error(`${label} is ${schema.persistence} and must not list fields (${quoted(schema.fields.map(field => field.key))})`);
     }
-    const keys = new Set<string>();
-    for (const field of schema.fields) {
-        validateFieldShape(field, label);
-        if (keys.has(field.key)) throw new Error(`${label}: field "${field.key}" is listed twice`);
-        keys.add(field.key);
-    }
+    validateFieldList(schema, label);
     if (schema.persistence === "implied") return;
-    const instance: Component = schema.create();
-    if (!(instance instanceof schema.ctor)) throw new Error(`${label}: create() must return a ${schema.ctor.name}`);
-    validateFieldAccess(instance, schema, label);
-    validateDefaultValues(instance, schema, label);
+    validateCreatedInstance(schema, label);
+}
+
+function validateResourceSchema(schema: ResourceSchema): void {
+    if (typeof schema.name !== "string" || schema.name.length === 0) throw new Error("Resource schema: the name must be a non-empty string");
+    const label = `Resource schema "${schema.name}"`;
+    if (typeof schema.ctor !== "function") throw new Error(`${label}: ctor must be a resource class`);
+    validateFieldList(schema, label);
+    validateCreatedInstance(schema, label);
+}
+
+function ownStaticSchema(ctor: Function, kind: string): unknown {
+    if (typeof ctor !== "function") throw new Error(`ComponentSchemaRegistry: expected a ${kind} class, got ${typeof ctor}`);
+    if (!Object.prototype.hasOwnProperty.call(ctor, STATIC_SCHEMA_KEY)) {
+        throw new Error(`ComponentSchemaRegistry: ${ctor.name} declares no static ${STATIC_SCHEMA_KEY} of its own`);
+    }
+    const schema = (ctor as unknown as Record<string, unknown>)[STATIC_SCHEMA_KEY];
+    if (typeof schema !== "object" || schema === null) throw new Error(`ComponentSchemaRegistry: ${ctor.name}.${STATIC_SCHEMA_KEY} is not a built ${kind} schema`);
+    const describedCtor = (schema as {readonly ctor?: unknown}).ctor;
+    if (describedCtor !== ctor) {
+        const describedName = typeof describedCtor === "function" ? describedCtor.name : String(describedCtor);
+        throw new Error(`ComponentSchemaRegistry: ${ctor.name}.${STATIC_SCHEMA_KEY} describes ${describedName}, not ${ctor.name}`);
+    }
+    return schema;
 }
 
 export class ComponentSchemaRegistry {
@@ -119,9 +164,16 @@ export class ComponentSchemaRegistry {
     private readonly _byName = new Map<string, ComponentSchema>();
     private readonly _byTypeId = new Map<number, ComponentSchema>();
     private readonly _indexByName = new Map<string, number>();
+    private readonly _resourceSchemas: ResourceSchema[] = [];
+    private readonly _resourcesByName = new Map<string, ResourceSchema>();
+    private readonly _resourcesByCtor = new Map<Function, ResourceSchema>();
 
     public get schemas(): readonly ComponentSchema[] {
         return this._schemas;
+    }
+
+    public get resourceSchemas(): readonly ResourceSchema[] {
+        return this._resourceSchemas;
     }
 
     public register<T extends Component>(schema: ComponentSchema<T>): void {
@@ -139,6 +191,35 @@ export class ComponentSchemaRegistry {
         this._byTypeId.set(typeId, general);
     }
 
+    public registerComponentClass<T extends Component>(ctor: ComponentCtor<T>): void {
+        this.register(ownStaticSchema(ctor, "component") as ComponentSchema<T>);
+    }
+
+    public registerComponentClasses(ctors: readonly ComponentCtor<Component>[]): void {
+        for (const ctor of ctors) this.registerComponentClass(ctor);
+    }
+
+    public registerResource<T extends Resource>(schema: ResourceSchema<T>): void {
+        const general = schema as unknown as ResourceSchema;
+        validateResourceSchema(general);
+        if (this._resourcesByName.has(general.name)) throw new Error(`ComponentSchemaRegistry: a resource schema named "${general.name}" is already registered`);
+        const existing = this._resourcesByCtor.get(general.ctor);
+        if (existing !== undefined) {
+            throw new Error(`ComponentSchemaRegistry: ${general.ctor.name} is already registered as "${existing.name}", cannot register it again as "${general.name}"`);
+        }
+        this._resourceSchemas.push(general);
+        this._resourcesByName.set(general.name, general);
+        this._resourcesByCtor.set(general.ctor, general);
+    }
+
+    public registerResourceClass<T extends Resource>(ctor: ResourceCtor<T>): void {
+        this.registerResource(ownStaticSchema(ctor, "resource") as ResourceSchema<T>);
+    }
+
+    public registerResourceClasses(ctors: readonly ResourceCtor<Resource>[]): void {
+        for (const ctor of ctors) this.registerResourceClass(ctor);
+    }
+
     public byName(name: string): ComponentSchema | undefined {
         return this._byName.get(name);
     }
@@ -151,5 +232,13 @@ export class ComponentSchemaRegistry {
         const index = this._indexByName.get(schema.name);
         if (index === undefined || this._schemas[index] !== schema) throw new Error(`ComponentSchemaRegistry: "${schema.name}" is not registered here`);
         return index;
+    }
+
+    public resourceByName(name: string): ResourceSchema | undefined {
+        return this._resourcesByName.get(name);
+    }
+
+    public resourceByCtor(ctor: ResourceCtor<Resource>): ResourceSchema | undefined {
+        return this._resourcesByCtor.get(ctor);
     }
 }

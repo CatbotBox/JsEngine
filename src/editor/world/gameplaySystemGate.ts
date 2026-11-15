@@ -15,6 +15,7 @@ const ENGINE_ROOT_SYSTEMS: readonly EngineRootSystemCtor[] = [
     InputSystem,
 ];
 
+// A gated root system on purpose: it counts only ticks in which gameplay ran, which is what step and play report.
 export class GameplayTickCounterSystem extends System {
     public ticks = 0;
 

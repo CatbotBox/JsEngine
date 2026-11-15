@@ -1,14 +1,37 @@
-import type {Component, Entity, World} from "../../engine/core";
+import type {Component, ComponentCtor, Entity, World} from "../../engine/core";
 import {NULL_ENTITY} from "../../engine/core/entity";
 import {ComponentType} from "../../engine/core/componentType";
+import {getOwner} from "../../engine/core/ownership";
+import type {AnyCT} from "../../engine/util/tokenUtils";
 import {Parent, ParentTransform} from "../../engine/translation/parent";
-import {Children} from "../../engine/translation/children";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
-import {decodeFieldValue, isEntityField, isSceneJsonObject} from "../../engine/scene";
-import type {ComponentSchema, ComponentSchemaRegistry, FieldDecodeContext, FieldSchema, SceneAssetLoader, SceneJsonObject, SceneJsonValue} from "../../engine/scene";
-import type {EditorFieldValue} from "../editorProtocol";
-import {encodeEditorFieldValue, isLiveEntity, parentOf, requireLiveEntity} from "./entityInspection";
+import {
+    assignInferredFieldValue,
+    decodeFieldValue,
+    EditorOnly,
+    inferComponentSchema,
+    isEntityField,
+    isSceneJsonObject,
+    untrackedComponentOf,
+} from "../../engine/scene";
+import type {ComponentSchema, ComponentSchemaRegistry, FieldDecodeContext, FieldSchema, SceneAssetLoader, SceneJsonObject} from "../../engine/scene";
+import type {EditorFieldEdit, EditorFieldValue} from "../editorProtocol";
+import {encodeEditorFieldValue, isSceneEntityHandle, parentOf, requireSceneEntity, unregisteredComponentTypes} from "./entityInspection";
+import {linkChild, reparentKeepingLocals, requireNoCycle, subtreeOf, unlinkChild} from "./hierarchyEditing";
+
+interface EditableComponent {
+    readonly schema: ComponentSchema;
+    readonly type: AnyCT;
+    readonly inferred: boolean;
+}
+
+interface PreparedEdit {
+    readonly edit: EditorFieldEdit;
+    readonly target: EditableComponent;
+    readonly field: FieldSchema;
+    readonly value: unknown;
+}
 
 function fieldsOf(component: Component): Record<string, unknown> {
     return component as unknown as Record<string, unknown>;
@@ -18,13 +41,40 @@ function quotedKeys(keys: readonly string[]): string {
     return keys.map(key => JSON.stringify(key)).join(", ");
 }
 
+function notFieldsPersistence(schema: ComponentSchema): Error {
+    return new Error(`${schema.name} is ${schema.persistence}: the editor only adds, removes and edits components saved with their fields`);
+}
+
 export function requireFieldsSchema(registry: ComponentSchemaRegistry, typeName: string): ComponentSchema {
     const schema = registry.byName(typeName);
     if (schema === undefined) throw new Error(`No component type named "${typeName}" is registered`);
-    if (schema.persistence !== "fields") {
-        throw new Error(`${typeName} is ${schema.persistence}: the editor only adds, removes and edits components saved with their fields`);
-    }
+    if (schema.persistence !== "fields") throw notFieldsPersistence(schema);
     return schema;
+}
+
+function unregisteredTypeNamed(world: World, registry: ComponentSchemaRegistry, typeName: string): AnyCT | undefined {
+    const matches = [...unregisteredComponentTypes(world, registry).keys()].filter(type => type.ctor.name === typeName);
+    if (matches.length > 1) throw new Error(`More than one unregistered component class is named "${typeName}"; register a schema for them`);
+    return matches[0];
+}
+
+function editableComponentOf(world: World, registry: ComponentSchemaRegistry, entity: Entity, typeName: string): EditableComponent {
+    const registered = registry.byName(typeName);
+    if (registered !== undefined) {
+        if (registered.persistence !== "fields") throw notFieldsPersistence(registered);
+        const type = ComponentType.of(registered.ctor);
+        if (!world.entityManager.hasComponent(entity, type)) throw new Error(`Entity ${entity} has no ${typeName}`);
+        return {schema: registered, type, inferred: false};
+    }
+    const archetype = getOwner(world, entity)!;
+    const own = archetype.componentTypes.find(type =>
+        type.ctor.name === typeName && registry.byType(type) === undefined && type !== ComponentType.of(EditorOnly));
+    if (own !== undefined) {
+        const instance = untrackedComponentOf<Component>(world, entity, own)!;
+        return {schema: inferComponentSchema(instance), type: own, inferred: true};
+    }
+    if (unregisteredTypeNamed(world, registry, typeName) !== undefined) throw new Error(`Entity ${entity} has no ${typeName}`);
+    throw new Error(`No component type named "${typeName}" is registered`);
 }
 
 function requireField(schema: ComponentSchema, key: string): FieldSchema {
@@ -35,7 +85,7 @@ function requireField(schema: ComponentSchema, key: string): FieldSchema {
 
 function decodeContext(world: World, assets: SceneAssetLoader): FieldDecodeContext {
     return {
-        entityOf: entity => isLiveEntity(world, entity) ? entity as Entity : undefined,
+        entityOf: entity => isSceneEntityHandle(world, entity) ? entity as Entity : undefined,
         reportDanglingEntity: path => {
             throw new Error(`${path} names no entity of this world`);
         },
@@ -48,6 +98,13 @@ function missingRequiredEntities(schema: ComponentSchema, component: Component):
     return schema.fields.filter(field => isEntityField(field) && !field.nullable && values[field.key] === NULL_ENTITY).map(field => field.key);
 }
 
+export function markComponentChanged(world: World, entity: Entity, type: AnyCT): void {
+    const archetype = getOwner(world, entity);
+    const row = archetype?.getIndexOfEntity(entity);
+    if (archetype === undefined || row === undefined) return;
+    archetype.getColumn(type)?.markBlockAt(row, world.changeStamps.current);
+}
+
 export function assetPathsOf(registry: ComponentSchemaRegistry, typeName: string, values: SceneJsonObject): string[] {
     const schema = registry.byName(typeName);
     if (schema === undefined) return [];
@@ -58,92 +115,79 @@ export function assetPathsOf(registry: ComponentSchemaRegistry, typeName: string
     });
 }
 
-function childrenByParent(world: World): Map<Entity, Set<Entity>> {
-    const childrenType = ComponentType.of(Children);
-    const parentType = ComponentType.of(Parent);
-    const byParent = new Map<Entity, Set<Entity>>();
-    const link = (parent: Entity, child: Entity) => {
-        let children = byParent.get(parent);
-        if (children === undefined) byParent.set(parent, children = new Set());
-        children.add(child);
-    };
-    for (const archetype of world.archetypes.values()) {
-        const childrenColumn = archetype.getColumn(childrenType);
-        const parentColumn = archetype.getColumn(parentType);
-        if (childrenColumn === undefined && parentColumn === undefined) continue;
-        const count = archetype.entityCountIncludingDisabled;
-        for (let row = 0; row < count; row++) {
-            const entity = archetype.getEntityAtIndex(row);
-            if (childrenColumn !== undefined) for (const child of (childrenColumn.get(row) as Children).children) link(entity, child);
-            if (parentColumn !== undefined) link((parentColumn.get(row) as Parent).entity, entity);
-        }
-    }
-    return byParent;
+export function assetPathsOfEdits(registry: ComponentSchemaRegistry, edits: readonly EditorFieldEdit[]): string[] {
+    return [...new Set(edits.flatMap(edit => assetPathsOf(registry, edit.typeName, {[edit.key]: edit.value})))];
 }
 
-export function subtreeOf(world: World, root: Entity): Entity[] {
-    const byParent = childrenByParent(world);
-    const subtree = [root];
-    const seen = new Set<Entity>(subtree);
-    for (let i = 0; i < subtree.length; i++) {
-        for (const child of byParent.get(subtree[i]) ?? []) {
-            if (seen.has(child) || !isLiveEntity(world, child)) continue;
-            seen.add(child);
-            subtree.push(child);
-        }
-    }
-    return subtree;
-}
-
-function requireNoCycle(world: World, child: Entity, parent: Entity): void {
-    if (subtreeOf(world, child).includes(parent)) {
-        throw new Error(`Entity ${parent} is entity ${child} or one of its descendants, so it cannot become its parent`);
-    }
-}
-
-function linkChild(world: World, child: Entity, parent: Entity): void {
-    const entityManager = world.entityManager;
-    const children = entityManager.getComponent<Children>(parent, Children);
-    if (children === undefined) entityManager.addComponent(parent, new Children(child));
-    else children.addChild(child);
-}
-
-function unlinkChild(world: World, child: Entity, parent: Entity): void {
-    if (!isLiveEntity(world, parent)) return;
-    world.entityManager.getComponent<Children>(parent, Children)?.removeChild(child);
-}
-
-function reparent(world: World, child: Entity, link: Parent, parent: Entity): void {
-    requireNoCycle(world, child, parent);
-    const previous = link.entity;
-    if (previous === parent) return;
-    unlinkChild(world, child, previous);
-    link.entity = parent;
-    linkChild(world, child, parent);
-}
-
-export function assignField(
-    world: World,
-    registry: ComponentSchemaRegistry,
-    assets: SceneAssetLoader,
-    entity: Entity,
-    typeName: string,
-    key: string,
-    json: SceneJsonValue,
-): EditorFieldValue {
-    requireLiveEntity(world, entity);
-    const schema = requireFieldsSchema(registry, typeName);
-    const field = requireField(schema, key);
-    const path = `${typeName}.${key}`;
-    const component = world.entityManager.getComponent<Component>(entity, ComponentType.of(schema.ctor));
-    if (component === undefined) throw new Error(`Entity ${entity} has no ${typeName}`);
-    const value = decodeFieldValue(field, json, decodeContext(world, assets), path);
+function prepareEdit(world: World, registry: ComponentSchemaRegistry, context: FieldDecodeContext, edit: EditorFieldEdit): PreparedEdit {
+    requireSceneEntity(world, edit.entity);
+    const target = editableComponentOf(world, registry, edit.entity, edit.typeName);
+    const field = requireField(target.schema, edit.key);
+    const path = `${edit.typeName}.${edit.key}`;
+    const value = decodeFieldValue(field, edit.value, context, path);
     if (isEntityField(field) && !field.nullable && value === NULL_ENTITY) {
-        throw new Error(`${path} cannot be null; remove the ${typeName} component instead`);
+        throw new Error(`${path} cannot be null; remove the ${edit.typeName} component instead`);
     }
-    if (component instanceof Parent) reparent(world, entity, component, value as Entity);
-    else fieldsOf(component)[key] = value;
-    return encodeEditorFieldValue(world, field, fieldsOf(component)[key], path);
+    return {edit, target, field, value};
+}
+
+function applyEdit(world: World, prepared: PreparedEdit): void {
+    const {edit, target, field, value} = prepared;
+    if (target.inferred) {
+        assignInferredFieldValue(untrackedComponentOf<Component>(world, edit.entity, target.type)!, field, value);
+        markComponentChanged(world, edit.entity, target.type);
+        return;
+    }
+    const component = world.entityManager.getComponent<Component>(edit.entity, target.type)!;
+    if (component instanceof Parent) reparentKeepingLocals(world, edit.entity, component, value as Entity);
+    else fieldsOf(component)[field.key] = value;
+}
+
+function encodedValueOf(world: World, prepared: PreparedEdit): EditorFieldValue {
+    const component = untrackedComponentOf<Component>(world, prepared.edit.entity, prepared.target.type)!;
+    return encodeEditorFieldValue(world, prepared.field, fieldsOf(component)[prepared.field.key], `${prepared.edit.typeName}.${prepared.edit.key}`);
+}
+
+export function assignField(world: World, registry: ComponentSchemaRegistry, assets: SceneAssetLoader, edit: EditorFieldEdit): EditorFieldValue {
+    const prepared = prepareEdit(world, registry, decodeContext(world, assets), edit);
+    if (prepared.target.schema.ctor === Parent) requireNoCycle(world, edit.entity, prepared.value as Entity);
+    applyEdit(world, prepared);
+    return encodedValueOf(world, prepared);
+}
+
+export function assignFields(world: World, registry: ComponentSchemaRegistry, assets: SceneAssetLoader, edits: readonly EditorFieldEdit[]): EditorFieldValue[] {
+    const context = decodeContext(world, assets);
+    const prepared = edits.map((edit, index) => {
+        if (registry.byName(edit.typeName)?.ctor === Parent) throw new Error(`edits[${index}]: setFields cannot edit Parent; use setParent`);
+        try {
+            return prepareEdit(world, registry, context, edit);
+        } catch (error) {
+            throw new Error(`edits[${index}]: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    });
+    for (const edit of prepared) applyEdit(world, edit);
+    return prepared.map(edit => encodedValueOf(world, edit));
+}
+
+function decodeValuesOnto(world: World, assets: SceneAssetLoader, schema: ComponentSchema, component: Component, values: SceneJsonObject, typeName: string): void {
+    const unknownKeys = Object.keys(values).filter(key => !schema.fields.some(field => field.key === key));
+    if (unknownKeys.length > 0) throw new Error(`${typeName} has no field${unknownKeys.length === 1 ? "" : "s"} ${quotedKeys(unknownKeys)}`);
+    const context = decodeContext(world, assets);
+    for (const field of schema.fields) {
+        const json = values[field.key];
+        if (json === undefined) continue;
+        const value = decodeFieldValue(field, json, context, `${typeName}.${field.key}`);
+        if (schema.inferred === true) assignInferredFieldValue(component, field, value);
+        else fieldsOf(component)[field.key] = value;
+    }
+}
+
+function createInferred(type: AnyCT, typeName: string): Component {
+    try {
+        return new (type.ctor as ComponentCtor<Component>)();
+    } catch (error) {
+        throw new Error(`${typeName} could not be created without constructor arguments: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
 
 export function addComponentTo(
@@ -154,18 +198,22 @@ export function addComponentTo(
     typeName: string,
     values: SceneJsonObject,
 ): void {
-    requireLiveEntity(world, entity);
-    const schema = requireFieldsSchema(registry, typeName);
+    requireSceneEntity(world, entity);
     const entityManager = world.entityManager;
-    if (entityManager.hasComponent(entity, ComponentType.of(schema.ctor))) throw new Error(`Entity ${entity} already has ${typeName}`);
-    const unknownKeys = Object.keys(values).filter(key => !schema.fields.some(field => field.key === key));
-    if (unknownKeys.length > 0) throw new Error(`${typeName} has no field${unknownKeys.length === 1 ? "" : "s"} ${quotedKeys(unknownKeys)}`);
-    const component = schema.create();
-    const context = decodeContext(world, assets);
-    for (const field of schema.fields) {
-        const json = values[field.key];
-        if (json !== undefined) fieldsOf(component)[field.key] = decodeFieldValue(field, json, context, `${typeName}.${field.key}`);
+    const registered = registry.byName(typeName);
+    if (registered === undefined) {
+        const type = unregisteredTypeNamed(world, registry, typeName);
+        if (type === undefined) throw new Error(`No component type named "${typeName}" is registered`);
+        if (entityManager.hasComponent(entity, type)) throw new Error(`Entity ${entity} already has ${typeName}`);
+        const component = createInferred(type, typeName);
+        decodeValuesOnto(world, assets, inferComponentSchema(component), component, values, typeName);
+        entityManager.addComponent(entity, component);
+        return;
     }
+    const schema = requireFieldsSchema(registry, typeName);
+    if (entityManager.hasComponent(entity, ComponentType.of(schema.ctor))) throw new Error(`Entity ${entity} already has ${typeName}`);
+    const component = schema.create();
+    decodeValuesOnto(world, assets, schema, component, values, typeName);
     const missing = missingRequiredEntities(schema, component);
     if (missing.length > 0) throw new Error(`${typeName} needs ${quotedKeys(missing)} set to an entity in its values`);
     if (component instanceof Parent) requireNoCycle(world, entity, component.entity);
@@ -174,21 +222,24 @@ export function addComponentTo(
 }
 
 export function removeComponentFrom(world: World, registry: ComponentSchemaRegistry, entity: Entity, typeName: string): void {
-    requireLiveEntity(world, entity);
-    const schema = requireFieldsSchema(registry, typeName);
+    requireSceneEntity(world, entity);
+    const target = editableComponentOf(world, registry, entity, typeName);
     const entityManager = world.entityManager;
-    const type = ComponentType.of(schema.ctor);
-    if (!entityManager.hasComponent(entity, type)) throw new Error(`Entity ${entity} has no ${typeName}`);
-    if (schema.ctor === Parent) {
+    if (target.schema.ctor === Parent) {
         const parent = parentOf(world, entity);
         if (parent !== undefined) unlinkChild(world, entity, parent);
         entityManager.removeComponent(entity, ParentTransform);
     }
-    entityManager.removeComponent(entity, type);
+    entityManager.removeComponent(entity, target.type);
+}
+
+export function renameEntity(world: World, entity: Entity, name: string | null): void {
+    requireSceneEntity(world, entity);
+    world.entityManager.setName(entity, name ?? undefined);
 }
 
 export function createEditorEntity(world: World, name: string | undefined, parent: Entity | undefined): Entity {
-    if (parent !== undefined) requireLiveEntity(world, parent);
+    if (parent !== undefined) requireSceneEntity(world, parent);
     const components: Component[] = [new LocalPosition(), new LocalToWorld()];
     if (parent !== undefined) components.push(new Parent(parent));
     const entity = world.entityManager.createEntity(name, components);
@@ -197,7 +248,7 @@ export function createEditorEntity(world: World, name: string | undefined, paren
 }
 
 export function destroyWithDescendants(world: World, root: Entity): Entity[] {
-    requireLiveEntity(world, root);
+    requireSceneEntity(world, root);
     const doomed = subtreeOf(world, root);
     const doomedSet = new Set(doomed);
     for (const entity of doomed) {
@@ -210,7 +261,7 @@ export function destroyWithDescendants(world: World, root: Entity): Entity[] {
 }
 
 export function setEntityEnabled(world: World, entity: Entity, enabled: boolean): void {
-    requireLiveEntity(world, entity);
+    requireSceneEntity(world, entity);
     world.entityManager.setEnabledState(entity, enabled);
 }
 

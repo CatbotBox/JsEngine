@@ -3,7 +3,8 @@ import type {MeshLoadOptions} from "../rendering/3d/mesh";
 import {SpriteImage} from "../rendering/2d/spriteImage";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {isSceneJsonObject} from "./sceneDocument";
-import type {SceneDocument} from "./sceneDocument";
+import type {SceneDocument, SceneFieldValues} from "./sceneDocument";
+import type {FieldSchema} from "./fieldSchema";
 
 export type SceneAssetKind = "mesh" | "spriteImage";
 
@@ -38,21 +39,27 @@ export function platformSceneAssetLoader(options: MeshLoadOptions): SceneAssetLo
 export function sceneAssetPaths(document: SceneDocument, registry: ComponentSchemaRegistry): SceneAssetReference[] {
     const references: SceneAssetReference[] = [];
     const seen = new Set<string>();
+    const collect = (fields: readonly FieldSchema[], values: SceneFieldValues) => {
+        for (const field of fields) {
+            if (field.kind !== "mesh" && field.kind !== "spriteImage") continue;
+            const value = values[field.key];
+            if (!isSceneJsonObject(value) || typeof value.path !== "string") continue;
+            const key = `${field.kind}:${value.path}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            references.push({kind: field.kind, path: value.path});
+        }
+    };
     for (const record of document.entities) {
         for (const componentName of Object.keys(record.components)) {
             const schema = registry.byName(componentName);
-            if (schema === undefined) continue;
-            const values = record.components[componentName];
-            for (const field of schema.fields) {
-                if (field.kind !== "mesh" && field.kind !== "spriteImage") continue;
-                const value = values[field.key];
-                if (!isSceneJsonObject(value) || typeof value.path !== "string") continue;
-                const key = `${field.kind}:${value.path}`;
-                if (seen.has(key)) continue;
-                seen.add(key);
-                references.push({kind: field.kind, path: value.path});
-            }
+            if (schema !== undefined) collect(schema.fields, record.components[componentName]);
         }
+    }
+    const resources = document.resources ?? {};
+    for (const resourceName of Object.keys(resources)) {
+        const schema = registry.resourceByName(resourceName);
+        if (schema !== undefined) collect(schema.fields, resources[resourceName]);
     }
     return references;
 }

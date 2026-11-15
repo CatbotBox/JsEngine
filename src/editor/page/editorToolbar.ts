@@ -1,25 +1,26 @@
 import type {SceneLoadReport, SceneSaveReport, SkippedComponentType} from "../../engine/scene";
 import type {EditorMode, EditorPlayState, LoadSceneResult} from "../editorProtocol";
-
-export interface EditorToolbarActions {
-    setMode(mode: EditorMode): void;
-
-    step(): void;
-
-    createEntity(): void;
-
-    save(): void;
-
-    load(sceneText: string): void;
-}
+import {createButton, createElement} from "./dom";
+import {EDITOR_TOOLS} from "./editorTools";
+import type {EditorTool} from "./editorTools";
+import type {EditorWorkspace} from "./editorWorkspace";
 
 export const SCENE_FILE_NAME = "scene.json";
 export const MAX_LISTED_REPORT_PATHS = 3;
 
-const SCENE_MEDIA_TYPE = "application/json";
-const SCENE_FILE_ACCEPT = ".json,application/json";
 const MODE_LABELS: Readonly<Record<EditorMode, string>> = {edit: "Editing", play: "Playing", paused: "Paused"};
+const TOOL_LABELS: Readonly<Record<EditorTool, string>> = {hand: "Hand", move: "Move", rotate: "Rotate", scale: "Scale"};
+const TOOL_SHORTCUTS: Readonly<Record<EditorTool, string>> = {hand: "Q", move: "W", rotate: "E", scale: "R"};
+const TOOL_HINTS: Readonly<Record<EditorTool, string>> = {
+    hand: "Drag to pan the Scene view",
+    move: "Drag the selection or its axis handles to move it (Ctrl snaps)",
+    rotate: "Drag the ring to rotate about the view axis (Ctrl snaps)",
+    scale: "Drag the axis handles or the centre to scale (Ctrl snaps)",
+};
 const ERROR_CLASS = "error";
+const WARNING_CLASS = "warn";
+const DIRTY_MARK = " *";
+const TITLE_SEPARATOR = " - ";
 
 interface CountedPhrase {
     readonly one: string;
@@ -55,8 +56,8 @@ function withWarnings(summary: string, warnings: readonly string[]): string {
     return warnings.length === 0 ? summary : `${summary}; ${warnings.join("; ")}`;
 }
 
-export function sceneSaveStatus(report: SceneSaveReport): string {
-    return withWarnings(`Saved ${SCENE_FILE_NAME}`, [
+export function sceneSaveStatus(report: SceneSaveReport, fileName: string = SCENE_FILE_NAME): string {
+    return withWarnings(`Saved ${fileName}`, [
         ...skippedText(report.skippedComponentTypes),
         ...pathsText(report.danglingEntityRefs, DANGLING_SAVED),
         ...pathsText(report.unsavedAssets, UNSAVED_ASSETS),
@@ -76,94 +77,104 @@ export function playStateText(state: EditorPlayState): string {
     return state.mode === "edit" ? MODE_LABELS.edit : `${MODE_LABELS[state.mode]} (tick ${state.gameplayTicks})`;
 }
 
-export function downloadText(document: Document, fileName: string, text: string): void {
-    const url = URL.createObjectURL(new Blob([text], {type: SCENE_MEDIA_TYPE}));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.hidden = true;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url));
+export function editorTitleText(projectName: string, documentName: string, dirty: boolean): string {
+    const document = `${documentName}${dirty ? DIRTY_MARK : ""}`;
+    return projectName.length === 0 ? document : `${projectName}${TITLE_SEPARATOR}${document}`;
 }
 
-export class EditorToolbar {
+export class ToolbarView {
     private readonly play: HTMLButtonElement;
     private readonly pause: HTMLButtonElement;
     private readonly stepButton: HTMLButtonElement;
-    private readonly stop: HTMLButtonElement;
+    private readonly toolButtons = new Map<EditorTool, HTMLButtonElement>();
+    private readonly title: HTMLElement;
     private readonly mode: HTMLElement;
+    private readonly stopped: HTMLElement;
     private readonly status: HTMLOutputElement;
 
-    public constructor(container: HTMLElement, private readonly actions: EditorToolbarActions) {
+    public constructor(container: HTMLElement, private readonly workspace: EditorWorkspace) {
         const document = container.ownerDocument;
-        this.play = this.button(document, "Play", "Snapshot the scene and run the game", () => actions.setMode("play"));
-        this.pause = this.button(document, "Pause", "Stop running gameplay, keep the state", () => actions.setMode("paused"));
-        this.stepButton = this.button(document, "Step", "Run one gameplay tick", () => actions.step());
-        this.stop = this.button(document, "Stop", "Back to editing, restoring the snapshot", () => actions.setMode("edit"));
-        this.mode = document.createElement("span");
-        this.mode.className = "toolbar-mode";
-        const playback = this.group(document, this.play, this.pause, this.stepButton, this.stop, this.mode);
+        this.play = createButton(document, {className: "toolbar-play", text: "Play", title: "Play the scene (Ctrl+P); press again to stop and restore it", onClick: () => this.togglePlay()});
+        this.pause = createButton(document, {className: "toolbar-pause", text: "Pause", title: "Pause or resume gameplay", onClick: () => this.togglePause()});
+        this.stepButton = createButton(document, {className: "toolbar-step", text: "Step", title: "Run one gameplay tick", onClick: () => void workspace.step()});
+        const playback = createElement(document, "div", "toolbar-group");
+        playback.append(this.play, this.pause, this.stepButton);
 
-        const fileInput = document.createElement("input");
-        fileInput.type = "file";
-        fileInput.accept = SCENE_FILE_ACCEPT;
-        fileInput.hidden = true;
-        fileInput.addEventListener("change", () => {
-            const file = fileInput.files?.item(0);
-            fileInput.value = "";
-            if (file === null || file === undefined) return;
-            void file.text().then(text => actions.load(text), error => this.showError(`Could not read ${file.name}: ${String(error)}`));
-        });
-        const scene = this.group(document,
-            this.button(document, "New entity", "Create an entity at the origin", () => actions.createEntity()),
-            this.button(document, "Save", `Download the scene as ${SCENE_FILE_NAME}`, () => actions.save()),
-            this.button(document, "Load", "Replace the scene with a saved scene file", () => fileInput.click()),
-            fileInput,
-        );
+        const tools = createElement(document, "div", "toolbar-group toolbar-tools");
+        tools.setAttribute("role", "group");
+        tools.setAttribute("aria-label", "Scene tools");
+        for (const tool of EDITOR_TOOLS) {
+            const button = createButton(document, {
+                className: `toolbar-tool tool-${tool}`,
+                text: TOOL_LABELS[tool],
+                title: `${TOOL_LABELS[tool]} (${TOOL_SHORTCUTS[tool]}): ${TOOL_HINTS[tool]}`,
+                onClick: () => workspace.setTool(tool),
+            });
+            this.toolButtons.set(tool, button);
+            tools.append(button);
+        }
 
-        this.status = document.createElement("output");
-        this.status.className = "toolbar-status";
+        const file = createElement(document, "div", "toolbar-group");
+        file.append(createButton(document, {className: "toolbar-save", text: "Save", title: "Save the scene (Ctrl+S)", onClick: () => void workspace.saveDocument()}));
+
+        this.title = createElement(document, "span", "toolbar-title");
+        this.mode = createElement(document, "span", "toolbar-mode");
+        this.stopped = createElement(document, "span", "toolbar-stopped");
+        this.stopped.hidden = true;
+        this.status = createElement(document, "output", "toolbar-status");
         this.status.setAttribute("role", "status");
         this.status.setAttribute("aria-live", "polite");
-        container.replaceChildren(playback, scene, this.status);
-        this.showPlayState({mode: "edit", gameplayTicks: 0});
+        container.replaceChildren(playback, tools, file, this.title, this.mode, this.stopped, this.status);
+
+        workspace.on("state", () => this.showState());
+        workspace.on("document", () => this.showTitle());
+        workspace.on("status", () => this.showStatus());
+        this.showState();
+        this.showTitle();
     }
 
-    public showPlayState(state: EditorPlayState): void {
-        this.mode.textContent = playStateText(state);
-        this.mode.dataset.mode = state.mode;
-        this.play.disabled = state.mode === "play";
-        this.pause.disabled = state.mode === "paused";
-        this.stop.disabled = state.mode === "edit";
+    private togglePlay(): void {
+        void this.workspace.setMode(this.workspace.mode === "edit" ? "play" : "edit");
     }
 
-    public showMessage(text: string): void {
-        this.status.classList.remove(ERROR_CLASS);
+    private togglePause(): void {
+        void this.workspace.setMode(this.workspace.mode === "paused" ? "play" : "paused");
+    }
+
+    private showState(): void {
+        const {mode, gameplayTicks, worldStoppedError, closed} = this.workspace;
+        const stopped = worldStoppedError !== null;
+        this.play.textContent = mode === "edit" ? "Play" : "Stop";
+        this.play.classList.toggle("active", mode !== "edit");
+        this.play.disabled = closed || (mode === "edit" && stopped);
+        this.pause.classList.toggle("active", mode === "paused");
+        this.pause.setAttribute("aria-pressed", String(mode === "paused"));
+        this.pause.disabled = closed || stopped;
+        this.stepButton.disabled = closed || stopped;
+        for (const [tool, button] of this.toolButtons) {
+            const active = tool === this.workspace.tool;
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-pressed", String(active));
+        }
+        this.mode.textContent = playStateText({mode, gameplayTicks});
+        this.mode.dataset.mode = mode;
+        this.stopped.hidden = !stopped;
+        this.stopped.textContent = stopped ? `World stopped: ${worldStoppedError}` : "";
+        this.stopped.title = stopped ? `World stopped: ${worldStoppedError}. Load a scene to reset it.` : "";
+    }
+
+    private showTitle(): void {
+        const text = editorTitleText(this.workspace.session.project.name, this.workspace.documentName, this.workspace.dirty);
+        this.title.textContent = text;
+        this.title.title = this.workspace.documentPath ?? "Not saved yet";
+        this.title.ownerDocument.title = text;
+    }
+
+    private showStatus(): void {
+        const {level, text} = this.workspace.status;
+        this.status.classList.toggle(ERROR_CLASS, level === "error");
+        this.status.classList.toggle(WARNING_CLASS, level === "warn");
         this.status.textContent = text;
         this.status.title = text;
-    }
-
-    public showError(text: string): void {
-        this.status.classList.add(ERROR_CLASS);
-        this.status.textContent = text;
-        this.status.title = text;
-    }
-
-    private button(document: Document, text: string, title: string, onClick: () => void): HTMLButtonElement {
-        const created = document.createElement("button");
-        created.type = "button";
-        created.textContent = text;
-        created.title = title;
-        created.addEventListener("click", onClick);
-        return created;
-    }
-
-    private group(document: Document, ...children: HTMLElement[]): HTMLElement {
-        const group = document.createElement("div");
-        group.className = "toolbar-group";
-        group.append(...children);
-        return group;
     }
 }

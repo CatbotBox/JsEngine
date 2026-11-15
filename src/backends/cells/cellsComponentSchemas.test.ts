@@ -9,7 +9,7 @@ import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import {registerCellsComponentSchemas} from "./cellsComponentSchemas";
 import {CellRenderSettings} from "./cellRenderSettings";
 import {CellAspectRatio} from "./cellAspectRatio";
-import {TextSpriteCellPassSettings} from "./2d/textSpriteCellPassSettings";
+import {SpriteCellPassSettings} from "./2d/spriteCellPassSettings";
 import {MeshCellPassSettings} from "./3d/meshCellPassSettings";
 
 const FIXED_WORKERS = 3;
@@ -24,7 +24,7 @@ describe("cells component schemas", () => {
         render.backgroundGlyph = ".";
         render.backgroundGlyphColor = TextColor.BRIGHT_BLUE;
         render.backgroundColor = TextColor.rgb(10, 20, 30);
-        const sprites = new TextSpriteCellPassSettings();
+        const sprites = new SpriteCellPassSettings();
         sprites.maxDepthFade = 12;
         sprites.colorQuantMask = 0xF0F0F0;
         sprites.backgroundColor = 0x102030;
@@ -41,7 +41,7 @@ describe("cells component schemas", () => {
         source.entityManager.createEntity("settings", [render, sprites, meshes, new CellAspectRatio()]);
         const saved = serializeWorld(source, registry);
         const components = saved.document.entities[0].components;
-        expect(Object.keys(components)).toEqual(["CellRenderSettings", "TextSpriteCellPassSettings", "MeshCellPassSettings"]);
+        expect(Object.keys(components)).toEqual(["CellRenderSettings", "SpriteCellPassSettings", "MeshCellPassSettings"]);
         expect(components.CellRenderSettings).toEqual({backgroundGlyph: ".", backgroundGlyphColor: {palette: 12}, backgroundColor: "#0a141e"});
         expect(components.MeshCellPassSettings.threadAreaThreshold).toBe("Infinity");
         expect(components.MeshCellPassSettings.workerCount).toBeUndefined();

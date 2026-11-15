@@ -12,6 +12,7 @@ export type {PixelCanvasDisplayOptions} from "./pixelCanvasDisplay";
 export {startWorldPage} from "./worldPage";
 export type {PageDisplay, PageDisplayFactory} from "./worldPage";
 export {loadRenderBackendScript} from "./renderBackendBootstrap";
+export type {RenderBackendScriptOptions} from "./renderBackendBootstrap";
 export {installDomInput} from "./domInput";
 export type {CellArea, DomInputOptions, DomInputTarget, DomKeyboardEvent, DomPointerEvent, DomWheelEvent} from "./domInput";
 export type {CellWorldDisplay, PixelWorldDisplay, WorldDisplay, WorldWorker, WorldWorkerPage, WorldWorkerPageOptions} from "./worldWorkerPage";
@@ -39,6 +40,7 @@ export type {
     PageToWorldMessage,
     PixelFrameMessage,
     PixelSurfaceSize,
+    PresentedMessage,
     RenderBackend,
     ResizeMessage,
     StatusMessage,
@@ -47,3 +49,4 @@ export type {
 } from "./worldWorkerProtocol";
 export {PreloadedFileSource} from "./preloadedFileSource";
 export type {PreloadEntry, PreloadProgress, PreloadedFileSourceOptions, FetchFile, FetchedFile, ByteStream, ByteStreamReader} from "./preloadedFileSource";
+export {connectDevReload, DEV_EVENTS_PATH, DEV_RELOAD_DEFINE, DEV_RELOAD_ENABLED, DEV_RELOAD_EVENT} from "./devReload";

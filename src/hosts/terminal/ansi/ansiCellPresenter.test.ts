@@ -83,7 +83,7 @@ describe("AnsiCellPresenter", () => {
     test("size, resizes and backlog come from the terminal", () => {
         const terminal = new MemoryTerminal({columns: 50, rows: 20});
         const presenter = new AnsiCellPresenter(terminal);
-        expect(presenter.size()).toEqual({columns: 50, rows: 20});
+        expect(presenter.size()).toEqual({columns: 50, rows: 20, reservedRows: 1});
         let resizes = 0;
         const stop = presenter.onResize(() => resizes++);
         terminal.resize(60, 25);

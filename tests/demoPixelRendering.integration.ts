@@ -123,8 +123,7 @@ function runDemo2d(): void {
     setupDemo2d(world, {render, quit: () => quits++});
 
     const tick = () => {
-        world.time.deltaTimeMs = FRAME_MS;
-        (world as any).update();
+        world.step(FRAME_MS);
     };
     for (let frame = 0; frame < SETTLE_FRAMES; frame++) tick();
 
@@ -181,8 +180,7 @@ function runDemo3d(): void {
     const pass = world.tryGetSystem(MeshPixelPassSystem);
     let maxTriangles = 0;
     const tick = () => {
-        world.time.deltaTimeMs = FRAME_MS;
-        (world as any).update();
+        world.step(FRAME_MS);
         platform.advance(FRAME_MS);
         maxTriangles = Math.max(maxTriangles, pass?.trianglesDrawn ?? 0);
     };

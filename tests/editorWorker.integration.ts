@@ -1,20 +1,31 @@
-import {existsSync} from "fs";
-import {join, resolve} from "path";
+import {resolve} from "path";
 import {connectWorldWorker} from "../src/hosts/web";
 import type {PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
+import {copyPixelFrame} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {Key, NO_MODIFIERS} from "../src/engine/input";
 import type {Entity} from "../src/engine/core";
 import type {SceneJsonValue} from "../src/engine/scene";
 import {EditorClient} from "../src/editor/page/editorClient";
 import type {EditorChannel} from "../src/editor/page/editorClient";
-import type {EditorEntityDetails, EditorEntitySummary, EditorRequest, EditorResultOf} from "../src/editor/editorProtocol";
+import {isEditorEventMessage} from "../src/editor/editorProtocol";
+import type {EditorEntityDetails, EditorEntitySummary, EditorEvent, EditorRequest, EditorResultOf, EditorView} from "../src/editor/editorProtocol";
+import {parseSceneDocument} from "../src/engine/scene";
+import {createProjectServer} from "../src/hosts/desktop";
+import type {ProjectServer} from "../src/hosts/desktop";
+import {HttpProjectFileSystem} from "../src/editor/project/httpProjectFileSystem";
+import type {HttpRequestInit, ProjectEventSource} from "../src/editor/project/httpProjectFileSystem";
+import {serveProjectFiles} from "../src/editor/project/projectFileServing";
+import type {ProjectFileServing, ProjectFilesPort} from "../src/editor/project/projectFileServing";
+import {isBuildSuccess, projectApiUrl} from "../src/editor/project/projectServerApi";
+import type {BuildProjectResult, OpenProjectResult} from "../src/editor/project/projectServerApi";
+import {entityRemapOf} from "../src/editor/launch/projectRunner";
 
 const ROOT = resolve(__dirname, "..");
-const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
-const DEFAULT_DIST = "dist/web-prod";
-const DIST_ARG = process.argv.indexOf("--dist");
-const DIST = DIST_ARG < 0 ? undefined : resolve(process.argv[DIST_ARG + 1] ?? DEFAULT_DIST);
+const DIST_FLAG = "--dist";
+const SERVER_ORIGIN = "http://localhost";
+const JSON_HEADERS: Readonly<Record<string, string>> = {"Content-Type": "application/json"};
+const NO_SERVER_EVENTS: ProjectEventSource = {on: () => () => undefined};
 const SURFACE: PixelPresenterSize = {widthPx: 640, heightPx: 384};
 const TIMEOUT_MS = 20_000;
 const POLL_INTERVAL_MS = 10;
@@ -27,14 +38,21 @@ const PLAYER_MOVED_X = 3;
 const CAMERA_EDITED_XYZ = [0, 1, -12];
 const CAMERA_PAUSED_XYZ = [5, 5, 5];
 const X_COMPONENT = 0;
+const MOVED_PLAYER_XYZ = [4, 2, 0];
+const PREFAB_PATH = "prefabs/cross.prefab.json";
+const OVERRIDDEN_TINT = "#123456";
+const UPDATED_OPACITY = 0.5;
+const HALF = 0.5;
+const AXES = 3;
+const BOUNDS_SETTLE_FRAMES = 3;
 
-const WORKER_SOURCES: Readonly<Record<string, string>> = {
-    "editor2d": join(ROOT, "demo", "2d", "launch", "editor.worker.ts"),
-    "editor3d": join(ROOT, "demo", "3d", "launch", "editor.worker.ts"),
-};
+const SWARM_STATE_RESOURCE = "SwarmState";
+const SHIP_NAME = "ship";
 
-function workerEntry(name: string): string {
-    return DIST === undefined ? WORKER_SOURCES[name] : join(DIST, `${name}.worker.js`);
+interface BuiltProject {
+    readonly folder: string;
+    readonly bundlePath: string;
+    readonly files: HttpProjectFileSystem;
 }
 
 function log(message: string) {
@@ -81,7 +99,7 @@ class PixelFrameRecorder implements PixelWorldDisplay {
 
     public presentPixels(frame: PixelFrame, onPresented: () => void): void {
         this.frames++;
-        this.latest = frame;
+        this.latest = copyPixelFrame(frame);
         setTimeout(onPresented, 0);
     }
 
@@ -94,26 +112,46 @@ class PixelFrameRecorder implements PixelWorldDisplay {
     }
 }
 
+function serverFetch(server: ProjectServer) {
+    return (url: string, init?: HttpRequestInit) => server.handle(new Request(new URL(url, SERVER_ORIGIN), init as RequestInit));
+}
+
+async function postJson<T>(server: ProjectServer, route: string, body: unknown): Promise<T> {
+    const response = await serverFetch(server)(projectApiUrl(route), {method: "POST", body: JSON.stringify(body), headers: JSON_HEADERS});
+    const parsed = await response.json() as T & {error?: string};
+    if (!response.ok) throw new Error(`${route}: ${parsed.error ?? response.status}`);
+    return parsed;
+}
+
+async function buildProject(server: ProjectServer, path: string, label: string): Promise<BuiltProject | undefined> {
+    const opened = await postJson<OpenProjectResult>(server, "open", {path});
+    expect(opened.validation.ok, `${label}: ${path} is a valid project (${JSON.stringify(opened.validation)})`);
+    const built = await postJson<BuildProjectResult>(server, `${opened.id}/build`, {});
+    expect(isBuildSuccess(built), `${label}: the project builds on demand (${JSON.stringify(built)})`);
+    const bundlePath = server.bundlePathOf(opened.id);
+    if (!isBuildSuccess(built) || bundlePath === undefined) return undefined;
+    const files = new HttpProjectFileSystem({projectId: opened.id, rootLabel: path, fetch: serverFetch(server), events: NO_SERVER_EVENTS});
+    return {folder: opened.path, bundlePath, files};
+}
+
 class EditorPage {
     public readonly display = new PixelFrameRecorder();
     public readonly workerErrors: string[] = [];
+    public readonly events: EditorEvent[] = [];
     public readonly client: EditorClient;
     private readonly worker: Worker;
     private readonly connection: WorldWorkerPage;
+    private readonly fileServing: ProjectFileServing;
 
-    public constructor(entry: string, name: string) {
-        this.worker = new Worker(entry, {
-            type: "module",
-            preload: [SHIM],
-            env: {
-                ...process.env,
-                JSENGINE_VERIFY_ISOLATED: "0",
-                ...(DIST === undefined ? {} : {JSENGINE_VERIFY_DIST: DIST}),
-            },
-        } as WorkerOptions);
+    public constructor(project: BuiltProject, name: string) {
+        this.worker = new Worker(project.bundlePath, {type: "module"});
         this.worker.addEventListener("error", event => this.workerErrors.push(event.message));
+        this.fileServing = serveProjectFiles(this.worker as unknown as ProjectFilesPort, project.files);
         this.connection = connectWorldWorker(this.display, this.worker as unknown as WorldWorker, {name});
         this.client = new EditorClient(this.worker as unknown as EditorChannel, {timeoutMs: TIMEOUT_MS});
+        this.worker.addEventListener("message", event => {
+            if (isEditorEventMessage(event.data)) this.events.push(event.data.event);
+        });
     }
 
     public ask<R extends EditorRequest>(request: R): Promise<EditorResultOf<R>> {
@@ -152,6 +190,7 @@ class EditorPage {
 
     public dispose(): void {
         this.client.close();
+        this.fileServing.dispose();
         this.worker.terminate();
     }
 }
@@ -191,12 +230,119 @@ async function verifySaveLoad(page: EditorPage, label: string, checkedName: stri
     expect(arrived > 0, `${label}: frames still arrive after loading (${arrived} in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
 }
 
-async function verify2d(): Promise<void> {
+function boundsCentre(bounds: {readonly min: readonly number[], readonly max: readonly number[]}): number[] {
+    const centre: number[] = [];
+    for (let axis = 0; axis < AXES; axis++) centre.push((bounds.min[axis] + bounds.max[axis]) * HALF);
+    return centre;
+}
+
+function toScreen(matrix: readonly number[], point: readonly number[]): {x: number, y: number} {
+    const [x, y, z] = point;
+    const w = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
+    return {
+        x: (matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12]) / w,
+        y: (matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13]) / w,
+    };
+}
+
+async function verifyPickingNamed(page: EditorPage, label: string, name: string, view: EditorView): Promise<void> {
+    const target = await page.entityNamed(name);
+    if (target === undefined) expect(false, `${label}: ${name} exists to be picked`);
+    else await verifyPicking(page, label, target.entity, name, view);
+}
+
+async function verifyPicking(page: EditorPage, label: string, entity: Entity, name: string, view: EditorView): Promise<void> {
+    const info = await page.ask({op: "getViewInfo", view, entities: [entity]});
+    const point = toScreen(info.worldToScreen, boundsCentre(info.bounds[0]));
+    const picked = await page.ask({op: "pickEntities", x: point.x, y: point.y, view});
+    expect(picked.entities.includes(entity),
+        `${label}: picking the ${view} view at the projected centre of ${name} (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${info.projection}) finds it (${JSON.stringify(picked.entities)})`);
+}
+
+async function verifyMoving(page: EditorPage, label: string, name: string): Promise<void> {
+    const target = await page.entityNamed(name);
+    if (target === undefined) return;
+    await page.framesPass(BOUNDS_SETTLE_FRAMES);
+    const before = (await page.ask({op: "getViewInfo", view: "scene", entities: [target.entity]})).bounds[0];
+    const previous = await page.fieldOf(target.entity, "LocalPosition", "xyz") as number[];
+    const moved = await page.ask({op: "setFields", edits: [{entity: target.entity, typeName: "LocalPosition", key: "xyz", value: MOVED_PLAYER_XYZ}]});
+    expect(sameJson(moved.values, [MOVED_PLAYER_XYZ]), `${label}: setFields moves ${name} (${JSON.stringify(moved.values)})`);
+    await page.framesPass(BOUNDS_SETTLE_FRAMES);
+    const after = (await page.ask({op: "getViewInfo", view: "scene", entities: [target.entity]})).bounds[0];
+    const shift = after.min[X_COMPONENT] - before.min[X_COMPONENT];
+    expect(shift === MOVED_PLAYER_XYZ[X_COMPONENT] - previous[X_COMPONENT], `${label}: the bounds of ${name} followed the move (x shift ${shift})`);
+    await verifyPicking(page, label, target.entity, name, "scene");
+}
+
+async function verifyUndoOfDestroy(page: EditorPage, label: string, name: string): Promise<void> {
+    const target = await page.entityNamed(name);
+    if (target === undefined) return;
+    const xyz = await page.fieldOf(target.entity, "LocalPosition", "xyz");
+    const {documentText} = await page.ask({op: "serializeEntities", entities: [target.entity]});
+    await page.ask({op: "destroyEntity", entity: target.entity});
+    expect(await page.entityNamed(name) === undefined, `${label}: ${name} is gone after destroyEntity`);
+    const restored = await page.ask({op: "instantiateEntities", documentText, parent: target.parent, siblingIndex: target.siblingIndex});
+    const again = await page.entityNamed(name);
+    expect(again !== undefined && again.entity === restored.roots[0] && again.parent === target.parent && again.siblingIndex === target.siblingIndex,
+        `${label}: instantiateEntities restores ${name} under the same parent at sibling ${target.siblingIndex}`);
+    const restoredXyz = again === undefined ? undefined : await page.fieldOf(again.entity, "LocalPosition", "xyz");
+    expect(sameJson(restoredXyz, xyz), `${label}: the restored ${name} kept its position (${JSON.stringify(restoredXyz)})`);
+}
+
+async function verifyPrefabs(page: EditorPage, label: string, name: string): Promise<void> {
+    const source = await page.entityNamed(name);
+    if (source === undefined) return;
+    const {documentText} = await page.ask({op: "serializeEntities", entities: [source.entity]});
+    const created = await page.ask({op: "instantiateEntities", documentText, prefabSourcePath: PREFAB_PATH});
+    const instance = created.roots[0];
+    const fresh = await page.ask({op: "getPrefabOverrides", entity: instance});
+    expect(fresh.sourcePath === PREFAB_PATH && fresh.overrides.length === 0, `${label}: a new prefab instance has no overrides (${JSON.stringify(fresh)})`);
+    await page.ask({op: "setField", entity: instance, typeName: "Sprite", key: "tint", value: OVERRIDDEN_TINT});
+    const overridden = await page.ask({op: "getPrefabOverrides", entity: instance});
+    expect(sameJson(overridden.overrides, ["/Sprite.tint"]), `${label}: editing the tint of the instance is an override (${JSON.stringify(overridden.overrides)})`);
+    const document = parseSceneDocument(documentText);
+    document.entities[0].components.Sprite.opacity = UPDATED_OPACITY;
+    const {updated} = await page.ask({op: "updatePrefabInstances", sourcePath: PREFAB_PATH, documentText: JSON.stringify(document)});
+    const opacity = await page.fieldOf(instance, "Sprite", "opacity");
+    const tint = await page.fieldOf(instance, "Sprite", "tint");
+    expect(updated.includes(instance) && opacity === UPDATED_OPACITY && tint === OVERRIDDEN_TINT,
+        `${label}: updating the prefab changes the opacity of the instance (${opacity}) and keeps its overridden tint (${tint})`);
+    await page.ask({op: "destroyEntity", entity: instance});
+}
+
+async function verifyDomainReload(project: BuiltProject, page: EditorPage, label: string, checkedName: string): Promise<void> {
+    const checked = await page.entityNamed(checkedName);
+    const checkedXyz = checked === undefined ? undefined : await page.fieldOf(checked.entity, "LocalPosition", "xyz");
+    const exported = await page.ask({op: "exportSnapshot"});
+    const reloaded = new EditorPage(project, `${label} (reloaded)`);
+    try {
+        expect(await waitUntil(() => reloaded.display.frames > 0), `${label}: a second worker from the same bundle presents frames`);
+        const imported = await reloaded.ask({
+            op: "importSnapshot",
+            documentText: exported.documentText,
+            editSnapshotText: exported.editSnapshotText,
+            editSnapshotRecords: exported.editSnapshotRecords,
+            mode: exported.mode,
+            gameplayTicks: exported.gameplayTicks,
+        });
+        const remap = entityRemapOf(exported.entities, imported.entities);
+        expect(imported.entities.length === exported.entities.length, `${label}: importSnapshot recreates every exported entity (${exported.entities.length} -> ${imported.entities.length})`);
+        expect(imported.report.skippedComponentTypes.length === 0, `${label}: every component type survives the domain reload (${JSON.stringify(imported.report.skippedComponentTypes)})`);
+        const moved = checked === undefined ? undefined : remap.get(checked.entity);
+        const movedXyz = moved === undefined ? undefined : await reloaded.fieldOf(moved, "LocalPosition", "xyz");
+        expect(checkedXyz !== undefined && sameJson(movedXyz, checkedXyz), `${label}: the remapped ${checkedName} kept its position through the domain reload (${JSON.stringify(movedXyz)})`);
+        reloaded.expectNoErrors(`${label} (reloaded)`);
+    } finally {
+        reloaded.dispose();
+    }
+}
+
+async function verify2d(project: BuiltProject): Promise<void> {
     const label = "2D editor";
-    const page = new EditorPage(workerEntry("editor2d"), "the 2D editor");
+    const page = new EditorPage(project, "the 2D editor");
     try {
         await verifyStartsInEditMode(page, label);
-        await verifySchemas(page, label, ["Sprite", "TextSprite", "PixelRenderSettings", "SpritePixelPassSettings", "CellRenderSettings"]);
+        await verifySchemas(page, label, ["Sprite", "TextSprite", "PixelRenderSettings", "SpritePixelPassSettings", "CellRenderSettings", "FadeToColor", "OriginalColor", "PlayerTag"]);
 
         const camera = await page.entityNamed(CAMERA_NAME);
         const player = await page.entityNamed(PLAYER_NAME);
@@ -236,7 +382,13 @@ async function verify2d(): Promise<void> {
         const remaining = (await page.ask({op: "listEntities"})).entities.filter(entity => entity.name === "editorParent" || entity.name === "editorChild");
         expect(destroyed.includes(child.entity) && remaining.length === 0, `${label}: destroying the parent removed its child`);
 
+        expect(page.events.some(event => event.kind === "modeChanged" && event.mode === "play"), `${label}: the page received a modeChanged event for play`);
+        await verifyPickingNamed(page, label, PLAYER_NAME, "scene");
+        await verifyMoving(page, label, PLAYER_NAME);
+        await verifyUndoOfDestroy(page, label, PLAYER_NAME);
+        await verifyPrefabs(page, label, PLAYER_NAME);
         await verifySaveLoad(page, label, PLAYER_NAME);
+        await verifyDomainReload(project, page, label, PLAYER_NAME);
         page.expectNoErrors(label);
     } catch (error) {
         expect(false, `${label}: ${error instanceof Error ? error.message : String(error)}`);
@@ -245,9 +397,9 @@ async function verify2d(): Promise<void> {
     }
 }
 
-async function verify3d(): Promise<void> {
+async function verify3d(project: BuiltProject): Promise<void> {
     const label = "3D editor";
-    const page = new EditorPage(workerEntry("editor3d"), "the 3D editor");
+    const page = new EditorPage(project, "the 3D editor");
     try {
         await verifyStartsInEditMode(page, label);
         await verifySchemas(page, label, ["RenderMesh", "DirectionalLight", "MeshPixelPassSettings"]);
@@ -270,11 +422,33 @@ async function verify3d(): Promise<void> {
         const restored = await page.fieldOf(camera.entity, "LocalPosition", "xyz");
         expect(sameJson(restored, CAMERA_EDITED_XYZ), `${label}: stop restores the snapshot camera position (${JSON.stringify(restored)})`);
 
+        if (meshes.length > 0) await verifyPicking(page, label, meshes[0].entity, "the spawned model", "scene");
         await verifySaveLoad(page, label, CAMERA_NAME);
         const reloadedMeshes = (await page.ask({op: "listEntities"})).entities.filter(entity => entity.componentTypeNames.includes("RenderMesh"));
         const meshPath = reloadedMeshes.length === 0 ? undefined : await page.fieldOf(reloadedMeshes[0].entity, "RenderMesh", "mesh");
         expect(reloadedMeshes.length === meshes.length && typeof (meshPath as {path?: unknown} | undefined)?.path === "string",
             `${label}: the loaded scene has its meshes back by path (${JSON.stringify(meshPath)})`);
+        await verifyDomainReload(project, page, label, CAMERA_NAME);
+        page.expectNoErrors(label);
+    } catch (error) {
+        expect(false, `${label}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+        page.dispose();
+    }
+}
+
+async function verifySwarm(project: BuiltProject): Promise<void> {
+    const label = "Swarm editor";
+    const page = new EditorPage(project, "the Swarm editor");
+    try {
+        await verifyStartsInEditMode(page, label);
+        await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SpritePixelPassSettings"]);
+        const {resources} = await page.ask({op: "describeSchemas"});
+        expect(resources.some(resource => resource.typeName === SWARM_STATE_RESOURCE), `${label}: describeSchemas lists the ${SWARM_STATE_RESOURCE} resource`);
+        const ship = await page.entityNamed(SHIP_NAME);
+        expect(ship !== undefined && ship.componentTypeNames.includes("Ship"), `${label}: listEntities has the ship with its Ship component`);
+        await verifySaveLoad(page, label, SHIP_NAME);
+        await verifyDomainReload(project, page, label, SHIP_NAME);
         page.expectNoErrors(label);
     } catch (error) {
         expect(false, `${label}: ${error instanceof Error ? error.message : String(error)}`);
@@ -288,17 +462,26 @@ async function main(): Promise<void> {
         log("editor worker check: skipped, this runtime has no Web Worker global");
         return;
     }
-    if (DIST !== undefined) {
-        const missing = Object.keys(WORKER_SOURCES).map(workerEntry).filter(entry => !existsSync(entry));
-        if (missing.length > 0) {
-            log(`editor worker check: skipped, ${DIST} has no ${missing.join(", ")} (build it with --with-editor)`);
-            return;
-        }
-        log(`running the built editor workers in ${DIST}`);
+    if (process.argv.includes(DIST_FLAG)) {
+        log("editor worker check: skipped, the editor builds project workers on demand, so a built site holds none to run");
+        return;
+    }
+    if (process.versions.bun === undefined) {
+        log("editor worker check: skipped, building project workers needs bun");
+        return;
     }
 
-    await verify2d();
-    await verify3d();
+    const server = createProjectServer({repoRoot: ROOT, bun: {path: process.execPath}, browse: false});
+    try {
+        const project2d = await buildProject(server, "demo/2d", "2D editor");
+        const project3d = await buildProject(server, "demo/3d", "3D editor");
+        const projectSwarm = await buildProject(server, "demo/swarm", "Swarm editor");
+        if (project2d !== undefined) await verify2d(project2d);
+        if (project3d !== undefined) await verify3d(project3d);
+        if (projectSwarm !== undefined) await verifySwarm(projectSwarm);
+    } finally {
+        server.close();
+    }
 
     if (failures > 0) {
         console.error(`${failures} editor worker failures`);

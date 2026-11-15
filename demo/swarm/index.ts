@@ -20,7 +20,7 @@ const terminalInput = new TerminalInput({
     platform: world.platform,
     sink: world.resources.getOrCreate(Input),
     mouse: false,
-}).start();
+});
 
 setupSwarm(world, {
     render: installCellRenderingSwarm(world),
@@ -31,3 +31,4 @@ setupSwarm(world, {
 });
 
 world.startLoop();
+terminalInput.start();

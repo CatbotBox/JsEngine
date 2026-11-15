@@ -1,18 +1,9 @@
 ﻿import {Component} from "../core";
 import type {F32Backed} from "../core/componentType";
 import {asFloat32Array, fromFloat32Array, ReadonlyVec, ReadonlyVec16, ReadonlyVec3, ReadonlyVec4, Vec, Vec16, Vec3, Vec4} from "../math/types/vec";
-import {MAT4_FLOATS, MAT4_TRANSLATION_X, MAT4_TRANSLATION_Y, MAT4_TRANSLATION_Z} from "../math/mat4Layout";
+import {MAT4_ELEMENT, MAT4_FLOATS, MAT4_TRANSLATION_X, MAT4_TRANSLATION_Y, MAT4_TRANSLATION_Z} from "../math/mat4Layout";
 
 const raw = (v: ReadonlyVec<number>): Float32Array => asFloat32Array(v);
-
-export const M4 = {
-    m00: 0, m10: 1, m20: 2, m30: 3,
-    m01: 4, m11: 5, m21: 6, m31: 7,
-    m02: 8, m12: 9, m22: 10, m32: 11,
-    m03: 12, m13: 13, m23: 14, m33: 15,
-
-    tx: 12, ty: 13, tz: 14, one: 15,
-} as const;
 
 const identity = asFloat32Array(Vec16.alloc());
 identity[0] = 1;
@@ -49,11 +40,11 @@ export class LocalToWorld extends Component implements F32Backed {
     }
 
     public get position(): Vec3 {
-        return fromFloat32Array<3>(asFloat32Array(this._matrix).subarray(M4.tx, M4.tz + 1));
+        return fromFloat32Array<3>(asFloat32Array(this._matrix).subarray(MAT4_TRANSLATION_X, MAT4_TRANSLATION_Z + 1));
     }
 
     public set position(p: ReadonlyVec3) {
-        asFloat32Array(this._matrix).set(raw(p), M4.tx);
+        asFloat32Array(this._matrix).set(raw(p), MAT4_TRANSLATION_X);
     }
 
     public get scale(): Vec3 {
@@ -62,9 +53,9 @@ export class LocalToWorld extends Component implements F32Backed {
 
     public decomposeScaleInto(out: Vec3): Vec3 {
         const m = raw(this._matrix);
-        const sx = Math.hypot(...m.subarray(M4.m00, M4.m30));
-        const sy = Math.hypot(...m.subarray(M4.m01, M4.m31));
-        const sz = Math.hypot(...m.subarray(M4.m02, M4.m32));
+        const sx = Math.hypot(...m.subarray(MAT4_ELEMENT.m00, MAT4_ELEMENT.m30));
+        const sy = Math.hypot(...m.subarray(MAT4_ELEMENT.m01, MAT4_ELEMENT.m31));
+        const sz = Math.hypot(...m.subarray(MAT4_ELEMENT.m02, MAT4_ELEMENT.m32));
 
         const nx0 = sx > 0 ? m[0] / sx : 0, ny0 = sx > 0 ? m[1] / sx : 0, nz0 = sx > 0 ? m[2] / sx : 0;
         const nx1 = sy > 0 ? m[4] / sy : 0, ny1 = sy > 0 ? m[5] / sy : 0, nz1 = sy > 0 ? m[6] / sy : 0;

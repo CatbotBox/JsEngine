@@ -91,6 +91,7 @@ function encodeNumber(value: unknown, path: string): SceneJsonValue {
     if (Number.isNaN(value)) return NOT_A_NUMBER_TEXT;
     if (value === Number.POSITIVE_INFINITY) return POSITIVE_INFINITY_TEXT;
     if (value === Number.NEGATIVE_INFINITY) return NEGATIVE_INFINITY_TEXT;
+    // -0 + 0 is +0, so -0 saves as 0.
     return value + 0;
 }
 

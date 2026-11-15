@@ -33,6 +33,7 @@ const HIDE_CURSOR = `${CSI}${CURSOR_VISIBLE_MODE}l`;
 const SHOW_CURSOR = `${CSI}${CURSOR_VISIBLE_MODE}h`;
 const ENABLE_FOCUS_REPORTING = `${CSI}${FOCUS_REPORTING_MODE}h`;
 const DISABLE_FOCUS_REPORTING = `${CSI}${FOCUS_REPORTING_MODE}l`;
+// The kitty query goes last so its reply shows the flags after the push. Focus reports let focus-out release held keys whose release goes elsewhere.
 const ENABLE_KEY_REPORTING =
     `${PUSH_KITTY_KEYBOARD_FLAGS}${ENABLE_WIN32_INPUT_MODE}${ENABLE_FOCUS_REPORTING}${QUERY_KITTY_KEYBOARD_FLAGS}`;
 const RESTORE_KEY_REPORTING = `${DISABLE_FOCUS_REPORTING}${DISABLE_WIN32_INPUT_MODE}${POP_KITTY_KEYBOARD_FLAGS}`;
@@ -153,6 +154,7 @@ export class TerminalInput {
         {pattern: FOCUS_REPORT, accepts: EVERY_REPORT, read: report => this.handleFocusReport(report)},
         {pattern: KITTY_FLAGS_REPLY, accepts: EVERY_REPORT, read: report => this.handleKittyFlagsReply(report)},
         {pattern: KITTY_KEY_REPORT, accepts: EVERY_REPORT, read: report => this.handleKittyKey(readKittyKeyReport(report))},
+        // A plain `CSI A` / `CSI 2~` is a legacy key until kitty mode is detected, then a kitty press.
         {
             pattern: KITTY_FUNCTIONAL_KEY_REPORT,
             accepts: report => this._keyProtocol === "kitty" || kittyFunctionalReportHasEventType(report),
@@ -266,6 +268,7 @@ export class TerminalInput {
         if (incomplete === null) return text.length;
         const start = from + incomplete.index;
         const heldLength = text.length - start;
+        // Once keys are reported (kitty, win32) Escape arrives as a report, so a lone trailing ESC is a split report and is held.
         const bareEscapeIsAKey = heldLength === ESCAPE.length && this._keyProtocol === UNDETECTED_KEY_PROTOCOL;
         if (heldLength > MAX_HELD_REPORT_LENGTH || bareEscapeIsAKey) return text.length;
         return start;
@@ -319,6 +322,7 @@ export class TerminalInput {
 
     private pressKeyUntilSilence(key: Key, modifiers: Modifiers): void {
         const repeat = this.keyHeld(key);
+        // A key whose release will be reported gets no silence timer, which would release it early.
         if (!this.keysHeldUntilReported.has(key)) {
             clearTimeout(this.releaseTimers.get(key));
             this.releaseTimers.set(key, setTimeout(() => this.releaseKeyAfterSilence(key), this.keyReleaseDelayMs));

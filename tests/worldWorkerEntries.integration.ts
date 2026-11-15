@@ -3,6 +3,7 @@ import {join, resolve} from "path";
 import {connectWorldWorker, STOPPED_STATUS} from "../src/hosts/web";
 import type {CellSurfaceSize, CellWorldDisplay, PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
 import type {CellFrame} from "../src/backends/cells";
+import {copyPixelFrame} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {Key, NO_MODIFIERS} from "../src/engine/input";
 import type {Modifiers} from "../src/engine/input";
@@ -32,7 +33,6 @@ const PRESS_INTERVAL_MS = 200;
 const BYTES_PER_MB = 1024 * 1024;
 const POLL_INTERVAL_MS = 10;
 const FRAME_ARRIVAL_WINDOW_MS = 300;
-const PROMPT_ROWS = 1;
 const MIN_SCENE_CELL_DIVISOR = 50;
 const SCENE_REGION_MARGIN_FRACTION = 0.25;
 const ISOLATED = true;
@@ -174,11 +174,11 @@ class CellFrameDisplay extends RecordingDisplay implements CellWorldDisplay {
     }
 
     public framePainted(): boolean {
-        return this.latest !== undefined && this.latest.width === this.columns && this.latest.height === this.rows - PROMPT_ROWS;
+        return this.latest !== undefined && this.latest.width === this.columns && this.latest.height === this.rows;
     }
 
     public scenePainted(): boolean {
-        const frameCells = this.columns * (this.rows - PROMPT_ROWS);
+        const frameCells = this.columns * this.rows;
         return this.latest !== undefined && rgbCellCount(this.latest) > frameCells / MIN_SCENE_CELL_DIVISOR;
     }
 
@@ -201,7 +201,7 @@ class PixelFrameDisplay extends RecordingDisplay implements PixelWorldDisplay {
     }
 
     public presentPixels(frame: PixelFrame, onPresented: () => void): void {
-        this.latest = frame;
+        this.latest = copyPixelFrame(frame);
         this.recordFrame(onPresented);
     }
 

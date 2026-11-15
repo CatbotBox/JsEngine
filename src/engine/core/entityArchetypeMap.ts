@@ -2,6 +2,7 @@
 import {ComponentType} from "./componentType";
 import {Event} from "../util/event";
 import {ArchetypeEdge, EntityArchetype} from "./entityArchetype";
+import type {ChangeStampCounter} from "./changeStampCounter";
 
 const FNV1A_32_OFFSET_BASIS = 0x811c9dc5;
 const FNV1A_32_PRIME = 0x01000193;
@@ -31,6 +32,9 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
   private _byTypeHash: Map<number, EntityArchetype<CT>[]> = new Map();
   private _scratchIds: Int32Array = new Int32Array(INITIAL_SCRATCH_ID_CAPACITY);
 
+  public constructor(public readonly changeStamps: ChangeStampCounter) {
+  }
+
   public get loadedArchetypes(): number {
     return this._archetypes.size;
   }
@@ -49,7 +53,7 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
       }
     }
 
-    const archetype = new EntityArchetype<CT>(toTokens(types) as CT[]);
+    const archetype = new EntityArchetype<CT>(toTokens(types) as CT[], this.changeStamps);
     if (bucket !== undefined) bucket.push(archetype);
     else this._byTypeHash.set(hash, [archetype]);
     this._archetypes.add(archetype);

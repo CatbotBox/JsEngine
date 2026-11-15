@@ -86,6 +86,7 @@ export class EnemyGrid extends Resource {
         return found;
     }
 
+    // Out-of-grid positions clamp to border cells; gatherNear clamps its range the same way, so overlapping pairs still share a cell.
     private columnOf(x: number): number {
         const column = Math.floor((x - this.originX) / this.cellSize);
         return column < 0 ? 0 : column >= this.columns ? this.columns - 1 : column;

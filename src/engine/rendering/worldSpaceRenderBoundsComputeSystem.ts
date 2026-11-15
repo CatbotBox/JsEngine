@@ -32,7 +32,7 @@ export class WorldSpaceRenderBoundsComputeSystem extends System {
             write: {worldBounds: WorldSpaceRenderBounds},
             optional: {offset: RenderBoundsOffset},
         }, {
-            filterLastUpdated: this.lastUpdateTime,
+            filterLastUpdated: this.lastUpdateStamp,
             structuralFilter: "additions",
             filterBlackList: [WorldSpaceRenderBounds]
         }).consumeSpans(({start, end, cols, stores}) => {

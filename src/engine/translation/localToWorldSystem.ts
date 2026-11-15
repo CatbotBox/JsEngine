@@ -39,7 +39,7 @@ export class LocalToWorldSystem extends System {
                 parentTransform: ParentTransform,
             },
         }, {
-            filterLastUpdated: this.lastUpdateTime,
+            filterLastUpdated: this.lastUpdateStamp,
             structuralFilter: "additions",
             filterBlackList: [LocalToWorld],
         }).consumeSpans(({start, end, cols}) => {

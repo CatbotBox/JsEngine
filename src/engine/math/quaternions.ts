@@ -8,6 +8,7 @@ export namespace Quaternions {
     const HALF_TURN_DEGREES = 180;
     const FULL_TURN_RADIANS = 2 * Math.PI;
     const QUARTER_TURN_RADIANS = Math.PI / 2;
+    // Past this |sin(pitch)| (pitch within ~0.08 degrees of +/-90) roll and yaw rotate about the same axis.
     const GIMBAL_LOCK_SIN_PITCH = 1 - 1e-6;
 
     function deg2rad(a: number) {
@@ -143,6 +144,7 @@ export namespace Quaternions {
         const sinPitch = 2 * (w * y - z * x);
         let roll: number, pitch: number, yaw: number;
         if (Math.abs(sinPitch) >= GIMBAL_LOCK_SIN_PITCH) {
+            // Gimbal lock: only roll +/- yaw is defined, so report it all as yaw.
             roll = 0;
             pitch = Math.sign(sinPitch) * QUARTER_TURN_RADIANS;
             yaw = wrapToHalfTurn(2 * Math.atan2(z, w));

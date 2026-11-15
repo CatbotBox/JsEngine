@@ -30,22 +30,22 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     "backends/pixels": ["engine", "backends/pixels"],
     "hosts/terminal": ["engine", ...BACKENDS, "hosts/terminal"],
     "hosts/web": ["engine", ...BACKENDS, "hosts/web"],
-    "hosts/desktop": ["engine", ...BACKENDS, "hosts/desktop"],
-    "editor": ["engine", ...BACKENDS, "editor"],
-    "editor launch": ["engine", ...BACKENDS, "hosts/web", "editor", "editor launch"],
+    "hosts/desktop": ["engine", ...BACKENDS, "editor project", "hosts/desktop"],
+    "editor project": ["engine", "editor project"],
+    "editor": ["engine", ...BACKENDS, "editor project", "editor"],
+    "editor launch": ["engine", ...BACKENDS, "hosts/web", "editor project", "editor", "editor launch"],
     "demo": ["engine", "demo"],
-    "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "editor", "demo", "demo launch"],
+    "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "editor project", "editor", "demo", "demo launch"],
 };
 
 const UNSCHEDULED = "unscheduled";
 
-const WRONG_DIRECTION_ALLOWLIST_REMOVED_IN_STEP: Readonly<Record<string, number | typeof UNSCHEDULED>> = {
-    "src/hosts/desktop/main.ts -> scripts/webDistFiles.ts": UNSCHEDULED,
-};
+const WRONG_DIRECTION_ALLOWLIST_REMOVED_IN_STEP: Readonly<Record<string, number | typeof UNSCHEDULED>> = {};
 const WRONG_DIRECTION_ALLOWLIST = Object.keys(WRONG_DIRECTION_ALLOWLIST_REMOVED_IN_STEP);
-const DEMO_LAUNCH_ENTRY = "index.ts";
+const DEMO_LAUNCH_ENTRIES: readonly string[] = ["index.ts", "project.ts"];
 const DEMO_LAUNCH_FOLDER = "launch";
 const EDITOR_LAUNCH_FOLDER = "launch";
+const EDITOR_PROJECT_FOLDER = "project";
 const EDITOR_SOURCES = "src/editor/";
 const WEB_GAME_ENTRY_NAMES = ["2d", "3d", "swarm", "2d-cells", "2d-pixels", "3d-cells", "3d-pixels", "swarm-cells", "swarm-pixels"];
 const DEMO_GAME_ENTRY_PATHS = [["launch", "web.worker.ts"], ["launch", "pixelWeb.worker.ts"], ["index.ts"]];
@@ -72,8 +72,9 @@ function layerOf(file: string): string | undefined {
     const [top, second, third] = fromRoot(file).split("/");
     if (top === "src" && (second === "hosts" || second === "backends")) return `${second}/${third}`;
     if (top === "src" && second === "editor" && third === EDITOR_LAUNCH_FOLDER) return "editor launch";
+    if (top === "src" && second === "editor" && third === EDITOR_PROJECT_FOLDER) return "editor project";
     if (top === "src") return second;
-    if (top === "demo") return third === DEMO_LAUNCH_ENTRY || third === DEMO_LAUNCH_FOLDER ? "demo launch" : "demo";
+    if (top === "demo") return DEMO_LAUNCH_ENTRIES.includes(third) || third === DEMO_LAUNCH_FOLDER ? "demo launch" : "demo";
     return undefined;
 }
 

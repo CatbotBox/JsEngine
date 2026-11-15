@@ -104,3 +104,5 @@ bench/*.out.txt
 *.meshcache
 
 release
+
+.jsengine/

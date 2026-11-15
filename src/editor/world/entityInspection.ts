@@ -5,11 +5,21 @@ import {getEntityCreationOrder, getOwner} from "../../engine/core/ownership";
 import type {AnyCT} from "../../engine/util/tokenUtils";
 import {Parent} from "../../engine/translation/parent";
 import {SpriteImage} from "../../engine/rendering/2d/spriteImage";
-import {encodeFieldValue} from "../../engine/scene";
-import type {ComponentSchemaRegistry, FieldEncodeContext, FieldSchema} from "../../engine/scene";
+import {
+    categoryOf,
+    childEntitiesOf,
+    EditorOnly,
+    encodeFieldValue,
+    inferComponentSchema,
+    orderedSceneRoots,
+    PrefabInstance,
+    siblingOrderOf,
+} from "../../engine/scene";
+import type {ComponentSchema, ComponentSchemaRegistry, FieldEncodeContext, FieldSchema} from "../../engine/scene";
 import {ENTITY_HANDLE_LIMIT} from "../editorProtocol";
 import type {
     DescribeSchemasResult,
+    EditorComponentDescription,
     EditorComponentDetails,
     EditorEntityDetails,
     EditorEntitySummary,
@@ -25,6 +35,8 @@ interface EntityRow {
     readonly row: number;
 }
 
+const editorOnlyType = (): AnyCT => ComponentType.of(EditorOnly);
+
 function ignore(): void {
 }
 
@@ -36,8 +48,16 @@ export function isLiveEntity(world: World, entity: number): boolean {
     return Number.isInteger(entity) && entity > 0 && entity < ENTITY_HANDLE_LIMIT && world.entityManager.exists(entity as Entity);
 }
 
-export function requireLiveEntity(world: World, entity: Entity): Entity {
-    if (!isLiveEntity(world, entity)) throw new Error(`No entity ${entity} in this world`);
+export function isEditorOnlyEntity(world: World, entity: Entity): boolean {
+    return getOwner(world, entity)?.getColumn(editorOnlyType()) !== undefined;
+}
+
+export function isSceneEntityHandle(world: World, entity: number): boolean {
+    return isLiveEntity(world, entity) && !isEditorOnlyEntity(world, entity as Entity);
+}
+
+export function requireSceneEntity(world: World, entity: Entity): Entity {
+    if (!isSceneEntityHandle(world, entity)) throw new Error(`No entity ${entity} in this world`);
     return entity;
 }
 
@@ -53,19 +73,46 @@ function describeField(field: FieldSchema): EditorFieldDescription {
     }
 }
 
-export function describeSchemas(registry: ComponentSchemaRegistry): DescribeSchemasResult {
+function describeComponent(schema: ComponentSchema): EditorComponentDescription {
     return {
-        components: registry.schemas.map(schema => ({
-            typeName: schema.name,
-            persistence: schema.persistence,
-            fields: schema.fields.map(describeField),
-        })),
+        typeName: schema.name,
+        persistence: schema.persistence,
+        fields: schema.fields.map(describeField),
+        inferred: schema.inferred === true,
+        category: categoryOf(schema),
     };
 }
 
-function entityRowsInCreationOrder(world: World): EntityRow[] {
+function isSceneArchetype(archetype: EntityArchetype<AnyCT>): boolean {
+    return archetype.getColumn(editorOnlyType()) === undefined;
+}
+
+export function unregisteredComponentTypes(world: World, registry: ComponentSchemaRegistry): Map<AnyCT, Component> {
+    const found = new Map<AnyCT, Component>();
+    for (const archetype of world.archetypes.values()) {
+        if (!isSceneArchetype(archetype) || archetype.entityCountIncludingDisabled === 0) continue;
+        for (const type of archetype.componentTypes) {
+            if (found.has(type) || registry.byType(type) !== undefined) continue;
+            found.set(type, archetype.getColumn(type)!.get(0) as Component);
+        }
+    }
+    return found;
+}
+
+export function describeSchemas(world: World, registry: ComponentSchemaRegistry): DescribeSchemasResult {
+    const inferred = [...unregisteredComponentTypes(world, registry).values()]
+        .map(instance => inferComponentSchema(instance))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+        components: [...registry.schemas, ...inferred].map(describeComponent),
+        resources: registry.resourceSchemas.map(schema => ({typeName: schema.name, fields: schema.fields.map(describeField)})),
+    };
+}
+
+function sceneRowsInCreationOrder(world: World): EntityRow[] {
     const rows: EntityRow[] = [];
     for (const archetype of world.archetypes.values()) {
+        if (!isSceneArchetype(archetype)) continue;
         const count = archetype.entityCountIncludingDisabled;
         for (let row = 0; row < count; row++) {
             rows.push({entity: archetype.getEntityAtIndex(row), enabled: archetype.isEntityIndexEnabled(row), archetype, row});
@@ -75,7 +122,7 @@ function entityRowsInCreationOrder(world: World): EntityRow[] {
 }
 
 export function entitiesInCreationOrder(world: World): Entity[] {
-    return entityRowsInCreationOrder(world).map(row => row.entity);
+    return sceneRowsInCreationOrder(world).map(row => row.entity);
 }
 
 export function componentTypeName(registry: ComponentSchemaRegistry, type: AnyCT): string {
@@ -91,7 +138,7 @@ function orderedComponentTypes(registry: ComponentSchemaRegistry, types: readonl
 
 function parentInRow(world: World, archetype: EntityArchetype<AnyCT>, row: number): Entity | null {
     const link = archetype.getColumn(ComponentType.of(Parent))?.get(row) as Parent | undefined;
-    return link !== undefined && isLiveEntity(world, link.entity) ? link.entity : null;
+    return link !== undefined && isSceneEntityHandle(world, link.entity) && link.entity !== archetype.getEntityAtIndex(row) ? link.entity : null;
 }
 
 export function parentOf(world: World, entity: Entity): Entity | undefined {
@@ -99,6 +146,24 @@ export function parentOf(world: World, entity: Entity): Entity | undefined {
     const row = archetype?.getIndexOfEntity(entity);
     if (archetype === undefined || row === undefined) return undefined;
     return parentInRow(world, archetype, row) ?? undefined;
+}
+
+function prefabSourcePathInRow(archetype: EntityArchetype<AnyCT>, row: number): string | null {
+    const instance = archetype.getColumn(ComponentType.of(PrefabInstance))?.get(row) as PrefabInstance | undefined;
+    return instance === undefined ? null : instance.sourcePath;
+}
+
+export function sceneRoots(world: World): Entity[] {
+    return orderedSceneRoots(world, entitiesInCreationOrder(world).filter(entity => parentOf(world, entity) === undefined));
+}
+
+export function siblingIndexOf(world: World, entity: Entity): number {
+    const parent = parentOf(world, entity);
+    if (parent === undefined) return Math.max(0, sceneRoots(world).indexOf(entity));
+    const index = childEntitiesOf(world, parent).indexOf(entity);
+    if (index >= 0) return index;
+    const order = siblingOrderOf(world, entitiesInCreationOrder(world));
+    return order.siblingIndexOf.get(entity) ?? 0;
 }
 
 export function listEntities(world: World, registry: ComponentSchemaRegistry): ListEntitiesResult {
@@ -111,11 +176,15 @@ export function listEntities(world: World, registry: ComponentSchemaRegistry): L
         }
         return names;
     };
-    const entities = entityRowsInCreationOrder(world).map(({entity, enabled, archetype, row}): EditorEntitySummary => ({
+    const rows = sceneRowsInCreationOrder(world);
+    const order = siblingOrderOf(world, rows.map(row => row.entity));
+    const entities = rows.map(({entity, enabled, archetype, row}): EditorEntitySummary => ({
         entity,
         name: world.entityManager.nameOf(entity) ?? null,
         enabled,
         parent: parentInRow(world, archetype, row),
+        siblingIndex: order.siblingIndexOf.get(entity) ?? 0,
+        prefabSourcePath: prefabSourcePathInRow(archetype, row),
         componentTypeNames: namesOf(archetype),
     }));
     return {entities};
@@ -136,17 +205,20 @@ export function encodeEditorFieldValue(world: World, field: FieldSchema, value: 
     return encodeFieldValue(field, value, editorEncodeContext(world), path);
 }
 
+export function schemaOfComponent(registry: ComponentSchemaRegistry, type: AnyCT, component: Component): ComponentSchema {
+    return registry.byType(type) ?? inferComponentSchema(component);
+}
+
 function componentDetails(world: World, registry: ComponentSchemaRegistry, type: AnyCT, component: Component): EditorComponentDetails {
-    const schema = registry.byType(type);
-    if (schema === undefined) return {typeName: type.ctor.name, inspectable: false, fields: {}};
+    const schema = schemaOfComponent(registry, type, component);
     const values = fieldsOf(component);
     const fields: {[key: string]: EditorFieldValue} = {};
     for (const field of schema.fields) fields[field.key] = encodeEditorFieldValue(world, field, values[field.key], `${schema.name}.${field.key}`);
-    return {typeName: schema.name, inspectable: schema.persistence === "fields", fields};
+    return {typeName: schema.name, inspectable: schema.persistence === "fields", inferred: schema.inferred === true, fields};
 }
 
 export function entityDetails(world: World, registry: ComponentSchemaRegistry, entity: Entity): EditorEntityDetails {
-    requireLiveEntity(world, entity);
+    requireSceneEntity(world, entity);
     const archetype = getOwner(world, entity)!;
     const row = archetype.getIndexOfEntity(entity)!;
     return {
@@ -154,6 +226,8 @@ export function entityDetails(world: World, registry: ComponentSchemaRegistry, e
         name: world.entityManager.nameOf(entity) ?? null,
         enabled: archetype.isEntityIndexEnabled(row),
         parent: parentInRow(world, archetype, row),
+        siblingIndex: siblingIndexOf(world, entity),
+        prefabSourcePath: prefabSourcePathInRow(archetype, row),
         components: orderedComponentTypes(registry, archetype.componentTypes)
             .map(type => componentDetails(world, registry, type, archetype.getColumn(type)!.get(row))),
     };

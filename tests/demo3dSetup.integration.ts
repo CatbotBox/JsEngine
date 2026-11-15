@@ -158,8 +158,7 @@ async function main(): Promise<void> {
         }
         gameTerminal.feed(ARROW_RIGHT);
         const before = gameTerminal.length;
-        world.time.deltaTimeMs = FRAME_MS;
-        (world as any).update();
+        world.step(FRAME_MS);
         platform.advance(FRAME_MS);
         const written = gameTerminal.text().slice(before);
         terminal.write(written);
@@ -194,14 +193,14 @@ async function main(): Promise<void> {
     };
     const beforeLook = cameraView();
     gameTerminal.feed(LEFT_DRAG_10_CELLS_RIGHT + WHEEL_UP);
-    (world as any).update();
+    world.step(FRAME_MS);
     const afterLook = cameraView();
     expect(afterLook.yaw !== beforeLook.yaw, `a left drag turned the camera (yaw quaternion ${beforeLook.yaw.toFixed(3)} -> ${afterLook.yaw.toFixed(3)})`);
     expect(Math.abs(afterLook.degrees - beforeLook.degrees / FOV_WHEEL_STEP) < FOV_TOLERANCE_DEG, `the wheel zoomed in one step (${beforeLook.degrees.toFixed(2)} -> ${afterLook.degrees.toFixed(2)} degrees)`);
 
     gameTerminal.feed(CTRL_C);
     expect(quits === 0, "Ctrl+C waits for the next frame's input");
-    (world as any).update();
+    world.step(FRAME_MS);
     expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
     expect(errors.length === 0, `no errors logged while quitting${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
     const altScreenExits = gameTerminal.text().split(Ansi.modes.altScreenExit).length - 1;

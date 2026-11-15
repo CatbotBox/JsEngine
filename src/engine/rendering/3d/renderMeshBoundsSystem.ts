@@ -29,7 +29,7 @@ export class RenderMeshBoundsSystem extends System {
             read: {renderMesh: RenderMesh, localToWorld: LocalToWorld},
             write: {bounds: RenderBounds, worldBounds: WorldSpaceRenderBounds},
         }, {
-            filterLastUpdated: this.lastUpdateTime,
+            filterLastUpdated: this.lastUpdateStamp,
             structuralFilter: "additions",
             filterBlackList: [RenderBounds, WorldSpaceRenderBounds],
         }).consumeSpans(({start, end, cols, stores}) => {

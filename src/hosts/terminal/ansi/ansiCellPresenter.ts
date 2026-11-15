@@ -12,6 +12,7 @@ const AUTOWRAP_OFF = "\x1b[?7l";
 const AUTOWRAP_ON = "\x1b[?7h";
 const CRLF = "\r\n";
 const FIRST_COLUMN = 1;
+const PROMPT_ROWS = 1;
 
 export class AnsiCellPresenter implements CellPresenter {
     private readonly encoder = new AnsiCellEncoder();
@@ -22,7 +23,8 @@ export class AnsiCellPresenter implements CellPresenter {
     }
 
     public size(): CellPresenterSize {
-        return this.terminal.size();
+        const {columns, rows} = this.terminal.size();
+        return {columns, rows, reservedRows: PROMPT_ROWS};
     }
 
     public onResize(listener: () => void): () => void {

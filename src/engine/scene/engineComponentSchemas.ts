@@ -22,25 +22,42 @@ import {DirectionalLight} from "../rendering/3d/lighting/directionalLight";
 import {PointLight} from "../rendering/3d/lighting/pointLight";
 import {componentSchema} from "./componentSchemaBuilder";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
+import {PrefabInstance} from "./prefabInstance";
+import {PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY} from "./sceneSerialization";
 
 const REQUIRED_ENTITY = {nullable: false};
 
+export const ENGINE_COMPONENT_CATEGORIES = {
+    transform: "Transform",
+    camera: "Camera",
+    rendering: "Rendering",
+    rendering2d: "Rendering 2D",
+    rendering3d: "Rendering 3D",
+    hud: "HUD",
+    lighting: "Lighting",
+    prefab: "Prefab",
+    settings: "Settings",
+} as const;
+
+const CATEGORY = ENGINE_COMPONENT_CATEGORIES;
+
 export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry): void {
-    registry.register(componentSchema(LocalPosition, "LocalPosition").vec3("xyz").build());
-    registry.register(componentSchema(LocalRotation, "LocalRotation").rotation("xyzw").build());
-    registry.register(componentSchema(LocalScale, "LocalScale").vec3("xyz").build());
-    registry.register(componentSchema(Parent, "Parent").entity("entity", REQUIRED_ENTITY).create(() => new Parent(NULL_ENTITY)).build());
-    registry.register(componentSchema(Camera, "Camera").number("nearPlaneDistance").number("farPlaneDistance").build());
-    registry.register(componentSchema(FieldOfView, "FieldOfView").number("radians").build());
-    registry.register(componentSchema(Sprite, "Sprite").spriteImage("image").rgb("tint").number("opacity").build());
+    registry.register(componentSchema(LocalPosition, "LocalPosition").vec3("xyz").category(CATEGORY.transform).build());
+    registry.register(componentSchema(LocalRotation, "LocalRotation").rotation("xyzw").category(CATEGORY.transform).build());
+    registry.register(componentSchema(LocalScale, "LocalScale").vec3("xyz").category(CATEGORY.transform).build());
+    registry.register(componentSchema(Parent, PARENT_COMPONENT_NAME).entity(PARENT_ENTITY_KEY, REQUIRED_ENTITY)
+        .create(() => new Parent(NULL_ENTITY)).category(CATEGORY.transform).build());
+    registry.register(componentSchema(Camera, "Camera").number("nearPlaneDistance").number("farPlaneDistance").category(CATEGORY.camera).build());
+    registry.register(componentSchema(FieldOfView, "FieldOfView").number("radians").category(CATEGORY.camera).build());
+    registry.register(componentSchema(Sprite, "Sprite").spriteImage("image").rgb("tint").number("opacity").category(CATEGORY.rendering2d).build());
     registry.register(componentSchema(RenderMesh, "RenderMesh").mesh("mesh").rgb("color").enum("faceCulling", {
         BackFaces: FaceCulling.BackFaces,
         FrontFaces: FaceCulling.FrontFaces,
         None: FaceCulling.None,
-    }).build());
+    }).category(CATEGORY.rendering3d).build());
     registry.register(componentSchema(TextSprite, "TextSprite")
-        .textLines("image").nullableString("transparentChar").textColor("foreground").textColor("background").build());
-    registry.register(componentSchema(RenderBoundsOffset, "RenderBoundsOffset").number("x").number("y").number("z").build());
+        .textLines("image").nullableString("transparentChar").textColor("foreground").textColor("background").category(CATEGORY.rendering2d).build());
+    registry.register(componentSchema(RenderBoundsOffset, "RenderBoundsOffset").number("x").number("y").number("z").category(CATEGORY.rendering).build());
     registry.register(componentSchema(ScreenAnchor, "ScreenAnchor").enum("anchorPosition", {
         "top-left": "top-left",
         "top-center": "top-center",
@@ -51,15 +68,16 @@ export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry
         "bottom-left": "bottom-left",
         "bottom-center": "bottom-center",
         "bottom-right": "bottom-right",
-    }).build());
-    registry.register(componentSchema(HudElement, "HudElement").build());
-    registry.register(componentSchema(DirectionalLight, "DirectionalLight").rgb("color").number("intensity").build());
-    registry.register(componentSchema(PointLight, "PointLight").number("range").rgb("color").number("intensity").build());
-    registry.register(componentSchema(AmbientLight, "AmbientLight").rgb("color").number("intensity").build());
-    registry.register(componentSchema(LocalToWorld, "LocalToWorld").presenceOnly().build());
-    registry.register(componentSchema(RenderBounds, "RenderBounds").presenceOnly().build());
-    registry.register(componentSchema(ParentTransform, "ParentTransform").implied().build());
-    registry.register(componentSchema(Children, "Children").implied().build());
-    registry.register(componentSchema(WorldSpaceRenderBounds, "WorldSpaceRenderBounds").implied().build());
-    registry.register(componentSchema(ScreenSize, "ScreenSize").implied().build());
+    }).category(CATEGORY.hud).build());
+    registry.register(componentSchema(HudElement, "HudElement").category(CATEGORY.hud).build());
+    registry.register(componentSchema(DirectionalLight, "DirectionalLight").rgb("color").number("intensity").category(CATEGORY.lighting).build());
+    registry.register(componentSchema(PointLight, "PointLight").number("range").rgb("color").number("intensity").category(CATEGORY.lighting).build());
+    registry.register(componentSchema(AmbientLight, "AmbientLight").rgb("color").number("intensity").category(CATEGORY.lighting).build());
+    registry.register(componentSchema(PrefabInstance, "PrefabInstance").string("sourcePath").textLines("overrides").category(CATEGORY.prefab).build());
+    registry.register(componentSchema(LocalToWorld, "LocalToWorld").presenceOnly().category(CATEGORY.transform).build());
+    registry.register(componentSchema(RenderBounds, "RenderBounds").presenceOnly().category(CATEGORY.rendering).build());
+    registry.register(componentSchema(ParentTransform, "ParentTransform").implied().category(CATEGORY.transform).build());
+    registry.register(componentSchema(Children, "Children").implied().category(CATEGORY.transform).build());
+    registry.register(componentSchema(WorldSpaceRenderBounds, "WorldSpaceRenderBounds").implied().category(CATEGORY.rendering).build());
+    registry.register(componentSchema(ScreenSize, "ScreenSize").implied().category(CATEGORY.camera).build());
 }

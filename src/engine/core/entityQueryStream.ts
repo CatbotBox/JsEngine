@@ -56,7 +56,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
         if (this._plans) return this._plans;
         const plans: Plan[] = [];
 
-        const lastUpdatedTimeRequirement = this.options?.filterLastUpdated as number;
+        const sinceStamp = this.options?.filterLastUpdated as number;
         const filtering = this.options?.filterLastUpdated !== undefined;
         const blackList = this.options?.filterBlackList
             ? new Set<AnyCT>(toTokens(this.options.filterBlackList))
@@ -68,8 +68,8 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
             let skipped = filtering;
             let visitEveryBlock = !filtering;
 
-            const structuralTime = additionsOnly ? arch.lastEntityAddedTime : arch.lastStructuralChangeTime;
-            if (skipped && structuralTime >= lastUpdatedTimeRequirement) {
+            const structuralTime = additionsOnly ? arch.lastEntityAddedStamp : arch.lastStructuralChangeStamp;
+            if (skipped && structuralTime >= sinceStamp) {
                 skipped = false;
                 if (!additionsOnly) visitEveryBlock = true;
             }
@@ -89,7 +89,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
                 readCols.push(col);
                 if (!(blackList && blackList.has(token))) {
                     watchCols.push(col);
-                    if (skipped && col.lastUpdatedTime >= lastUpdatedTimeRequirement) skipped = false;
+                    if (skipped && col.lastChangeStamp >= sinceStamp) skipped = false;
                 }
             }
             if (missing) continue;
@@ -104,7 +104,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
                 writeCols.push(col);
                 if (!(blackList && blackList.has(token))) {
                     watchCols.push(col);
-                    if (skipped && col.lastUpdatedTime >= lastUpdatedTimeRequirement) skipped = false;
+                    if (skipped && col.lastChangeStamp >= sinceStamp) skipped = false;
                 }
             }
             if (missing) continue;
@@ -116,14 +116,14 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
                 optCols.push(col);
                 if (col !== undefined && !(blackList && blackList.has(token))) {
                     watchCols.push(col);
-                    if (skipped && col.lastUpdatedTime >= lastUpdatedTimeRequirement) skipped = false;
+                    if (skipped && col.lastChangeStamp >= sinceStamp) skipped = false;
                 }
             }
             if (skipped) continue;
 
             plans.push({
                 arch, readCols, writeCols, optCols, watchCols, visitEveryBlock,
-                since: lastUpdatedTimeRequirement,
+                since: sinceStamp,
             });
         }
         this._plans = plans;
@@ -168,7 +168,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
             const n = includeDisabled ? arch.entityCountIncludingDisabled : arch.enabledEntityCount;
             if (n === 0) continue;
             const hasWrites = writeCols.length > 0;
-            const stampTime = hasWrites ? performance.now() : 0;
+            const stamp = hasWrites ? arch.changeStamps.current : 0;
 
             for (let k = 0; k < readKeys.length; k++) {
                 cols[readKeys[k]] = readCols[k].f32Data;
@@ -204,7 +204,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
                 span.end = singleSpan ? n : Math.min(start + BLOCK_SIZE, n);
 
                 if (cb(span as ColumnSpan<(keyof R | keyof W | keyof O) & string>) !== Unchanged && hasWrites) {
-                    for (let k = 0; k < writeCols.length; k++) writeCols[k].markBlockAt(start, stampTime);
+                    for (let k = 0; k < writeCols.length; k++) writeCols[k].markBlockAt(start, stamp);
                 }
             }
         }
@@ -219,7 +219,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
         for (const {arch, readCols, writeCols, optCols, watchCols, visitEveryBlock, since} of this.plans()) {
             const n = includeDisabled ? arch.entityCountIncludingDisabled : arch.enabledEntityCount;
             const hasWrites = writeCols.length > 0;
-            const stampTime = hasWrites ? performance.now() : 0;
+            const stamp = hasWrites ? arch.changeStamps.current : 0;
 
             const singleSpan = visitEveryBlock && !hasWrites;
             const blocks = singleSpan ? 1 : (n + BLOCK_SIZE - 1) >> BLOCK_SHIFT;
@@ -251,7 +251,7 @@ export class EntityQueryStream<R extends CompMap, W extends CompMap, O extends C
                 }
 
                 if (anyRowWrote && hasWrites) {
-                    for (let k = 0; k < writeCols.length; k++) writeCols[k].markBlockAt(start, stampTime);
+                    for (let k = 0; k < writeCols.length; k++) writeCols[k].markBlockAt(start, stamp);
                 }
             }
         }

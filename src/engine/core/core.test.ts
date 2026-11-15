@@ -20,6 +20,7 @@ import {SystemGroup} from "./systemGroup";
 import {types} from "util";
 
 const isProxy = types.isProxy;
+const STAMPS_AHEAD = 1000;
 
 class Position extends Component {
     constructor(public x = 0, public y = 0) {
@@ -325,7 +326,8 @@ describe("EntityQueryStream", () => {
     test("writing through a streamed row marks the column updated", () => {
         spawn(2);
         const arch = world.archetypes.getOrCreate([Position.type(), Velocity.type()]) as EntityArchetype;
-        const before = arch.getColumn(Position.type())!.lastUpdatedTime;
+        const before = arch.getColumn(Position.type())!.lastChangeStamp;
+        world.changeStamps.advance();
 
         new EntityQuery(world, [Position, Velocity])
             .stream({write: {p: Position}})
@@ -333,14 +335,25 @@ describe("EntityQueryStream", () => {
                 p.x = p.x + 1;
             });
 
-        expect(arch.getColumn(Position.type())!.lastUpdatedTime).toBeGreaterThan(before);
+        expect(arch.getColumn(Position.type())!.lastChangeStamp).toBeGreaterThan(before);
     });
 
-    test("filterLastUpdated skips archetypes with no change since the given time", () => {
+    test("changes take the world's current stamp and a mark advances it", () => {
+        const [e] = spawn(1);
+        const column = getOwner(world, e)!.getColumn(Position.type())!;
+        expect(column.lastChangeStamp).toBe(world.changeStamps.current);
+
+        const mark = world.changeStamps.advance();
+        expect(column.lastChangeStamp).toBeLessThan(mark);
+        em.setComponent(e, new Position(5, 5));
+        expect(column.lastChangeStamp).toBe(mark);
+    });
+
+    test("filterLastUpdated skips archetypes with no change since the given stamp", () => {
         spawn(2);
         const q = new EntityQuery(world, [Position]);
 
-        const future = performance.now() + 1000;
+        const future = world.changeStamps.advance() + STAMPS_AHEAD;
         let rows = 0;
         q.stream({read: {p: Position}}, {filterLastUpdated: future}).forEach(() => rows++);
         expect(rows).toBe(0);
@@ -360,7 +373,7 @@ describe("EntityQueryStream", () => {
         };
 
         const victims = spawn(2);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
         expect(rowsSince(mark)).toBe(0);
 
         em.destroyEntity(victims[0]);
@@ -375,7 +388,7 @@ describe("EntityQueryStream", () => {
     test("a data edit still wakes a filtered stream", () => {
         spawn(3);
         const q = new EntityQuery(world, [Position]);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
         let n = 0;
         q.stream({read: {p: Position}}, {filterLastUpdated: mark}).forEach(() => n++);
         expect(n).toBe(0);
@@ -392,7 +405,7 @@ describe("EntityQueryStream", () => {
     test("returning Unchanged from every row skips the write stamp", () => {
         spawn(3);
         const q = new EntityQuery(world, [Position]);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
 
         q.stream({write: {p: Position}}).forEach(() => Unchanged);
 
@@ -404,7 +417,7 @@ describe("EntityQueryStream", () => {
     test("one row not returning false still stamps the whole column", () => {
         spawn(3);
         const q = new EntityQuery(world, [Position]);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
 
         let i = 0;
         q.stream({write: {p: Position}}).forEach(({p}) => {
@@ -420,7 +433,7 @@ describe("EntityQueryStream", () => {
     test("a callback returning nothing counts as a write", () => {
         spawn(3);
         const q = new EntityQuery(world, [Position]);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
 
         q.stream({write: {p: Position}}).forEach(() => {});
 
@@ -432,7 +445,7 @@ describe("EntityQueryStream", () => {
     test("one arrival wakes only its block, not the whole archetype", () => {
         spawn(300);
         const q = new EntityQuery(world, [Position]);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
 
         const added = em.createEntity();
         em.addComponent(added, new Position(9, 9));
@@ -451,7 +464,7 @@ describe("EntityQueryStream", () => {
     test("a write to one block does not wake the others", () => {
         spawn(300);
         const q = new EntityQuery(world, [Position]);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
 
         let i = 0;
         q.stream({write: {p: Position}}).forEach(({p}) => {
@@ -467,7 +480,7 @@ describe("EntityQueryStream", () => {
     test("a removal still forces a full pass for structural 'any' consumers", () => {
         const es = spawn(300);
         const q = new EntityQuery(world, [Position]);
-        const mark = performance.now();
+        const mark = world.changeStamps.advance();
 
         em.destroyEntity(es[0]);
 
@@ -546,6 +559,15 @@ describe("trackComponent", () => {
     });
 });
 
+class Counter extends Component {
+    public readonly counted: number[] = [];
+
+    public count(value: number): void {
+        this.counted.push(value);
+        this.notifyChanged();
+    }
+}
+
 describe("tracked handles survive structural changes", () => {
     test("a handle taken before an archetype move still marks its column", () => {
         const e = em.createEntity();
@@ -556,12 +578,27 @@ describe("tracked handles survive structural changes", () => {
 
         const arch = getOwner(world, e)!;
         const column = arch.getColumn(ComponentType.of(Position))!;
-        const before = column.lastUpdatedTime;
+        const before = column.lastChangeStamp;
+        world.changeStamps.advance();
 
         handle.x = 99;
 
-        expect(column.lastUpdatedTime > before).toBe(true);
+        expect(column.lastChangeStamp > before).toBe(true);
         expect(em.getComponent<Position>(e, Position)!.x).toBe(99);
+    });
+
+    test("notifyChanged through a tracked handle marks its column", () => {
+        const e = em.createEntity();
+        em.addComponent(e, new Counter());
+        const handle = em.getComponent<Counter>(e, Counter)!;
+        const column = getOwner(world, e)!.getColumn(ComponentType.of(Counter))!;
+        const before = column.lastChangeStamp;
+        world.changeStamps.advance();
+
+        handle.count(1);
+
+        expect(column.lastChangeStamp > before).toBe(true);
+        expect(handle.counted).toEqual([1]);
     });
 
     test("components carried through a command-buffer move are not left wrapped", () => {
@@ -769,5 +806,49 @@ describe("SystemGroup lifecycle", () => {
         world.stop();
 
         for (const name of [...childNames("child"), "group"]) expect(counts.get(name)).toEqual(ONCE);
+    });
+
+    test("disabling a group does not disable a child that is already off", () => {
+        const counts: LifecycleCounts = new Map();
+        const groupCtor = recordingGroup(counts, "group");
+        const childCtor = recordingSystemIn(groupCtor, counts, "child");
+        world.getOrCreateSystem(childCtor).enabled = false;
+
+        world.tryGetSystem(groupCtor)!.enabled = false;
+
+        expect(counts.get("child")!.disabled).toBe(1);
+    });
+
+    test("a child toggled inside a disabled group gets no callbacks until the group is enabled", () => {
+        const enables: string[] = [];
+        const groupCtor = class extends SystemGroup {
+        };
+        const childCtor = class extends System {
+            override systemGroup() {
+                return groupCtor;
+            }
+
+            onUpdate() {
+            }
+
+            override onEnable(): void {
+                enables.push("enabled");
+            }
+
+            override onDisable(): void {
+                enables.push("disabled");
+            }
+        };
+        const child = world.getOrCreateSystem(childCtor);
+        const group = world.tryGetSystem(groupCtor)!;
+        group.enabled = false;
+        enables.length = 0;
+
+        child.enabled = false;
+        child.enabled = true;
+        expect(enables).toEqual([]);
+
+        group.enabled = true;
+        expect(enables).toEqual(["enabled"]);
     });
 });

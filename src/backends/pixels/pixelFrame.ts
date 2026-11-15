@@ -3,6 +3,7 @@ export const RGBA_BYTES_PER_PIXEL = 4;
 export interface PixelFrame {
     readonly widthPx: number;
     readonly heightPx: number;
+    // Reused for the next frame: a presenter that keeps it past present() copies it.
     readonly rgba: Uint8ClampedArray;
     readonly pixelsPerScreenUnitX: number;
     readonly pixelsPerScreenUnitY: number;
