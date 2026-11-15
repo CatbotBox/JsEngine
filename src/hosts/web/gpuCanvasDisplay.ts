@@ -5,6 +5,8 @@ import type {PixelSurfaceSize} from "./worldWorkerProtocol";
 import {fitFramebuffer, NO_SCREEN_UNITS, PIXELATED_IMAGE_RENDERING, pixelCanvasDisplayOptionsFromQuery} from "./pixelCanvasDisplay";
 import type {PixelCanvasDisplayOptions, ScreenUnitPx} from "./pixelCanvasDisplay";
 
+const VISIBLE = true;
+
 function drawsNoFrames(): void {
 }
 
@@ -16,10 +18,31 @@ export class GpuCanvasDisplay implements GpuWorldDisplay {
     private transferred = false;
     private screenUnit: ScreenUnitPx | undefined;
 
-    public constructor(container: HTMLElement, private readonly options: PixelCanvasDisplayOptions = {}) {
+    public constructor(container: HTMLElement, private readonly options: PixelCanvasDisplayOptions = {}, visible: boolean = VISIBLE) {
         this.shell = new CanvasDisplayShell<never>(container, drawsNoFrames);
         this.shell.canvas.style.imageRendering = PIXELATED_IMAGE_RENDERING;
-        this.shell.mount(this.fit);
+        this.shell.mount(this.fit, visible);
+    }
+
+    public show(): void {
+        this.shell.show();
+    }
+
+    public hide(): void {
+        this.shell.hide();
+    }
+
+    public hasFocus(): boolean {
+        return this.shell.hasFocus();
+    }
+
+    public focus(): void {
+        this.shell.focus();
+    }
+
+    public dispose(): void {
+        this.resizeListeners.clear();
+        this.shell.dispose();
     }
 
     public surfaceSize(): PixelSurfaceSize {

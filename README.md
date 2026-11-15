@@ -31,6 +31,7 @@ Every demo runs on four runtimes: `bun run demo:3d:bun` / `demo:3d:node` (termin
 locally with cross-origin isolation) and `demo:3d:window` (Electron window); the same scripts exist for `2d`.
 
 `?backend=gpu` (`demo:3d:gpu:web`, `demo:3d:gpu:window`) is an experimental WebGPU renderer for the 3D demo; it supports custom WGSL surface shaders, registered with `GpuShaderLibrary` and chosen per entity with `GpuSurfaceShader` (`o` cycles lit, toon and hologram in the demo).
+The project editor takes the same `?backend=gpu` (`editor:gpu:web`, `editor:3d:gpu:window`) and names its renderer next to the Scene/Game tabs; projects read `host.renderBackend` to install GPU passes.
 
 2D sprites and HUD elements render alongside 3D through the same screen buffer.
 

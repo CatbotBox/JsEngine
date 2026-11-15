@@ -1,9 +1,6 @@
-import type {PixelFrame} from "../../backends/pixels/pixelFrame";
-import type {PixelCanvasDisplay} from "../../hosts/web/pixelCanvasDisplay";
 import {connectWorldWorker} from "../../hosts/web/worldWorkerPage";
-import type {PixelWorldDisplay, WorldWorkerPage} from "../../hosts/web/worldWorkerPage";
+import type {WorldWorkerPage} from "../../hosts/web/worldWorkerPage";
 import {requestedRasterWorkersFromQuery} from "../../hosts/web/worldWorkerProtocol";
-import type {PixelSurfaceSize} from "../../hosts/web/worldWorkerProtocol";
 import {isEditorEventMessage} from "../editorProtocol";
 import type {EditorEvent} from "../editorProtocol";
 import {EditorClient} from "../page/editorClient";
@@ -11,6 +8,7 @@ import type {EditorEventSource} from "../page/editorSession";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {serveProjectFiles} from "../project/projectFileServing";
 import type {ProjectFileServing} from "../project/projectFileServing";
+import type {EditorSessionDisplay, EditorViewport} from "./editorViewport";
 
 export const EDITOR_REQUEST_TIMEOUT_MS = 60_000;
 export const BUFFERED_EDITOR_EVENT_LIMIT = 1000;
@@ -23,57 +21,12 @@ export interface SessionVisibility {
 
 export interface ProjectWorkerSessionOptions {
     readonly workerUrl: string;
-    readonly display: PixelCanvasDisplay;
+    readonly viewport: EditorViewport;
     readonly files: ProjectFileSystem;
     readonly name: string;
     readonly search: string;
     readonly visibility: SessionVisibility;
     readonly onQuit: () => void;
-}
-
-interface SessionDisplayEvents {
-    firstFrame(): void;
-    failed(text: string): void;
-}
-
-class SessionDisplay implements PixelWorldDisplay {
-    private firstFrameSeen = false;
-
-    public constructor(private readonly display: PixelCanvasDisplay, private visible: boolean, private readonly events: SessionDisplayEvents) {
-    }
-
-    public show(): void {
-        this.visible = true;
-    }
-
-    public hide(): void {
-        this.visible = false;
-    }
-
-    public surfaceSize(): PixelSurfaceSize {
-        return this.display.surfaceSize();
-    }
-
-    public onResize(listener: () => void): () => void {
-        return this.display.onResize(listener);
-    }
-
-    public presentPixels(frame: PixelFrame, onPresented: () => void): void {
-        if (this.visible) this.display.presentPixels(frame, onPresented);
-        else onPresented();
-        if (this.firstFrameSeen) return;
-        this.firstFrameSeen = true;
-        this.events.firstFrame();
-    }
-
-    public showStatus(text: string): void {
-        if (this.visible) this.display.showStatus(text);
-    }
-
-    public showError(text: string): void {
-        if (this.visible) this.display.showError(text);
-        this.events.failed(text);
-    }
 }
 
 export class WorkerEditorEvents implements EditorEventSource {
@@ -113,7 +66,7 @@ export class ProjectWorkerSession {
 
     private constructor(
         private readonly worker: Worker,
-        private readonly display: SessionDisplay,
+        private readonly display: EditorSessionDisplay,
         private readonly fileServing: ProjectFileServing,
         public readonly page: WorldWorkerPage,
         public readonly client: EditorClient,
@@ -133,9 +86,10 @@ export class ProjectWorkerSession {
                 settled = true;
                 fileServing.dispose();
                 worker.terminate();
+                if (!options.visibility.visible) display.dispose();
                 reject(new Error(text));
             };
-            const display = new SessionDisplay(options.display, options.visibility.visible, {
+            const display = options.viewport.sessionDisplay(options.visibility.visible, {
 // The client is created on the first frame: requests sent before the worker attached the editor service are lost.
                 firstFrame: () => {
                     if (settled) return;
@@ -177,5 +131,6 @@ export class ProjectWorkerSession {
         this.client.close();
         this.fileServing.dispose();
         this.worker.terminate();
+        this.display.dispose();
     }
 }
