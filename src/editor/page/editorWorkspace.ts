@@ -49,6 +49,7 @@ import {
     uniqueChildPath,
 } from "./projectFiles";
 import type {ProjectFileKind} from "./projectFiles";
+import type {ProjectEntry} from "../project/projectFileSystem";
 import {sceneLoadStatus, sceneSaveStatus} from "./editorToolbar";
 import {
     ComponentPresenceCommand,
@@ -65,7 +66,7 @@ import {
 } from "./undoStack";
 import type {EditorRequester, FieldChange, RecordedSubtree, StoredValues, UndoCommand, UndoContext} from "./undoStack";
 
-export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal";
+export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile";
 
 export type DragPayload =
     | {readonly kind: "entities", readonly entities: readonly Entity[]}
@@ -139,6 +140,7 @@ export class EditorWorkspace implements UndoContext {
     public componentClipboard: ComponentValuesClipboard | undefined;
     public status: WorkspaceStatus = {level: "info", text: ""};
     public revealedPath: string | undefined;
+    public inspectedFile: ProjectEntry | undefined;
     public closed = false;
     private summaries = new Map<Entity, EditorEntitySummary>();
     private queue: Promise<void> = Promise.resolve();
@@ -298,8 +300,16 @@ export class EditorWorkspace implements UndoContext {
         const unique = [...new Set(entities)];
         if (unique.length === this.selection.length && unique.every((entity, index) => entity === this.selection[index])) return;
         this.selection = unique;
+        if (unique.length > 0) this.inspectFile(undefined);
         this.emit("selection");
         this.refresh.selectionChanged();
+    }
+
+    public inspectFile(entry: ProjectEntry | undefined): void {
+        if (entry === this.inspectedFile) return;
+        this.inspectedFile = entry;
+        if (entry !== undefined) this.select([]);
+        this.emit("inspectedFile");
     }
 
     public toggleSelected(entity: Entity): void {
