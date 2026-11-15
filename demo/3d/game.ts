@@ -163,6 +163,10 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
         frameLoopSettings.renderRate = renderPacing().renderRate;
         frameLoopSettings.matchDisplay = renderPacing().matchDisplay;
     };
+    const renderPacingLabel = (renderRateLimit: number): string => {
+        const limited = Number.isFinite(renderRateLimit);
+        return limited ? `${renderPacing().label} (cpu limit ${renderRateLimit})` : renderPacing().label;
+    };
 
     let lightsEnabled = true;
     let lampEnabled = true;
@@ -616,7 +620,7 @@ export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
             this.measureRates();
             this._fpsCounterImage.image = [
                 'FPS: ' + this._framesPerSecond.toFixed(1) + '  ticks/s: ' + this._ticksPerSecond.toFixed(1),
-                'render: ' + renderPacing().label,
+                'render: ' + renderPacingLabel(this.world.loopTiming.renderRateLimit),
             ]
 
             const stats = render.stats();

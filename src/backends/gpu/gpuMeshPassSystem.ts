@@ -138,6 +138,14 @@ export class GpuMeshPassSystem extends System {
         this._startTimeMs = this.world.time.elapsedTimeMs;
     }
 
+    override onEnable(): void {
+        this.world.renderers.add("gpu");
+    }
+
+    override onDisable(): void {
+        this.world.renderers.remove("gpu");
+    }
+
     override update(): void {
         this.trianglesDrawn = 0;
         this.lodLevelCounts.fill(0);

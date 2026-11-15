@@ -139,6 +139,18 @@ describe("CellPresenterResource", () => {
         const renderWorld = new World({platform: new MemoryPlatform()});
         expect(() => renderWorld.getOrCreateSystem(CellRenderSystemGroup)).toThrow("CellPresenterResource");
     });
+
+    test("the render group counts as a CPU renderer while it is enabled", () => {
+        const world = worldPresentingOn(new RecordingPresenter());
+        expect(world.renderers.framesRenderedOnCpu).toBe(false);
+        const group = world.getOrCreateSystem(CellRenderSystemGroup);
+        expect(world.renderers.framesRenderedOnCpu).toBe(true);
+        group.enabled = false;
+        expect(world.renderers.framesRenderedOnCpu).toBe(false);
+        group.enabled = true;
+        world.stop();
+        expect(world.renderers.count("cpu")).toBe(0);
+    });
 });
 
 describe("CellRenderSystemGroup frames", () => {
