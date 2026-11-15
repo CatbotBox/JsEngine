@@ -118,6 +118,10 @@ export class PageConnection {
         };
     }
 
+    public renderBackend(): RenderBackend {
+        return this.canvas === undefined ? this.surface.kind : GPU_BACKEND;
+    }
+
     public gpuCanvas(): OffscreenCanvas {
         if (this.canvas === undefined) throw missingCanvas();
         return this.canvas;

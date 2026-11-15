@@ -1040,12 +1040,15 @@ describe("the gpu backend's plumbing", () => {
     test("the worker hands out the page's canvas, or says the page must be opened with ?backend=gpu", async () => {
         const withoutCanvas = await openPixelConnection();
         expect(() => withoutCanvas.gpuCanvas()).toThrow("a gpu world needs the page opened with ?backend=gpu");
+        expect(withoutCanvas.renderBackend()).toBe("pixels");
+        expect((await openConnection()).renderBackend()).toBe("cells");
         const canvas = offscreenCanvas();
         const scope = new FakeScope();
         const opening = PageConnection.open(scope, new MemoryFileSource());
         withOffscreenCanvasGlobal(() => scope.send({...PIXEL_INIT, canvas} as PageToWorldMessage));
         const connection = await opening;
         expect(connection.gpuCanvas()).toBe(canvas);
+        expect(connection.renderBackend()).toBe("gpu");
         expect(connection.pixelPresenter().size()).toEqual({widthPx: PIXEL_SURFACE.widthPx, heightPx: PIXEL_SURFACE.heightPx});
     });
 
