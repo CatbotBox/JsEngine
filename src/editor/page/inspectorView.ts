@@ -11,6 +11,7 @@ import {fieldValuesOf, missingInSome, sharedBoolean, sharedComponents} from "./m
 import type {SharedComponent} from "./multiSelection";
 import {isComponentOverridden, overriddenFieldKeys, pathWithinInstance} from "./prefabInstancePaths";
 import {showPopupMenu} from "./popupMenu";
+import {ProjectFilePreview} from "./projectPreview";
 import type {MenuItem} from "./popupMenu";
 import {MAX_INSPECTED_ENTITIES} from "./editorRefresh";
 import type {RotationEulerCache} from "./rotationEulerCache";
@@ -160,6 +161,7 @@ export class InspectorView {
     private inspected: InspectedSelection | undefined;
     private schemasStale = false;
     private popupClosedAtMs = Number.NEGATIVE_INFINITY;
+    private readonly filePreview: ProjectFilePreview;
 
     public constructor(private readonly container: HTMLElement, public readonly workspace: EditorWorkspace, public readonly rotations: RotationEulerCache) {
         const document = container.ownerDocument;
@@ -201,8 +203,10 @@ export class InspectorView {
         this.requiredForm.hidden = true;
         addArea.append(this.addButton, this.addHost, this.requiredForm);
         this.root.append(header, this.prefabBar, this.componentList, addArea);
+        this.filePreview = new ProjectFilePreview(document, workspace);
         container.replaceChildren(this.placeholder);
 
+        workspace.on("inspectedFile", () => this.inspectedFileChanged());
         workspace.on("details", () => this.render());
         workspace.on("selection", () => this.selectionChanged());
         workspace.on("entities", () => this.showEntityChoices());
@@ -221,7 +225,20 @@ export class InspectorView {
         else this.collapsedTypes.delete(typeName);
     }
 
+    private inspectedFileChanged(): void {
+        const entry = this.workspace.inspectedFile;
+        this.filePreview.show(entry);
+        if (entry === undefined) {
+            this.showPlaceholder(NO_SELECTION_TEXT);
+            this.render();
+            return;
+        }
+        this.showPlaceholder(NO_SELECTION_TEXT);
+        this.container.replaceChildren(this.filePreview.element);
+    }
+
     private selectionChanged(): void {
+        if (this.workspace.inspectedFile !== undefined) return;
         if (this.workspace.selection.length === 0) {
             this.showPlaceholder(NO_SELECTION_TEXT);
             return;
@@ -241,6 +258,7 @@ export class InspectorView {
     }
 
     private render(): void {
+        if (this.workspace.inspectedFile !== undefined) return;
         const {details, overrides, overridesRoot} = this.workspace.selectionDetails;
         if (details.length === 0) {
             if (this.workspace.selection.length === 0) this.showPlaceholder(NO_SELECTION_TEXT);
