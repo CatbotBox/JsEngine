@@ -857,8 +857,130 @@ body:not(.terminal-unfocused) .editor-viewport {
 .project-body {
     display: grid;
     flex: 1;
-    grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);
+    grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr) minmax(10rem, 18rem);
     min-height: 0;
+}
+
+.project-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 0.5rem 0.6rem;
+    overflow: auto;
+    border-left: 1px solid var(--border);
+}
+
+.project-preview-header {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-preview-empty,
+.project-preview-hint {
+    margin: 0;
+    color: var(--muted);
+}
+
+.project-preview-hint {
+    font-size: 0.85em;
+}
+
+.project-preview-error {
+    margin: 0;
+    color: var(--danger);
+    overflow-wrap: anywhere;
+}
+
+.project-preview-facts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.15rem 0.6rem;
+    margin: 0;
+    font-size: 0.85em;
+}
+
+.project-preview-facts dt {
+    color: var(--muted);
+}
+
+.project-preview-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.project-preview-image {
+    width: 100%;
+    height: auto;
+    max-height: 16rem;
+    object-fit: contain;
+    image-rendering: pixelated;
+    background: repeating-conic-gradient(#3a3f4a 0% 25%, #2a2e36 0% 50%) 0 0 / 0.8rem 0.8rem;
+}
+
+.project-preview-heading {
+    margin: 0.2rem 0 0.15rem;
+    color: var(--muted);
+    font-size: 0.8em;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.project-preview-symbols {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.project-preview-symbol {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.05rem 0;
+    font-family: var(--mono);
+    font-size: 0.85em;
+}
+
+.project-preview-symbol .symbol-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-preview-symbol .symbol-type,
+.project-preview-symbol .symbol-line {
+    color: var(--muted);
+}
+
+.project-preview-symbol .symbol-line {
+    margin-left: auto;
+}
+
+.project-preview-symbol .symbol-badge {
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--background);
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
+.project-preview-symbol .symbol-badge.registered {
+    color: var(--accent);
+}
+
+.project-preview-text {
+    margin: 0;
+    padding: 0.35rem;
+    overflow: auto;
+    border-radius: 0.25rem;
+    background: var(--background);
+    font-family: var(--mono);
+    font-size: 0.8em;
+    white-space: pre;
 }
 
 .project-tree {
@@ -973,6 +1095,11 @@ body:not(.terminal-unfocused) .editor-viewport {
 
 .file-icon.kind-image {
     background: #2d5a3a;
+}
+
+.file-icon.kind-code {
+    background: #6b4a1f;
+    color: #ffe7c2;
 }
 
 .console-filter {

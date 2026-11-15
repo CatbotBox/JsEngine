@@ -29,4 +29,6 @@ export interface ProjectFileSystem {
     makeDirectory(path: string): Promise<void>;
 
     onChange(listener: (change: ProjectFileChange) => void): () => void;
+
+    openExternally?(path: string): Promise<void>;
 }

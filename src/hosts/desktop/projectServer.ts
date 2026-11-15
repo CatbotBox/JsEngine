@@ -16,6 +16,7 @@ import {
     PROJECT_EVENT_BUILD_FAILED,
     PROJECT_EVENT_FILES_CHANGED,
     PROJECT_EVENT_REBUILT,
+    PROJECT_OPEN_EXTERNALLY_ROUTE,
     PROJECT_WORKER_FILE,
 } from "../../editor/project/projectServerApi";
 import type {
@@ -30,6 +31,13 @@ import type {ProjectEntry} from "../../editor/project/projectFileSystem";
 import {ServerSentEventChannel} from "./serverSentEvents";
 import {ISOLATION_HEADERS} from "./webDistFiles";
 
+export type ExternalOpener = (absolutePath: string) => Promise<void>;
+
+export interface ExternalOpenCommand {
+    readonly command: string;
+    readonly args: readonly string[];
+}
+
 export type BunLocation = {readonly path: string} | {readonly unavailableReason: string};
 
 export interface ProjectServerOptions {
@@ -38,6 +46,7 @@ export interface ProjectServerOptions {
     readonly pickFolder?: () => Promise<string | null>;
     readonly browse: boolean;
     readonly allowedHostnames?: readonly string[];
+    readonly openExternally?: ExternalOpener;
 }
 
 export interface ProjectWorkerBuildError {
@@ -97,6 +106,11 @@ const RECURSIVE = {recursive: true} as const;
 const WATCH_RECURSIVE = {recursive: true} as const;
 const WATCH_FLAT = {recursive: false} as const;
 const EXCLUSIVE_WRITE = {flag: "wx"} as const;
+const EDITOR_ENVIRONMENT_VARIABLES: readonly string[] = ["JSENGINE_EDITOR", "VISUAL", "EDITOR"];
+const DEFAULT_OPENER_BY_PLATFORM: Readonly<Partial<Record<NodeJS.Platform, string>>> = {win32: "explorer.exe", darwin: "open"};
+const FALLBACK_OPENER = "xdg-open";
+const COMMAND_QUOTES = "\"'";
+const COMMAND_WHITESPACE = /\s/;
 
 class HttpError extends Error {
     public constructor(public readonly status: number, message: string) {
@@ -275,6 +289,51 @@ export async function buildProjectEditorWorker(request: ProjectBuildRequest): Pr
     return {ok: true, bundlePath, inputs: run.report.inputs.map(input => resolve(input))};
 }
 
+export function splitCommandLine(text: string): string[] {
+    const tokens: string[] = [];
+    let token = "";
+    let quote: string | undefined;
+    let started = false;
+    for (const character of text) {
+        if (quote !== undefined) {
+            if (character === quote) quote = undefined;
+            else token += character;
+        } else if (COMMAND_QUOTES.includes(character)) {
+            quote = character;
+            started = true;
+        } else if (COMMAND_WHITESPACE.test(character)) {
+            if (started) tokens.push(token);
+            token = "";
+            started = false;
+        } else {
+            token += character;
+            started = true;
+        }
+    }
+    if (started) tokens.push(token);
+    return tokens;
+}
+
+export function externalOpenCommand(absolutePath: string, environment: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform): ExternalOpenCommand {
+    for (const name of EDITOR_ENVIRONMENT_VARIABLES) {
+        const [command, ...args] = splitCommandLine(environment[name] ?? "");
+        if (command !== undefined && command.length > 0) return {command, args: [...args, absolutePath]};
+    }
+    return {command: DEFAULT_OPENER_BY_PLATFORM[platform] ?? FALLBACK_OPENER, args: [absolutePath]};
+}
+
+export function openWithExternalEditor(absolutePath: string): Promise<void> {
+    const {command, args} = externalOpenCommand(absolutePath, process.env, process.platform);
+    return new Promise((resolveOpen, rejectOpen) => {
+        const child = spawn(command, args, {detached: true, stdio: "ignore"});
+        child.once("error", error => rejectOpen(new Error(`could not start ${command} (set JSENGINE_EDITOR to your editor's executable): ${describeError(error)}`)));
+        child.once("spawn", () => {
+            child.unref();
+            resolveOpen();
+        });
+    });
+}
+
 async function pathExists(path: string): Promise<boolean> {
     try {
         await stat(path);
@@ -403,6 +462,10 @@ export class ProjectServer {
             case "build":
                 requireMethod(request, "POST");
                 return json(await this.build(project));
+            case PROJECT_OPEN_EXTERNALLY_ROUTE:
+                requireMethod(request, "POST");
+                await this.openExternally(project, requiredString(await jsonBody(request), "path"));
+                return json({});
             case PROJECT_WORKER_FILE:
                 requireMethod(request, "GET");
                 return await this.workerBundle(project);
@@ -474,6 +537,13 @@ export class ProjectServer {
         await mkdir(dirname(to), RECURSIVE);
         await rename(from, to);
         return json({});
+    }
+
+    private async openExternally(project: OpenProject, path: string): Promise<void> {
+        const absolute = await this.confinedPath(project, path);
+        const info = await stat(absolute).catch(() => undefined);
+        if (info === undefined || !info.isFile()) throw new HttpError(HTTP_NOT_FOUND, `${path} is not a file in the project`);
+        await (this.options.openExternally ?? openWithExternalEditor)(absolute);
     }
 
     private async confinedPath(project: OpenProject, path: string): Promise<string> {

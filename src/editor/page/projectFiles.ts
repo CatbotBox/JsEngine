@@ -1,6 +1,7 @@
 import type {ProjectEntry} from "../project/projectFileSystem";
+import {PROJECT_ENTRY_EXTENSIONS} from "../project/projectManifest";
 
-export type ProjectFileKind = "scene" | "prefab" | "mesh" | "image" | "other";
+export type ProjectFileKind = "scene" | "prefab" | "mesh" | "image" | "code" | "other";
 
 export interface ProjectFolder {
     readonly path: string;
@@ -13,6 +14,7 @@ export const ROOT_FOLDER_PATH = "";
 export const SCENE_EXTENSION = ".scene.json";
 export const PREFAB_EXTENSION = ".prefab.json";
 export const SCENES_FOLDER = "scenes";
+export const PROJECT_FILE_KIND_TITLES: Readonly<Record<ProjectFileKind, string>> = {scene: "Scene", prefab: "Prefab", mesh: "Mesh", image: "Image", code: "Code", other: "File"};
 
 const PATH_SEPARATOR = "/";
 const BACKSLASH = /\\/g;
@@ -36,6 +38,7 @@ export function projectFileKind(path: string): ProjectFileKind {
     if (lower.endsWith(PREFAB_EXTENSION)) return "prefab";
     if (MESH_EXTENSIONS.some(extension => lower.endsWith(extension))) return "mesh";
     if (IMAGE_EXTENSIONS.some(extension => lower.endsWith(extension))) return "image";
+    if (PROJECT_ENTRY_EXTENSIONS.some(extension => lower.endsWith(extension))) return "code";
     return "other";
 }
 
