@@ -4,6 +4,7 @@ import {readFile, writeFile} from "fs/promises";
 import {join} from "path";
 import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "./webDistFiles";
 import {createProjectServer, locateBun} from "./projectServer";
+import {nextZoomFactor, storedZoomFactor, zoomCommandOf, zoomSettingsText} from "./windowZoom";
 
 const SCHEME = "app";
 const HOST = "bundle";
@@ -22,6 +23,7 @@ const BITMAP_BYTES_PER_PIXEL = 4;
 const ARGV_APP_ARGS_START_UNPACKAGED = 2;
 const ARGV_APP_ARGS_START_PACKAGED = 1;
 const AS_USER_GESTURE = true;
+const WINDOW_SETTINGS_FILE = "window-settings.json";
 
 export interface PackagedLaunch {
     readonly page: string;
@@ -141,6 +143,26 @@ function initialWindowSize(): {readonly width: number, readonly height: number} 
     return {width: fitted(MIN_WINDOW_WIDTH_PX, workArea.width), height: fitted(MIN_WINDOW_HEIGHT_PX, workArea.height)};
 }
 
+function windowSettingsPath(): string {
+    return join(app.getPath("userData"), WINDOW_SETTINGS_FILE);
+}
+
+function loadZoomFactor(): number {
+    const path = windowSettingsPath();
+    return storedZoomFactor(existsSync(path) ? readFileSync(path, "utf8") : undefined);
+}
+
+function handleZoomShortcuts(window: BrowserWindow): void {
+    window.webContents.on("before-input-event", (event, input) => {
+        const command = zoomCommandOf(input);
+        if (command === undefined) return;
+        event.preventDefault();
+        const zoomFactor = nextZoomFactor(window.webContents.getZoomFactor(), command);
+        window.webContents.setZoomFactor(zoomFactor);
+        void writeFile(windowSettingsPath(), zoomSettingsText(zoomFactor));
+    });
+}
+
 async function openWindow(): Promise<void> {
     protocol.handle(SCHEME, respond);
     Menu.setApplicationMenu(null);
@@ -151,8 +173,10 @@ async function openWindow(): Promise<void> {
         show: !smoke,
         title: launch?.title,
         icon: launch === undefined ? undefined : join(app.getAppPath(), launch.iconFile),
+        webPreferences: {zoomFactor: smoke ? undefined : loadZoomFactor()},
     });
     mainWindow = window;
+    handleZoomShortcuts(window);
     if (launch !== undefined) window.on("page-title-updated", (event: PreventableEvent) => event.preventDefault());
     const pageErrors: string[] = [];
     window.webContents.on("console-message", event => {
