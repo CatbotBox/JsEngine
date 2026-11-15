@@ -422,6 +422,14 @@ button.primary {
     color: var(--danger);
 }
 
+.view-tabs-renderer {
+    align-self: center;
+    margin-left: auto;
+    padding: 0 0.4rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
 .editor-stage {
     position: relative;
     flex: 1;

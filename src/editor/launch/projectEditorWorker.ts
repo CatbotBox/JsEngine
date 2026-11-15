@@ -6,19 +6,30 @@ import {ComponentSchemaRegistry, registerEngineComponentSchemas} from "../../eng
 import {registerCellsComponentSchemas} from "../../backends/cells/cellsComponentSchemas";
 import {registerPixelsComponentSchemas} from "../../backends/pixels/pixelsComponentSchemas";
 import {PixelPresenterResource} from "../../backends/pixels/pixelPresenterResource";
+import {registerGpuComponentSchemas} from "../../backends/gpu/gpuComponentSchemas";
 import {PageConnection} from "../../hosts/web/worldWorkerPlatform";
 import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
+import {gpuCanvasPresenter, requestGpuDevice} from "../../hosts/web/gpuWorldDevice";
 import {attachEditorWorldService} from "../world/editorWorldService";
 import type {EditorServiceScope} from "../world/editorWorldService";
 import {ProjectFileSource} from "../project/projectFileSource";
 import type {ProjectFilesChannel} from "../project/projectFileSource";
-import type {ProjectAssetFile, ProjectAssetFiles, ProjectEntryModule, ProjectLoadProgress, ProjectLoadProgressListener} from "../project/projectEntry";
+import type {
+    ProjectAssetFile,
+    ProjectAssetFiles,
+    ProjectEntryModule,
+    ProjectLoadProgress,
+    ProjectLoadProgressListener,
+    ProjectRenderBackend,
+} from "../project/projectEntry";
 
 type ProjectEditorWorkerScope = WorldWorkerScope & EditorServiceScope & ProjectFilesChannel;
 
 const MESH_EXTENSION = ".obj";
 const BYTES_PER_MB = 1024 * 1024;
 const MB_DECIMALS = 1;
+const GPU_BACKEND: ProjectRenderBackend = "gpu";
+const PIXELS_BACKEND: ProjectRenderBackend = "pixels";
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -70,6 +81,7 @@ export function projectComponentSchemas(entry: ProjectEntryModule): ComponentSch
     registerEngineComponentSchemas(registry);
     registerCellsComponentSchemas(registry);
     registerPixelsComponentSchemas(registry);
+    registerGpuComponentSchemas(registry);
     entry.registerProjectSchemas(registry);
     return registry;
 }
@@ -85,14 +97,25 @@ export async function preloadProjectAssets(files: ProjectFileSource, platform: P
     }
 }
 
+async function insertPresenter(world: DebugWorld, page: PageConnection): Promise<ProjectRenderBackend> {
+    if (page.renderBackend() !== GPU_BACKEND) {
+        world.resources.insert(new PixelPresenterResource(page.pixelPresenter()));
+        return PIXELS_BACKEND;
+    }
+    const gpu = await requestGpuDevice(page);
+    world.resources.insert(gpu);
+    world.resources.insert(new PixelPresenterResource(gpuCanvasPresenter(page, gpu)));
+    return GPU_BACKEND;
+}
+
 async function startProjectWorld(scope: ProjectEditorWorkerScope, page: PageConnection, files: ProjectFileSource, entry: ProjectEntryModule): Promise<void> {
     const registry = projectComponentSchemas(entry);
-    await files.whenListed();
     const world = new DebugWorld({platform: page.platform});
-    world.resources.insert(new PixelPresenterResource(page.pixelPresenter()));
+    const renderBackend = await insertPresenter(world, page);
+    await files.whenListed();
     page.connectInput(world.resources.getOrCreate(Input));
     const assetFiles = new SetupStatusAssetFiles(files, page);
-    await entry.setupProject(world, {files: assetFiles, quit: () => page.quit()});
+    await entry.setupProject(world, {files: assetFiles, renderBackend, quit: () => page.quit()});
     assetFiles.stopReporting();
     attachEditorWorldService(scope, world, registry, {
         preloadAssets: paths => preloadProjectAssets(files, world.platform, paths),

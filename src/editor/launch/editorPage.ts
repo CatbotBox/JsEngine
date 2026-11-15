@@ -1,5 +1,6 @@
 import {installDomInput} from "../../hosts/web/domInput";
-import {pixelCanvasDisplayFromQuery} from "../../hosts/web/pixelCanvasDisplay";
+import {gpuFallbackWarning, webGpuUsable} from "../../hosts/web/renderBackendBootstrap";
+import {renderBackendFromQuery} from "../../hosts/web/worldWorkerProtocol";
 import {createEditorShell} from "../page/editorShell";
 import {DirectoryHandleProjectFileSystem} from "../project/directoryHandleProjectFileSystem";
 import type {DirectoryHandleLike} from "../project/directoryHandleProjectFileSystem";
@@ -16,6 +17,8 @@ import {
 } from "../project/projectServerApi";
 import type {BuildProjectResult, OpenProjectResult} from "../project/projectServerApi";
 import type {ServerEventStream} from "../project/serverEvents";
+import {chooseEditorRenderBackend, EDITOR_DEFAULT_RENDER_BACKEND, editorViewportFromQuery, renderBackendLabelText} from "./editorViewport";
+import type {EditorRenderBackend} from "./editorViewport";
 import {browseForFolder} from "./folderBrowser";
 import {ProjectRunner} from "./projectRunner";
 import {ProjectServerClient} from "./projectServerClient";
@@ -29,6 +32,8 @@ export type EditorPageState = "start" | "loading" | "ready" | "failed" | "stoppe
 
 const EDITOR_STATE_KEY = "editorState";
 const EDITOR_VIEWPORT_KEY = "editorViewport";
+const RENDER_BACKEND_KEY = "renderBackend";
+const GPU_BACKEND: EditorRenderBackend = "gpu";
 const EDITOR_TITLE_SUFFIX = " - JsEngine editor";
 const SCRIPT_TYPE = "text/javascript";
 const ABORT_ERROR_NAME = "AbortError";
@@ -54,6 +59,14 @@ interface DirectoryPickerWindow {
 
 function setPageState(state: EditorPageState): void {
     document.documentElement.dataset[EDITOR_STATE_KEY] = state;
+}
+
+async function editorRenderBackend(search: string): Promise<EditorRenderBackend> {
+    const requested = renderBackendFromQuery(search, EDITOR_DEFAULT_RENDER_BACKEND);
+    const usable = requested === GPU_BACKEND && await webGpuUsable(navigator, HTMLCanvasElement.prototype);
+    const choice = chooseEditorRenderBackend(requested, usable);
+    if (choice.fallbackReason !== undefined) console.warn(gpuFallbackWarning(choice.fallbackReason));
+    return choice.backend;
 }
 
 function describeError(error: unknown): string {
@@ -222,22 +235,24 @@ class EditorStart {
     }
 
     private async launch(launch: ProjectLaunch): Promise<void> {
+        const renderBackend = await editorRenderBackend(location.search);
         this.screen.remove();
         const name = launch.manifest.name;
         document.title = name + EDITOR_TITLE_SUFFIX;
-        const shell = createEditorShell(document.body);
+        const shell = createEditorShell(document.body, {renderBackendLabel: renderBackendLabelText(renderBackend)});
         shell.viewport.dataset[EDITOR_VIEWPORT_KEY] = "";
-        const display = pixelCanvasDisplayFromQuery(shell.viewport, location.search);
+        const viewport = editorViewportFromQuery(renderBackend, shell.viewport, location.search);
+        document.documentElement.dataset[RENDER_BACKEND_KEY] = renderBackend;
         const runner = new ProjectRunner({
             shell,
-            display,
+            viewport,
             files: launch.files,
             project: {name, startScene: launch.manifest.startScene ?? null},
             search: location.search,
             onReady: () => setPageState("ready"),
             onStopped: () => setPageState("stopped"),
         });
-        installDomInput(shell.viewport, {sink: runner.input, cellArea: () => display.cellArea()});
+        installDomInput(shell.viewport, {sink: runner.input, cellArea: () => viewport.cellArea()});
         window.addEventListener("pagehide", () => runner.exit());
         launch.events?.on(PROJECT_EVENT_REBUILT, data => {
             if (isRebuiltEvent(data)) runner.reload(data.workerUrl);
@@ -249,7 +264,7 @@ class EditorStart {
             await runner.start(launch.workerUrl);
         } catch (error) {
             setPageState("failed");
-            display.showError(describeError(error));
+            viewport.showError(describeError(error));
         }
     }
 }

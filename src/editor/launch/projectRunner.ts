@@ -1,9 +1,9 @@
 import type {Entity} from "../../engine/core";
 import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
 import type {SceneLoadReport} from "../../engine/scene/sceneSerialization";
-import type {PixelCanvasDisplay} from "../../hosts/web/pixelCanvasDisplay";
 import type {EditorNoticeLevel, EditorProject, EditorSession, EditorShell, EntityRemap} from "../page/editorSession";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
+import type {EditorViewport} from "./editorViewport";
 import {ProjectWorkerSession} from "./projectWorkerSession";
 import type {SessionVisibility} from "./projectWorkerSession";
 
@@ -16,7 +16,7 @@ export interface ReloadNotice {
 
 export interface ProjectRunnerOptions {
     readonly shell: EditorShell;
-    readonly display: PixelCanvasDisplay;
+    readonly viewport: EditorViewport;
     readonly files: ProjectFileSystem;
     readonly project: EditorProject;
     readonly search: string;
@@ -113,7 +113,7 @@ export class ProjectRunner {
     private startSession(workerUrl: string, visibility: SessionVisibility): Promise<ProjectWorkerSession> {
         return ProjectWorkerSession.start({
             workerUrl,
-            display: this.options.display,
+            viewport: this.options.viewport,
             files: this.options.files,
             name: this.options.project.name,
             search: this.options.search,
