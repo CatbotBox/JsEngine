@@ -52,6 +52,7 @@ export class AddComponentPopup {
     private readonly list: HTMLElement;
     private items: {readonly typeName: string, readonly element: HTMLElement}[] = [];
     private highlighted = 0;
+    private closed = false;
 
     public constructor(
         document: Document,
@@ -105,7 +106,8 @@ export class AddComponentPopup {
     }
 
     public close(): void {
-        if (!this.element.isConnected) return;
+        if (this.closed || !this.element.isConnected) return;
+        this.closed = true;
         this.element.remove();
         this.actions.closed();
     }

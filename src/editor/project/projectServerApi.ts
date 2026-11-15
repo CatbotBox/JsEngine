@@ -6,6 +6,7 @@ export const PROJECT_EVENT_REBUILT = "rebuilt";
 export const PROJECT_EVENT_BUILD_FAILED = "build-failed";
 export const PROJECT_WORKER_FILE = "worker.js";
 export const PROJECT_BUILD_COPY_PATH = ".jsengine/build/editor.worker.js";
+export const PROJECT_OPEN_EXTERNALLY_ROUTE = "open-external";
 
 export interface ProjectCapabilities {
     readonly build: boolean;
@@ -53,6 +54,10 @@ export interface RenameRequest {
 }
 
 export interface MakeDirectoryRequest {
+    readonly path: string;
+}
+
+export interface OpenExternallyRequest {
     readonly path: string;
 }
 
