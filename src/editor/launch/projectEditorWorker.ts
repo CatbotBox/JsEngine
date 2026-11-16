@@ -17,7 +17,7 @@ import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../project/project
 import type {ProjectManifest} from "../project/projectManifest";
 import {createProjectSchemaRegistry} from "../project/projectSchemas";
 import type {GeneratedProjectSchemas, SchemaRegistration} from "../project/projectSchemas";
-import {loadProjectResources} from "../project/projectStartup";
+import {startProject} from "../project/projectStartup";
 import type {ProjectFilesChannel} from "../project/projectFileSource";
 import type {
     ProjectAssetFile,
@@ -133,8 +133,7 @@ async function startProjectWorld(
     const preloadAssets = (paths: readonly string[]) => preloadProjectAssets(files, world.platform, paths);
     const scenes = editorSceneManager(world, registry, preloadAssets);
     const host: ProjectHost = {files: assetFiles, renderBackend, scenes, quit: () => page.quit()};
-    await loadProjectResources(world, host, manifest, registry);
-    await entry.setupProject(world, host);
+    await startProject(world, entry, host, manifest, registry);
     assetFiles.stopReporting();
     attachEditorWorldService(scope, world, registry, {preloadAssets, scenes, refetchFiles: paths => files.refetch(paths)});
 }

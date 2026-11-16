@@ -2,12 +2,13 @@ import type {Resource, World} from "../../engine/core";
 import type {ComponentSchemaRegistry} from "../../engine/scene/componentSchemaRegistry";
 import {dataAssetsOf} from "../../engine/scene/dataAssets";
 import type {ResourceSchema} from "../../engine/scene/fieldSchema";
-import type {SceneHandle, SceneLoadMode} from "../../engine/scene/sceneManager";
+import type {SceneActivation, SceneHandle, SceneLoadMode} from "../../engine/scene/sceneManager";
 import type {ProjectEntryModule, ProjectHost} from "./projectEntry";
 import {PROJECT_MANIFEST_FILE} from "./projectManifest";
 import type {ProjectManifest, ProjectResourceBinding} from "./projectManifest";
 
 const START_SCENE_LOAD_MODE: SceneLoadMode = "single";
+const START_SCENE_ACTIVATION: SceneActivation = "onCommandBufferPlayback";
 const NO_RESOURCES: readonly ProjectResourceBinding[] = [];
 
 function bindingLabel(index: number): string {
@@ -51,5 +52,5 @@ export async function startProject(
     await loadProjectResources(world, host, manifest, registry);
     await entry.setupProject(world, host);
     if (manifest.startScene === undefined) return undefined;
-    return host.scenes.load(manifest.startScene, {mode: START_SCENE_LOAD_MODE});
+    return host.scenes.load(manifest.startScene, {mode: START_SCENE_LOAD_MODE, activation: START_SCENE_ACTIVATION});
 }

@@ -1,73 +1,24 @@
 import {EntityCommandBuffer, EntityCommandBufferSystem, Resource, System, World} from "../../src/engine/core";
 import type {Entity} from "../../src/engine/core";
-import {Input, Key} from "../../src/engine/input";
-import type {ActionBindings} from "../../src/engine/input";
+import {Input, resolveInputActions} from "../../src/engine/input";
+import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
 import {
     Camera,
     SCREEN_UNIT_HEIGHT_PER_WIDTH,
     ScreenSize,
     SPRITE_PIXELS_PER_SCREEN_UNIT_X,
     SPRITE_PIXELS_PER_SCREEN_UNIT_Y,
-    TextColor,
 } from "../../src/engine/rendering";
-import type {TextSprite} from "../../src/engine/rendering";
 import {Sprite} from "../../src/engine/rendering/2d";
-import {LocalPosition, LocalToWorld} from "../../src/engine/translation";
-import {AverageStat} from "../../src/engine/datatypes";
-import {createHudLabel} from "../_shared/hud";
+import {LocalPosition} from "../../src/engine/translation";
+import {DataAssets, dataAssetPathOf, PrefabSpawner} from "../../src/engine/scene";
+import type {PrefabAsset} from "../../src/engine/scene";
 import {Bullet, Enemy, Lifetime, Ship, Spark, Velocity} from "./components";
 import {EnemyGrid} from "./enemyGrid";
+import {SwarmHudSystem} from "./hud";
 import {SeededRandom, SwarmPhase, SwarmState} from "./resources";
-import {
-    BLINK_INTERVAL_MS,
-    BOMB_EARNED_EVERY_WAVES,
-    BOMB_RADIUS_UNITS,
-    BOMB_SPARKS,
-    BRUTE,
-    BRUTE_WOUNDED_TINT_RGB,
-    BULLET_DAMAGE,
-    BULLET_DEPTH,
-    BULLET_IMAGE,
-    BULLET_LIFETIME_MS,
-    BULLET_RADIUS_UNITS,
-    BULLET_SPEED_UNITS_PER_SECOND,
-    bruteShareForWave,
-    ENEMY_DEPTH,
-    ENEMY_SPEED_JITTER_FRACTION,
-    enemyCountForWave,
-    enemySpeedMultiplierForWave,
-    FALLBACK_ARENA_HEIGHT_UNITS,
-    FALLBACK_ARENA_WIDTH_UNITS,
-    FIRE_INTERVAL_MS,
-    GRID_CELL_SIZE_UNITS,
-    GRID_MARGIN_UNITS,
-    INVULNERABILITY_MS,
-    LIFE_LOST_SPARK_REACH_UNITS,
-    LIFE_LOST_SPARKS,
-    MAX_BOMBS,
-    MAX_ENEMY_RADIUS_UNITS,
-    MAX_ENEMY_STEER_RAD,
-    MAX_SIMULATION_STEP_MS,
-    MAX_SPAWNS_PER_FRAME,
-    MS_PER_SECOND,
-    SHIP_DEPTH,
-    SHIP_DESTROYED_SPARK_REACH_UNITS,
-    SHIP_DESTROYED_SPARKS,
-    SHIP_IMAGE,
-    SHIP_RADIUS_UNITS,
-    SHIP_SPEED_UNITS_PER_SECOND,
-    SPARK_DEPTH,
-    SPARK_IMAGE,
-    SPARK_MAX_LIFETIME_MS,
-    SPARK_MAX_REACH_FRACTION,
-    SPARK_MIN_LIFETIME_MS,
-    SPARK_MIN_REACH_FRACTION,
-    SPARK_TINTS_RGB,
-    SPAWN_MARGIN_UNITS,
-    spawnDurationMsForWave,
-    SWARMER,
-    WAVE_INTERMISSION_MS,
-} from "./tuning";
+import {MS_PER_SECOND, SwarmTuning} from "./tuning";
+import type {EnemySpawn, ShipTuning, SparkTuning, WaveTuning} from "./tuning";
 
 export interface SwarmRenderControls {
     toggleHud(): void;
@@ -95,21 +46,7 @@ const Action = {
     ToggleHud: "toggleHud",
 } as const;
 
-const SWARM_ACTIONS: ActionBindings = {
-    [Action.MoveUp]: [Key.W],
-    [Action.MoveDown]: [Key.S],
-    [Action.MoveLeft]: [Key.A],
-    [Action.MoveRight]: [Key.D],
-    [Action.FireUp]: [Key.Up],
-    [Action.FireDown]: [Key.Down],
-    [Action.FireLeft]: [Key.Left],
-    [Action.FireRight]: [Key.Right],
-    [Action.Bomb]: [Key.Space],
-    [Action.Start]: [Key.Enter],
-    [Action.Restart]: [Key.R],
-    [Action.Quit]: [Key.Escape],
-    [Action.ToggleHud]: [Key.Tab],
-};
+type SwarmActions = ResolvedInputActions<typeof Action>;
 
 const ARENA_PRIORITY = -120;
 const CONTROL_PRIORITY = -110;
@@ -123,7 +60,6 @@ const BROADPHASE_PRIORITY = -50;
 const BULLET_HIT_PRIORITY = -45;
 const BOMB_PRIORITY = -44;
 const SHIP_CONTACT_PRIORITY = -43;
-const HUD_PRIORITY = -5;
 
 const HALF = 0.5;
 const UNSCALED = 1;
@@ -133,78 +69,14 @@ const WIDTH_UNITS_PER_SCREEN_UNIT_Y = SCREEN_UNIT_HEIGHT_PER_WIDTH;
 const POSITION_STRIDE = LocalPosition.f32Width;
 const POSITION_X = 0;
 const POSITION_Y = 1;
-const SHIP_HALF_WIDTH_SCREEN_UNITS = SHIP_IMAGE.sizeX / SPRITE_PIXELS_PER_SCREEN_UNIT_X * HALF;
-const SHIP_HALF_HEIGHT_SCREEN_UNITS = SHIP_IMAGE.sizeY / SPRITE_PIXELS_PER_SCREEN_UNIT_Y * HALF;
-const SEEK_STOP_DISTANCE_UNITS = 0.01;
 const VISIBLE_OPACITY = 1;
 const HIDDEN_OPACITY = 0;
 const BLINK_PHASES = 2;
 const DEFEATED_HIT_POINTS = 0;
-
-const FPS_AVERAGE_FRAMES = 30;
-const STATS_REFRESH_MS = 250;
-const UNSHOWN = -1;
-const STATUS_SEPARATOR = "   ";
-const STATUS_COLOR = TextColor.BRIGHT_GREEN;
-const STATS_COLOR = TextColor.GREEN;
-const TITLE_COLOR = TextColor.BRIGHT_CYAN;
-const WAVE_BANNER_COLOR = TextColor.BRIGHT_YELLOW;
-const GAME_OVER_COLOR = TextColor.BRIGHT_RED;
-const HUD_BACKGROUND = TextColor.BLACK;
-const PANEL_PADDING_COLUMNS = 2;
-const NO_TEXT: string[] = [];
-const BLANK_LINE = "";
-const SPACE = " ";
-
-type BannerKind = "none" | "title" | "wave" | "gameOver";
-
-function centeredPanel(lines: readonly string[]): string[] {
-    let width = 0;
-    for (const line of lines) width = Math.max(width, line.length);
-    const padding = SPACE.repeat(PANEL_PADDING_COLUMNS);
-    const rows = [BLANK_LINE, ...lines, BLANK_LINE];
-    return rows.map(line => padding + (SPACE.repeat(Math.floor((width - line.length) * HALF)) + line).padEnd(width) + padding);
-}
-
-const CONTROL_KEY_COLUMNS = 9;
-const CONTROLS: readonly (readonly [string, string])[] = [
-    ["WASD", "move"],
-    ["ARROWS", "fire, hold to repeat"],
-    ["SPACE", "bomb"],
-    ["TAB", "toggle HUD"],
-    ["ESC", "quit"],
-];
-
-function controlLines(): string[] {
-    const lines = CONTROLS.map(([keys, effect]) => keys.padEnd(CONTROL_KEY_COLUMNS) + effect);
-    let width = 0;
-    for (const line of lines) width = Math.max(width, line.length);
-    return lines.map(line => line.padEnd(width));
-}
-
-const TITLE_LINES = centeredPanel([
-    "S W A R M",
-    BLANK_LINE,
-    ...controlLines(),
-    BLANK_LINE,
-    "press ENTER to start",
-]);
-
-function waveBannerLines(state: SwarmState): string[] {
-    const lines = [`W A V E   ${state.wave}`];
-    if (state.lastClearEarnedBomb) lines.push(BLANK_LINE, "+1 BOMB");
-    return centeredPanel(lines);
-}
-
-function gameOverLines(state: SwarmState): string[] {
-    return centeredPanel([
-        "GAME OVER",
-        BLANK_LINE,
-        ["SCORE " + state.score, "WAVE " + state.wave, "KILLS " + state.kills].join(STATUS_SEPARATOR),
-        BLANK_LINE,
-        "press R to restart" + STATUS_SEPARATOR + "ESC to quit",
-    ]);
-}
+const NO_EXTENT = 0;
+const TUNING_FILE = "assets/swarm.tuning.asset.json";
+const STATE_FILE = "assets/swarm.state.asset.json";
+const ENEMY_PREFAB_FIELD = "waves.enemies[].prefab";
 
 class SwarmHostResource extends Resource {
     public constructor(public readonly host: SwarmHost) {
@@ -212,14 +84,9 @@ class SwarmHostResource extends Resource {
     }
 }
 
-class SwarmHudLabels extends Resource {
-    public constructor(
-        public readonly status: TextSprite,
-        public readonly stats: TextSprite,
-        public readonly banner: TextSprite,
-    ) {
-        super();
-    }
+class SwarmArena extends Resource {
+    public halfWidthUnits = 0;
+    public halfHeightUnits = 0;
 }
 
 function fullExtentOf(halfExtent: number): number {
@@ -227,38 +94,78 @@ function fullExtentOf(halfExtent: number): number {
 }
 
 function simulationStepMs(world: World): number {
-    return Math.min(world.time.deltaTimeMs, MAX_SIMULATION_STEP_MS);
+    return Math.min(world.time.deltaTimeMs, world.resources.get(SwarmTuning).maxSimulationStepMs);
 }
 
 function commandBufferOf(world: World): EntityCommandBuffer {
     return world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
 }
 
-function axis(input: Input, positive: string, negative: string): number {
+function axis(input: Input, positive: InputAction, negative: InputAction): number {
     return Number(input.actionHeld(positive)) - Number(input.actionHeld(negative));
 }
 
-function quitRequested(input: Input): boolean {
-    if (input.actionPressed(Action.Quit)) return true;
-    for (const event of input.events) {
-        if (event.type === "keyDown" && event.key === Key.C && event.ctrl) return true;
-    }
-    return false;
+function swarmActionsOf(world: World): SwarmActions {
+    return resolveInputActions(world, Action);
 }
 
-function spawnSparks(buffer: EntityCommandBuffer, random: SeededRandom, x: number, y: number, count: number, reachUnits: number): void {
+function requirePrefab(prefab: PrefabAsset | undefined, field: string): PrefabAsset {
+    if (prefab === undefined) throw new Error(`SwarmTuning.${field} names no prefab: set it in ${TUNING_FILE}`);
+    return prefab;
+}
+
+function maxEnemyRadiusUnits(world: World, grid: EnemyGrid): number {
+    const spawner = world.resources.get(PrefabSpawner);
+    let max = grid.maxRadiusUnits;
+    for (const enemy of world.resources.get(SwarmTuning).waves.enemies) {
+        const radius = spawner.templateOf(requirePrefab(enemy.prefab, ENEMY_PREFAB_FIELD)).rootComponentDefaults(Enemy)?.radiusUnits ?? NO_EXTENT;
+        if (radius > max) max = radius;
+    }
+    return max;
+}
+
+function enemySpawnFor(enemies: readonly EnemySpawn[], wavesAfterFirst: number, roll: number): EnemySpawn {
+    let cumulativeShare = 0;
+    for (const enemy of enemies) {
+        cumulativeShare += enemy.spawnShare.valueAt(wavesAfterFirst);
+        if (roll < cumulativeShare) return enemy;
+    }
+    return enemies[enemies.length - 1];
+}
+
+function startNewGame(world: World, state: SwarmState): void {
+    const path = dataAssetPathOf(state);
+    if (path === undefined || world.resources.get(DataAssets).reload(path) === undefined) {
+        throw new Error(`SwarmState has no starting values to reload: load it from ${STATE_FILE} through "resources" in jsengine.project.json`);
+    }
+    const tuning = world.resources.get(SwarmTuning);
+    state.phase = SwarmPhase.Playing;
+    state.wave = tuning.waves.firstWave;
+    state.lives = tuning.ship.startLives;
+    state.bombs = tuning.bomb.startBombs;
+    state.invulnerableRemainingMs = tuning.ship.startInvulnerabilityMs;
+    state.intermissionRemainingMs = tuning.waves.intermissionMs;
+}
+
+function spawnSparks(buffer: EntityCommandBuffer, world: World, sparks: SparkTuning, x: number, y: number, count: number, reachUnits: number): void {
+    const random = world.resources.get(SeededRandom), spawner = world.resources.get(PrefabSpawner);
+    const prefab = requirePrefab(sparks.prefab, "sparks.prefab");
+    const tints = sparks.tints;
     for (let i = 0; i < count; i++) {
         const angle = random.next() * FULL_TURN_RAD;
-        const lifetimeMs = random.between(SPARK_MIN_LIFETIME_MS, SPARK_MAX_LIFETIME_MS);
-        const speed = reachUnits * random.between(SPARK_MIN_REACH_FRACTION, SPARK_MAX_REACH_FRACTION) * MS_PER_SECOND / lifetimeMs;
-        buffer.createEntity("spark", [
-            new Spark(),
-            new Velocity(Math.cos(angle) * speed, Math.sin(angle) * speed / WIDTH_UNITS_PER_SCREEN_UNIT_Y),
-            new Lifetime(lifetimeMs),
-            new Sprite(SPARK_IMAGE, SPARK_TINTS_RGB[random.indexBelow(SPARK_TINTS_RGB.length)]),
-            new LocalPosition(x, y, SPARK_DEPTH),
-            new LocalToWorld(),
-        ]);
+        const lifetimeMs = random.between(sparks.minLifetimeMs, sparks.maxLifetimeMs);
+        const speed = reachUnits * random.between(sparks.minReachFraction, sparks.maxReachFraction) * MS_PER_SECOND / lifetimeMs;
+        const spark = spawner.spawn(buffer, prefab);
+        const velocity = spark.rootComponent(Velocity);
+        velocity.xUnitsPerSecond = Math.cos(angle) * speed;
+        velocity.yUnitsPerSecond = Math.sin(angle) * speed / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+        const lifetime = spark.rootComponent(Lifetime);
+        lifetime.durationMs = lifetimeMs;
+        lifetime.remainingMs = lifetimeMs;
+        if (tints.length > 0) spark.rootComponent(Sprite).tint = tints[random.indexBelow(tints.length)];
+        const position = spark.rootComponent(LocalPosition);
+        position.x = x;
+        position.y = y;
     }
 }
 
@@ -270,7 +177,7 @@ function removeEnemyAt(buffer: EntityCommandBuffer, grid: EnemyGrid, index: numb
 }
 
 function scoreEnemyAt(state: SwarmState, grid: EnemyGrid, index: number): void {
-    state.score += grid.enemies[index].kind.score;
+    state.score += grid.enemies[index].score;
     state.kills++;
 }
 
@@ -287,12 +194,13 @@ class SwarmArenaSystem extends System {
     }
 
     onUpdate(): void {
-        const state = this.world.resources.get(SwarmState);
+        const arena = this.world.resources.get(SwarmArena);
+        const fallback = this.world.resources.get(SwarmTuning).arena;
         const camera = this._cameraQuery.tryGetSingleton({screenSize: ScreenSize});
-        const width = camera !== undefined && camera.screenSize.x > 0 ? camera.screenSize.x : FALLBACK_ARENA_WIDTH_UNITS;
-        const height = camera !== undefined && camera.screenSize.y > 0 ? camera.screenSize.y : FALLBACK_ARENA_HEIGHT_UNITS;
-        state.arenaHalfWidthUnits = width * HALF;
-        state.arenaHalfHeightUnits = height * HALF;
+        const width = camera !== undefined && camera.screenSize.x > 0 ? camera.screenSize.x : fallback.fallbackWidthUnits;
+        const height = camera !== undefined && camera.screenSize.y > 0 ? camera.screenSize.y : fallback.fallbackHeightUnits;
+        arena.halfWidthUnits = width * HALF;
+        arena.halfHeightUnits = height * HALF;
     }
 }
 
@@ -300,28 +208,33 @@ class SwarmControlSystem extends System {
     private _enemies = this.createEntityQuery([Enemy]);
     private _bullets = this.createEntityQuery([Bullet]);
     private _sparks = this.createEntityQuery([Spark]);
+    private _actions!: SwarmActions;
 
     override priority(): number {
         return CONTROL_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this._actions = swarmActionsOf(this.world);
     }
 
     onUpdate(): void {
         const input = this.world.resources.get(Input);
         const state = this.world.resources.get(SwarmState);
         const host = this.world.resources.get(SwarmHostResource).host;
-        if (quitRequested(input)) {
+        if (input.actionPressed(this._actions.Quit)) {
             this.world.stop();
             host.quit();
             return;
         }
-        if (input.actionPressed(Action.ToggleHud)) host.render.toggleHud();
+        if (input.actionPressed(this._actions.ToggleHud)) host.render.toggleHud();
         // Starting lasts one frame: the ECB destroyed the old entities at the end of the frame that queued it, so reset only now.
         if (state.phase === SwarmPhase.Starting) {
-            state.resetForNewGame();
+            startNewGame(this.world, state);
             return;
         }
-        const startPressed = state.phase === SwarmPhase.Title && input.actionPressed(Action.Start);
-        const restartPressed = state.phase === SwarmPhase.GameOver && input.actionPressed(Action.Restart);
+        const startPressed = state.phase === SwarmPhase.Title && input.actionPressed(this._actions.Start);
+        const restartPressed = state.phase === SwarmPhase.GameOver && input.actionPressed(this._actions.Restart);
         if (startPressed || restartPressed) this.clearField(state);
     }
 
@@ -336,6 +249,7 @@ class SwarmControlSystem extends System {
 
 class ShipSystem extends System {
     private _ship = this.createEntityQuery([Ship, LocalPosition, Sprite]);
+    private _actions!: SwarmActions;
 
     override priority(): number {
         return SHIP_PRIORITY;
@@ -343,16 +257,18 @@ class ShipSystem extends System {
 
     protected onCreate(): void {
         this.requireAnyForUpdate(this._ship);
+        this._actions = swarmActionsOf(this.world);
     }
 
     onUpdate(): void {
         const state = this.world.resources.get(SwarmState);
+        const ship = this.world.resources.get(SwarmTuning).ship;
         if (state.phase === SwarmPhase.Playing) {
             const stepMs = simulationStepMs(this.world);
             state.invulnerableRemainingMs = Math.max(0, state.invulnerableRemainingMs - stepMs);
-            this.steer(state, this.world.resources.get(Input), stepMs);
+            this.steer(state, ship, this.world.resources.get(Input), stepMs);
         }
-        const x = state.shipX, y = state.shipY, opacity = this.opacityOf(state);
+        const x = state.shipX, y = state.shipY, opacity = this.opacityOf(state, ship);
         this._ship.stream({write: {position: LocalPosition, sprite: Sprite}}).consume(({position, sprite}) => {
             position.x = x;
             position.y = y;
@@ -360,56 +276,66 @@ class ShipSystem extends System {
         });
     }
 
-    private steer(state: SwarmState, input: Input, stepMs: number): void {
-        const right = axis(input, Action.MoveRight, Action.MoveLeft);
-        const down = axis(input, Action.MoveDown, Action.MoveUp);
+    private steer(state: SwarmState, ship: ShipTuning, input: Input, stepMs: number): void {
+        const right = axis(input, this._actions.MoveRight, this._actions.MoveLeft);
+        const down = axis(input, this._actions.MoveDown, this._actions.MoveUp);
         if (right !== 0 || down !== 0) {
-            const distance = SHIP_SPEED_UNITS_PER_SECOND * stepMs / MS_PER_SECOND / Math.hypot(right, down);
+            const distance = ship.speedUnitsPerSecond * stepMs / MS_PER_SECOND / Math.hypot(right, down);
             state.shipX += right * distance;
             state.shipY += down * distance / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
         }
-        const limitX = Math.max(0, state.arenaHalfWidthUnits - SHIP_HALF_WIDTH_SCREEN_UNITS);
-        const limitY = Math.max(0, state.arenaHalfHeightUnits - SHIP_HALF_HEIGHT_SCREEN_UNITS);
+        const arena = this.world.resources.get(SwarmArena);
+        const image = this._ship.tryGetSingleton({sprite: Sprite})?.sprite.image;
+        const halfWidth = (image?.sizeX ?? NO_EXTENT) / SPRITE_PIXELS_PER_SCREEN_UNIT_X * HALF;
+        const halfHeight = (image?.sizeY ?? NO_EXTENT) / SPRITE_PIXELS_PER_SCREEN_UNIT_Y * HALF;
+        const limitX = Math.max(0, arena.halfWidthUnits - halfWidth);
+        const limitY = Math.max(0, arena.halfHeightUnits - halfHeight);
         state.shipX = Math.min(limitX, Math.max(-limitX, state.shipX));
         state.shipY = Math.min(limitY, Math.max(-limitY, state.shipY));
     }
 
-    private opacityOf(state: SwarmState): number {
+    private opacityOf(state: SwarmState, ship: ShipTuning): number {
         if (state.phase !== SwarmPhase.Playing) return HIDDEN_OPACITY;
         if (state.invulnerableRemainingMs <= 0) return VISIBLE_OPACITY;
-        return Math.floor(state.invulnerableRemainingMs / BLINK_INTERVAL_MS) % BLINK_PHASES === 0 ? VISIBLE_OPACITY : HIDDEN_OPACITY;
+        return Math.floor(state.invulnerableRemainingMs / ship.blinkIntervalMs) % BLINK_PHASES === 0 ? VISIBLE_OPACITY : HIDDEN_OPACITY;
     }
 }
 
 class ShipWeaponSystem extends System {
+    private _actions!: SwarmActions;
+
     override priority(): number {
         return WEAPON_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this._actions = swarmActionsOf(this.world);
     }
 
     onUpdate(): void {
         const state = this.world.resources.get(SwarmState);
         if (state.phase !== SwarmPhase.Playing) return;
         const input = this.world.resources.get(Input);
-        const right = axis(input, Action.FireRight, Action.FireLeft);
-        const down = axis(input, Action.FireDown, Action.FireUp);
+        const right = axis(input, this._actions.FireRight, this._actions.FireLeft);
+        const down = axis(input, this._actions.FireDown, this._actions.FireUp);
         state.fireCooldownMs -= simulationStepMs(this.world);
         if (right === 0 && down === 0) {
             state.fireCooldownMs = Math.max(0, state.fireCooldownMs);
             return;
         }
         if (state.fireCooldownMs > 0) return;
+        const weapon = this.world.resources.get(SwarmTuning).weapon;
         // Carry the overshoot into the next interval so the fire rate does not depend on frame timing.
-        state.fireCooldownMs = Math.max(0, state.fireCooldownMs + FIRE_INTERVAL_MS);
+        state.fireCooldownMs = Math.max(0, state.fireCooldownMs + MS_PER_SECOND / weapon.fireRateShotsPerSecond);
 
-        const speed = BULLET_SPEED_UNITS_PER_SECOND / Math.hypot(right, down);
-        commandBufferOf(this.world).createEntity("bullet", [
-            new Bullet(BULLET_DAMAGE),
-            new Velocity(right * speed, down * speed / WIDTH_UNITS_PER_SCREEN_UNIT_Y),
-            new Lifetime(BULLET_LIFETIME_MS),
-            new Sprite(BULLET_IMAGE),
-            new LocalPosition(state.shipX, state.shipY, BULLET_DEPTH),
-            new LocalToWorld(),
-        ]);
+        const speed = weapon.bulletSpeedUnitsPerSecond / Math.hypot(right, down);
+        const bullet = this.world.resources.get(PrefabSpawner).spawn(commandBufferOf(this.world), requirePrefab(weapon.bullet, "weapon.bullet"));
+        const velocity = bullet.rootComponent(Velocity);
+        velocity.xUnitsPerSecond = right * speed;
+        velocity.yUnitsPerSecond = down * speed / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+        const position = bullet.rootComponent(LocalPosition);
+        position.x = state.shipX;
+        position.y = state.shipY;
     }
 }
 
@@ -423,47 +349,51 @@ class WaveSystem extends System {
     onUpdate(): void {
         const state = this.world.resources.get(SwarmState);
         if (state.phase !== SwarmPhase.Playing) return;
+        const tuning = this.world.resources.get(SwarmTuning);
+        const waves = tuning.waves;
         const stepMs = simulationStepMs(this.world);
         if (state.intermissionRemainingMs > 0) {
             state.intermissionRemainingMs -= stepMs;
             if (state.intermissionRemainingMs > 0) return;
-            this.beginWave(state);
+            this.beginWave(state, waves);
         }
         if (state.waveEnemiesSpawned >= state.waveEnemyTarget) {
-            if (this._enemies.enabledEntityCount() === 0) this.clearWave(state);
+            if (this._enemies.enabledEntityCount() === 0) this.clearWave(state, tuning);
             return;
         }
-        state.spawnBudget += stepMs * state.waveEnemyTarget / spawnDurationMsForWave(state.wave);
-        const spawns = Math.min(Math.floor(state.spawnBudget), state.waveEnemyTarget - state.waveEnemiesSpawned, MAX_SPAWNS_PER_FRAME);
-        const buffer = commandBufferOf(this.world), random = this.world.resources.get(SeededRandom);
-        for (let i = 0; i < spawns; i++) this.spawnEnemy(state, random, buffer);
+        state.spawnBudget += stepMs * state.waveEnemyTarget / waves.spawnDurationMs.valueAt(state.wave - waves.firstWave);
+        const spawns = Math.min(Math.floor(state.spawnBudget), state.waveEnemyTarget - state.waveEnemiesSpawned, waves.maxSpawnsPerFrame);
+        const buffer = commandBufferOf(this.world);
+        for (let i = 0; i < spawns; i++) this.spawnEnemy(state, waves, buffer);
         state.spawnBudget -= spawns;
         state.waveEnemiesSpawned += spawns;
     }
 
-    private beginWave(state: SwarmState): void {
+    private beginWave(state: SwarmState, waves: WaveTuning): void {
         state.intermissionRemainingMs = 0;
-        state.waveEnemyTarget = enemyCountForWave(state.wave);
+        state.waveEnemyTarget = waves.enemyCount.valueAt(state.wave - waves.firstWave);
         state.waveEnemiesSpawned = 0;
         state.spawnBudget = 0;
     }
 
-    private clearWave(state: SwarmState): void {
+    private clearWave(state: SwarmState, tuning: SwarmTuning): void {
         const clearedWave = state.wave;
-        const earnedBomb = clearedWave % BOMB_EARNED_EVERY_WAVES === 0 && state.bombs < MAX_BOMBS;
+        const earnedBomb = clearedWave % tuning.bomb.earnedEveryWaves === 0 && state.bombs < tuning.bomb.maxBombs;
         if (earnedBomb) state.bombs++;
         state.lastClearEarnedBomb = earnedBomb;
         state.wave = clearedWave + 1;
-        state.intermissionRemainingMs = WAVE_INTERMISSION_MS;
+        state.intermissionRemainingMs = tuning.waves.intermissionMs;
         state.waveEnemyTarget = 0;
         state.waveEnemiesSpawned = 0;
         state.spawnBudget = 0;
     }
 
-    private spawnEnemy(state: SwarmState, random: SeededRandom, buffer: EntityCommandBuffer): void {
-        const kind = random.next() < bruteShareForWave(state.wave) ? BRUTE : SWARMER;
-        const halfWidth = state.arenaHalfWidthUnits + SPAWN_MARGIN_UNITS;
-        const halfHeight = state.arenaHalfHeightUnits * WIDTH_UNITS_PER_SCREEN_UNIT_Y + SPAWN_MARGIN_UNITS;
+    private spawnEnemy(state: SwarmState, waves: WaveTuning, buffer: EntityCommandBuffer): void {
+        const random = this.world.resources.get(SeededRandom), arena = this.world.resources.get(SwarmArena);
+        const wavesAfterFirst = state.wave - waves.firstWave;
+        const kind = enemySpawnFor(waves.enemies, wavesAfterFirst, random.next());
+        const halfWidth = arena.halfWidthUnits + waves.spawnMarginUnits;
+        const halfHeight = arena.halfHeightUnits * WIDTH_UNITS_PER_SCREEN_UNIT_Y + waves.spawnMarginUnits;
         const width = fullExtentOf(halfWidth), height = fullExtentOf(halfHeight);
         const topEnd = width, rightEnd = topEnd + height, bottomEnd = rightEnd + width;
         const along = random.next() * (bottomEnd + height);
@@ -481,15 +411,17 @@ class WaveSystem extends System {
             x = -halfWidth;
             y = halfHeight - (along - bottomEnd);
         }
-        const speed = kind.speedUnitsPerSecond * enemySpeedMultiplierForWave(state.wave)
-            * random.between(UNSCALED - ENEMY_SPEED_JITTER_FRACTION, UNSCALED + ENEMY_SPEED_JITTER_FRACTION);
-        const steer = random.between(-MAX_ENEMY_STEER_RAD, MAX_ENEMY_STEER_RAD);
-        buffer.createEntity(kind.name, [
-            new Enemy(kind, speed, Math.cos(steer), Math.sin(steer)),
-            new Sprite(kind.image),
-            new LocalPosition(x, y / WIDTH_UNITS_PER_SCREEN_UNIT_Y, ENEMY_DEPTH),
-            new LocalToWorld(),
-        ]);
+        const speedMultiplier = waves.enemySpeedMultiplier.valueAt(wavesAfterFirst);
+        const jitter = random.between(UNSCALED - waves.enemySpeedJitterFraction, UNSCALED + waves.enemySpeedJitterFraction);
+        const steer = random.between(-waves.maxEnemySteerRad, waves.maxEnemySteerRad);
+        const spawned = this.world.resources.get(PrefabSpawner).spawn(buffer, requirePrefab(kind.prefab, ENEMY_PREFAB_FIELD));
+        const enemy = spawned.rootComponent(Enemy);
+        enemy.speedUnitsPerSecond = enemy.speedUnitsPerSecond * speedMultiplier * jitter;
+        enemy.steerCos = Math.cos(steer);
+        enemy.steerSin = Math.sin(steer);
+        const position = spawned.rootComponent(LocalPosition);
+        position.x = x;
+        position.y = y / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
     }
 }
 
@@ -507,6 +439,7 @@ class EnemySeekSystem extends System {
     onUpdate(): void {
         const state = this.world.resources.get(SwarmState);
         if (state.phase !== SwarmPhase.Playing) return;
+        const stopDistance = this.world.resources.get(SwarmTuning).waves.seekStopDistanceUnits;
         const stepSeconds = simulationStepMs(this.world) / MS_PER_SECOND;
         const targetX = state.shipX, targetY = state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
         this._enemies.stream({read: {enemy: Enemy}, write: {position: LocalPosition}}).consumeSpans(({start, end, cols, stores}) => {
@@ -517,7 +450,7 @@ class EnemySeekSystem extends System {
                 const dx = targetX - positions[p + POSITION_X];
                 const dy = targetY - positions[p + POSITION_Y] * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance <= SEEK_STOP_DISTANCE_UNITS) continue;
+                if (distance <= stopDistance) continue;
                 const scale = Math.min(enemy.speedUnitsPerSecond * stepSeconds, distance) / distance;
                 const stepX = dx * scale, stepY = dy * scale;
                 positions[p + POSITION_X] += stepX * enemy.steerCos - stepY * enemy.steerSin;
@@ -586,11 +519,12 @@ class EnemyBroadphaseSystem extends System {
     }
 
     onUpdate(): void {
-        const state = this.world.resources.get(SwarmState);
+        const arena = this.world.resources.get(SwarmArena);
+        const tuning = this.world.resources.get(SwarmTuning).arena;
         const grid = this.world.resources.get(EnemyGrid);
-        const halfWidth = state.arenaHalfWidthUnits + GRID_MARGIN_UNITS;
-        const halfHeight = state.arenaHalfHeightUnits * WIDTH_UNITS_PER_SCREEN_UNIT_Y + GRID_MARGIN_UNITS;
-        grid.begin(-halfWidth, -halfHeight, fullExtentOf(halfWidth), fullExtentOf(halfHeight), GRID_CELL_SIZE_UNITS, this._enemies.enabledEntityCount());
+        const halfWidth = arena.halfWidthUnits + tuning.broadphaseMarginUnits;
+        const halfHeight = arena.halfHeightUnits * WIDTH_UNITS_PER_SCREEN_UNIT_Y + tuning.broadphaseMarginUnits;
+        grid.begin(-halfWidth, -halfHeight, fullExtentOf(halfWidth), fullExtentOf(halfHeight), tuning.broadphaseCellSizeUnits, this._enemies.enabledEntityCount());
         this._enemies.stream({read: {enemy: Enemy, position: LocalPosition, sprite: Sprite}}).consumeSpans(({start, end, cols, stores, entities}) => {
             const positions = cols.position!, enemies = stores.enemy!, sprites = stores.sprite!;
             for (let i = start; i < end; i++) {
@@ -618,7 +552,7 @@ class BulletHitSystem extends System {
         const grid = this.world.resources.get(EnemyGrid);
         if (state.phase !== SwarmPhase.Playing || grid.count === 0) return;
         const buffer = commandBufferOf(this.world);
-        const searchRadius = BULLET_RADIUS_UNITS + MAX_ENEMY_RADIUS_UNITS;
+        const maxEnemyRadius = maxEnemyRadiusUnits(this.world, grid);
         this._bullets.stream({read: {position: LocalPosition}, write: {bullet: Bullet}}).consumeSpans(({start, end, cols, stores, entities}) => {
             const positions = cols.position!, bullets = stores.bullet!;
             for (let i = start; i < end; i++) {
@@ -626,16 +560,16 @@ class BulletHitSystem extends System {
                 if (bullet.remainingDamage <= 0) continue;
                 const p = i * POSITION_STRIDE;
                 const x = positions[p + POSITION_X], y = positions[p + POSITION_Y] * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
-                const found = grid.gatherNear(x, y, searchRadius);
+                const found = grid.gatherNear(x, y, bullet.radiusUnits + maxEnemyRadius);
                 for (let k = 0; k < found && bullet.remainingDamage > 0; k++) {
                     const index = grid.candidates[k];
                     const enemy = grid.enemies[index];
-                    if (enemy.hitPoints <= 0 || !withinReach(grid, index, x, y, BULLET_RADIUS_UNITS + enemy.kind.radiusUnits)) continue;
+                    if (enemy.hitPoints <= 0 || !withinReach(grid, index, x, y, bullet.radiusUnits + enemy.radiusUnits)) continue;
                     const dealt = Math.min(bullet.remainingDamage, enemy.hitPoints);
                     enemy.hitPoints -= dealt;
                     bullet.remainingDamage -= dealt;
                     if (enemy.hitPoints > 0) {
-                        grid.sprites[index].tint = BRUTE_WOUNDED_TINT_RGB;
+                        grid.sprites[index].tint = enemy.woundedTint;
                         continue;
                     }
                     scoreEnemyAt(state, grid, index);
@@ -648,27 +582,35 @@ class BulletHitSystem extends System {
 }
 
 class BombSystem extends System {
+    private _actions!: SwarmActions;
+
     override priority(): number {
         return BOMB_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this._actions = swarmActionsOf(this.world);
     }
 
     onUpdate(): void {
         const state = this.world.resources.get(SwarmState);
         if (state.phase !== SwarmPhase.Playing || state.bombs <= 0) return;
-        if (!this.world.resources.get(Input).actionPressed(Action.Bomb)) return;
+        if (!this.world.resources.get(Input).actionPressed(this._actions.Bomb)) return;
         state.bombs--;
+        const tuning = this.world.resources.get(SwarmTuning);
+        const radius = tuning.bomb.radiusUnits;
         const grid = this.world.resources.get(EnemyGrid);
         const buffer = commandBufferOf(this.world);
         const x = state.shipX, y = state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
-        const found = grid.gatherNear(x, y, BOMB_RADIUS_UNITS + MAX_ENEMY_RADIUS_UNITS);
+        const found = grid.gatherNear(x, y, radius + maxEnemyRadiusUnits(this.world, grid));
         for (let k = 0; k < found; k++) {
             const index = grid.candidates[k];
             const enemy = grid.enemies[index];
-            if (enemy.hitPoints <= 0 || !withinReach(grid, index, x, y, BOMB_RADIUS_UNITS + enemy.kind.radiusUnits)) continue;
+            if (enemy.hitPoints <= 0 || !withinReach(grid, index, x, y, radius + enemy.radiusUnits)) continue;
             scoreEnemyAt(state, grid, index);
             removeEnemyAt(buffer, grid, index);
         }
-        spawnSparks(buffer, this.world.resources.get(SeededRandom), state.shipX, state.shipY, BOMB_SPARKS, BOMB_RADIUS_UNITS);
+        spawnSparks(buffer, this.world, tuning.sparks, state.shipX, state.shipY, tuning.bomb.sparkCount, radius);
     }
 }
 
@@ -681,131 +623,53 @@ class ShipContactSystem extends System {
         const state = this.world.resources.get(SwarmState);
         const grid = this.world.resources.get(EnemyGrid);
         if (state.phase !== SwarmPhase.Playing || state.invulnerableRemainingMs > 0 || grid.count === 0) return;
+        const tuning = this.world.resources.get(SwarmTuning);
+        const shipRadius = tuning.ship.radiusUnits;
         const x = state.shipX, y = state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
-        const found = grid.gatherNear(x, y, SHIP_RADIUS_UNITS + MAX_ENEMY_RADIUS_UNITS);
+        const found = grid.gatherNear(x, y, shipRadius + maxEnemyRadiusUnits(this.world, grid));
         for (let k = 0; k < found; k++) {
             const index = grid.candidates[k];
             const enemy = grid.enemies[index];
-            if (enemy.hitPoints <= 0 || !withinReach(grid, index, x, y, SHIP_RADIUS_UNITS + enemy.kind.radiusUnits)) continue;
-            this.loseLife(state, grid, index);
+            if (enemy.hitPoints <= 0 || !withinReach(grid, index, x, y, shipRadius + enemy.radiusUnits)) continue;
+            this.loseLife(state, tuning, grid, index);
             return;
         }
     }
 
-    private loseLife(state: SwarmState, grid: EnemyGrid, index: number): void {
-        const buffer = commandBufferOf(this.world), random = this.world.resources.get(SeededRandom);
+    private loseLife(state: SwarmState, tuning: SwarmTuning, grid: EnemyGrid, index: number): void {
+        const buffer = commandBufferOf(this.world), sparks = tuning.sparks;
         removeEnemyAt(buffer, grid, index);
         state.lives--;
         if (state.lives > 0) {
-            state.invulnerableRemainingMs = INVULNERABILITY_MS;
-            spawnSparks(buffer, random, state.shipX, state.shipY, LIFE_LOST_SPARKS, LIFE_LOST_SPARK_REACH_UNITS);
+            state.invulnerableRemainingMs = tuning.ship.invulnerabilityMs;
+            spawnSparks(buffer, this.world, sparks, state.shipX, state.shipY, sparks.lifeLostCount, sparks.lifeLostReachUnits);
             return;
         }
         state.phase = SwarmPhase.GameOver;
-        spawnSparks(buffer, random, state.shipX, state.shipY, SHIP_DESTROYED_SPARKS, SHIP_DESTROYED_SPARK_REACH_UNITS);
+        spawnSparks(buffer, this.world, sparks, state.shipX, state.shipY, sparks.shipDestroyedCount, sparks.shipDestroyedReachUnits);
     }
 }
 
-class SwarmHudSystem extends System {
-    private _enemies = this.createEntityQuery([Enemy]);
-    private _fps = new AverageStat(FPS_AVERAGE_FRAMES);
-    private _sinceStatsRefreshMs = STATS_REFRESH_MS;
-    private _shownPhase: SwarmPhase | undefined;
-    private _shownScore = UNSHOWN;
-    private _shownWave = UNSHOWN;
-    private _shownLives = UNSHOWN;
-    private _shownBombs = UNSHOWN;
-    private _shownBanner: BannerKind | undefined;
-    private _shownBannerWave = UNSHOWN;
-
-    override priority(): number {
-        return HUD_PRIORITY;
+function requireSwarmData(world: World): void {
+    const tuning = world.resources.get(SwarmTuning);
+    const state = world.resources.get(SwarmState);
+    if (dataAssetPathOf(state) === undefined) {
+        throw new Error(`SwarmState must be loaded from ${STATE_FILE} through "resources" in jsengine.project.json, so a new game can reload its starting values`);
     }
-
-    onUpdate(): void {
-        const labels = this.world.resources.get(SwarmHudLabels);
-        const state = this.world.resources.get(SwarmState);
-        this.refreshStatus(labels.status, state);
-        this.refreshStats(labels.stats);
-        this.refreshBanner(labels.banner, state);
-    }
-
-    private refreshStatus(label: TextSprite, state: SwarmState): void {
-        if (state.phase === this._shownPhase && state.score === this._shownScore && state.wave === this._shownWave
-            && state.lives === this._shownLives && state.bombs === this._shownBombs) return;
-        this._shownPhase = state.phase;
-        this._shownScore = state.score;
-        this._shownWave = state.wave;
-        this._shownLives = state.lives;
-        this._shownBombs = state.bombs;
-        label.image = state.phase === SwarmPhase.Title ? NO_TEXT : [[
-            "SCORE " + state.score,
-            "WAVE " + state.wave,
-            "LIVES " + state.lives,
-            "BOMBS " + state.bombs,
-        ].join(STATUS_SEPARATOR)];
-    }
-
-    private refreshStats(label: TextSprite): void {
-        const time = this.world.time;
-        if (time.frameDeltaTimeMs > 0) this._fps.add(MS_PER_SECOND / time.frameDeltaTimeMs);
-        this._sinceStatsRefreshMs += time.deltaTimeMs;
-        if (this._sinceStatsRefreshMs < STATS_REFRESH_MS) return;
-        this._sinceStatsRefreshMs = 0;
-        label.image = [["ENEMIES " + this._enemies.enabledEntityCount(), "FPS " + Math.round(this._fps.getAvg())].join(STATUS_SEPARATOR)];
-    }
-
-    private refreshBanner(label: TextSprite, state: SwarmState): void {
-        const banner = this.bannerOf(state);
-        if (banner === this._shownBanner && state.wave === this._shownBannerWave) return;
-        this._shownBanner = banner;
-        this._shownBannerWave = state.wave;
-        switch (banner) {
-            case "title":
-                label.foreground = TITLE_COLOR;
-                label.image = TITLE_LINES;
-                break;
-            case "wave":
-                label.foreground = WAVE_BANNER_COLOR;
-                label.image = waveBannerLines(state);
-                break;
-            case "gameOver":
-                label.foreground = GAME_OVER_COLOR;
-                label.image = gameOverLines(state);
-                break;
-            case "none":
-                label.image = NO_TEXT;
-                break;
-        }
-    }
-
-    private bannerOf(state: SwarmState): BannerKind {
-        if (state.phase === SwarmPhase.Title) return "title";
-        if (state.phase === SwarmPhase.GameOver) return "gameOver";
-        if (state.phase === SwarmPhase.Playing && state.intermissionRemainingMs > 0) return "wave";
-        return "none";
-    }
+    const spawner = world.resources.tryGet(PrefabSpawner);
+    if (spawner === undefined) throw new Error("Swarm spawns prefabs through a PrefabSpawner: launch it with launchProject or startProject, whose SceneManager creates one");
+    if (tuning.waves.enemies.length === 0) throw new Error(`SwarmTuning.waves.enemies is empty: list at least one enemy prefab in ${TUNING_FILE}`);
+    spawner.templateOf(requirePrefab(tuning.weapon.bullet, "weapon.bullet"));
+    spawner.templateOf(requirePrefab(tuning.sparks.prefab, "sparks.prefab"));
+    tuning.waves.enemies.forEach((enemy, index) => spawner.templateOf(requirePrefab(enemy.prefab, `waves.enemies[${index}].prefab`)));
 }
 
 export function setupSwarm(world: World, host: SwarmHost): void {
-    const buffer = commandBufferOf(world);
+    requireSwarmData(world);
     world.resources.insert(new SwarmHostResource(host));
-    world.resources.insert(new SwarmState());
     world.resources.insert(new SeededRandom(host.seed));
     world.resources.insert(new EnemyGrid());
-    world.resources.getOrCreate(Input).bindActions(SWARM_ACTIONS);
-
-    buffer.createEntity("camera", [new Camera(), new LocalPosition(), new LocalToWorld()]);
-    buffer.createEntity("ship", [new Ship(), new Sprite(SHIP_IMAGE), new LocalPosition(0, 0, SHIP_DEPTH), new LocalToWorld()]);
-    const labels = new SwarmHudLabels(
-        createHudLabel(buffer, "swarmStatus", BLANK_LINE, STATUS_COLOR, "top-left"),
-        createHudLabel(buffer, "swarmStats", BLANK_LINE, STATS_COLOR, "top-right"),
-        createHudLabel(buffer, "swarmBanner", BLANK_LINE, TITLE_COLOR, "middle-center"),
-    );
-    labels.status.background = HUD_BACKGROUND;
-    labels.stats.background = HUD_BACKGROUND;
-    labels.banner.background = HUD_BACKGROUND;
-    world.resources.insert(labels);
+    world.resources.insert(new SwarmArena());
 
     world.ensureSystemExists(SwarmArenaSystem);
     world.ensureSystemExists(SwarmControlSystem);

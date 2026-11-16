@@ -1,21 +1,21 @@
+import {EntityCommandBufferSystem, NULL_ENTITY, Resource, System} from "../../src/engine/core";
+import type {Component, ComponentCtor, Entity, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
+import {getEntityCreationOrder} from "../../src/engine/core/ownership";
+import {Input, resolveInputActions} from "../../src/engine/input";
+import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
+import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderingSystemGroup} from "../../src/engine/rendering";
+import {Sprite} from "../../src/engine/rendering/2d";
+import {LocalPosition, LocalToWorld} from "../../src/engine/translation";
 import {Vec} from "../../src/engine/math/types/vec";
-import {
-    Component,
-    Entity,
-    EntityCommandBufferSystem,
-    System,
-    DebugWorld
-} from "../../src/engine/core";
-import {Input, Key} from "../../src/engine/input";
-
-import {Camera, CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextColor, WHITE_RGB} from "../../src/engine/rendering";
-import {componentSchema} from "../../src/engine/scene/componentSchemaBuilder";
-
-import {LocalPosition, LocalToWorld, Parent} from "../../src/engine/translation";
-
-import {Sprite, SpriteImage} from "../../src/engine/rendering/2d";
+import {randomSourceFor} from "../../src/engine/math/randomSource";
+import type {RandomSource} from "../../src/engine/math/randomSource";
 import {AverageStat} from "../../src/engine/datatypes";
-import {createHudLabel} from "../_shared/hud";
+import {PrefabSpawner} from "../../src/engine/scene";
+import type {PrefabAsset} from "../../src/engine/scene";
+import {requireDebugWorld} from "../_shared/debugWorld";
+import {formatHudText, HudLabel} from "../_shared/hud";
+import {Demo2dHud, FadeToColor, OriginalColor, PanCamera, PlayerTag, RandomTint} from "./components";
+import {Demo2dTuning} from "./tuning";
 
 export interface Demo2dRenderControls {
     toggleSpritePass(): void;
@@ -27,52 +27,96 @@ export interface Demo2dHost {
     quit(): void;
 }
 
+const DEMO_NAME = "The 2D demo";
+const TUNING_FILE = "assets/demo2d.asset.json";
+const BLUE_SHIFT = 0;
+const MS_PER_SECOND = 1000;
+const HALF = 0.5;
+const NO_STEP = 0;
+const NO_OFFSET = 0;
+const UNSET = -1;
+const RANDOM_TINT_PRIORITY = -2;
+const BEFORE_SIMULATION_PRIORITY = -1;
+const INCLUDING_DISABLED = {includeDisabled: true} as const;
+const ENTITIES_INCLUDING_DISABLED = {includeEntity: true, includeDisabled: true} as const;
+
+const Demo2dAction = {
+    MovePlayerUp: "movePlayerUp",
+    MovePlayerDown: "movePlayerDown",
+    MovePlayerLeft: "movePlayerLeft",
+    MovePlayerRight: "movePlayerRight",
+    MoveCameraUp: "moveCameraUp",
+    MoveCameraDown: "moveCameraDown",
+    MoveCameraLeft: "moveCameraLeft",
+    MoveCameraRight: "moveCameraRight",
+    SpawnPixels: "spawnPixels",
+    ToggleRendering: "toggleRendering",
+    ToggleSpritePass: "toggleSpritePass",
+    ToggleHalfBlockCells: "toggleHalfBlockCells",
+    LogSystemOrder: "logSystemOrder",
+    ToggleHud: "toggleHud",
+    Quit: "quit",
+} as const;
+
+type Demo2dActions = ResolvedInputActions<typeof Demo2dAction>;
+
+interface ActionHandler {
+    readonly action: InputAction;
+    readonly run: () => void;
+}
+
+class Demo2dHostResource extends Resource {
+    public constructor(public readonly host: Demo2dHost) {
+        super();
+    }
+}
+
+class Demo2dRandom extends Resource {
+    private seed: number | undefined;
+    private source: RandomSource;
+
+    public constructor(seed: number | undefined) {
+        super();
+        this.seed = seed;
+        this.source = randomSourceFor(seed);
+    }
+
+    public sourceFor(seed: number | undefined): RandomSource {
+        if (seed !== this.seed) {
+            this.seed = seed;
+            this.source = randomSourceFor(seed);
+        }
+        return this.source;
+    }
+}
+
+function commandBufferOf(world: World): EntityCommandBuffer {
+    return world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
+}
+
+function randomSourceOf(world: World): RandomSource {
+    return world.resources.get(Demo2dRandom).sourceFor(world.resources.get(Demo2dTuning).randomSeed);
+}
+
+function requirePixelPrefab(tuning: Demo2dTuning): PrefabAsset {
+    if (tuning.pixelPrefab === undefined) throw new Error(`Demo2dTuning.pixelPrefab names no prefab: set it in ${TUNING_FILE}`);
+    return tuning.pixelPrefab;
+}
+
 function packRgb(r: number, g: number, b: number): number {
     return (r << RED_SHIFT) | (g << GREEN_SHIFT) | b;
 }
 
-const HUD_CROSS_RGB = 0x00FFCC;
-const FADE_TARGET_RGB = 0xFFB7CE;
-const DEMO_2D_CATEGORY = "Demo 2D";
-const BLUE_SHIFT = 0;
-const FADE_MIN_MS = 5000, FADE_JITTER_MS = 5000;
-const PIXELS_PER_SPAWN = 1_000;
-const SPAWN_AREA_CELLS = 100;
-const PLAYER_STEP_ROWS = 0.5;
-const PLAYER_STEP_COLUMNS = 1;
-const FPS_AVERAGE_FRAMES = 10;
-const MS_PER_SECOND = 1000;
-const BEFORE_SIMULATION_PRIORITY = -1;
-const TOGGLE_HUD_ACTION = "toggleHud";
-const HUD_TEXT_COLOR = TextColor.GREEN;
-
-const CROSS_IMAGE = SpriteImage.fromPattern([
-    ' # ',
-    '###',
-    ' # ',
-], {'#': WHITE_RGB});
-const PIXEL_IMAGE = SpriteImage.solid(1, 1, WHITE_RGB);
-
-export class FadeToColor extends Component {
-    public static readonly schema = componentSchema(FadeToColor, "FadeToColor")
-        .rgb("rgb").number("fadeTime").number("currentFadeTime").category(DEMO_2D_CATEGORY).build();
-
-    public rgb: number = WHITE_RGB;
-    public fadeTime: number = 0;
-    public currentFadeTime: number = 0;
+function randomChannel(random: RandomSource): number {
+    return Math.round(random.next() * CHANNEL_MAX);
 }
 
-export class OriginalColor extends Component {
-    public static readonly schema = componentSchema(OriginalColor, "OriginalColor").rgb("rgb").category(DEMO_2D_CATEGORY).build();
-
-    public rgb: number = WHITE_RGB;
+function randomRgb(random: RandomSource): number {
+    const r = randomChannel(random);
+    const g = randomChannel(random);
+    const b = randomChannel(random);
+    return packRgb(r, g, b);
 }
-
-export class PlayerTag extends Component {
-    public static readonly schema = componentSchema(PlayerTag, "PlayerTag").category(DEMO_2D_CATEGORY).build();
-}
-
-export const DEMO_2D_COMPONENTS = [FadeToColor, OriginalColor, PlayerTag];
 
 function channelOf(rgb: number, shift: number): number {
     return (rgb >> shift) & CHANNEL_MASK;
@@ -89,192 +133,211 @@ function interpolateRgb(from: number, to: number, scale: number): number {
     return packRgb(interpolateChannel(from, to, RED_SHIFT, scale), interpolateChannel(from, to, GREEN_SHIFT, scale), interpolateChannel(from, to, BLUE_SHIFT, scale));
 }
 
-export function setupDemo2d(world: DebugWorld, host: Demo2dHost): void {
-    const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
+function translate<IncSpec extends readonly ComponentCtor<Component>[]>(query: EntityQuery<IncSpec>, dx: number, dy: number): void {
+    query.stream({write: {position: LocalPosition}}, INCLUDING_DISABLED).consume(({position}) => {
+        if (dx !== NO_STEP) position.x += dx;
+        if (dy !== NO_STEP) position.y += dy;
+    });
+}
 
+function toggle(system: System | undefined): void {
+    if (system) system.enabled = !system.enabled;
+}
 
-    const cameraEntity = buffer.createEntity("cameraEntity", [new Camera(), new LocalToWorld(), new RenderBounds()]);
-    const cameraPosition = buffer.addTrackedComponent(cameraEntity, new LocalPosition());
+function byCreationOrder(a: Entity, b: Entity): number {
+    return getEntityCreationOrder(a)! - getEntityCreationOrder(b)!;
+}
 
-    function createCross(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const r = Math.round(Math.random() * CHANNEL_MAX)
-        const g = Math.round(Math.random() * CHANNEL_MAX)
-        const b = Math.round(Math.random() * CHANNEL_MAX)
-        const localToWorld = new LocalToWorld();
-        const components: Component[] = [new Sprite(CROSS_IMAGE, packRgb(r, g, b)), localToWorld];
-        if (parent) {
-            components.push(new Parent(parent));
-        }
-        components.push(...additionalComponents);
-        const objectEntity = buffer.createEntity(name, components);
-        const position2 = buffer.addTrackedComponent(objectEntity, position);
-        return [objectEntity, position2, localToWorld];
+class RandomTintSystem extends System {
+    private _tinted = this.createEntityQuery([RandomTint, Sprite]);
+
+    override priority(): number {
+        return RANDOM_TINT_PRIORITY;
     }
 
-    function createPixel(position: LocalPosition, parent?: Entity, name?: string, ...additionalComponents: Component[]): [Entity, LocalPosition, Readonly<LocalToWorld>] {
-        const r = Math.round(Math.random() * CHANNEL_MAX)
-        const g = Math.round(Math.random() * CHANNEL_MAX)
-        const b = Math.round(Math.random() * CHANNEL_MAX)
-        const originalColor = new OriginalColor()
-        originalColor.rgb = packRgb(r, g, b);
-        const localToWorld = new LocalToWorld();
-        const components: Component[] = [originalColor, new Sprite(PIXEL_IMAGE, packRgb(r, g, b)), localToWorld];
-        if (parent) {
-            components.push(new Parent(parent));
-        }
-        components.push(...additionalComponents);
-        const objectEntity = buffer.createEntity(name, components);
-        return [objectEntity, buffer.addTrackedComponent(objectEntity, position), localToWorld];
+    onUpdate(): void {
+        if (this._tinted.entityCountIncludingDisabled() === 0) return;
+        const tinted: Entity[] = [];
+        this._tinted.stream({read: {tint: RandomTint}}, ENTITIES_INCLUDING_DISABLED).consume(({entity}) => {
+            tinted.push(entity);
+        });
+        const random = randomSourceOf(this.world);
+        const buffer = commandBufferOf(this.world);
+        const tints = new Map<Entity, number>();
+        for (const entity of tinted.sort(byCreationOrder)) tints.set(entity, randomRgb(random));
+        this._tinted.stream({write: {sprite: Sprite}}, ENTITIES_INCLUDING_DISABLED).consume(({entity, sprite}) => {
+            sprite.tint = tints.get(entity)!;
+            buffer.removeComponent(entity, RandomTint);
+        });
+    }
+}
+
+class Demo2dControlsSystem extends System {
+    private _players = this.createEntityQuery([PlayerTag, LocalPosition]);
+    private _playerTransforms = this.createEntityQuery([PlayerTag, LocalToWorld]);
+    private _cameras = this.createEntityQuery([PanCamera, LocalPosition]);
+    private _actions!: Demo2dActions;
+    private _handlers: readonly ActionHandler[] = [];
+
+    override priority(): number {
+        return BEFORE_SIMULATION_PRIORITY;
     }
 
-    function createHudCross(): void {
-        const hudAnchor = new ScreenAnchor();
-        hudAnchor.anchorPosition = 'bottom-right';
-        buffer.createEntity("hudCross", [new Sprite(CROSS_IMAGE, HUD_CROSS_RGB), new HudElement(), hudAnchor]);
+    protected onCreate(): void {
+        const actions = resolveInputActions(this.world, Demo2dAction);
+        this._actions = actions;
+        this._handlers = [
+            {action: actions.MovePlayerUp, run: () => translate(this._players, NO_STEP, -this.tuning().playerStepYUnits)},
+            {action: actions.MovePlayerDown, run: () => translate(this._players, NO_STEP, this.tuning().playerStepYUnits)},
+            {action: actions.MovePlayerLeft, run: () => translate(this._players, -this.tuning().playerStepXUnits, NO_STEP)},
+            {action: actions.MovePlayerRight, run: () => translate(this._players, this.tuning().playerStepXUnits, NO_STEP)},
+            {action: actions.MoveCameraUp, run: () => translate(this._cameras, NO_STEP, -this.tuning().cameraStepYUnits)},
+            {action: actions.MoveCameraDown, run: () => translate(this._cameras, NO_STEP, this.tuning().cameraStepYUnits)},
+            {action: actions.MoveCameraLeft, run: () => translate(this._cameras, -this.tuning().cameraStepXUnits, NO_STEP)},
+            {action: actions.MoveCameraRight, run: () => translate(this._cameras, this.tuning().cameraStepXUnits, NO_STEP)},
+            {action: actions.SpawnPixels, run: () => this.spawnFadingPixels()},
+            {action: actions.ToggleRendering, run: () => toggle(this.world.tryGetSystem(RenderingSystemGroup))},
+            {action: actions.ToggleSpritePass, run: () => this.host().render.toggleSpritePass()},
+            {action: actions.ToggleHalfBlockCells, run: () => this.host().render.toggleHalfBlockCells?.()},
+            {action: actions.LogSystemOrder, run: () => requireDebugWorld(this.world, DEMO_NAME).logSystemUpdateOrder()},
+        ];
     }
 
-    const [entity, position, localToWorld] = createCross(new LocalPosition(), cameraEntity, "cross1", new PlayerTag())
-    createCross(new LocalPosition(-5, -5), entity, "cross2")
-    createCross(new LocalPosition(-5, +5), entity, "cross3")
-    createCross(new LocalPosition(+5, -5), entity, "cross4")
-    createCross(new LocalPosition(+5, +5), entity, "cross5")
-
-    const entityCounterImage = createHudLabel(buffer, "entityCounter", 'HUD element', HUD_TEXT_COLOR, 'bottom-left');
-    const fpsCounterImage = createHudLabel(buffer, "fpsCounter", 'FPS: 0', HUD_TEXT_COLOR, 'top-right');
-
-    createHudCross();
-
-    const input = world.resources.getOrCreate(Input);
-    input.bindAction(TOGGLE_HUD_ACTION, [Key.Tab]);
-
-    const spawnFadingPixels = () => {
-        for (let i = 0; i < PIXELS_PER_SPAWN; i++) {
-            const x = (Math.random() - 0.5) * SPAWN_AREA_CELLS
-            const y = (Math.random() - 0.5) * SPAWN_AREA_CELLS
-            const newPos = new LocalPosition();
-            newPos.x = x + Vec.x(localToWorld.position)
-            newPos.y = y + Vec.y(localToWorld.position)
-            newPos.z = Math.random()
-            const fadeToColor = new FadeToColor();
-            fadeToColor.rgb = FADE_TARGET_RGB
-            fadeToColor.fadeTime = Math.random() * FADE_JITTER_MS + FADE_MIN_MS;
-            createPixel(newPos, undefined, undefined, fadeToColor);
-        }
-    }
-
-    const toggleSystem = (system: System | undefined) => {
-        if (system) system.enabled = !system.enabled;
-    }
-
-    const keyDownHandlers = new Map<Key, () => void>([
-        [Key.Up, () => position.y -= PLAYER_STEP_ROWS],
-        [Key.Down, () => position.y += PLAYER_STEP_ROWS],
-        [Key.Left, () => position.x -= PLAYER_STEP_COLUMNS],
-        [Key.Right, () => position.x += PLAYER_STEP_COLUMNS],
-        [Key.W, () => cameraPosition.y -= 1],
-        [Key.S, () => cameraPosition.y += 1],
-        [Key.A, () => cameraPosition.x -= 1],
-        [Key.D, () => cameraPosition.x += 1],
-        [Key.Space, spawnFadingPixels],
-        [Key.Enter, () => toggleSystem(world.tryGetSystem(RenderingSystemGroup))],
-        [Key.Backspace, () => host.render.toggleSpritePass()],
-        [Key.H, () => host.render.toggleHalfBlockCells?.()],
-        [Key.G, () => world.logSystemUpdateOrder()],
-    ]);
-
-    class ControlsSystem extends System {
-        override priority(): number {
-            return BEFORE_SIMULATION_PRIORITY;
-        }
-
-        onUpdate(): void {
-            for (const event of input.events) {
-                if (event.type !== "keyDown") continue;
-                if (event.key === Key.C && event.ctrl) {
-                    world.stop();
-                    host.quit();
-                    return;
-                }
-                keyDownHandlers.get(event.key)?.();
+    onUpdate(): void {
+        const input = this.world.resources.get(Input);
+        for (const event of input.events) {
+            if (event.type !== "keyDown") continue;
+            if (input.isActionEvent(event, this._actions.Quit)) {
+                this.world.stop();
+                this.host().quit();
+                return;
             }
+            for (const handler of this._handlers) if (input.isActionEvent(event, handler.action)) handler.run();
         }
     }
 
-
-    class FadeSystem extends System {
-
-        private _query = this.createEntityQuery([OriginalColor, FadeToColor, Sprite])
-
-        protected onCreate() {
-            this.requireAllForUpdate(this._query);
-        }
-
-        public count() {
-            return this._query.enabledEntityCount()
-        }
-
-        onUpdate(): void {
-            const deltaTimeMs = this.world.time.deltaTimeMs;
-            this._query.stream({
-                write: {originalColor: OriginalColor, fadeToColor: FadeToColor, sprite: Sprite},
-            }, {
-                includeEntity: true
-            }).consume(({entity, sprite, fadeToColor, originalColor}) => {
-                fadeToColor.currentFadeTime += deltaTimeMs;
-
-                const scale = fadeToColor.currentFadeTime / fadeToColor.fadeTime;
-                sprite.tint = interpolateRgb(originalColor.rgb, fadeToColor.rgb, scale);
-                if (fadeToColor.currentFadeTime >= fadeToColor.fadeTime) {
-                    originalColor.rgb = fadeToColor.rgb;
-                    buffer.removeComponent(entity, FadeToColor);
-                    buffer.removeComponent(entity, OriginalColor);
-                }
-            })
-        }
+    private tuning(): Demo2dTuning {
+        return this.world.resources.get(Demo2dTuning);
     }
 
-    class DebugSystem extends System {
-        private _query = this.createEntityQuery([LocalToWorld])
-        private _hudQuery = this.createEntityQuery([HudElement])
-        private _toggle = true;
-        private _fpsCounter = new AverageStat(FPS_AVERAGE_FRAMES)
+    private host(): Demo2dHost {
+        return this.world.resources.get(Demo2dHostResource).host;
+    }
 
-        onUpdate() {
-            if (input.actionPressed(TOGGLE_HUD_ACTION)) {
-                this._toggle = !this._toggle;
-                buffer.setEnabledStateForQuery(this._hudQuery, this._toggle);
+    private spawnFadingPixels(): void {
+        const tuning = this.tuning();
+        const random = randomSourceOf(this.world);
+        const spawner = this.world.resources.get(PrefabSpawner);
+        const prefab = requirePixelPrefab(tuning);
+        const buffer = commandBufferOf(this.world);
+        const origin = this._playerTransforms.tryGetSingleton({transform: LocalToWorld}, INCLUDING_DISABLED)?.transform.position;
+        const originX = origin === undefined ? NO_OFFSET : Vec.x(origin);
+        const originY = origin === undefined ? NO_OFFSET : Vec.y(origin);
+        for (let i = 0; i < tuning.pixelsPerSpawn; i++) {
+            const x = (random.next() - HALF) * tuning.spawnAreaUnits;
+            const y = (random.next() - HALF) * tuning.spawnAreaUnits;
+            const z = random.next();
+            const fadeTime = random.next() * tuning.fadeJitterMs + tuning.fadeMinMs;
+            const rgb = randomRgb(random);
+            const pixel = spawner.spawn(buffer, prefab);
+            const position = pixel.rootComponent(LocalPosition);
+            position.x = x + originX;
+            position.y = y + originY;
+            position.z = z;
+            pixel.rootComponent(FadeToColor).fadeTime = fadeTime;
+            pixel.rootComponent(OriginalColor).rgb = rgb;
+            pixel.rootComponent(Sprite).tint = rgb;
+        }
+    }
+}
+
+class FadeSystem extends System {
+    private _fading = this.createEntityQuery([OriginalColor, FadeToColor, Sprite]);
+
+    protected onCreate(): void {
+        this.requireAllForUpdate(this._fading);
+    }
+
+    public count(): number {
+        return this._fading.enabledEntityCount();
+    }
+
+    onUpdate(): void {
+        const deltaTimeMs = this.world.time.deltaTimeMs;
+        const buffer = commandBufferOf(this.world);
+        this._fading.stream({
+            write: {originalColor: OriginalColor, fadeToColor: FadeToColor, sprite: Sprite},
+        }, {
+            includeEntity: true,
+        }).consume(({entity, sprite, fadeToColor, originalColor}) => {
+            fadeToColor.currentFadeTime += deltaTimeMs;
+            const scale = fadeToColor.currentFadeTime / fadeToColor.fadeTime;
+            sprite.tint = interpolateRgb(originalColor.rgb, fadeToColor.rgb, scale);
+            if (fadeToColor.currentFadeTime >= fadeToColor.fadeTime) {
+                originalColor.rgb = fadeToColor.rgb;
+                buffer.removeComponent(entity, FadeToColor);
+                buffer.removeComponent(entity, OriginalColor);
             }
-            if (!this._toggle) return;
-            this._query.enabledEntityCount();
-            const frameDeltaMs = this.world.time.frameDeltaTimeMs;
-            if (frameDeltaMs > 0) this._fpsCounter.add(MS_PER_SECOND / frameDeltaMs)
-            fpsCounterImage.image = [
-                'FPS: ' + this._fpsCounter.getAvg().toFixed(2),
-            ]
-            const fadeSystem = this.world.tryGetSystem(FadeSystem);
-            if (fadeSystem) {
-                const fadeSystemCount = fadeSystem.count();
-                entityCounterImage.image = [
-                    'Entities: ' + fadeSystemCount.toFixed(2),
-                ]
-            } else {
-                entityCounterImage.image = [
-                    'Fade System Not Active'
-                ]
-            }
+        });
+    }
+}
 
+class Demo2dHudSystem extends System {
+    private _hud = this.createEntityQuery([Demo2dHud]);
+    private _hudElements = this.createEntityQuery([HudElement]);
+    private _entityCounter = new HudLabel();
+    private _fpsCounter = new HudLabel();
+    private _fps: AverageStat | undefined;
+    private _fpsAverageFrames = UNSET;
+    private _visible = true;
+    private _actions!: Demo2dActions;
 
-
-        }
-
-
+    protected onCreate(): void {
+        this._actions = resolveInputActions(this.world, Demo2dAction);
     }
 
+    onUpdate(): void {
+        if (this.world.resources.get(Input).actionPressed(this._actions.ToggleHud)) {
+            this._visible = !this._visible;
+            commandBufferOf(this.world).setEnabledStateForQuery(this._hudElements, this._visible);
+        }
+        if (!this._visible) return;
+        const tuning = this.world.resources.get(Demo2dTuning).hud;
+        const fps = this.fpsAveragedOver(tuning.fpsAverageFrames);
+        const frameDeltaMs = this.world.time.frameDeltaTimeMs;
+        if (frameDeltaMs > 0) fps.add(MS_PER_SECOND / frameDeltaMs);
+        const hud = this._hud.tryGetSingleton({hud: Demo2dHud}, INCLUDING_DISABLED)?.hud;
+        this._fpsCounter.bindTo(this.world, hud?.fpsCounter ?? NULL_ENTITY);
+        this._entityCounter.bindTo(this.world, hud?.entityCounter ?? NULL_ENTITY);
+        this._fpsCounter.show([formatHudText(tuning.fpsFormat, {fps: fps.getAvg().toFixed(tuning.fpsDecimals)})]);
+        const fadeSystem = this.world.tryGetSystem(FadeSystem);
+        this._entityCounter.show([fadeSystem === undefined
+            ? tuning.fadeSystemInactiveText
+            : formatHudText(tuning.entitiesFormat, {entities: fadeSystem.count().toFixed(tuning.entitiesDecimals)})]);
+    }
 
-    world.ensureSystemExists(ControlsSystem);
+    private fpsAveragedOver(frames: number): AverageStat {
+        if (this._fps === undefined || this._fpsAverageFrames !== frames) {
+            this._fps = new AverageStat(frames);
+            this._fpsAverageFrames = frames;
+        }
+        return this._fps;
+    }
+}
 
+function requireDemo2dData(world: World): void {
+    const tuning = world.resources.get(Demo2dTuning);
+    const spawner = world.resources.tryGet(PrefabSpawner);
+    if (spawner === undefined) throw new Error(`${DEMO_NAME} spawns prefabs through a PrefabSpawner: launch it with launchProject or startProject, whose SceneManager creates one`);
+    spawner.templateOf(requirePixelPrefab(tuning));
+}
 
-    world.ensureSystemExists(DebugSystem)
-
+export function setupDemo2d(world: World, host: Demo2dHost): void {
+    requireDemo2dData(world);
+    world.resources.insert(new Demo2dHostResource(host));
+    world.resources.insert(new Demo2dRandom(world.resources.get(Demo2dTuning).randomSeed));
+    world.ensureSystemExists(RandomTintSystem);
+    world.ensureSystemExists(Demo2dControlsSystem);
+    world.ensureSystemExists(Demo2dHudSystem);
     world.ensureSystemExists(FadeSystem);
 }

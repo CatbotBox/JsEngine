@@ -1,0 +1,345 @@
+{
+  "format": "jsengine-asset",
+  "version": 1,
+  "type": "InputMap",
+  "fields": {
+    "actions": [
+      {
+        "name": "moveForward",
+        "keys": [
+          "W"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveBackward",
+        "keys": [
+          "S"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveRight",
+        "keys": [
+          "D"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveLeft",
+        "keys": [
+          "A"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveDown",
+        "keys": [
+          "Q"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveUp",
+        "keys": [
+          "E"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateModelsUp",
+        "keys": [
+          "Up"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateModelsDown",
+        "keys": [
+          "Down"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateModelsLeft",
+        "keys": [
+          "Left"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateModelsRight",
+        "keys": [
+          "Right"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "shrinkModels",
+        "keys": [
+          "BracketLeft"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "growModels",
+        "keys": [
+          "BracketRight"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "zoomIn",
+        "keys": [
+          "Z"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "zoomOut",
+        "keys": [
+          "X"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateSunUp",
+        "keys": [
+          "I"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateSunDown",
+        "keys": [
+          "K"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateSunLeft",
+        "keys": [
+          "J"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "rotateSunRight",
+        "keys": [
+          "L"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "spawnModel",
+        "keys": [
+          "Space"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "despawnModel",
+        "keys": [
+          "Backspace"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "nextModel",
+        "keys": [
+          "N"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "reloadModels",
+        "keys": [
+          "R"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "look",
+        "keys": [],
+        "chords": [],
+        "buttons": [
+          "Left"
+        ]
+      },
+      {
+        "name": "toggleMeshPass",
+        "keys": [
+          "V"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleHud",
+        "keys": [
+          "Tab"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "logSystemOrder",
+        "keys": [
+          "G"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleTextures",
+        "keys": [
+          "T"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleTextureFiltering",
+        "keys": [
+          "M"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "cycleSurfaceShader",
+        "keys": [
+          "O"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleHalfBlock",
+        "keys": [
+          "B"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleLod",
+        "keys": [
+          "F"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "lessDetail",
+        "keys": [
+          "Minus"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moreDetail",
+        "keys": [
+          "Equal"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "supersample1x1",
+        "keys": [
+          "Num1"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "supersample2x2",
+        "keys": [
+          "Num2"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "supersample2x4",
+        "keys": [
+          "Num3"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "supersample4x4",
+        "keys": [
+          "Num4"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "cycleRenderPacing",
+        "keys": [
+          "Y"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleLights",
+        "keys": [
+          "H"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleLamp",
+        "keys": [
+          "P"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "quit",
+        "keys": [
+          "Escape"
+        ],
+        "chords": [
+          {
+            "key": "C",
+            "ctrl": true,
+            "alt": false,
+            "shift": false,
+            "meta": false
+          }
+        ],
+        "buttons": []
+      }
+    ]
+  }
+}

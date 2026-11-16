@@ -13,6 +13,7 @@ export type {
 } from "./platform";
 export {WORKER_ENTRY_POINT} from "./platform";
 export {joinPath, dirname, normalizePath, isAbsolutePath} from "./paths";
+export {directoryFileSource} from "./directoryFileSource";
 export {
     ASSUMED_DISPLAY_INTERVAL_MS,
     UNCAPPED_PACING,

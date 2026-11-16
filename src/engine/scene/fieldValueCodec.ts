@@ -212,6 +212,7 @@ function encodeAsset(field: AssetFieldType, value: unknown, context: FieldEncode
     if (value === undefined) return null;
     const type = assetTypeOf(context.fieldTypes, field.assetType, path);
     if (!type.isAsset(value)) throw fieldValueError(path, `a ${type.valueName} or undefined`, value);
+    if (type.isDerived?.(value) === true) return null;
     const assetPath = type.pathOf(value);
     if (assetPath !== undefined) return {path: assetPath};
     if (type.inline !== undefined) return type.inline.encode(value, context, path);

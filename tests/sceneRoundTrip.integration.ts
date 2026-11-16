@@ -27,10 +27,10 @@ import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {MeshPixelPassSystem} from "../src/backends/pixels/3d";
 import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {TerminalScreen} from "./support/terminalScreen";
-import {setupDemo2d} from "../demo/2d/game";
+import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
 import {installCellRendering2d} from "../demo/2d/launch/cellRendering";
-import {setupDemo3d} from "../demo/3d/game";
-import type {DemoModel} from "../demo/3d/game";
+import {DEMO_3D_PROJECT_DIRECTORY, launchDemo3d} from "../demo/3d/launch/demo3dLaunch";
+import {directoryFileSource} from "../src/engine/platform";
 import {installPixelRendering3d} from "../demo/3d/launch/pixelRendering";
 
 const FRAME_MS = 1000 / 60;
@@ -42,10 +42,6 @@ const MIN_CROSS_CELLS = 10;
 const PIXELS: PixelPresenterSize = {widthPx: 640, heightPx: 384};
 const BACKGROUND_RGB = 0x000000;
 const MIN_SCENE_PIXEL_DIVISOR = 50;
-const MODELS: readonly DemoModel[] = [
-    {name: "cube", path: "./demo/3d/cube.obj"},
-    {name: "blender_monkey", path: "./demo/3d/blender_monkey.obj"},
-];
 
 function log(message: string) {
     process.stdout.write(message + "\n");
@@ -93,16 +89,16 @@ function nonBackgroundPixels(frame: PixelFrame): number {
     return count;
 }
 
-function runDemo2dOnCells(): void {
+async function runDemo2dOnCells(): Promise<void> {
     log("--- 2D demo on cells");
     const registry = new ComponentSchemaRegistry();
     registerEngineComponentSchemas(registry);
     registerCellsComponentSchemas(registry);
-    const platform = new MemoryPlatform();
+    const platform = new MemoryPlatform({fileSource: nodePlatform().files});
 
     const playing = new DebugWorld({platform});
     playing.resources.insert(new CellPresenterResource(new AnsiCellPresenter(new MemoryTerminal(CELLS))));
-    setupDemo2d(playing, {render: installCellRendering2d(playing), quit: () => undefined});
+    await launchDemo2d(playing, {renderBackend: "cells", installRendering: installCellRendering2d, quit: () => undefined});
     stepFrames(playing, SETTLE_FRAMES);
     keyDown(playing, Key.Space);
     stepFrames(playing, SPAWN_SETTLE_FRAMES);
@@ -139,7 +135,7 @@ function runDemo2dOnCells(): void {
     expect(sameDocument(serializeWorld(loaded, registry).document, saved.document), "ticking the loaded world changed no saved data");
 }
 
-function runDemo3dOnPixels(): void {
+async function runDemo3dOnPixels(): Promise<void> {
     log("--- 3D demo on pixels");
     const registry = new ComponentSchemaRegistry();
     registerEngineComponentSchemas(registry);
@@ -149,7 +145,7 @@ function runDemo3dOnPixels(): void {
 
     const playing = new DebugWorld({platform});
     playing.resources.insert(new PixelPresenterResource(new MemoryPixelPresenter(PIXELS)));
-    setupDemo3d(playing, {render: installPixelRendering3d(playing), listModels: () => MODELS, quit: () => undefined});
+    await launchDemo3d(playing, {renderBackend: "pixels", installRendering: installPixelRendering3d, quit: () => undefined});
     stepFrames(playing, SETTLE_FRAMES);
     keyDown(playing, Key.Space);
     stepFrames(playing, SPAWN_SETTLE_FRAMES);
@@ -170,7 +166,8 @@ function runDemo3dOnPixels(): void {
     loaded.resources.insert(new PixelPresenterResource(presenter));
     loaded.ensureSystemExists(MeshPixelPassSystem);
     loaded.ensureSystemExists(HudTextSpritePixelPassSystem);
-    const result = deserializeInto(loaded, registry, parseSceneDocument(JSON.stringify(saved.document)), {assets: platformSceneAssetLoader(platform)});
+    const projectAssets = platformSceneAssetLoader({files: directoryFileSource(platform.files, DEMO_3D_PROJECT_DIRECTORY), inflate: platform.inflate});
+    const result = deserializeInto(loaded, registry, parseSceneDocument(JSON.stringify(saved.document)), {assets: projectAssets});
     expect(result.report.droppedComponents.length === 0 && result.report.danglingEntityRefs.length === 0, "loading reported nothing dropped or dangling");
     expect(sameDocument(serializeWorld(loaded, registry).document, saved.document), "the loaded world serializes to the same document");
     const loadedMeshes = result.entities.filter(entity => loaded.entityManager.hasComponent(entity, RenderMesh));
@@ -193,13 +190,17 @@ function runDemo3dOnPixels(): void {
     expect(sameDocument(serializeWorld(loaded, registry).document, saved.document), "ticking the loaded world changed no saved data");
 }
 
-runDemo2dOnCells();
-runDemo3dOnPixels();
-expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
-consoleOverride.removeConsoleEventListener(errorRecorder);
+async function main(): Promise<void> {
+    await runDemo2dOnCells();
+    await runDemo3dOnPixels();
+    expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
+    consoleOverride.removeConsoleEventListener(errorRecorder);
 
-if (failures > 0) {
-    console.error(`${failures} scene round-trip failures`);
-    process.exit(1);
+    if (failures > 0) {
+        console.error(`${failures} scene round-trip failures`);
+        process.exit(1);
+    }
+    log("scene round trip OK");
 }
-log("scene round trip OK");
+
+void main();

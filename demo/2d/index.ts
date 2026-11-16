@@ -4,11 +4,13 @@ import {consoleOverride} from "../../src/engine/debugging";
 import {CellPresenterResource} from "../../src/backends/cells";
 import {AnsiCellPresenter, nodePlatform, nodeTerminal, TerminalInput} from "../../src/hosts/terminal";
 import {fileLogger} from "../../src/hosts/terminal/fileLogger";
-import {exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
-import {setupDemo2d} from "./game";
+import {exitAfterLaunchFailure, exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
 import {installCellRendering2d} from "./launch/cellRendering";
+import {launchDemo2d} from "./launch/demo2dLaunch";
 
-exitUnlessInteractiveTerminal("The 2D demo");
+const DEMO_NAME = "The 2D demo";
+
+exitUnlessInteractiveTerminal(DEMO_NAME);
 
 consoleOverride.addConsoleEventListener(fileLogger);
 
@@ -22,13 +24,15 @@ const terminalInput = new TerminalInput({
     mouse: true,
 });
 
-setupDemo2d(world, {
-    render: installCellRendering2d(world),
+launchDemo2d(world, {
+    renderBackend: "cells",
+    directory: __dirname,
+    installRendering: installCellRendering2d,
     quit: () => {
         terminalInput.stop();
         process.exit(0);
     },
-});
-
-world.startLoop();
-terminalInput.start();
+}).then(() => {
+    world.startLoop();
+    terminalInput.start();
+}, error => exitAfterLaunchFailure(DEMO_NAME, error));

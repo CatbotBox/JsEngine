@@ -1,0 +1,48 @@
+{
+  "format": "jsengine-scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": "swarmer",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            3
+          ]
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            "# #",
+            " # "
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ff3f7f"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "Enemy": {
+          "hitPoints": 1,
+          "radiusUnits": 1.3,
+          "speedUnitsPerSecond": 12,
+          "score": 10,
+          "woundedTint": "#ff7070",
+          "steerCos": 1,
+          "steerSin": 0
+        }
+      }
+    }
+  ]
+}

@@ -6,6 +6,8 @@ import {System} from "../core/system";
 import {GcSystem} from "../core/gcSystem";
 import {RootSystemGroup} from "../core/rootSystemGroup";
 import {Input} from "./input";
+import {inputMapOf} from "./inputMap";
+import type {InputActionDefinition} from "./inputMap";
 import {InputSystem} from "./inputSystem";
 import {Key, keyForCharacter} from "./key";
 import {PointerButton} from "./pointerButton";
@@ -163,68 +165,71 @@ describe("Input focus", () => {
     });
 });
 
+function inputWith(definitions: Readonly<Record<string, InputActionDefinition>>): Input {
+    const input = new Input();
+    input.useInputMap(inputMapOf(definitions));
+    return input;
+}
+
 describe("Input actions", () => {
     test("an action is held, pressed and released through any of its keys", () => {
-        const input = new Input();
-        input.bindAction("jump", [Key.Space, Key.W]);
+        const input = inputWith({jump: {keys: [Key.Space, Key.W]}});
+        const jump = input.action("jump");
         frame(input, keyDown(Key.W));
-        expect([input.actionPressed("jump"), input.actionHeld("jump"), input.actionReleased("jump")]).toEqual([true, true, false]);
+        expect([input.actionPressed(jump), input.actionHeld(jump), input.actionReleased(jump)]).toEqual([true, true, false]);
         frame(input);
-        expect([input.actionPressed("jump"), input.actionHeld("jump")]).toEqual([false, true]);
+        expect([input.actionPressed(jump), input.actionHeld(jump)]).toEqual([false, true]);
         frame(input, keyUp(Key.W));
-        expect([input.actionReleased("jump"), input.actionHeld("jump")]).toEqual([true, false]);
+        expect([input.actionReleased(jump), input.actionHeld(jump)]).toEqual([true, false]);
     });
 
     test("a second key of a held action neither presses it again nor releases it early", () => {
-        const input = new Input();
-        input.bindActions({jump: [Key.Space, Key.W]});
+        const input = inputWith({jump: {keys: [Key.Space, Key.W]}});
+        const jump = input.action("jump");
         frame(input, keyDown(Key.Space));
         frame(input, keyDown(Key.W));
-        expect(input.actionPressed("jump")).toBe(false);
+        expect(input.actionPressed(jump)).toBe(false);
         frame(input, keyUp(Key.Space));
-        expect([input.actionReleased("jump"), input.actionHeld("jump")]).toEqual([false, true]);
+        expect([input.actionReleased(jump), input.actionHeld(jump)]).toEqual([false, true]);
         frame(input, keyUp(Key.W));
-        expect(input.actionReleased("jump")).toBe(true);
+        expect(input.actionReleased(jump)).toBe(true);
     });
 
     test("a tap inside one frame presses and releases the action", () => {
-        const input = new Input();
-        input.bindAction("fire", [Key.F]);
+        const input = inputWith({fire: {keys: [Key.F]}});
+        const fire = input.action("fire");
         frame(input, keyDown(Key.F), keyUp(Key.F));
-        expect([input.actionPressed("fire"), input.actionReleased("fire"), input.actionHeld("fire")]).toEqual([true, true, false]);
+        expect([input.actionPressed(fire), input.actionReleased(fire), input.actionHeld(fire)]).toEqual([true, true, false]);
     });
 
     test("a key repeat does not press an action again", () => {
-        const input = new Input();
-        input.bindAction("fire", [Key.F]);
+        const input = inputWith({fire: {keys: [Key.F]}});
+        const fire = input.action("fire");
         frame(input, keyDown(Key.F));
         frame(input, keyDown(Key.F, REPEATED));
-        expect(input.actionPressed("fire")).toBe(false);
+        expect(input.actionPressed(fire)).toBe(false);
     });
 
-    test("one key may drive several actions; rebinding takes effect on the held state at once", () => {
-        const input = new Input();
-        input.bindActions({left: [Key.A, Key.Left], strafe: [Key.A]});
+    test("one key may drive several actions; a new map takes effect on the held state at once", () => {
+        const input = inputWith({left: {keys: [Key.A, Key.Left]}, strafe: {keys: [Key.A]}});
+        const left = input.action("left"), strafe = input.action("strafe");
         frame(input, keyDown(Key.A));
-        expect([input.actionPressed("left"), input.actionPressed("strafe")]).toEqual([true, true]);
-        input.bindAction("strafe", [Key.D]);
-        expect(input.actionHeld("strafe")).toBe(false);
+        expect([input.actionPressed(left), input.actionPressed(strafe)]).toEqual([true, true]);
+        input.useInputMap(inputMapOf({strafe: {keys: [Key.D]}, left: {keys: [Key.A]}}));
+        expect([input.actionHeld(strafe), input.actionHeld(left)]).toEqual([false, true]);
     });
 
     test("losing focus releases actions", () => {
-        const input = new Input();
-        input.bindAction("jump", [Key.Space]);
+        const input = inputWith({jump: {keys: [Key.Space]}});
+        const jump = input.action("jump");
         frame(input, keyDown(Key.Space));
         frame(input, {type: "focus", focused: false});
-        expect([input.actionReleased("jump"), input.actionHeld("jump")]).toEqual([true, false]);
+        expect([input.actionReleased(jump), input.actionHeld(jump)]).toEqual([true, false]);
     });
 
-    test("an unbound action name throws instead of reading as never pressed", () => {
-        const input = new Input();
-        expect(() => input.actionPressed("jmup")).toThrow("No input action named \"jmup\"");
-        input.bindAction("jump", [Key.Space]);
-        input.unbindAction("jump");
-        expect(() => input.actionHeld("jump")).toThrow("No input action named");
+    test("an action name the map lacks, or resolving before any map, throws instead of reading as never pressed", () => {
+        expect(() => new Input().action("jump")).toThrow("Input has no InputMap to resolve the action \"jump\" from");
+        expect(() => inputWith({jump: {keys: [Key.Space]}}).action("jmup")).toThrow("The InputMap has no action named \"jmup\"; add it to the input map (it has \"jump\")");
     });
 });
 

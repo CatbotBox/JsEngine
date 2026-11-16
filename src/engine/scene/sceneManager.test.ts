@@ -1,6 +1,6 @@
 import {describe, expect, test} from "../testing/harness";
 import {MemoryPlatform} from "../testing/memoryPlatform";
-import {World} from "../core";
+import {EntityCommandBufferSystem, World} from "../core";
 import type {Entity} from "../core";
 import {LocalPosition} from "../translation/localPosition";
 import {Parent} from "../translation/parent";
@@ -15,6 +15,7 @@ import type {SceneDocument, SceneFieldValues} from "./sceneDocument";
 import {applySceneInPlace, deserializeInto, sceneEntitiesInCreationOrder, serializeWorld} from "./sceneSerialization";
 import {SceneInstance, withoutSceneMembership} from "./sceneInstance";
 import {SceneManager} from "./sceneManager";
+import {PrefabSpawner} from "./prefabSpawner";
 import type {LoadedScene, ScenePreload} from "./sceneManager";
 
 const FIRST_PATH = "scenes/first.scene.json";
@@ -355,5 +356,50 @@ describe("SceneManager membership in saved worlds", () => {
 
         document.resources = {ActiveScene: {sceneId: 1, path: FIRST_PATH}};
         expect("resources" in withoutSceneMembership(document)).toBe(false);
+    });
+});
+
+describe("SceneManager activation and archetypes", () => {
+    test("a scene activated on command-buffer playback exists disabled until the next playback, and authored-disabled entities stay disabled", () => {
+        const {world, scenes} = setup();
+        const document = familyOf("late");
+        document.entities[2].enabled = false;
+        const loaded = scenes.loadDocument(document, {activation: "onCommandBufferPlayback"});
+        const entityManager = world.entityManager;
+        expect(loaded.entities.map(entity => entityManager.exists(entity))).toEqual([true, true, true]);
+        expect(loaded.entities.map(entity => entityManager.isEnabled(entity))).toEqual([false, false, false]);
+        world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer().playback(entityManager);
+        expect(loaded.entities.map(entity => entityManager.isEnabled(entity))).toEqual([true, true, false]);
+        expect(scenes.sceneOf(loaded.entities[1])).toBe(loaded.handle);
+    });
+
+    test("an immediate load is enabled at once", () => {
+        const {world, scenes} = setup();
+        const loaded = scenes.loadDocument(familyOf("now"));
+        expect(loaded.entities.every(entity => world.entityManager.isEnabled(entity))).toBe(true);
+    });
+
+    test("a scene unloaded before its activation playback leaves nothing for the playback to act on", () => {
+        const {world, scenes} = setup();
+        const loaded = scenes.loadDocument(familyOf("gone"), {activation: "onCommandBufferPlayback"});
+        scenes.unload(loaded.handle);
+        world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer().playback(world.entityManager);
+        expect(loaded.entities.some(entity => world.entityManager.exists(entity))).toBe(false);
+    });
+
+    test("a load prunes the archetypes it created and emptied, and keeps empty archetypes that existed before", () => {
+        const {world, scenes} = setup();
+        const before = persistentEntity(world, "before");
+        world.entityManager.destroyEntity(before);
+        const emptyBefore = [...world.archetypes.values()].filter(archetype => archetype.entityCountIncludingDisabled === 0 && archetype.componentTypes.length > 0);
+        expect(emptyBefore.length).toBeGreaterThan(0);
+        scenes.loadDocument(familyOf("tidy"));
+        const empty = [...world.archetypes.values()].filter(archetype => archetype.entityCountIncludingDisabled === 0 && archetype.componentTypes.length > 0);
+        expect(empty).toEqual(emptyBefore);
+    });
+
+    test("creating a SceneManager gives the world a PrefabSpawner", () => {
+        const {world} = setup();
+        expect(world.resources.tryGet(PrefabSpawner)).toBeInstanceOf(PrefabSpawner);
     });
 });

@@ -55,6 +55,7 @@ import type {Entity} from "@jsengine/engine/core";
 import {Vec2, Vec3, Vec4} from "@jsengine/engine/math/types/vec";
 import type {Mesh} from "@jsengine/engine/rendering/3d/mesh";
 import type {SpriteImage} from "@jsengine/engine/rendering/2d/spriteImage";
+import type {ShaderSource} from "@jsengine/engine/rendering/shaderSource";
 import {TextColor} from "@jsengine/engine/rendering/textColor";
 import type {Int, PrefabAsset, Quat, Rgb, TextLines} from "@jsengine/engine/scene";
 
@@ -101,6 +102,7 @@ export class Mapping extends Component {
     public mesh: Mesh | undefined = undefined;
     public sprite?: SpriteImage;
     public prefab: PrefabAsset | undefined = undefined;
+    public shader: ShaderSource | undefined = undefined;
     public settings: GameSettings | undefined = undefined;
     public health: Health = 1;
     public speed: Speed = 1;
@@ -351,6 +353,7 @@ describe("generateProjectSchemas type mapping", () => {
         ["mesh", `{key: "mesh", kind: "asset", assetType: "mesh"},`],
         ["sprite", `{key: "sprite", kind: "asset", assetType: "spriteImage"},`],
         ["prefab", `{key: "prefab", kind: "asset", assetType: "prefab"},`],
+        ["shader", `{key: "shader", kind: "asset", assetType: "shader"},`],
         ["settings", `{key: "settings", kind: "asset", assetType: "GameSettings"},`],
         ["health", `{key: "health", kind: "integer", typeName: "Health"},`],
         ["speed", `{key: "speed", kind: "number", typeName: "Speed"},`],
@@ -511,5 +514,54 @@ describe("generateProjectSchemas output", () => {
             `registry.registerGeneratedComponent(Apple, "Apple", []);`,
             `registry.registerGeneratedComponent(Zebra, "Zebra", []);`,
         ]);
+    });
+});
+
+const CATEGORY_FIXTURE: FixtureFiles = {
+    "categories.ts": `
+import {Component, Resource} from "@jsengine/engine/core";
+
+const COMBAT_CATEGORY = "Combat";
+
+export class Tagged extends Component {
+    public static readonly category = COMBAT_CATEGORY;
+    public health = 1;
+}
+
+export class Widened extends Component {
+    public static category = "Loose";
+}
+
+export class Settings extends Resource {
+    public static readonly category = "Ignored";
+    public volume = 1;
+}
+`,
+};
+
+describe("generateProjectSchemas categories", () => {
+    const categories = () => generateFixture(CATEGORY_FIXTURE);
+
+    test("passes the static readonly category of a component to its registration", () => {
+        const lines = categories().source.split(LINE_BREAK).map(line => line.trim());
+        const start = lines.indexOf(`registry.registerGeneratedComponent(Tagged, "Tagged", [`);
+        expect(start >= 0).toBe(true);
+        expect(lines.slice(start + 1, start + 3)).toEqual([`{key: "health", kind: "number"},`, `], {category: "Combat"});`]);
+    });
+
+    test("warns and leaves out a category that is not a string literal", () => {
+        const result = categories();
+        expect(result.source.includes(`registry.registerGeneratedComponent(Widened, "Widened", []);`)).toBe(true);
+        expect(result.warnings.some(warning => warning.startsWith("Widened.category: the static category is not a string literal"))).toBe(true);
+    });
+
+    test("warns about a category on a resource and registers it without one", () => {
+        const result = categories();
+        expect(registrationBlock(result.source, "Settings")).toBe([
+            `registry.registerGeneratedResource(Settings, "Settings", [`,
+            `{key: "volume", kind: "number"},`,
+            `]);`,
+        ].join("\n"));
+        expect(result.warnings.some(warning => warning.startsWith("Settings.category: resources have no category"))).toBe(true);
     });
 });

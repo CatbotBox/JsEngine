@@ -18,7 +18,8 @@ function grownCapacity(current: number, required: number): number {
 
 export class EnemyGrid extends Resource {
     public count = 0;
-    public x = new Float32Array(INITIAL_ENEMY_CAPACITY);
+    public maxRadiusUnits = 0;
+    public x =new Float32Array(INITIAL_ENEMY_CAPACITY);
     public y = new Float32Array(INITIAL_ENEMY_CAPACITY);
     public entities = new Uint32Array(INITIAL_ENEMY_CAPACITY);
     public readonly enemies: Enemy[] = [];
@@ -44,6 +45,7 @@ export class EnemyGrid extends Resource {
         this.ensureCellCapacity(this.columns * this.rows);
         this.ensureEnemyCapacity(expectedCount);
         this.count = 0;
+        this.maxRadiusUnits = 0;
     }
 
     public add(x: number, y: number, entity: Entity, enemy: Enemy, sprite: Sprite): void {
@@ -54,6 +56,7 @@ export class EnemyGrid extends Resource {
         this.entities[index] = entity;
         this.enemies[index] = enemy;
         this.sprites[index] = sprite;
+        if (enemy.radiusUnits > this.maxRadiusUnits) this.maxRadiusUnits = enemy.radiusUnits;
         this.cellOfEnemy[index] = this.rowOf(y) * this.columns + this.columnOf(x);
         this.count = index + 1;
     }

@@ -1,0 +1,158 @@
+{
+  "format": "jsengine-asset",
+  "version": 1,
+  "type": "Demo3dTuning",
+  "fields": {
+    "models": [
+      {
+        "prefab": {
+          "path": "prefabs/models/cube.prefab.json"
+        },
+        "loadOnDemand": false
+      },
+      {
+        "prefab": {
+          "path": "prefabs/models/blender_monkey.prefab.json"
+        },
+        "loadOnDemand": false
+      },
+      {
+        "prefab": {
+          "path": "prefabs/models/bugatti.prefab.json"
+        },
+        "loadOnDemand": true
+      },
+      {
+        "prefab": {
+          "path": "prefabs/models/cat.prefab.json"
+        },
+        "loadOnDemand": false
+      },
+      {
+        "prefab": {
+          "path": "prefabs/models/indoor_plant.prefab.json"
+        },
+        "loadOnDemand": false
+      }
+    ],
+    "camera": {
+      "moveStepUnits": 0.05,
+      "lookRadPerUnit": 0.03,
+      "pitchMarginRad": 0.01,
+      "fovKeyStep": 1.01,
+      "fovWheelStep": 1.05,
+      "minFovDegrees": 10,
+      "maxFovDegrees": 120
+    },
+    "modelControls": {
+      "rotateStepRad": 0.1,
+      "scaleStep": 1.02
+    },
+    "sunRotateStepRad": 0.05,
+    "lodBiasStepLevels": 1,
+    "renderPacing": [
+      {
+        "label": "60 fps",
+        "renderRate": 60,
+        "matchDisplay": false
+      },
+      {
+        "label": "uncapped",
+        "renderRate": "Infinity",
+        "matchDisplay": false
+      },
+      {
+        "label": "display",
+        "renderRate": "Infinity",
+        "matchDisplay": true
+      }
+    ],
+    "supersample": [
+      {
+        "action": "supersample1x1",
+        "x": 1,
+        "y": 1
+      },
+      {
+        "action": "supersample2x2",
+        "x": 2,
+        "y": 2
+      },
+      {
+        "action": "supersample2x4",
+        "x": 2,
+        "y": 4
+      },
+      {
+        "action": "supersample4x4",
+        "x": 4,
+        "y": 4
+      }
+    ],
+    "surfaceShaders": [
+      {
+        "name": "lit",
+        "shader": null,
+        "params": [],
+        "instancePhaseParam": null,
+        "instancePhaseStepSeconds": 0
+      },
+      {
+        "name": "toon",
+        "shader": {
+          "path": "shaders/toon.wgsl"
+        },
+        "params": [
+          3,
+          0.35,
+          0.45,
+          0.4
+        ],
+        "instancePhaseParam": null,
+        "instancePhaseStepSeconds": 0
+      },
+      {
+        "name": "hologram",
+        "shader": {
+          "path": "shaders/hologram.wgsl"
+        },
+        "params": [
+          0.3,
+          0.9,
+          1,
+          0,
+          8,
+          2.5,
+          0.5,
+          0.25
+        ],
+        "instancePhaseParam": 3,
+        "instancePhaseStepSeconds": 0.4
+      }
+    ],
+    "hud": {
+      "rateWindowMs": 500,
+      "rateDecimals": 1,
+      "fpsLines": [
+        "FPS: {fps}  ticks/s: {ticks}",
+        "render: {pacing}"
+      ],
+      "pacingWithCpuLimitFormat": "{label} (cpu limit {limit})",
+      "statsLines": [
+        "Entities: {entities}",
+        "Triangles: {drawn} drawn / {source} source{lodLevels}",
+        "Raster workers: {rasterWorkers}"
+      ],
+      "lodLevelsFormat": "  LOD levels: {levels}",
+      "lodLevelsShown": 5,
+      "lodLevelSeparator": "/",
+      "singleThreadedRasterText": "none (single-threaded)",
+      "nextModelFormat": "Next: {model}  [spawned: {spawned}] ",
+      "noModelsFormat": "no models listed: add a model prefab to models in assets/demo3d.asset.json and press r  [spawned: {spawned}] ",
+      "downloadFormat": "Loading {model}... {loaded} / {total} MB{queued} ",
+      "queuedSpawnsFormat": ", {queued} to spawn",
+      "downloadFailedFormat": "Could not load {model}: {failure} ",
+      "megabyteDecimals": 1
+    }
+  }
+}

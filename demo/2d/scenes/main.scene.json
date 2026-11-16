@@ -1,0 +1,319 @@
+{
+  "format": "jsengine-scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": "2dRenderSettings",
+      "enabled": true,
+      "components": {
+        "SpriteCellPassSettings": {
+          "maxDepthFade": "Infinity",
+          "colorQuantMask": 16579836,
+          "backgroundColor": "#000000",
+          "halfBlockCells": true
+        },
+        "SpritePixelPassSettings": {
+          "maxDepthFade": "Infinity"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "cameraEntity",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "Camera": {
+          "nearPlaneDistance": 0.1,
+          "farPlaneDistance": 100
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "PanCamera": {}
+      }
+    },
+    {
+      "id": 3,
+      "name": "cross1",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "Parent": {
+          "entity": 2
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            " # ",
+            "###",
+            " # "
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffffff"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "PlayerTag": {},
+        "RandomTint": {}
+      }
+    },
+    {
+      "id": 4,
+      "name": "cross2",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            -5,
+            -5,
+            0
+          ]
+        },
+        "Parent": {
+          "entity": 3
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            " # ",
+            "###",
+            " # "
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffffff"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "RandomTint": {}
+      }
+    },
+    {
+      "id": 5,
+      "name": "cross3",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            -5,
+            5,
+            0
+          ]
+        },
+        "Parent": {
+          "entity": 3
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            " # ",
+            "###",
+            " # "
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffffff"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "RandomTint": {}
+      }
+    },
+    {
+      "id": 6,
+      "name": "cross4",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            5,
+            -5,
+            0
+          ]
+        },
+        "Parent": {
+          "entity": 3
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            " # ",
+            "###",
+            " # "
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffffff"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "RandomTint": {}
+      }
+    },
+    {
+      "id": 7,
+      "name": "cross5",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            5,
+            5,
+            0
+          ]
+        },
+        "Parent": {
+          "entity": 3
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            " # ",
+            "###",
+            " # "
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffffff"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "RandomTint": {}
+      }
+    },
+    {
+      "id": 8,
+      "name": "entityCounter",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            "HUD element"
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 2
+          },
+          "background": "default"
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "bottom-left"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 9,
+      "name": "fpsCounter",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            "FPS: 0"
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 2
+          },
+          "background": "default"
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "top-right"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 10,
+      "name": "hudCross",
+      "enabled": true,
+      "components": {
+        "Sprite": {
+          "image": null,
+          "tint": "#00ffcc",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            " # ",
+            "###",
+            " # "
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffffff"
+            }
+          ]
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "bottom-right"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 11,
+      "name": "demo2dHud",
+      "enabled": true,
+      "components": {
+        "Demo2dHud": {
+          "entityCounter": 8,
+          "fpsCounter": 9
+        }
+      }
+    }
+  ]
+}

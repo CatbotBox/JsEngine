@@ -19,6 +19,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
     ".jpeg": "image/jpeg",
     ".ppm": "image/x-portable-pixmap",
     ".meshcache": "application/octet-stream",
+    ".wgsl": "text/wgsl; charset=utf-8",
 };
 
 export function contentTypeOf(path: string): string {

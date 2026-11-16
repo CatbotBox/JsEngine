@@ -1,0 +1,330 @@
+{
+  "format": "jsengine-scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": "settings",
+      "enabled": true,
+      "components": {
+        "FrameLoopSettings": {
+          "simulationTickRate": 60,
+          "renderRate": 60,
+          "matchDisplay": false,
+          "cpuRenderRateLimit": 60,
+          "maxCatchUpTicks": 5
+        },
+        "CellRenderSettings": {
+          "backgroundGlyph": " ",
+          "backgroundGlyphColor": {
+            "palette": 0
+          },
+          "backgroundColor": {
+            "palette": 0
+          }
+        },
+        "MeshCellPassSettings": {
+          "maxDepthFade": "Infinity",
+          "colorQuantMask": 16579836,
+          "supersampleX": 2,
+          "supersampleY": 4,
+          "backgroundColor": "#000000",
+          "threadTriangleThreshold": 2048,
+          "threadAreaThreshold": 50000,
+          "textures": true,
+          "halfBlockCells": true,
+          "lod": true,
+          "lodBias": 0,
+          "lodTrianglesPerCell": 32
+        },
+        "PixelRenderSettings": {
+          "backgroundColor": "#000000",
+          "pixelsPerScreenUnitX": 8
+        },
+        "MeshPixelPassSettings": {
+          "maxDepthFade": "Infinity",
+          "supersampleX": 2,
+          "supersampleY": 2,
+          "threadTriangleThreshold": 2048,
+          "threadAreaThreshold": 50000,
+          "textures": true,
+          "lod": true,
+          "lodBias": 0,
+          "lodTrianglesPerPixel": 0.25
+        },
+        "GpuMeshPassSettings": {
+          "textures": true,
+          "textureFiltering": "nearest",
+          "sampleCount": "multisample4",
+          "orthographicDepthRange": 1000,
+          "evictUnusedMeshAfterFrames": 600,
+          "lod": true,
+          "lodBias": 0,
+          "lodTrianglesPerPixel": 0.25
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "cameraEntity",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            -10
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "Camera": {
+          "nearPlaneDistance": 0.1,
+          "farPlaneDistance": 100
+        },
+        "FieldOfView": {
+          "radians": 1.0471975511965976
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "FlyCamera": {
+          "yawRad": 0,
+          "pitchRad": 0
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "sun",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0.32758277654647827,
+            -0.2776036262512207,
+            0.10133323073387146,
+            0.8974170088768005
+          ]
+        },
+        "DirectionalLight": {
+          "color": "#fff4e0",
+          "intensity": 0.9
+        },
+        "LocalToWorld": {},
+        "EulerAngles": {
+          "radians": [
+            0.699999988079071,
+            -0.6000000238418579,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "lamp",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            3,
+            2,
+            -4
+          ]
+        },
+        "PointLight": {
+          "range": 14,
+          "color": "#4fa3f7",
+          "intensity": 1.2
+        },
+        "LocalToWorld": {}
+      }
+    },
+    {
+      "id": 5,
+      "name": "ambient",
+      "enabled": true,
+      "components": {
+        "AmbientLight": {
+          "color": "#ffffff",
+          "intensity": 0.12
+        }
+      }
+    },
+    {
+      "id": 6,
+      "name": "demo3d",
+      "enabled": true,
+      "components": {
+        "Demo3dHud": {
+          "preview": 7,
+          "entityCounter": 10,
+          "fpsCounter": 11
+        },
+        "ModelGrid": {
+          "spacingUnits": 5,
+          "rotationRad": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "selectedModel": 0
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "spawnPreview",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            ""
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 6
+          },
+          "background": "default"
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "bottom-right"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 8,
+      "name": "controls",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            "camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit",
+            "models  space spawn  bksp despawn  n next  r reload  arrows rotate  [ ] scale",
+            "render  1-4 aa  b halfblock  t textures  m filter  f lod  - = detail  o shader  v 3d  tab hud  g order  y pacing",
+            "lights  h all  p lamp  i/k j/l sun"
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 6
+          },
+          "background": "default"
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "top-left"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 9,
+      "name": "cube",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "LocalScale": {
+          "xyz": [
+            1,
+            1,
+            1
+          ]
+        },
+        "RenderMesh": {
+          "mesh": {
+            "path": "cube.obj"
+          },
+          "color": "#ffffff",
+          "faceCulling": "BackFaces"
+        },
+        "PrefabInstance": {
+          "sourcePath": "prefabs/models/cube.prefab.json",
+          "overrides": []
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "GridModel": {
+          "slot": 0
+        }
+      }
+    },
+    {
+      "id": 10,
+      "name": "entityCounter",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            "HUD element"
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 2
+          },
+          "background": "default"
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "bottom-left"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 11,
+      "name": "fpsCounter",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            "FPS: 0"
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 2
+          },
+          "background": "default"
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "top-right"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    }
+  ]
+}

@@ -50,5 +50,6 @@ export type {
     WorldToPageMessage,
 } from "./worldWorkerProtocol";
 export {PreloadedFileSource} from "./preloadedFileSource";
+export {projectFilePreload} from "./projectFilePreload";
 export type {PreloadEntry, PreloadProgress, PreloadedFileSourceOptions, FetchFile, FetchedFile, ByteStream, ByteStreamReader} from "./preloadedFileSource";
 export {connectDevReload, DEV_EVENTS_PATH, DEV_RELOAD_DEFINE, DEV_RELOAD_ENABLED, DEV_RELOAD_EVENT} from "./devReload";

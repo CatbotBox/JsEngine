@@ -10,6 +10,7 @@ import type {Modifiers} from "../src/engine/input";
 import {cellFrameLines, rgbCellCount} from "./support/cellFrameText";
 import {pixelFrameShowsText, pixelRgbAt} from "./support/pixelFrameText";
 import {buildDemo3dManifest} from "../demo/3d/assets";
+import {DEMO_3D_PROJECT_DIRECTORY} from "../demo/3d/launch/demo3dLaunch";
 import type {Demo3dManifest} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
 import {BLACK_RGB} from "../src/engine/rendering";
@@ -52,6 +53,17 @@ interface QuitChord {
 const CTRL_C_QUIT: QuitChord = {key: Key.C, modifiers: CTRL, label: "Ctrl+C"};
 const ESCAPE_QUIT: QuitChord = {key: Key.Escape, modifiers: NO_MODIFIERS, label: "Esc"};
 const LINE_SEPARATOR = "\n";
+const PROJECT_MANIFEST_FILE = "jsengine.project.json";
+const DEMO_2D_DIRECTORY = "demo/2d";
+const DEMO_3D_DIRECTORY = "demo/3d";
+const SWARM_DIRECTORY = "demo/swarm";
+const SHADER_FILE_SUFFIX = ".wgsl";
+const REFERENCED_DATA_FILE_SUFFIXES: readonly string[] = [".prefab.json", SHADER_FILE_SUFFIX];
+
+interface ManifestFiles {
+    readonly startScene?: string;
+    readonly resources?: readonly {readonly path: string}[];
+}
 
 const WORKER_SOURCES: Readonly<Record<string, string>> = {
     "world2d": join(ROOT, "demo", "2d", "launch", "web.worker.ts"),
@@ -68,7 +80,7 @@ function workerEntry(name: string): string {
 }
 
 function demo3dManifest(): Demo3dManifest {
-    if (DIST === undefined) return buildDemo3dManifest(ROOT, nodePlatform());
+    if (DIST === undefined) return buildDemo3dManifest(ROOT, DEMO_3D_PROJECT_DIRECTORY, nodePlatform());
     return JSON.parse(readFileSync(join(DIST, "3d-manifest.json"), "utf8")) as Demo3dManifest;
 }
 
@@ -296,6 +308,38 @@ class Page {
     }
 }
 
+function referencedDataPathsIn(json: unknown): string[] {
+    if (Array.isArray(json)) return json.flatMap(referencedDataPathsIn);
+    if (typeof json !== "object" || json === null) return [];
+    const path = (json as {readonly path?: unknown}).path;
+    if (typeof path === "string" && REFERENCED_DATA_FILE_SUFFIXES.some(suffix => path.endsWith(suffix))) return [path];
+    return Object.values(json).flatMap(referencedDataPathsIn);
+}
+
+function projectFileJson(directory: string, path: string): unknown {
+    return JSON.parse(readFileSync(join(ROOT, directory, path), "utf8"));
+}
+
+function projectFileUrls(directory: string): string[] {
+    const manifest = projectFileJson(directory, PROJECT_MANIFEST_FILE) as ManifestFiles;
+    const resourcePaths = (manifest.resources ?? []).map(resource => resource.path);
+    const scenePaths = manifest.startScene === undefined ? [] : [manifest.startScene];
+    const referencedPaths = [...resourcePaths, ...scenePaths].flatMap(path => referencedDataPathsIn(projectFileJson(directory, path)));
+    return [...new Set([PROJECT_MANIFEST_FILE, ...resourcePaths, ...scenePaths, ...referencedPaths])].map(path => encodeURI(`${directory}/${path}`));
+}
+
+function expectProjectFilesFetched(page: Page, label: string, directory: string): void {
+    const wanted = projectFileUrls(directory);
+    const missing = wanted.filter(url => !page.fetched.includes(url));
+    expect(wanted.length > 1 && missing.length === 0,
+        `${label}: the worker loaded its manifest, resources, start scene, prefabs and shaders from files (${wanted.join(", ")}${missing.length > 0 ? "; missing " + missing.join(", ") : ""})`);
+}
+
+function expectShadersFetched(page: Page, label: string, directory: string): void {
+    const shaderUrls = projectFileUrls(directory).filter(url => url.endsWith(SHADER_FILE_SUFFIX));
+    expect(shaderUrls.length > 0 && shaderUrls.every(url => page.fetched.includes(url)), `${label}: the worker fetched the surface shaders its tuning asset names (${shaderUrls.join(", ")})`);
+}
+
 async function verifyResize(page: Page, label: string, resize: () => void): Promise<void> {
     resize();
     expect(await waitUntil(() => page.display.framePainted()), `${label}: repainted at the new size (${page.display.sizeLabel()})`);
@@ -306,6 +350,7 @@ async function verify2d(label: string, entry: string, display: TestDisplay, resi
     try {
         expect(await waitUntil(() => display.framePainted()), `${label}: a frame of the page's size (${display.sizeLabel()}) painted on start`);
         expect(await waitUntil(() => display.showing("FPS:")), `${label}: the FPS label rendered`);
+        expectProjectFilesFetched(page, label, DEMO_2D_DIRECTORY);
         const framesBefore = display.frames;
         await sleep(FRAME_ARRIVAL_WINDOW_MS);
         expect(display.frames > framesBefore, `${label}: frames keep arriving (${display.frames - framesBefore} frame messages in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
@@ -322,6 +367,7 @@ async function verifySwarm(label: string, entry: string, display: TestDisplay, r
         expect(await waitUntil(() => display.framePainted()), `${label}: a frame of the page's size (${display.sizeLabel()}) painted on start`);
         expect(await waitUntil(() => display.showing(SWARM_TITLE)), `${label}: the title "${SWARM_TITLE}" rendered`);
         expect(!display.showing(SWARM_HUD_WAVE), `${label}: the title screen shows no "${SWARM_HUD_WAVE}"`);
+        expectProjectFilesFetched(page, label, SWARM_DIRECTORY);
         page.press(Key.Enter);
         expect(await waitUntil(() => display.showing(SWARM_HUD_WAVE)), `${label}: Enter started a game and the HUD shows "${SWARM_HUD_WAVE}"`);
         await verifyResize(page, label, resize);
@@ -384,6 +430,8 @@ async function verify3d(run: Demo3dRun, manifest: Demo3dManifest): Promise<void>
         expect(display.framePainted(), `${label}: frames have the page's size (${display.sizeLabel()})`);
         expect(await waitUntil(() => display.scenePainted()), `${label}: the scene is painted in 24-bit colour`);
         expect(display.statusShown("Loading assets: "), `${label}: preload progress reached the page`);
+        expectProjectFilesFetched(page, label, DEMO_3D_DIRECTORY);
+        expectShadersFetched(page, label, DEMO_3D_DIRECTORY);
         if (isolated) await verifyLazyModel(page, label, manifest);
         if (run.resize !== undefined) await verifyResize(page, label, run.resize);
         await page.quit(label);

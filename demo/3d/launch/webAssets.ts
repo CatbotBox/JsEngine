@@ -1,11 +1,13 @@
 import type {PreloadedFileSource, PreloadProgress} from "../../../src/hosts/web/preloadedFileSource";
 import type {PageConnection} from "../../../src/hosts/web/worldWorkerPlatform";
-import type {DemoModel, DemoModelFiles} from "../game";
+import type {PrefabAsset} from "../../../src/engine/scene";
+import type {Demo3dModelFiles} from "../game";
 import type {Demo3dManifest} from "../assets";
 
 const MANIFEST_URL = "3d-manifest.json";
 
 const MB = 1024 * 1024;
+const NO_FILES: readonly string[] = [];
 
 function progressLine(progress: PreloadProgress): string {
     const loaded = (progress.loadedBytes / MB).toFixed(1);
@@ -35,11 +37,11 @@ export async function preloadDemo3dAssets(page: PageConnection, files: Preloaded
     return manifest;
 }
 
-export function manifestModelFiles(manifest: Demo3dManifest, files: PreloadedFileSource): DemoModelFiles {
-    const pathsByModel = new Map(manifest.models.map(model => [model.path, model.files]));
-    const pathsOf = (model: DemoModel) => pathsByModel.get(model.path) ?? [];
+export function manifestModelFiles(manifest: Demo3dManifest, files: PreloadedFileSource): Demo3dModelFiles {
+    const pathsByPrefab = new Map(manifest.models.map(model => [model.path, model.files]));
+    const pathsOf = (prefab: PrefabAsset) => pathsByPrefab.get(prefab.sourcePath) ?? NO_FILES;
     return {
-        ready: model => !pathsOf(model).some(path => files.isPending(path)),
-        fetch: (model, onProgress) => files.ensureLoaded(pathsOf(model), progress => onProgress(progress.loadedBytes, progress.totalBytes)),
+        ready: prefab => !pathsOf(prefab).some(path => files.isPending(path)),
+        fetch: (prefab, onProgress) => files.ensureLoaded(pathsOf(prefab), progress => onProgress(progress.loadedBytes, progress.totalBytes)),
     };
 }
