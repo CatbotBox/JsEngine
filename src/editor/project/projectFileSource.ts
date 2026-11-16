@@ -159,13 +159,21 @@ export class ProjectFileSource implements FileSource, ProjectAssetFiles {
         throw new Error(`Loading kept asking for more project files after ${maxPasses} fetches`);
     }
 
+    public async refetch(paths: readonly string[]): Promise<void> {
+        const keys = [...new Set(paths.map(normalizePath))];
+        for (const key of keys) this.loaded.delete(key);
+        await Promise.all(keys.map(key => this.startFetch(key)));
+    }
+
     private fetchOnce(path: string): Promise<void> {
-        const running = this.fetches.get(path);
-        if (running !== undefined) return running;
-        const fetch = this.read(path).then(bytes => {
-            this.loaded.set(path, bytes);
+        return this.fetches.get(path) ?? this.startFetch(path);
+    }
+
+    private startFetch(path: string): Promise<void> {
+        const fetch: Promise<void> = this.read(path).then(bytes => {
+            if (this.fetches.get(path) === fetch) this.loaded.set(path, bytes);
         }).finally(() => {
-            this.fetches.delete(path);
+            if (this.fetches.get(path) === fetch) this.fetches.delete(path);
         });
         this.fetches.set(path, fetch);
         return fetch;

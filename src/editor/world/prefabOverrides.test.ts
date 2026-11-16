@@ -1,7 +1,7 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {Component, NULL_ENTITY} from "../../engine/core";
 import type {Entity} from "../../engine/core";
-import {componentSchema, ComponentSchemaRegistry, registerEngineComponentSchemas, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene";
+import {componentSchema, ComponentSchemaRegistry, registerEngineComponentSchemas, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION, structFields} from "../../engine/scene";
 import type {SceneDocument, SceneEntityRecord} from "../../engine/scene";
 import {diffPrefabOverrides, documentTree, subtreeDocument} from "./prefabOverrides";
 
@@ -10,6 +10,21 @@ const TENTH = 0.1;
 class Aim extends Component {
     public static readonly schema = componentSchema(Aim, "Aim").entity("target").build();
     public target: Entity = NULL_ENTITY;
+}
+
+class Link {
+    public to: Entity = NULL_ENTITY;
+    public weight = 1;
+}
+
+class Patrol extends Component {
+    public static readonly schema = componentSchema(Patrol, "Patrol")
+        .list("stops", {kind: "entity", nullable: true})
+        .struct("link", structFields<Link>().entity("to").number("weight").build(), {typeName: "Link", create: () => new Link()})
+        .build();
+
+    public stops: Entity[] = [];
+    public link = new Link();
 }
 
 function document(entities: SceneEntityRecord[]): SceneDocument {
@@ -35,6 +50,7 @@ function registry(): ComponentSchemaRegistry {
     const result = new ComponentSchemaRegistry();
     registerEngineComponentSchemas(result);
     result.registerComponentClass(Aim);
+    result.registerComponentClass(Patrol);
     return result;
 }
 
@@ -95,6 +111,26 @@ describe("diffPrefabOverrides", () => {
         ]);
         expect(diffPrefabOverrides(aimed, reordered, registry())).toEqual([]);
         expect(diffPrefabOverrides(aimed, reordered)).toEqual(["/Aim.target"]);
+    });
+
+    test("entity references nested in lists and structs compare the entities they point at", () => {
+        const patrolling = edited(entities => {
+            entities[0].components.Patrol = {stops: [2, null, 3], link: {to: 4, weight: 2}};
+        });
+        const reordered = document([
+            {id: 1, name: "Enemy", enabled: true, components: {
+                LocalPosition: {xyz: [0, 0, 0]},
+                Camera: {nearPlaneDistance: TENTH, farPlaneDistance: 100},
+                Patrol: {stops: [3, null, 2], link: {to: 4, weight: 2}},
+            }},
+            {id: 2, name: "Shield", enabled: true, siblingIndex: 1, components: {LocalPosition: {xyz: [0, 1, 0]}, Parent: {entity: 1}}},
+            {id: 3, name: "Gun", enabled: true, siblingIndex: 0, components: {LocalPosition: {xyz: [1, 0, 0]}, Parent: {entity: 1}}},
+            {id: 4, name: "Barrel", enabled: true, components: {LocalScale: {xyz: [1, 1, 1]}, Parent: {entity: 3}}},
+        ]);
+        expect(diffPrefabOverrides(patrolling, reordered, registry())).toEqual([]);
+        const retargeted = JSON.parse(JSON.stringify(reordered)) as SceneDocument;
+        retargeted.entities[0].components.Patrol = {stops: [2, null, 3], link: {to: 1, weight: 2}};
+        expect(diffPrefabOverrides(patrolling, retargeted, registry())).toEqual(["/Patrol.stops", "/Patrol.link"]);
     });
 
     test("subtreeDocument keeps one child and its descendants and drops the root's Parent", () => {

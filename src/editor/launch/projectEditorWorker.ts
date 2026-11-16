@@ -2,7 +2,7 @@ import {DebugWorld} from "../../engine/core";
 import {Input} from "../../engine/input";
 import type {Platform} from "../../engine/platform/platform";
 import {Mesh} from "../../engine/rendering/3d/mesh";
-import {ComponentSchemaRegistry, registerEngineComponentSchemas} from "../../engine/scene";
+import type {ComponentSchemaRegistry} from "../../engine/scene";
 import {registerCellsComponentSchemas} from "../../backends/cells/cellsComponentSchemas";
 import {registerPixelsComponentSchemas} from "../../backends/pixels/pixelsComponentSchemas";
 import {PixelPresenterResource} from "../../backends/pixels/pixelPresenterResource";
@@ -10,14 +10,20 @@ import {registerGpuComponentSchemas} from "../../backends/gpu/gpuComponentSchema
 import {PageConnection} from "../../hosts/web/worldWorkerPlatform";
 import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
 import {gpuCanvasPresenter, requestGpuDevice} from "../../hosts/web/gpuWorldDevice";
-import {attachEditorWorldService} from "../world/editorWorldService";
+import {attachEditorWorldService, editorSceneManager} from "../world/editorWorldService";
 import type {EditorServiceScope} from "../world/editorWorldService";
 import {ProjectFileSource} from "../project/projectFileSource";
+import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../project/projectManifest";
+import type {ProjectManifest} from "../project/projectManifest";
+import {createProjectSchemaRegistry} from "../project/projectSchemas";
+import type {GeneratedProjectSchemas, SchemaRegistration} from "../project/projectSchemas";
+import {loadProjectResources} from "../project/projectStartup";
 import type {ProjectFilesChannel} from "../project/projectFileSource";
 import type {
     ProjectAssetFile,
     ProjectAssetFiles,
     ProjectEntryModule,
+    ProjectHost,
     ProjectLoadProgress,
     ProjectLoadProgressListener,
     ProjectRenderBackend,
@@ -30,6 +36,7 @@ const BYTES_PER_MB = 1024 * 1024;
 const MB_DECIMALS = 1;
 const GPU_BACKEND: ProjectRenderBackend = "gpu";
 const PIXELS_BACKEND: ProjectRenderBackend = "pixels";
+const BACKEND_SCHEMAS: readonly SchemaRegistration[] = [registerCellsComponentSchemas, registerPixelsComponentSchemas, registerGpuComponentSchemas];
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -76,14 +83,15 @@ class SetupStatusAssetFiles implements ProjectAssetFiles {
     }
 }
 
-export function projectComponentSchemas(entry: ProjectEntryModule): ComponentSchemaRegistry {
-    const registry = new ComponentSchemaRegistry();
-    registerEngineComponentSchemas(registry);
-    registerCellsComponentSchemas(registry);
-    registerPixelsComponentSchemas(registry);
-    registerGpuComponentSchemas(registry);
-    entry.registerProjectSchemas(registry);
-    return registry;
+export function projectComponentSchemas(entry: ProjectEntryModule, generated?: GeneratedProjectSchemas): ComponentSchemaRegistry {
+    return createProjectSchemaRegistry(entry, {backendSchemas: BACKEND_SCHEMAS, generated});
+}
+
+async function readProjectManifest(files: ProjectFileSource): Promise<ProjectManifest> {
+    await files.ensureLoaded([PROJECT_MANIFEST_FILE]);
+    const validation = validateProjectManifest(files.readText(PROJECT_MANIFEST_FILE));
+    if (!validation.ok) throw new Error(`${PROJECT_MANIFEST_FILE}: ${validation.problems.join("; ")}`);
+    return validation.manifest;
 }
 
 export async function preloadProjectAssets(files: ProjectFileSource, platform: Platform, paths: readonly string[]): Promise<void> {
@@ -108,26 +116,35 @@ async function insertPresenter(world: DebugWorld, page: PageConnection): Promise
     return GPU_BACKEND;
 }
 
-async function startProjectWorld(scope: ProjectEditorWorkerScope, page: PageConnection, files: ProjectFileSource, entry: ProjectEntryModule): Promise<void> {
-    const registry = projectComponentSchemas(entry);
+async function startProjectWorld(
+    scope: ProjectEditorWorkerScope,
+    page: PageConnection,
+    files: ProjectFileSource,
+    entry: ProjectEntryModule,
+    generated: GeneratedProjectSchemas | undefined,
+): Promise<void> {
+    const registry = projectComponentSchemas(entry, generated);
     const world = new DebugWorld({platform: page.platform});
     const renderBackend = await insertPresenter(world, page);
     await files.whenListed();
+    const manifest = await readProjectManifest(files);
     page.connectInput(world.resources.getOrCreate(Input));
     const assetFiles = new SetupStatusAssetFiles(files, page);
-    await entry.setupProject(world, {files: assetFiles, renderBackend, quit: () => page.quit()});
+    const preloadAssets = (paths: readonly string[]) => preloadProjectAssets(files, world.platform, paths);
+    const scenes = editorSceneManager(world, registry, preloadAssets);
+    const host: ProjectHost = {files: assetFiles, renderBackend, scenes, quit: () => page.quit()};
+    await loadProjectResources(world, host, manifest, registry);
+    await entry.setupProject(world, host);
     assetFiles.stopReporting();
-    attachEditorWorldService(scope, world, registry, {
-        preloadAssets: paths => preloadProjectAssets(files, world.platform, paths),
-    });
+    attachEditorWorldService(scope, world, registry, {preloadAssets, scenes, refetchFiles: paths => files.refetch(paths)});
 }
 
-export function runProjectEditorWorker(entry: ProjectEntryModule): void {
+export function runProjectEditorWorker(entry: ProjectEntryModule, generated?: GeneratedProjectSchemas): void {
     const scope = globalThis as unknown as ProjectEditorWorkerScope;
     const files = new ProjectFileSource(scope);
     void PageConnection.open(scope, files).then(async page => {
         try {
-            await startProjectWorld(scope, page, files, entry);
+            await startProjectWorld(scope, page, files, entry, generated);
         } catch (error) {
             console.error(error);
             page.fail(error);

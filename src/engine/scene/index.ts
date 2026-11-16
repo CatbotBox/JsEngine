@@ -1,25 +1,108 @@
 export type {
+    AliasedNumberKind,
+    AssetFieldType,
     ComponentPersistence,
     ComponentSchema,
+    CustomFieldType,
     EntityFieldSchema,
+    EntityFieldType,
     EnumFieldSchema,
+    EnumFieldType,
     EnumMember,
     EnumValue,
+    FieldAlias,
+    FieldKeyed,
     FieldKind,
     FieldSchema,
+    FieldType,
+    FieldTypeDefinition,
+    FieldTypeResolver,
+    IntegerFieldType,
+    ListFieldType,
+    NumberFieldOptions,
+    NumberFieldType,
     PlainFieldKind,
     PlainFieldSchema,
+    PlainFieldType,
     ResourceSchema,
     StringFieldSchema,
+    StringFieldType,
+    StructFieldType,
 } from "./fieldSchema";
-export {categoryOf, DEFAULT_COMPONENT_CATEGORY, hasEntityFields, isEntityField} from "./fieldSchema";
-export {ComponentSchemaBuilder, componentSchema, FieldListBuilder, ResourceSchemaBuilder, resourceSchema} from "./componentSchemaBuilder";
-export type {EntityFieldOptions, FieldKey, KeysOfType, WritableKeys} from "./componentSchemaBuilder";
+export {categoryOf, DEFAULT_COMPONENT_CATEGORY, hasEntityFields, isEntityField, refersToEntities} from "./fieldSchema";
+export type {Int, Quat, Rgb, TextLines} from "./fieldTypeAliases";
+export {createStructValue, defaultFieldValue} from "./fieldDefaults";
+export {
+    ComponentSchemaBuilder,
+    componentSchema,
+    FieldListBuilder,
+    ResourceSchemaBuilder,
+    resourceSchema,
+    StructFieldsBuilder,
+    structFields,
+} from "./componentSchemaBuilder";
+export type {
+    EntityFieldOptions,
+    FieldKey,
+    IntegerFieldBuildOptions,
+    KeysOfType,
+    ListKey,
+    NumberFieldBuildOptions,
+    StructFieldBuildOptions,
+    StructKey,
+    WritableKeys,
+} from "./componentSchemaBuilder";
 export {ComponentSchemaRegistry, STATIC_SCHEMA_KEY} from "./componentSchemaRegistry";
+export type {GeneratedComponentOptions} from "./componentSchemaRegistry";
+export {
+    ENGINE_ASSET_TYPES,
+    MESH_ASSET_TYPE,
+    MESH_ASSET_TYPE_NAME,
+    PREFAB_ASSET_TYPE,
+    PREFAB_ASSET_TYPE_NAME,
+    PREFAB_FILE_SUFFIX,
+    SPRITE_IMAGE_ASSET_TYPE,
+    SPRITE_IMAGE_ASSET_TYPE_NAME,
+} from "./assetTypes";
+export type {AssetType, InlineAssetCodec} from "./assetTypes";
+export {PrefabAsset} from "./prefabAsset";
+export {
+    DATA_ASSET_FILE_SUFFIX,
+    DATA_ASSET_FORMAT,
+    DATA_ASSET_VERSION,
+    dataAssetDocumentText,
+    dataAssetPathOf,
+    newDataAssetDocument,
+    parseDataAssetDocument,
+} from "./dataAssetDocument";
+export type {DataAssetDocument} from "./dataAssetDocument";
+export {DataAssets, dataAssetsOf, encodeDataAssetFields, serializeDataAsset} from "./dataAssets";
+export type {DataAssetReloaded, DataAssetSchemaChanges, DataAssetsSettings} from "./dataAssets";
+export {DEFAULT_SCHEMA_CHANGE_POLICY, describeSchemaChange, SchemaChangeCollector} from "./schemaChanges";
 export {ENGINE_COMPONENT_CATEGORIES, registerEngineComponentSchemas} from "./engineComponentSchemas";
 export {assignInferredFieldValue, inferComponentSchema} from "./inferredSchema";
 export {EditorOnly} from "./editorOnly";
 export {PrefabInstance} from "./prefabInstance";
+export {
+    ACTIVE_SCENE_RESOURCE_NAME,
+    ActiveScene,
+    NO_SCENE_ID,
+    SCENE_INSTANCE_COMPONENT_NAME,
+    SceneInstance,
+    withoutSceneMembership,
+} from "./sceneInstance";
+export {SceneManager} from "./sceneManager";
+export type {
+    LoadedScene,
+    PersistentEntityPolicy,
+    SceneDocumentLoadRequest,
+    SceneHandle,
+    SceneLoadedListener,
+    SceneLoadMode,
+    SceneLoadRequest,
+    SceneManagerOptions,
+    ScenePreload,
+} from "./sceneManager";
 export {
     childEntitiesOf,
     orderedSceneRoots,
@@ -41,8 +124,8 @@ export {
     sceneJsonEquals,
 } from "./sceneDocument";
 export type {SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonObject, SceneJsonValue} from "./sceneDocument";
-export {platformSceneAssetLoader, sceneAssetPaths} from "./sceneAssets";
-export type {SceneAssetKind, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
+export {assetReferencesOfFields, platformSceneAssetLoader, preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
+export type {AssetPreload, DataAssetSource, SceneAssetKind, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
 export {
     applySceneInPlace,
     deserializeInto,

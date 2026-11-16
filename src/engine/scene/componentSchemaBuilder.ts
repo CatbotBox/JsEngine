@@ -1,11 +1,25 @@
 import type {Component, ComponentCtor, Entity, Resource} from "../core";
 import type {ResourceCtor} from "../core/resource";
-import type {Vec3, Vec4} from "../math/types/vec";
+import type {Vec2, Vec3, Vec4} from "../math/types/vec";
 import type {TextColor} from "../rendering/textColor";
 import type {Mesh} from "../rendering/3d/mesh";
 import type {SpriteImage} from "../rendering/2d/spriteImage";
-import {DEFAULT_COMPONENT_CATEGORY} from "./fieldSchema";
-import type {ComponentPersistence, ComponentSchema, EnumMember, EnumValue, FieldSchema, PlainFieldKind, ResourceSchema} from "./fieldSchema";
+import {MESH_ASSET_TYPE_NAME, PREFAB_ASSET_TYPE_NAME, SPRITE_IMAGE_ASSET_TYPE_NAME} from "./assetTypes";
+import {DEFAULT_COMPONENT_CATEGORY, STATIC_SCHEMA_KEY} from "./fieldSchema";
+import type {
+    ComponentPersistence,
+    ComponentSchema,
+    EnumMember,
+    EnumValue,
+    FieldSchema,
+    FieldType,
+    IntegerFieldType,
+    NumberFieldOptions,
+    NumberFieldType,
+    PlainFieldKind,
+    ResourceSchema,
+} from "./fieldSchema";
+import type {PrefabAsset} from "./prefabAsset";
 
 type SameModifiers<X, Y> = (<G>() => G extends X ? 1 : 2) extends (<G>() => G extends Y ? 1 : 2) ? true : false;
 
@@ -20,21 +34,85 @@ export type WritableKeys<T> = {
 
 export type FieldKey<T, V> = KeysOfType<T, V> & WritableKeys<T> & string;
 
+export type ListKey<T> = {
+    [K in keyof T]-?: T[K] extends readonly unknown[] ? K : never
+}[keyof T] & WritableKeys<T> & string;
+
+export type StructKey<T> = {
+    [K in keyof T]-?: T[K] extends object ? K : never
+}[keyof T] & WritableKeys<T> & string;
+
 export interface EntityFieldOptions {
     readonly nullable: boolean;
 }
 
+export interface NumberFieldBuildOptions extends NumberFieldOptions {
+    readonly uncapped?: boolean;
+    readonly typeName?: string;
+}
+
+export interface IntegerFieldBuildOptions extends NumberFieldOptions {
+    readonly typeName?: string;
+}
+
+export interface StructFieldBuildOptions {
+    readonly typeName?: string;
+    readonly create?: () => object;
+}
+
 const NULLABLE_ENTITY_FIELD: EntityFieldOptions = {nullable: true};
+const NO_NUMBER_OPTIONS: NumberFieldBuildOptions = {};
+const NO_INTEGER_OPTIONS: IntegerFieldBuildOptions = {};
+const NO_STRUCT_OPTIONS: StructFieldBuildOptions = {};
+const NULLABLE = true;
+const NOT_NULLABLE = false;
+
+function hasNumberOptions(options: NumberFieldOptions): boolean {
+    return Object.keys(options).length > 0;
+}
+
+function numberFieldType(nullable: boolean, {uncapped, typeName, ...options}: NumberFieldBuildOptions): NumberFieldType {
+    return {
+        kind: "number",
+        ...(nullable ? {nullable} : {}),
+        ...(uncapped === true ? {uncapped} : {}),
+        ...(typeName === undefined ? {} : {typeName}),
+        ...(hasNumberOptions(options) ? {options} : {}),
+    };
+}
+
+function integerFieldType(nullable: boolean, {typeName, ...options}: IntegerFieldBuildOptions): IntegerFieldType {
+    return {
+        kind: "integer",
+        ...(nullable ? {nullable} : {}),
+        ...(typeName === undefined ? {} : {typeName}),
+        ...(hasNumberOptions(options) ? {options} : {}),
+    };
+}
+
+function dataAssetTypeNameOf(type: ResourceCtor<Resource>): string {
+    if (!Object.prototype.hasOwnProperty.call(type, STATIC_SCHEMA_KEY)) return type.name;
+    const schema = (type as unknown as Record<string, unknown>)[STATIC_SCHEMA_KEY] as {readonly name?: unknown} | undefined;
+    return typeof schema?.name === "string" ? schema.name : type.name;
+}
 
 export abstract class FieldListBuilder<T extends object> {
     protected readonly _fields: FieldSchema[] = [];
 
-    public number(key: FieldKey<T, number>): this {
-        return this.plain(key, "number");
+    public number(key: FieldKey<T, number>, options: NumberFieldBuildOptions = NO_NUMBER_OPTIONS): this {
+        return this.field(key, numberFieldType(NOT_NULLABLE, options));
     }
 
-    public integer(key: FieldKey<T, number>): this {
-        return this.plain(key, "integer");
+    public nullableNumber(key: FieldKey<T, number | undefined>, options: NumberFieldBuildOptions = NO_NUMBER_OPTIONS): this {
+        return this.field(key, numberFieldType(NULLABLE, options));
+    }
+
+    public integer(key: FieldKey<T, number>, options: IntegerFieldBuildOptions = NO_INTEGER_OPTIONS): this {
+        return this.field(key, integerFieldType(NOT_NULLABLE, options));
+    }
+
+    public nullableInteger(key: FieldKey<T, number | undefined>, options: IntegerFieldBuildOptions = NO_INTEGER_OPTIONS): this {
+        return this.field(key, integerFieldType(NULLABLE, options));
     }
 
     public boolean(key: FieldKey<T, boolean>): this {
@@ -42,17 +120,19 @@ export abstract class FieldListBuilder<T extends object> {
     }
 
     public string(key: FieldKey<T, string>): this {
-        this._fields.push({key, kind: "string", nullable: false});
-        return this;
+        return this.field(key, {kind: "string", nullable: NOT_NULLABLE});
     }
 
     public nullableString(key: FieldKey<T, string | undefined>): this {
-        this._fields.push({key, kind: "string", nullable: true});
-        return this;
+        return this.field(key, {kind: "string", nullable: NULLABLE});
     }
 
     public textLines(key: FieldKey<T, string[]>): this {
         return this.plain(key, "textLines");
+    }
+
+    public vec2(key: FieldKey<T, Vec2>): this {
+        return this.plain(key, "vec2");
     }
 
     public vec3(key: FieldKey<T, Vec3>): this {
@@ -73,26 +153,59 @@ export abstract class FieldListBuilder<T extends object> {
 
     public enum<V extends EnumValue>(key: FieldKey<T, V>, members: Readonly<Record<string, V>>): this {
         const enumMembers: EnumMember[] = Object.keys(members).map(name => ({name, value: members[name]}));
-        this._fields.push({key, kind: "enum", members: enumMembers});
-        return this;
+        return this.field(key, {kind: "enum", members: enumMembers});
     }
 
     public entity(key: FieldKey<T, Entity>, options: EntityFieldOptions = NULLABLE_ENTITY_FIELD): this {
-        this._fields.push({key, kind: "entity", nullable: options.nullable});
-        return this;
+        return this.field(key, {kind: "entity", nullable: options.nullable});
+    }
+
+    public list(key: ListKey<T>, element: FieldType): this {
+        return this.field(key, {kind: "list", element});
+    }
+
+    public struct(key: StructKey<T>, fields: readonly FieldSchema[], options: StructFieldBuildOptions = NO_STRUCT_OPTIONS): this {
+        return this.field(key, {
+            kind: "struct",
+            ...(options.typeName === undefined ? {} : {typeName: options.typeName}),
+            fields: Object.freeze([...fields]),
+            ...(options.create === undefined ? {} : {create: options.create}),
+        });
+    }
+
+    public asset(key: WritableKeys<T> & string, assetType: string): this {
+        return this.field(key, {kind: "asset", assetType});
     }
 
     public mesh(key: FieldKey<T, Mesh | undefined>): this {
-        return this.plain(key, "mesh");
+        return this.asset(key, MESH_ASSET_TYPE_NAME);
     }
 
     public spriteImage(key: FieldKey<T, SpriteImage | undefined>): this {
-        return this.plain(key, "spriteImage");
+        return this.asset(key, SPRITE_IMAGE_ASSET_TYPE_NAME);
+    }
+
+    public prefab(key: FieldKey<T, PrefabAsset | undefined>): this {
+        return this.asset(key, PREFAB_ASSET_TYPE_NAME);
+    }
+
+    public dataAsset<R extends Resource>(key: FieldKey<T, R | undefined>, type: ResourceCtor<R>, typeName: string = dataAssetTypeNameOf(type)): this {
+        return this.asset(key, typeName);
     }
 
     private plain(key: string, kind: PlainFieldKind): this {
-        this._fields.push({key, kind});
+        return this.field(key, {kind});
+    }
+
+    private field(key: string, type: FieldType): this {
+        this._fields.push({key, ...type} as FieldSchema);
         return this;
+    }
+}
+
+export class StructFieldsBuilder<T extends object> extends FieldListBuilder<T> {
+    public build(): readonly FieldSchema[] {
+        return Object.freeze([...this._fields]);
     }
 }
 
@@ -168,4 +281,8 @@ export function componentSchema<T extends Component>(ctor: ComponentCtor<T>, nam
 
 export function resourceSchema<T extends Resource>(ctor: ResourceCtor<T>, name: string): ResourceSchemaBuilder<T> {
     return new ResourceSchemaBuilder(ctor, name);
+}
+
+export function structFields<T extends object>(): StructFieldsBuilder<T> {
+    return new StructFieldsBuilder<T>();
 }

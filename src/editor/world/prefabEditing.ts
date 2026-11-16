@@ -15,6 +15,7 @@ import {
     sceneJsonEquals,
     serializeEntities,
     untrackedComponentOf,
+    withoutSceneMembership,
 } from "../../engine/scene";
 import type {
     ComponentSchema,
@@ -71,7 +72,7 @@ function fieldsOf(component: Component): Record<string, unknown> {
 
 function withoutInstanceData(document: SceneDocument): SceneDocument {
     const root = documentTree(document).roots[0];
-    const entities = document.entities.map((record, index): SceneEntityRecord => {
+    const entities = withoutSceneMembership(document).entities.map((record, index): SceneEntityRecord => {
         if (index !== root) return record;
         const components = {...record.components};
         delete components[PREFAB_INSTANCE_COMPONENT_NAME];
@@ -286,13 +287,14 @@ export class PrefabLibrary {
             },
             reportDanglingEntity: ignore,
             assets: this.assets,
+            fieldTypes: this.registry,
         };
     }
 
     private encodeContext(state: PrefabSync): FieldEncodeContext {
         const idByEntity = new Map<Entity, number>();
         for (const [index, entity] of state.matched) idByEntity.set(entity, state.prefab.entities[index].id);
-        return {sceneIdOf: entity => idByEntity.get(entity), reportDanglingEntity: ignore, reportUnsavedAsset: ignore};
+        return {sceneIdOf: entity => idByEntity.get(entity), reportDanglingEntity: ignore, reportUnsavedAsset: ignore, fieldTypes: this.registry};
     }
 
     private syncEntity(state: PrefabSync, prefabIndex: number, entity: Entity): void {

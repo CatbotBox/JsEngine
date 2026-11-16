@@ -10,7 +10,7 @@ export class ResourceManager {
     public get<T extends Resource>(ctor: ResourceCtor<T>): T {
         const result = this._map.get(ctor) as T | undefined;
         if (result) return result;
-        throw new Error(`Resource ${ctor.name} not found`);
+        throw new Error(`The required resource ${ctor.name} was not loaded: list it under "resources" in jsengine.project.json, or insert it before a system reads it`);
     }
 
     public getOrCreate<T extends Resource>(ctor: ResourceCtor<T>): T {

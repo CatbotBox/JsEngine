@@ -4,8 +4,10 @@ import type {EditorComponentDescription, EditorEntityDetails, EditorFieldDescrip
 import {AddComponentPopup, requiredEntityFields} from "./addComponentPopup";
 import {createButton, createElement, isFocusWithin} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
+import {fieldLabelElement} from "./fieldEditorBase";
+import type {FieldEditor, FieldEditorServices} from "./fieldEditorBase";
+import {workspaceFieldServices} from "./fieldEditorServices";
 import {createFieldEditor} from "./fieldEditors";
-import type {FieldEditor} from "./fieldEditors";
 import {entityLabel} from "./fieldValueText";
 import {fieldValuesOf, missingInSome, sharedBoolean, sharedComponents} from "./multiSelection";
 import type {SharedComponent} from "./multiSelection";
@@ -15,6 +17,7 @@ import {ProjectFilePreview} from "./projectPreview";
 import type {MenuItem} from "./popupMenu";
 import {MAX_INSPECTED_ENTITIES} from "./editorRefresh";
 import type {RotationEulerCache} from "./rotationEulerCache";
+import {entityValueShapeOf} from "./undoStack";
 
 const NO_SELECTION_TEXT = "Select an entity in the Hierarchy or the Scene view.";
 const LOADING_TEXT = "Loading…";
@@ -24,8 +27,6 @@ const NO_FIELDS_TEXT = "No fields";
 const MIXED_NAME_PLACEHOLDER = "—";
 const COLLAPSED_CLASS = "collapsed";
 const OVERRIDDEN_CLASS = "overridden";
-const ENTITY_KIND = "entity";
-const NUMBER_KINDS: ReadonlySet<string> = new Set(["number", "integer"]);
 const POPUP_REOPEN_GUARD_MS = 250;
 
 interface InspectedSelection {
@@ -94,15 +95,15 @@ class ComponentView {
     private fieldRow(field: EditorFieldDescription): HTMLElement {
         const document = this.inspector.document;
         const row = createElement(document, "div", "field-row");
-        const label = createElement(document, "span", NUMBER_KINDS.has(field.kind) ? "field-name scrub-label" : "field-name", field.key);
+        const label = fieldLabelElement(document, field.key, field);
         const workspace = this.inspector.workspace;
+        const entityShape = entityValueShapeOf(field);
         const editor = createFieldEditor(document, {
             typeName: this.typeName,
             field,
             entities: this.entities,
-            rotations: this.inspector.rotations,
             label,
-            entityChoices: () => workspace.entities,
+            services: this.inspector.fieldServices,
             commit: async (before, after, coalesceKey) => {
                 const changes = this.entities.map((entity, index) => ({
                     entity,
@@ -110,14 +111,11 @@ class ComponentView {
                     key: field.key,
                     before: before[index] as SceneJsonValue,
                     after: after[index],
-                    entityValued: field.kind === ENTITY_KIND,
+                    entityShape,
                 }));
                 const result = await workspace.setFields(changes, `Edit ${this.typeName}.${field.key}`, coalesceKey);
                 return result?.values;
             },
-            endGesture: coalesceKey => workspace.endGesture(coalesceKey),
-            reportInvalid: message => workspace.notice("warn", message),
-            draggedAsset: () => workspace.drag?.kind === "asset" ? workspace.drag : undefined,
         });
         this.editors.set(field.key, {editor, row});
         row.append(label, editor.element);
@@ -143,6 +141,7 @@ class ComponentView {
 
 export class InspectorView {
     public readonly document: Document;
+    public readonly fieldServices: FieldEditorServices;
     private readonly placeholder: HTMLElement;
     private readonly root: HTMLElement;
     private readonly enabled: HTMLInputElement;
@@ -166,6 +165,7 @@ export class InspectorView {
     public constructor(private readonly container: HTMLElement, public readonly workspace: EditorWorkspace, public readonly rotations: RotationEulerCache) {
         const document = container.ownerDocument;
         this.document = document;
+        this.fieldServices = workspaceFieldServices(workspace, rotations);
         this.placeholder = createElement(document, "p", "inspector-placeholder", NO_SELECTION_TEXT);
         this.root = createElement(document, "div", "entity-inspector");
         const header = createElement(document, "header", "entity-header");

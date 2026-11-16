@@ -46,7 +46,13 @@ export interface OpenProjectResult {
     readonly validation: ProjectManifestValidation;
 }
 
-export type BuildProjectResult = {readonly workerUrl: string} | {readonly errors: readonly string[]};
+export interface BuiltProject {
+    readonly workerUrl: string;
+    readonly editorExtensionsUrl?: string;
+    readonly warnings: readonly string[];
+}
+
+export type BuildProjectResult = BuiltProject | {readonly errors: readonly string[]};
 
 export interface RenameRequest {
     readonly from: string;
@@ -65,9 +71,7 @@ export interface FilesChangedEvent {
     readonly paths: readonly string[];
 }
 
-export interface RebuiltEvent {
-    readonly workerUrl: string;
-}
+export type RebuiltEvent = BuiltProject;
 
 export interface BuildFailedEvent {
     readonly errors: readonly string[];
@@ -85,7 +89,7 @@ export function projectFileRoute(path: string): string {
     return path.split("/").map(encodeURIComponent).join("/");
 }
 
-export function isBuildSuccess(result: BuildProjectResult): result is {readonly workerUrl: string} {
+export function isBuildSuccess(result: BuildProjectResult): result is BuiltProject {
     return "workerUrl" in result;
 }
 
@@ -102,7 +106,9 @@ export function isFilesChangedEvent(value: unknown): value is FilesChangedEvent 
 }
 
 export function isRebuiltEvent(value: unknown): value is RebuiltEvent {
-    return isRecord(value) && typeof value.workerUrl === "string";
+    if (!isRecord(value)) return false;
+    const editorExtensionsUrl = value.editorExtensionsUrl;
+    return typeof value.workerUrl === "string" && isStringList(value.warnings) && (editorExtensionsUrl === undefined || typeof editorExtensionsUrl === "string");
 }
 
 export function isBuildFailedEvent(value: unknown): value is BuildFailedEvent {

@@ -1,6 +1,6 @@
 import {describe, expect, test} from "../testing/harness";
 import {MemoryPlatform} from "../testing/memoryPlatform";
-import {Component, World} from "../core";
+import {Component, FrameLoopSettings, UNCAPPED_RENDER_RATE, World} from "../core";
 import type {Entity} from "../core";
 import {Vec, Vec3, Vec4} from "../math/types/vec";
 import {Quaternions} from "../math/quaternions";
@@ -32,6 +32,7 @@ import {encodePpm} from "../assets/image/ppm";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {registerEngineComponentSchemas} from "./engineComponentSchemas";
 import {PrefabInstance} from "./prefabInstance";
+import {SceneInstance} from "./sceneInstance";
 import {platformSceneAssetLoader, sceneAssetPaths} from "./sceneAssets";
 import {parseSceneDocument, SCENE_DOCUMENT_FORMAT} from "./sceneDocument";
 import type {SceneDocument, SceneFieldValues, SceneJsonValue} from "./sceneDocument";
@@ -53,6 +54,9 @@ const TRANSLATION_COLUMN = 12;
 const ENABLED = true;
 const DISABLED = false;
 const PREFAB_PATH = "prefabs/hud.prefab.json";
+const SCENE_INSTANCE_ID = 3;
+const CATCH_UP_TICKS = 3;
+const SCENE_INSTANCE_PATH = "scenes/lights.scene.json";
 const EMPTY_LOAD_REPORT = {skippedComponentTypes: [], skippedResourceTypes: [], danglingEntityRefs: [], droppedComponents: [], changedSchemas: []};
 
 class GameTag extends Component {
@@ -129,7 +133,10 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     sunRotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.7, -0.6, 0));
     const sun = em.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalPosition(), sunRotation, new LocalToWorld()]);
     em.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld()]);
-    em.createEntity("ambient", [new AmbientLight(0x101010, 0.3)]);
+    const frameLoop = new FrameLoopSettings();
+    frameLoop.renderRate = UNCAPPED_RENDER_RATE;
+    frameLoop.maxCatchUpTicks = CATCH_UP_TICKS;
+    em.createEntity("ambient", [new AmbientLight(0x101010, 0.3), new SceneInstance(SCENE_INSTANCE_ID, SCENE_INSTANCE_PATH), frameLoop]);
 
     const asleep = em.createEntity("asleep", [new LocalPosition(7, 7, 7)]);
     em.setEnabledState(asleep, DISABLED);
@@ -452,11 +459,11 @@ describe("scene serialization", () => {
         let meshLoads = 0;
         const countingLoader = platformSceneAssetLoader(platform);
         const assets = {
+            ...countingLoader,
             loadMesh: (path: string) => {
                 meshLoads++;
                 return countingLoader.loadMesh(path);
             },
-            loadSpriteImage: (path: string) => countingLoader.loadSpriteImage(path),
         };
         applySceneInPlace(world, registry, snapshot, {assets});
         expect(meshLoads).toBe(0);

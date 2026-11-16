@@ -33,7 +33,7 @@ export const MAX_INSPECTED_ENTITIES = 64;
 
 type IntervalHandle = ReturnType<typeof setInterval>;
 
-class CoalescedRefresh {
+export class CoalescedRefresh {
     private running = false;
     private runAgain = false;
 
