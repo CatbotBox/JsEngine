@@ -1,5 +1,6 @@
 import {System} from "../core/system";
 import {Input} from "./input";
+import {InputMap} from "./inputMap";
 
 const UPDATE_FIRST_PRIORITY = Number.NEGATIVE_INFINITY;
 
@@ -9,6 +10,8 @@ export class InputSystem extends System {
     }
 
     public onUpdate(): void {
-        this.world.resources.getOrCreate(Input).beginFrame();
+        const input = this.world.resources.getOrCreate(Input);
+        input.useInputMap(this.world.resources.tryGet(InputMap));
+        input.beginFrame();
     }
 }

@@ -178,7 +178,7 @@ describe("ComponentSchemaRegistry field types", () => {
         registry.registerFieldAlias(PERCENT_TYPE_NAME, {options: PERCENT_OPTIONS});
         expect(() => registry.registerFieldAlias(PERCENT_TYPE_NAME, {options: {}})).toThrow(`a field alias named "Percent" is already registered`);
         expect(() => registry.registerFieldAlias("Name", {kind: "string" as never, options: {}})).toThrow("must be a number or integer");
-        expect(registry.assetTypes.map(type => type.name)).toEqual(["mesh", "spriteImage", "prefab"]);
+        expect(registry.assetTypes.map(type => type.name)).toEqual(["mesh", "spriteImage", "prefab", "shader"]);
         expect(() => registry.registerAssetType({...registry.assetType("mesh")!})).toThrow(`the asset type "mesh" is already registered`);
         registry.registerAssetType({name: "sound", valueName: "Sound", fileSuffixes: [".wav"], isAsset: (value): value is string => typeof value === "string", load: path => path, pathOf: path => path});
         expect(registry.assetType("sound")!.fileSuffixes).toEqual([".wav"]);

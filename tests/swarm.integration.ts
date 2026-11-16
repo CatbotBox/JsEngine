@@ -8,19 +8,14 @@ import {LocalPosition} from "../src/engine/translation";
 import {CellPresenterResource} from "../src/backends/cells";
 import {MemoryPixelPresenter, PixelPresenterResource, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
-import {AnsiCellPresenter} from "../src/hosts/terminal";
+import {AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {TerminalScreen} from "./support/terminalScreen";
-import {setupSwarm} from "../demo/swarm/game";
+import {launchSwarm} from "../demo/swarm/launch/swarmLaunch";
 import {Bullet, Enemy, Spark} from "../demo/swarm/components";
 import {SwarmPhase, SwarmState} from "../demo/swarm/resources";
-import {
-    BOMB_RADIUS_UNITS,
-    enemyCountForWave,
-    SHIP_RADIUS_UNITS,
-    START_BOMBS,
-    START_LIVES,
-    SWARMER_RGB,
-} from "../demo/swarm/tuning";
+import {SwarmTuning} from "../demo/swarm/tuning";
+import {PrefabSpawner} from "../src/engine/scene";
+import {SpritePattern} from "../src/engine/rendering/2d";
 import {installCellRenderingSwarm} from "../demo/swarm/launch/cellRendering";
 import {installPixelRenderingSwarm} from "../demo/swarm/launch/pixelRendering";
 
@@ -52,6 +47,7 @@ const BACKGROUND_RGB = 0x000000;
 const HUD_BAND_PX = 16;
 const KEEP_LAST_FRAME = 1;
 const NO_KEYS: readonly Key[] = [];
+const SWARMER_PREFAB_SUFFIX = "swarmer.prefab.json";
 
 const FIRE_KEYS_BY_OCTANT: readonly (readonly Key[])[] = [
     [Key.Right], [Key.Right, Key.Down], [Key.Down], [Key.Left, Key.Down],
@@ -158,7 +154,7 @@ class SwarmDriver {
         this.queries.enemies.stream({read: {enemy: Enemy, position: LocalPosition}}).forEach(({enemy, position}) => {
             if (enemy.hitPoints <= 0) return;
             const dx = position.x - shipX, dy = position.y * SCREEN_UNIT_HEIGHT_PER_WIDTH - shipY;
-            offsets.push({dx, dy, distance: Math.hypot(dx, dy), radius: enemy.kind.radiusUnits});
+            offsets.push({dx, dy, distance: Math.hypot(dx, dy), radius: enemy.radiusUnits});
         });
         return offsets;
     }
@@ -174,7 +170,8 @@ class SwarmDriver {
     }
 
     public enemiesTouchingShip(): number {
-        return this.enemyOffsets().filter(offset => offset.distance <= SHIP_RADIUS_UNITS + offset.radius).length;
+        const shipRadius = this.world.resources.get(SwarmTuning).ship.radiusUnits;
+        return this.enemyOffsets().filter(offset => offset.distance <= shipRadius + offset.radius).length;
     }
 
     public aimAtNearest(): void {
@@ -198,24 +195,40 @@ class SwarmDriver {
     }
 }
 
+function swarmerColorOf(world: DebugWorld): number {
+    const spawner = world.resources.get(PrefabSpawner);
+    const swarmer = world.resources.get(SwarmTuning).waves.enemies.find(enemy => enemy.prefab?.sourcePath.endsWith(SWARMER_PREFAB_SUFFIX))?.prefab;
+    if (swarmer === undefined) throw new Error(`SwarmTuning lists no ${SWARMER_PREFAB_SUFFIX}`);
+    const pattern = spawner.templateOf(swarmer).rootComponentDefaults(SpritePattern);
+    if (pattern === undefined || pattern.palette.length === 0) throw new Error(`${SWARMER_PREFAB_SUFFIX} has no sprite pattern colour`);
+    return pattern.palette[0].rgb;
+}
+
 function median(values: readonly number[]): number {
     const sorted = [...values].sort((a, b) => a - b);
     return sorted[Math.floor(sorted.length * HALF)];
 }
 
-function runOnCells(): void {
+function projectPlatform(): MemoryPlatform {
+    return new MemoryPlatform({fileSource: nodePlatform().files});
+}
+
+async function runOnCells(): Promise<void> {
     log("--- Swarm on cells");
     const terminal = new MemoryTerminal(TERMINAL_SIZE);
     const screen = new TerminalScreen(TERMINAL_SIZE.columns, TERMINAL_SIZE.rows);
-    const world = new DebugWorld({platform: new MemoryPlatform()});
+    const world = new DebugWorld({platform: projectPlatform()});
     world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(terminal)));
     let quits = 0;
-    setupSwarm(world, {render: installCellRenderingSwarm(world), seed: SEED, quit: () => quits++});
+    await launchSwarm(world, {renderBackend: "cells", installRendering: installCellRenderingSwarm, seed: SEED, quit: () => quits++});
     const driver = new SwarmDriver(world, () => {
         screen.write(terminal.text());
         terminal.clear();
     });
     const state = driver.state;
+    const tuning = world.resources.get(SwarmTuning);
+    const startLives = tuning.ship.startLives, startBombs = tuning.bomb.startBombs, bombRadiusUnits = tuning.bomb.radiusUnits;
+    const perfWaveEnemies = tuning.waves.enemyCount.valueAt(PERF_WAVE - tuning.waves.firstWave);
 
     driver.step(SETTLE_FRAMES);
     expect(state.phase === SwarmPhase.Title, "the game opens on the title screen");
@@ -224,13 +237,13 @@ function runOnCells(): void {
     driver.tap(Key.Enter);
     driver.step(START_FRAMES);
     expect(state.phase === SwarmPhase.Playing, `Enter starts a game (${state.phase})`);
-    expect(state.score === 0 && state.wave === 1 && state.lives === START_LIVES && state.bombs === START_BOMBS,
-        `a new game starts at score 0, wave 1, ${START_LIVES} lives, ${START_BOMBS} bombs`);
-    expect(screen.text().includes(`SCORE 0   WAVE 1   LIVES ${START_LIVES}   BOMBS ${START_BOMBS}`), "the HUD shows score, wave, lives and bombs");
+    expect(state.score === 0 && state.wave === 1 && state.lives === startLives && state.bombs === startBombs,
+        `a new game starts at score 0, wave 1, ${startLives} lives, ${startBombs} bombs`);
+    expect(screen.text().includes(`SCORE 0   WAVE 1   LIVES ${startLives}   BOMBS ${startBombs}`), "the HUD shows score, wave, lives and bombs");
     expect(screen.text().includes("W A V E   1"), "the wave banner shows before the first wave");
 
-    const hit = driver.runUntil(() => state.lives < START_LIVES, () => driver.hold(NO_KEYS));
-    expect(hit && state.lives === START_LIVES - 1, `enemy contact costs one life (${state.lives} left)`);
+    const hit = driver.runUntil(() => state.lives < startLives, () => driver.hold(NO_KEYS));
+    expect(hit && state.lives === startLives - 1, `enemy contact costs one life (${state.lives} left)`);
     expect(state.invulnerableRemainingMs > 0, "losing a life makes the ship invulnerable");
     let overlapsWhileInvulnerable = 0;
     driver.runUntil(() => state.invulnerableRemainingMs <= FRAME_MS, () => driver.ramNearest(), () => {
@@ -238,7 +251,7 @@ function runOnCells(): void {
     });
     driver.hold(NO_KEYS);
     expect(overlapsWhileInvulnerable > 0, `the invulnerable ship rammed enemies (${overlapsWhileInvulnerable} frames touching)`);
-    expect(state.lives === START_LIVES - 1, `invulnerability prevented further hits (${state.lives} lives)`);
+    expect(state.lives === startLives - 1, `invulnerability prevented further hits (${state.lives} lives)`);
 
     state.lives = SAFE_LIVES;
     const killsBeforeFiring = state.kills, scoreBeforeFiring = state.score;
@@ -255,13 +268,13 @@ function runOnCells(): void {
     driver.step();
     expect(screen.text().includes(`W A V E   ${SECOND_WAVE}`), "the wave banner announces the next wave");
 
-    const gathered = driver.runUntil(() => driver.enemiesWithin(BOMB_RADIUS_UNITS) >= MIN_BOMB_TARGETS, () => driver.hold(NO_KEYS));
-    const bombsBefore = state.bombs, killsBefore = state.kills, near = driver.enemiesWithin(BOMB_RADIUS_UNITS);
+    const gathered = driver.runUntil(() => driver.enemiesWithin(bombRadiusUnits) >= MIN_BOMB_TARGETS, () => driver.hold(NO_KEYS));
+    const bombsBefore = state.bombs, killsBefore = state.kills, near = driver.enemiesWithin(bombRadiusUnits);
     driver.tap(Key.Space);
     driver.step();
     expect(gathered, `enemies gathered within the bomb radius (${near})`);
     expect(state.bombs === bombsBefore - 1, `the bomb used a charge (${bombsBefore} -> ${state.bombs})`);
-    expect(driver.enemiesWithin(BOMB_RADIUS_UNITS) === 0 && state.kills >= killsBefore + near,
+    expect(driver.enemiesWithin(bombRadiusUnits) === 0 && state.kills >= killsBefore + near,
         `the bomb cleared every enemy within its radius (${state.kills - killsBefore} killed)`);
     expect(driver.sparkCount() > 0, `the bomb burst into fading sparks (${driver.sparkCount()})`);
 
@@ -274,12 +287,12 @@ function runOnCells(): void {
     driver.tap(Key.R);
     driver.step(RESTART_FRAMES);
     expect(state.phase === SwarmPhase.Playing, `R restarts (${state.phase})`);
-    expect(state.score === 0 && state.kills === 0 && state.wave === 1 && state.lives === START_LIVES && state.bombs === START_BOMBS,
+    expect(state.score === 0 && state.kills === 0 && state.wave === 1 && state.lives === startLives && state.bombs === startBombs,
         "the restarted game has fresh state");
     expect(driver.enemyCount() === 0 && driver.bulletCount() === 0 && driver.sparkCount() === 0,
         "restarting cleared every enemy, bullet and spark");
 
-    expect(enemyCountForWave(PERF_WAVE) >= PERF_MIN_WAVE_ENEMIES, `wave ${PERF_WAVE} sends ${enemyCountForWave(PERF_WAVE)} enemies`);
+    expect(perfWaveEnemies >= PERF_MIN_WAVE_ENEMIES, `wave ${PERF_WAVE} sends ${perfWaveEnemies} enemies`);
     state.wave = PERF_WAVE;
     state.lives = SAFE_LIVES;
     driver.runUntil(() => state.waveEnemyTarget > 0 && state.waveEnemiesSpawned >= state.waveEnemyTarget * PERF_SPAWNED_FRACTION_BEFORE_MEASURING,
@@ -318,16 +331,17 @@ function pixelsMatching(frame: PixelFrame, firstRow: number, lastRow: number, ma
     return count;
 }
 
-function runOnPixels(): void {
+async function runOnPixels(): Promise<void> {
     log("--- Swarm on pixels");
     const presenter = new MemoryPixelPresenter(PIXEL_SIZE);
-    const world = new DebugWorld({platform: new MemoryPlatform()});
+    const world = new DebugWorld({platform: projectPlatform()});
     world.resources.insert(new PixelPresenterResource(presenter));
     let quits = 0;
-    setupSwarm(world, {render: installPixelRenderingSwarm(world), seed: SEED, quit: () => quits++});
+    await launchSwarm(world, {renderBackend: "pixels", installRendering: installPixelRenderingSwarm, seed: SEED, quit: () => quits++});
     const driver = new SwarmDriver(world, () => presenter.frames.splice(0, presenter.frames.length - KEEP_LAST_FRAME));
     const isPainted = (rgb: number) => rgb !== BACKGROUND_RGB;
-    const isSwarmer = (rgb: number) => rgb === SWARMER_RGB;
+    const swarmerRgb = swarmerColorOf(world);
+    const isSwarmer = (rgb: number) => rgb === swarmerRgb;
 
     driver.step(SETTLE_FRAMES);
     const title = presenter.lastFrame!;
@@ -346,13 +360,17 @@ function runOnPixels(): void {
     expect(quits === 1, "Esc quits on pixels too");
 }
 
-runOnCells();
-runOnPixels();
-expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
-consoleOverride.removeConsoleEventListener(errorRecorder);
+async function main(): Promise<void> {
+    await runOnCells();
+    await runOnPixels();
+    expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
+    consoleOverride.removeConsoleEventListener(errorRecorder);
 
-if (failures > 0) {
-    console.error(`${failures} swarm integration failures`);
-    process.exit(1);
+    if (failures > 0) {
+        console.error(`${failures} swarm integration failures`);
+        process.exit(1);
+    }
+    log("swarm integration test OK");
 }
-log("swarm integration test OK");
+
+void main();

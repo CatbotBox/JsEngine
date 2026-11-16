@@ -15,14 +15,17 @@ import {RenderBoundsOffset} from "../rendering/renderBoundsOffset";
 import {WorldSpaceRenderBounds} from "../rendering/worldSpaceRenderBounds";
 import {TextSprite} from "../rendering/textSprite";
 import {Sprite} from "../rendering/2d/sprite";
+import {SpritePattern, SpritePatternColor} from "../rendering/2d/spritePattern";
 import {FieldOfView} from "../rendering/3d/fieldOfView";
 import {RenderMesh} from "../rendering/3d/renderMesh";
 import {FaceCulling} from "../rendering/3d/faceCulling";
 import {AmbientLight} from "../rendering/3d/lighting/ambientLight";
 import {DirectionalLight} from "../rendering/3d/lighting/directionalLight";
 import {PointLight} from "../rendering/3d/lighting/pointLight";
-import {componentSchema, resourceSchema} from "./componentSchemaBuilder";
+import {componentSchema, resourceSchema, structFields} from "./componentSchemaBuilder";
+import {INPUT_MAP_SCHEMA} from "./inputMapSchema";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
+import type {StructFieldType} from "./fieldSchema";
 import {PrefabInstance} from "./prefabInstance";
 import {ACTIVE_SCENE_RESOURCE_NAME, ActiveScene, SCENE_INSTANCE_COMPONENT_NAME, SceneInstance} from "./sceneInstance";
 import {PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY} from "./sceneSerialization";
@@ -45,6 +48,15 @@ export const ENGINE_COMPONENT_CATEGORIES = {
 
 const CATEGORY = ENGINE_COMPONENT_CATEGORIES;
 
+export const SPRITE_PATTERN_COLOR_TYPE_NAME = "SpritePatternColor";
+
+export const SPRITE_PATTERN_COLOR_FIELD_TYPE: StructFieldType = {
+    kind: "struct",
+    typeName: SPRITE_PATTERN_COLOR_TYPE_NAME,
+    fields: structFields<SpritePatternColor>().string("char").rgb("rgb").build(),
+    create: () => new SpritePatternColor(),
+};
+
 export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry): void {
     registry.register(componentSchema(LocalPosition, "LocalPosition").vec3("xyz").category(CATEGORY.transform).build());
     registry.register(componentSchema(LocalRotation, "LocalRotation").rotation("xyzw").category(CATEGORY.transform).build());
@@ -54,6 +66,8 @@ export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry
     registry.register(componentSchema(Camera, "Camera").number("nearPlaneDistance").number("farPlaneDistance").category(CATEGORY.camera).build());
     registry.register(componentSchema(FieldOfView, "FieldOfView").number("radians").category(CATEGORY.camera).build());
     registry.register(componentSchema(Sprite, "Sprite").spriteImage("image").rgb("tint").number("opacity").category(CATEGORY.rendering2d).build());
+    registry.register(componentSchema(SpritePattern, "SpritePattern").textLines("rows").list("palette", SPRITE_PATTERN_COLOR_FIELD_TYPE)
+        .category(CATEGORY.rendering2d).build());
     registry.register(componentSchema(RenderMesh, "RenderMesh").mesh("mesh").rgb("color").enum("faceCulling", {
         BackFaces: FaceCulling.BackFaces,
         FrontFaces: FaceCulling.FrontFaces,
@@ -88,4 +102,5 @@ export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry
     registry.register(componentSchema(FrameLoopSettings, "FrameLoopSettings").number("simulationTickRate").number("renderRate", UNCAPPED_RATE)
         .boolean("matchDisplay").number("cpuRenderRateLimit", UNCAPPED_RATE).integer("maxCatchUpTicks").category(CATEGORY.settings).build());
     registry.registerResource(resourceSchema(ActiveScene, ACTIVE_SCENE_RESOURCE_NAME).integer("sceneId").nullableString("path").build());
+    registry.registerResource(INPUT_MAP_SCHEMA);
 }

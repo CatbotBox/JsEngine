@@ -126,6 +126,7 @@ export class EntityCommandBuffer implements EntityWriteOptions {
                 em.attachEntity(entity, this.createdComponents(pending), pending.enabled ?? ENABLED_BY_DEFAULT);
                 continue;
             }
+            if (!em.exists(entity)) continue;
 
             this.applyToExisting(world, entity, pending);
             if (pending.enabled !== undefined) em.setEnabledState(entity, pending.enabled);

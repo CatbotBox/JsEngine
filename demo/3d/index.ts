@@ -4,12 +4,13 @@ import {consoleOverride} from "../../src/engine/debugging";
 import {CellPresenterResource} from "../../src/backends/cells";
 import {AnsiCellPresenter, nodePlatform, nodeTerminal, TerminalInput} from "../../src/hosts/terminal";
 import {fileLogger} from "../../src/hosts/terminal/fileLogger";
-import {exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
-import {setupDemo3d} from "./game";
-import {findDemoModels} from "./models";
+import {exitAfterLaunchFailure, exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
 import {installCellRendering3d} from "./launch/cellRendering";
+import {launchDemo3d} from "./launch/demo3dLaunch";
 
-exitUnlessInteractiveTerminal("The 3D demo");
+const DEMO_NAME = "The 3D demo";
+
+exitUnlessInteractiveTerminal(DEMO_NAME);
 
 consoleOverride.addConsoleEventListener(fileLogger);
 
@@ -24,14 +25,15 @@ const terminalInput = new TerminalInput({
     hideCursor: true,
 });
 
-setupDemo3d(world, {
-    render: installCellRendering3d(world),
-    listModels: () => findDemoModels(),
+launchDemo3d(world, {
+    renderBackend: "cells",
+    directory: __dirname,
+    installRendering: installCellRendering3d,
     quit: () => {
         terminalInput.stop();
         process.exit(0);
     },
-});
-
-world.startLoop();
-terminalInput.start();
+}).then(() => {
+    world.startLoop();
+    terminalInput.start();
+}, error => exitAfterLaunchFailure(DEMO_NAME, error));

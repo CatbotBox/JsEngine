@@ -1,0 +1,121 @@
+{
+  "format": "jsengine-asset",
+  "version": 1,
+  "type": "InputMap",
+  "fields": {
+    "actions": [
+      {
+        "name": "moveUp",
+        "keys": [
+          "W"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveDown",
+        "keys": [
+          "S"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveLeft",
+        "keys": [
+          "A"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveRight",
+        "keys": [
+          "D"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "fireUp",
+        "keys": [
+          "Up"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "fireDown",
+        "keys": [
+          "Down"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "fireLeft",
+        "keys": [
+          "Left"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "fireRight",
+        "keys": [
+          "Right"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "bomb",
+        "keys": [
+          "Space"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "start",
+        "keys": [
+          "Enter"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "restart",
+        "keys": [
+          "R"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "quit",
+        "keys": [
+          "Escape"
+        ],
+        "chords": [
+          {
+            "key": "C",
+            "ctrl": true,
+            "alt": false,
+            "shift": false,
+            "meta": false
+          }
+        ],
+        "buttons": []
+      },
+      {
+        "name": "toggleHud",
+        "keys": [
+          "Tab"
+        ],
+        "chords": [],
+        "buttons": []
+      }
+    ]
+  }
+}

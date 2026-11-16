@@ -1,4 +1,19 @@
 {
   "name": "Swarm",
-  "entry": "project.ts"
+  "entry": "project.ts",
+  "startScene": "scenes/main.scene.json",
+  "resources": [
+    {
+      "type": "InputMap",
+      "path": "assets/input.asset.json"
+    },
+    {
+      "type": "SwarmTuning",
+      "path": "assets/swarm.tuning.asset.json"
+    },
+    {
+      "type": "SwarmState",
+      "path": "assets/swarm.state.asset.json"
+    }
+  ]
 }

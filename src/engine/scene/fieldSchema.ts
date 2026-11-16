@@ -8,6 +8,7 @@ export const STATIC_SCHEMA_KEY = "schema";
 export const MESH_ASSET_TYPE_NAME = "mesh";
 export const SPRITE_IMAGE_ASSET_TYPE_NAME = "spriteImage";
 export const PREFAB_ASSET_TYPE_NAME = "prefab";
+export const SHADER_ASSET_TYPE_NAME = "shader";
 export const PREFAB_FILE_SUFFIX = ".prefab.json";
 
 export type PlainFieldKind = "boolean" | "textLines" | "vec2" | "vec3" | "rotation" | "rgb" | "textColor";

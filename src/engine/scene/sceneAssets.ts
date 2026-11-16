@@ -28,6 +28,8 @@ export interface SceneAssetLoader {
 
     loadPrefab(path: string): PrefabAsset;
 
+    loadText(path: string): string;
+
     loadDataAsset<R extends Resource>(path: string, type: ResourceCtor<R>): R;
 }
 
@@ -57,6 +59,9 @@ export function platformSceneAssetLoader(options: MeshLoadOptions, dataAssets?: 
                 prefabs.set(path, prefab);
             }
             return prefab;
+        },
+        loadText(path: string): string {
+            return options.files.readText(path);
         },
         loadDataAsset<R extends Resource>(path: string, type: ResourceCtor<R>): R {
             if (dataAssets === undefined) throw new Error(`Loading the data asset "${path}" needs a DataAssets resource; this asset loader has none`);

@@ -4,6 +4,7 @@ import {RenderingSystemGroup} from "../renderingSystemGroup";
 import {LocalToWorld} from "../../translation";
 import {anchorFractionX, anchorFractionY, ScreenAnchor} from "../screenAnchor";
 import {Sprite} from "./sprite";
+import {SpritePatternImageSystem} from "./spritePatternImageSystem";
 import {WorldSpaceRenderBoundsComputeSystem} from "../worldSpaceRenderBoundsComputeSystem";
 import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../../datatypes/aabb";
 import {SPRITE_PIXELS_PER_SCREEN_UNIT_X, SPRITE_PIXELS_PER_SCREEN_UNIT_Y} from "../screenUnits";
@@ -27,6 +28,7 @@ export class SpriteBoundsSystem extends System {
     protected onCreate() {
         this.requireAnyForUpdate(this._query);
         this.world.ensureSystemExists(WorldSpaceRenderBoundsComputeSystem);
+        this.world.ensureSystemExists(SpritePatternImageSystem);
     }
 
     onUpdate() {

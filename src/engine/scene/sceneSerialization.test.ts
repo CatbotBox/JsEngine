@@ -21,6 +21,7 @@ import {TextSprite} from "../rendering/textSprite";
 import {TextColor} from "../rendering/textColor";
 import {Sprite} from "../rendering/2d/sprite";
 import {SpriteImage} from "../rendering/2d/spriteImage";
+import {SpritePattern, SpritePatternColor} from "../rendering/2d/spritePattern";
 import {FieldOfView} from "../rendering/3d/fieldOfView";
 import {RenderMesh} from "../rendering/3d/renderMesh";
 import {FaceCulling} from "../rendering/3d/faceCulling";
@@ -38,6 +39,8 @@ import {parseSceneDocument, SCENE_DOCUMENT_FORMAT} from "./sceneDocument";
 import type {SceneDocument, SceneFieldValues, SceneJsonValue} from "./sceneDocument";
 import {applySceneInPlace, deserializeInto, serializeWorld} from "./sceneSerialization";
 
+const LAMP_PATTERN_ROWS = ["#.", ".#"];
+const LAMP_PATTERN_RGB = 0x4FA3F7;
 const MESH_PATH = "models/tri.obj";
 const SPRITE_PATH = "sprites/dot.ppm";
 const TRIANGLE_OBJ = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
@@ -132,7 +135,8 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     const sunRotation = new LocalRotation();
     sunRotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.7, -0.6, 0));
     const sun = em.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalPosition(), sunRotation, new LocalToWorld()]);
-    em.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld()]);
+    const lampPattern = new SpritePattern(LAMP_PATTERN_ROWS, [new SpritePatternColor("#", LAMP_PATTERN_RGB)]);
+    em.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld(), lampPattern]);
     const frameLoop = new FrameLoopSettings();
     frameLoop.renderRate = UNCAPPED_RENDER_RATE;
     frameLoop.maxCatchUpTicks = CATCH_UP_TICKS;

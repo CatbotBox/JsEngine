@@ -5,6 +5,7 @@ import {TextColor} from "../rendering/textColor";
 import {FaceCulling} from "../rendering/3d/faceCulling";
 import {Mesh} from "../rendering/3d/mesh";
 import {SpriteImage} from "../rendering/2d/spriteImage";
+import {SpritePatternColor, spritePatternImage} from "../rendering/2d/spritePattern";
 import {decodeFieldValue, encodeFieldValue} from "./fieldValueCodec";
 import type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 import type {FieldSchema} from "./fieldSchema";
@@ -17,6 +18,7 @@ const TRIANGLE_OBJ = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
 const KNOWN_ENTITY = makeEntityHandle(5, 1);
 const UNKNOWN_ENTITY = makeEntityHandle(6, 1);
 const KNOWN_SCENE_ID = 3;
+const PATTERN_RGB = 0x40E0FF;
 const UNKNOWN_SCENE_ID = 99;
 const LONGEST_BASE64_TEST_LENGTH = 10;
 const BYTE_VALUES = 256;
@@ -223,6 +225,9 @@ describe("field value codec", () => {
             loadPrefab: path => {
                 throw new Error(`no prefab ${path}`);
             },
+            loadText: path => {
+                throw new Error(`no text ${path}`);
+            },
             loadDataAsset: path => {
                 throw new Error(`no data asset ${path}`);
             },
@@ -248,6 +253,14 @@ describe("field value codec", () => {
         expect(decodeFieldValue(field.spriteImage, encoded, decoder.context, PATH)).toBe(decoded);
         expect(encode(field.spriteImage, undefined)).toBe(null);
         expect(decode(field.spriteImage, null)).toBeUndefined();
+    });
+
+    test("a spriteImage rebuilt from a sprite pattern saves as null without counting as unsaved", () => {
+        const recorder = encodeRecorder();
+        const image = spritePatternImage(["#"], [new SpritePatternColor("#", PATTERN_RGB)]);
+        expect(encodeFieldValue(field.spriteImage, image, recorder.context, PATH)).toBe(null);
+        expect(recorder.unsaved).toEqual([]);
+        expect(encode(field.spriteImage, SpriteImage.fromPattern(["#"], {"#": PATTERN_RGB}))).toEqual({width: 1, height: 1, rgbaBase64: encodeBase64(image.rgba)});
     });
 
     test("spriteImage errors name the field path", () => {

@@ -1,0 +1,22 @@
+{
+  "format": "jsengine-asset",
+  "version": 1,
+  "type": "SwarmState",
+  "fields": {
+    "phase": "Title",
+    "score": 0,
+    "kills": 0,
+    "wave": 0,
+    "lives": 0,
+    "bombs": 0,
+    "invulnerableRemainingMs": 0,
+    "fireCooldownMs": 0,
+    "intermissionRemainingMs": 0,
+    "waveEnemyTarget": 0,
+    "waveEnemiesSpawned": 0,
+    "spawnBudget": 0,
+    "lastClearEarnedBomb": false,
+    "shipX": 0,
+    "shipY": 0
+  }
+}
