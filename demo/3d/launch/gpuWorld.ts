@@ -4,9 +4,10 @@ import {PixelPresenterResource} from "../../../src/backends/pixels";
 import {gpuCanvasPresenter, requestGpuDevice} from "../../../src/hosts/web/gpuWorldDevice";
 import type {PageConnection} from "../../../src/hosts/web/worldWorkerPlatform";
 import type {PreloadedFileSource} from "../../../src/hosts/web/preloadedFileSource";
-import {setupDemo3d} from "../game";
+import {projectFilePreload} from "../../../src/hosts/web/projectFilePreload";
 import type {Demo3dManifest} from "../assets";
 import {installGpuRendering3d} from "./gpuRendering";
+import {DEMO_3D_PROJECT_DIRECTORY, launchDemo3d} from "./demo3dLaunch";
 import {manifestModelFiles, preloadDemo3dAssets} from "./webAssets";
 
 export interface GpuWorld3d {
@@ -23,9 +24,10 @@ export async function createGpuWorld3d(page: PageConnection, files: PreloadedFil
     world.resources.insert(gpu);
     world.resources.insert(new PixelPresenterResource(presenter));
     page.connectInput(world.resources.getOrCreate(Input));
-    setupDemo3d(world, {
-        render: installGpuRendering3d(world),
-        listModels: () => manifest.models,
+    await launchDemo3d(world, {
+        renderBackend: "gpu",
+        preload: projectFilePreload(files, DEMO_3D_PROJECT_DIRECTORY),
+        installRendering: installGpuRendering3d,
         modelFiles: manifestModelFiles(manifest, files),
         quit: () => page.quit(),
     });

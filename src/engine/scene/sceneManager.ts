@@ -1,3 +1,4 @@
+import {EntityCommandBufferSystem} from "../core";
 import type {Entity, World} from "../core";
 import {ComponentType} from "../core/componentType";
 import type {EntityArchetype} from "../core/entityArchetype";
@@ -8,6 +9,7 @@ import {EditorOnly} from "./editorOnly";
 import {parseSceneDocument} from "./sceneDocument";
 import type {SceneDocument} from "./sceneDocument";
 import {dataAssetsOf} from "./dataAssets";
+import {prefabSpawnerOf} from "./prefabSpawner";
 import {preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
 import type {AssetPreload, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
 import {parentEntityOf, SceneRootOrder, untrackedComponentOf} from "./sceneHierarchy";
@@ -18,6 +20,8 @@ import {ActiveScene, NO_SCENE_ID, SceneInstance, withoutSceneMembership} from ".
 export type SceneLoadMode = "single" | "additive";
 
 export type PersistentEntityPolicy = "keep" | "destroy";
+
+export type SceneActivation = "immediate" | "onCommandBufferPlayback";
 
 export type ScenePreload = AssetPreload;
 
@@ -39,6 +43,7 @@ export interface SceneManagerOptions {
 export interface SceneLoadRequest {
     readonly mode?: SceneLoadMode;
     readonly persistentEntities?: PersistentEntityPolicy;
+    readonly activation?: SceneActivation;
 }
 
 export interface SceneDocumentLoadRequest extends SceneLoadRequest {
@@ -53,6 +58,9 @@ export interface LoadedScene extends SceneLoadResult {
 
 const DEFAULT_LOAD_MODE: SceneLoadMode = "single";
 const DEFAULT_PERSISTENT_ENTITY_POLICY: PersistentEntityPolicy = "keep";
+const DEFAULT_ACTIVATION: SceneActivation = "immediate";
+const ENABLED = true;
+const DISABLED = false;
 const NO_ENTITIES: readonly Entity[] = [];
 
 function noPreload(): Promise<void> {
@@ -85,6 +93,7 @@ export class SceneManager {
         this.files = options.files ?? world.platform.files;
         this.assets = options.assets ?? dataAssetsOf(world, registry, {files: this.files, inflate: world.platform.inflate}, {schemaChanges: options.schemaChanges}).assets;
         this.preload = options.preload ?? noPreload;
+        prefabSpawnerOf(world, registry, this.assets, {unknownComponentTypes: options.unknownComponentTypes, schemaChanges: options.schemaChanges});
         world.resources.getOrCreate(ActiveScene);
     }
 
@@ -109,6 +118,7 @@ export class SceneManager {
         const replaced = mode === "additive" ? NO_ENTITIES
             : persistentEntities === "destroy" ? sceneEntitiesInCreationOrder(this.world)
             : this.membersOf(replacedScenes);
+        const archetypesBeforeLoad = new Set(this.world.archetypes.values());
         const loaded = deserializeInto(this.world, this.registry, withoutSceneMembership(document), {
             assets: this.assets,
             unknownComponentTypes: this.options.unknownComponentTypes,
@@ -117,6 +127,8 @@ export class SceneManager {
         const handle = this.handleOf(this.nextSceneId(), request.path);
         const roots = loaded.entities.filter(entity => parentEntityOf(this.world, entity) === undefined);
         for (const root of roots) this.world.entityManager.addComponent(root, new SceneInstance(handle.id, handle.path));
+        this.world.archetypes.prune(archetype => !archetypesBeforeLoad.has(archetype));
+        if ((request.activation ?? DEFAULT_ACTIVATION) === "onCommandBufferPlayback") this.activateOnCommandBufferPlayback(loaded.entities);
         this.destroy(replaced);
         this.forgetScenes(replacedScenes);
         if (mode === "single" || this.activeScene().sceneId === NO_SCENE_ID) this.writeActive(handle);
@@ -179,6 +191,16 @@ export class SceneManager {
         return () => {
             this.listeners.delete(listener);
         };
+    }
+
+    private activateOnCommandBufferPlayback(entities: readonly Entity[]): void {
+        const entityManager = this.world.entityManager;
+        const buffer = this.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
+        for (const entity of entities) {
+            if (!entityManager.isEnabled(entity)) continue;
+            entityManager.setEnabledState(entity, DISABLED);
+            buffer.setEnabledState(entity, ENABLED);
+        }
     }
 
     private activeScene(): ActiveScene {

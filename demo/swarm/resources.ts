@@ -1,16 +1,5 @@
 import {Resource} from "../../src/engine/core";
-import {resourceSchema} from "../../src/engine/scene/componentSchemaBuilder";
-import {
-    FALLBACK_ARENA_HEIGHT_UNITS,
-    FALLBACK_ARENA_WIDTH_UNITS,
-    FIRST_WAVE,
-    START_BOMBS,
-    START_INVULNERABILITY_MS,
-    START_LIVES,
-    WAVE_INTERMISSION_MS,
-} from "./tuning";
-
-const HALF = 0.5;
+import type {Int} from "../../src/engine/scene";
 
 const MULBERRY32_INCREMENT = 0x6D2B79F5;
 const MULBERRY32_FIRST_SHIFT = 15;
@@ -30,49 +19,21 @@ export const SwarmPhase = {
 export type SwarmPhase = typeof SwarmPhase[keyof typeof SwarmPhase];
 
 export class SwarmState extends Resource {
-    public static readonly schema = resourceSchema(SwarmState, "SwarmState")
-        .enum("phase", SwarmPhase)
-        .number("score").number("kills").number("wave").number("lives").number("bombs")
-        .number("invulnerableRemainingMs").number("fireCooldownMs").number("intermissionRemainingMs")
-        .number("waveEnemyTarget").number("waveEnemiesSpawned").number("spawnBudget").boolean("lastClearEarnedBomb")
-        .number("shipX").number("shipY").number("arenaHalfWidthUnits").number("arenaHalfHeightUnits")
-        .build();
-
     public phase: SwarmPhase = SwarmPhase.Title;
-    public score = 0;
-    public kills = 0;
-    public wave = 0;
-    public lives = 0;
-    public bombs = 0;
+    public score: Int = 0;
+    public kills: Int = 0;
+    public wave: Int = 0;
+    public lives: Int = 0;
+    public bombs: Int = 0;
     public invulnerableRemainingMs = 0;
     public fireCooldownMs = 0;
     public intermissionRemainingMs = 0;
-    public waveEnemyTarget = 0;
-    public waveEnemiesSpawned = 0;
+    public waveEnemyTarget: Int = 0;
+    public waveEnemiesSpawned: Int = 0;
     public spawnBudget = 0;
     public lastClearEarnedBomb = false;
     public shipX = 0;
     public shipY = 0;
-    public arenaHalfWidthUnits = FALLBACK_ARENA_WIDTH_UNITS * HALF;
-    public arenaHalfHeightUnits = FALLBACK_ARENA_HEIGHT_UNITS * HALF;
-
-    public resetForNewGame(): void {
-        this.phase = SwarmPhase.Playing;
-        this.score = 0;
-        this.kills = 0;
-        this.wave = FIRST_WAVE;
-        this.lives = START_LIVES;
-        this.bombs = START_BOMBS;
-        this.invulnerableRemainingMs = START_INVULNERABILITY_MS;
-        this.fireCooldownMs = 0;
-        this.intermissionRemainingMs = WAVE_INTERMISSION_MS;
-        this.waveEnemyTarget = 0;
-        this.waveEnemiesSpawned = 0;
-        this.spawnBudget = 0;
-        this.lastClearEarnedBomb = false;
-        this.shipX = 0;
-        this.shipY = 0;
-    }
 }
 
 function unseededStart(): number {
@@ -103,5 +64,3 @@ export class SeededRandom extends Resource {
         return Math.floor(this.next() * length);
     }
 }
-
-export const SWARM_RESOURCES = [SwarmState];

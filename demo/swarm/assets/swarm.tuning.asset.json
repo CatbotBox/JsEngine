@@ -1,0 +1,174 @@
+{
+  "format": "jsengine-asset",
+  "version": 1,
+  "type": "SwarmTuning",
+  "fields": {
+    "maxSimulationStepMs": 100,
+    "arena": {
+      "fallbackWidthUnits": 80,
+      "fallbackHeightUnits": 24,
+      "broadphaseMarginUnits": 8,
+      "broadphaseCellSizeUnits": 4
+    },
+    "ship": {
+      "startLives": 3,
+      "startInvulnerabilityMs": 1500,
+      "speedUnitsPerSecond": 36,
+      "radiusUnits": 2,
+      "invulnerabilityMs": 2000,
+      "blinkIntervalMs": 100
+    },
+    "weapon": {
+      "bullet": {
+        "path": "prefabs/bullet.prefab.json"
+      },
+      "fireRateShotsPerSecond": 12,
+      "bulletSpeedUnitsPerSecond": 90
+    },
+    "bomb": {
+      "startBombs": 2,
+      "radiusUnits": 18,
+      "sparkCount": 240,
+      "earnedEveryWaves": 2,
+      "maxBombs": 3
+    },
+    "sparks": {
+      "prefab": {
+        "path": "prefabs/spark.prefab.json"
+      },
+      "minLifetimeMs": 450,
+      "maxLifetimeMs": 1100,
+      "minReachFraction": 0.5,
+      "maxReachFraction": 1,
+      "tints": [
+        "#ffffff",
+        "#fff4c0",
+        "#ffd040",
+        "#ff8020",
+        "#ff4040"
+      ],
+      "lifeLostCount": 60,
+      "lifeLostReachUnits": 8,
+      "shipDestroyedCount": 160,
+      "shipDestroyedReachUnits": 14
+    },
+    "waves": {
+      "firstWave": 1,
+      "intermissionMs": 2000,
+      "maxSpawnsPerFrame": 64,
+      "spawnMarginUnits": 3,
+      "enemyCount": {
+        "base": 20,
+        "perWave": 0,
+        "perWaveSquared": 25,
+        "max": "Infinity"
+      },
+      "spawnDurationMs": {
+        "base": 4000,
+        "perWave": 700,
+        "perWaveSquared": 0,
+        "max": "Infinity"
+      },
+      "enemySpeedMultiplier": {
+        "base": 1,
+        "perWave": 0.07,
+        "perWaveSquared": 0,
+        "max": 2
+      },
+      "enemySpeedJitterFraction": 0.25,
+      "maxEnemySteerRad": 0.5,
+      "seekStopDistanceUnits": 0.01,
+      "enemies": [
+        {
+          "prefab": {
+            "path": "prefabs/brute.prefab.json"
+          },
+          "spawnShare": {
+            "base": 0,
+            "perWave": 0.04,
+            "perWaveSquared": 0,
+            "max": 0.3
+          }
+        },
+        {
+          "prefab": {
+            "path": "prefabs/swarmer.prefab.json"
+          },
+          "spawnShare": {
+            "base": 1,
+            "perWave": 0,
+            "perWaveSquared": 0,
+            "max": "Infinity"
+          }
+        }
+      ]
+    },
+    "hud": {
+      "statusFormat": "SCORE {score}   WAVE {wave}   LIVES {lives}   BOMBS {bombs}",
+      "statsFormat": "ENEMIES {enemies}   FPS {fps}",
+      "statsRefreshMs": 250,
+      "fpsAverageFrames": 30,
+      "panelPaddingColumns": 2,
+      "title": {
+        "lines": [
+          "S W A R M",
+          ""
+        ],
+        "controls": [
+          {
+            "keys": "WASD",
+            "effect": "move"
+          },
+          {
+            "keys": "ARROWS",
+            "effect": "fire, hold to repeat"
+          },
+          {
+            "keys": "SPACE",
+            "effect": "bomb"
+          },
+          {
+            "keys": "TAB",
+            "effect": "toggle HUD"
+          },
+          {
+            "keys": "ESC",
+            "effect": "quit"
+          }
+        ],
+        "controlKeyColumns": 9,
+        "promptLines": [
+          "",
+          "press ENTER to start"
+        ],
+        "color": {
+          "palette": 14
+        }
+      },
+      "wave": {
+        "lines": [
+          "W A V E   {wave}"
+        ],
+        "bombEarnedLines": [
+          "",
+          "+1 BOMB"
+        ],
+        "color": {
+          "palette": 11
+        }
+      },
+      "gameOver": {
+        "lines": [
+          "GAME OVER",
+          "",
+          "SCORE {score}   WAVE {wave}   KILLS {kills}",
+          "",
+          "press R to restart   ESC to quit"
+        ],
+        "color": {
+          "palette": 9
+        }
+      }
+    }
+  }
+}

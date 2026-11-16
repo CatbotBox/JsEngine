@@ -21,6 +21,8 @@
     "test:integration:node": "node -r ts-node/register/transpile-only scripts/runIntegrationTests.ts",
     "test:frame-hashes": "bun tests/checkFrameHashes.ts",
     "test:frame-hashes:update-baseline": "bun tests/checkFrameHashes.ts --update-baseline",
+    "test:demo-frame-hashes": "bun tests/checkDemoFrameHashes.ts",
+    "test:demo-frame-hashes:update-baseline": "bun tests/checkDemoFrameHashes.ts --update-baseline",
     "demo:2d:bun": "bun demo/2d/index.ts",
     "demo:2d:node": "node -r ts-node/register/transpile-only demo/2d/index.ts",
     "demo:2d:watch": "bun --watch demo/2d/index.ts",

@@ -1,0 +1,47 @@
+{
+  "format": "jsengine-scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": "spark",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            2
+          ]
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            "#"
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffffff"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "Lifetime": {
+          "durationMs": 450,
+          "remainingMs": 450
+        },
+        "Spark": {},
+        "Velocity": {
+          "xUnitsPerSecond": 0,
+          "yUnitsPerSecond": 0
+        }
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
 import {buildDemo3dManifest} from "../demo/3d/assets";
+import {DEMO_3D_PROJECT_DIRECTORY} from "../demo/3d/launch/demo3dLaunch";
 import type {Demo3dManifest} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
 
@@ -29,7 +30,7 @@ function paced(bytes: Uint8Array): ReadableStream<Uint8Array> {
 
 function served(url: string): Uint8Array | undefined {
     if (DIST === undefined && url === MANIFEST_URL) {
-        return new TextEncoder().encode(JSON.stringify(manifest ??= buildDemo3dManifest(ROOT, nodePlatform())));
+        return new TextEncoder().encode(JSON.stringify(manifest ??= buildDemo3dManifest(ROOT, DEMO_3D_PROJECT_DIRECTORY, nodePlatform())));
     }
     try {
         return new Uint8Array(readFileSync(join(DIST ?? ROOT, decodeURI(url))));

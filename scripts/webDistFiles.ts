@@ -1,6 +1,17 @@
 import {QUERY_OR_FRAGMENT} from "../src/hosts/desktop";
+import {PROJECT_MANIFEST_FILE, SCENE_FILE_SUFFIX} from "../src/editor/project/projectManifest";
+import {DATA_ASSET_FILE_SUFFIX} from "../src/engine/scene/dataAssetDocument";
+import {PREFAB_FILE_SUFFIX} from "../src/engine/scene/fieldSchema";
+import {WGSL_FILE_SUFFIX} from "../src/engine/rendering/shaderSource";
 
 export {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "../src/hosts/desktop";
+
+const WEB_PROJECT_DATA_FILE_ENDINGS: readonly string[] = [PROJECT_MANIFEST_FILE, DATA_ASSET_FILE_SUFFIX, SCENE_FILE_SUFFIX, PREFAB_FILE_SUFFIX, WGSL_FILE_SUFFIX];
+
+export function isWebProjectDataFile(path: string): boolean {
+    const lower = path.toLowerCase();
+    return WEB_PROJECT_DATA_FILE_ENDINGS.some(ending => lower.endsWith(ending));
+}
 
 const PAGES: Readonly<Record<string, string>> = {
     "2d": "2d.html",

@@ -1,18 +1,21 @@
 import {Mesh} from "../rendering/3d/mesh";
 import {SpriteImage} from "../rendering/2d/spriteImage";
+import {isSpritePatternImage} from "../rendering/2d/spritePattern";
+import {ShaderSource, WGSL_FILE_SUFFIX} from "../rendering/shaderSource";
 import {decodeBase64, encodeBase64} from "./base64";
-import {MESH_ASSET_TYPE_NAME, PREFAB_ASSET_TYPE_NAME, PREFAB_FILE_SUFFIX, SPRITE_IMAGE_ASSET_TYPE_NAME} from "./fieldSchema";
+import {MESH_ASSET_TYPE_NAME, PREFAB_ASSET_TYPE_NAME, PREFAB_FILE_SUFFIX, SHADER_ASSET_TYPE_NAME, SPRITE_IMAGE_ASSET_TYPE_NAME} from "./fieldSchema";
 import {fieldValueError} from "./fieldValueError";
 import type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 import {PrefabAsset} from "./prefabAsset";
 import type {SceneAssetLoader} from "./sceneAssets";
 import type {SceneJsonObject} from "./sceneDocument";
 
-export {MESH_ASSET_TYPE_NAME, PREFAB_ASSET_TYPE_NAME, PREFAB_FILE_SUFFIX, SPRITE_IMAGE_ASSET_TYPE_NAME} from "./fieldSchema";
+export {MESH_ASSET_TYPE_NAME, PREFAB_ASSET_TYPE_NAME, PREFAB_FILE_SUFFIX, SHADER_ASSET_TYPE_NAME, SPRITE_IMAGE_ASSET_TYPE_NAME} from "./fieldSchema";
 
 const MESH_FILE_SUFFIXES: readonly string[] = [".obj"];
 const IMAGE_FILE_SUFFIXES: readonly string[] = [".png", ".jpg", ".jpeg", ".ppm"];
 const PREFAB_FILE_SUFFIXES: readonly string[] = [PREFAB_FILE_SUFFIX];
+const SHADER_FILE_SUFFIXES: readonly string[] = [WGSL_FILE_SUFFIX];
 const RGBA_BYTES_PER_PIXEL = 4;
 
 export interface InlineAssetCodec<A> {
@@ -32,6 +35,8 @@ export interface AssetType<A = unknown> {
     readonly inline?: InlineAssetCodec<A>;
 
     isAsset(value: unknown): value is A;
+
+    isDerived?(value: A): boolean;
 
     load(path: string, loader: SceneAssetLoader): A;
 
@@ -96,6 +101,7 @@ export const SPRITE_IMAGE_ASSET_TYPE: AssetType<SpriteImage> = {
         decode: decodeInlineSpriteImage,
     },
     isAsset: (value): value is SpriteImage => value instanceof SpriteImage,
+    isDerived: isSpritePatternImage,
     load: (path, loader) => loader.loadSpriteImage(path),
     pathOf: image => image.sourcePath,
 };
@@ -109,10 +115,20 @@ export const PREFAB_ASSET_TYPE: AssetType<PrefabAsset> = {
     pathOf: prefab => prefab.sourcePath,
 };
 
+export const SHADER_ASSET_TYPE: AssetType<ShaderSource> = {
+    name: SHADER_ASSET_TYPE_NAME,
+    valueName: "ShaderSource",
+    fileSuffixes: SHADER_FILE_SUFFIXES,
+    isAsset: (value): value is ShaderSource => value instanceof ShaderSource,
+    load: (path, loader) => new ShaderSource(path, loader.loadText(path)),
+    pathOf: shader => shader.sourcePath,
+};
+
 export const ENGINE_ASSET_TYPES: readonly AssetType[] = [
     MESH_ASSET_TYPE as AssetType,
     SPRITE_IMAGE_ASSET_TYPE as AssetType,
     PREFAB_ASSET_TYPE as AssetType,
+    SHADER_ASSET_TYPE as AssetType,
 ];
 
 export function engineAssetType(name: string): AssetType | undefined {

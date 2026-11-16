@@ -669,7 +669,7 @@ export function deserializeInto(world: World, registry: ComponentSchemaRegistry,
     return {entities: created.entities, report: report.build()};
 }
 
-function withoutDetachedParents(registry: ComponentSchemaRegistry, document: SceneDocument): SceneDocument {
+export function withoutDetachedParents(registry: ComponentSchemaRegistry, document: SceneDocument): SceneDocument {
     const parentName = registry.byType(ComponentType.of(Parent))?.name ?? PARENT_COMPONENT_NAME;
     const ids = new Set(document.entities.map(record => record.id));
     const entities = document.entities.map(record => {

@@ -1,11 +1,10 @@
 import type {AssetLoadOptions, FileSource, FileStat} from "../../src/engine/platform";
-import {joinPath, normalizePath} from "../../src/engine/platform";
+import {directoryFileSource, joinPath, normalizePath} from "../../src/engine/platform";
 import {Mesh} from "../../src/engine/rendering/3d";
-import type {DemoModel} from "./game";
-import {findDemoModels} from "./models";
-import {DEFAULT_LAZY_MODEL_BYTES} from "./projectModels";
-
-export {DEFAULT_LAZY_MODEL_BYTES};
+import {ComponentSchemaRegistry, DataAssets, MESH_ASSET_TYPE_NAME, registerEngineComponentSchemas, sceneAssetPaths} from "../../src/engine/scene";
+import {DEMO_3D_TUNING_FILE, prefabRootName, requireModelPrefab} from "./modelCatalog";
+import {registerGeneratedSchemas} from "./schemas.generated";
+import {Demo3dTuning} from "./tuning";
 
 export interface ManifestFile {
     readonly path: string;
@@ -16,17 +15,16 @@ export interface ManifestFile {
     readonly gzipParts?: readonly number[];
 }
 
-export interface ManifestModel extends DemoModel {
+export interface ManifestModel {
+    readonly name: string;
+    readonly path: string;
+    readonly meshes: readonly string[];
     readonly files: readonly string[];
 }
 
 export interface Demo3dManifest {
     readonly models: readonly ManifestModel[];
     readonly files: readonly ManifestFile[];
-}
-
-export interface Demo3dManifestOptions {
-    readonly lazyModelBytes?: number;
 }
 
 const WRITABLE = true;
@@ -65,18 +63,32 @@ export class RecordingFileSource implements FileSource {
     }
 }
 
-export function buildDemo3dManifest(root: string, base: AssetLoadOptions, options: Demo3dManifestOptions = {}): Demo3dManifest {
-    const lazyModelBytes = options.lazyModelBytes ?? DEFAULT_LAZY_MODEL_BYTES;
+function demo3dSchemaRegistry(): ComponentSchemaRegistry {
+    const registry = new ComponentSchemaRegistry();
+    registerEngineComponentSchemas(registry);
+    registerGeneratedSchemas(registry);
+    return registry;
+}
+
+function loadTuning(root: string, projectDirectory: string, base: AssetLoadOptions, registry: ComponentSchemaRegistry): Demo3dTuning {
+    const files = directoryFileSource(new RecordingFileSource(root, base.files), projectDirectory);
+    return new DataAssets(registry, {files, inflate: base.inflate}).load(DEMO_3D_TUNING_FILE, Demo3dTuning);
+}
+
+export function buildDemo3dManifest(root: string, projectDirectory: string, base: AssetLoadOptions): Demo3dManifest {
     const inflate = base.inflate;
+    const registry = demo3dSchemaRegistry();
     const writable = new RecordingFileSource(root, base.files, WRITABLE);
     const stats = new RecordingFileSource(root, base.files);
-    const recorded = findDemoModels(root).map(found => {
-        const model = {name: found.name, path: normalizePath(found.path)};
-        Mesh.fromFile(model.path, {files: writable, inflate});
+    const recorded = loadTuning(root, projectDirectory, base, registry).models.map((entry, index) => {
+        const prefab = requireModelPrefab(entry, index);
+        const meshes = sceneAssetPaths(prefab.document, registry)
+            .filter(reference => reference.kind === MESH_ASSET_TYPE_NAME)
+            .map(reference => normalizePath(joinPath(projectDirectory, reference.path)));
+        for (const mesh of meshes) Mesh.fromFile(mesh, {files: writable, inflate});
         const recorder = new RecordingFileSource(root, base.files);
-        Mesh.fromFile(model.path, {files: recorder, inflate});
-        const readBytes = [...recorder.read].reduce((sum, path) => sum + stats.stat(path).size, 0);
-        return {model, recorder, lazy: readBytes > lazyModelBytes};
+        for (const mesh of meshes) Mesh.fromFile(mesh, {files: recorder, inflate});
+        return {model: {name: prefabRootName(prefab), path: prefab.sourcePath, meshes}, recorder, lazy: entry.loadOnDemand};
     });
     const read = new Set(recorded.flatMap(({recorder}) => [...recorder.read]));
     const eagerRead = new Set(recorded.filter(({lazy}) => !lazy).flatMap(({recorder}) => [...recorder.read]));

@@ -14,6 +14,10 @@ function hashTypeIds(ids: Int32Array, count: number): number {
   return h;
 }
 
+function everyArchetype(): boolean {
+  return true;
+}
+
 function sameTypeIds(key: Int32Array, ids: Int32Array, count: number): boolean {
   if (key.length !== count) return false;
   for (let i = 0; i < count; i++) if (key[i] !== ids[i]) return false;
@@ -96,12 +100,12 @@ export class EntityArchetypeMap<CT extends ComponentType<any> = ComponentType<an
     return from.removeEdges.get(token)!;
   }
 
-  public prune(): number {
+  public prune(isPrunable: (archetype: EntityArchetype<CT>) => boolean = everyArchetype): number {
     let pruneCount = 0;
     for (const arch of this._archetypes) {
       const holdsAnyEntity = arch.entityCountIncludingDisabled !== 0;
       const isSpawnArchetype = arch.componentTypes.length === 0;
-      if (holdsAnyEntity || isSpawnArchetype) continue;
+      if (holdsAnyEntity || isSpawnArchetype || !isPrunable(arch)) continue;
       this._archetypes.delete(arch);
       this.forgetTypeKey(arch);
       this.unlink(arch);

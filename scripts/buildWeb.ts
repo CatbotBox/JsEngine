@@ -1,12 +1,15 @@
-import {copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from "fs";
+import {copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from "fs";
 import {dirname, extname, join, relative, resolve} from "path";
 import {gzipSync} from "zlib";
 import {buildDemo3dManifest} from "../demo/3d/assets";
+import {DEMO_3D_PROJECT_DIRECTORY} from "../demo/3d/launch/demo3dLaunch";
 import type {Demo3dManifest, ManifestFile} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
 import type {RenderBackend} from "../src/hosts/web/worldWorkerProtocol";
 import {EDITOR_MESSAGE_TYPE} from "../src/editor/editorProtocol";
 import {DEV_RELOAD_DEFINE} from "../src/hosts/web/devReload";
+import {PROJECT_MANIFEST_FILE} from "../src/editor/project/projectManifest";
+import {isWebProjectDataFile} from "./webDistFiles";
 
 const ROOT = resolve(__dirname, "..");
 const WEB = join(ROOT, "src", "hosts", "web");
@@ -77,18 +80,22 @@ interface FirstLoad {
     readonly page: string;
     readonly files: readonly string[];
     readonly fetchesDemo3dAssets: boolean;
+    readonly projectDirectory?: string;
 }
 
 const FIRST_LOADS: readonly FirstLoad[] = [
     {page: "index.html", files: ["index.html", "coi-serviceworker.js"], fetchesDemo3dAssets: false},
-    {page: "2d.html", files: ["2d.html", "demo.css", "2d.js", "2d-cells.js", "world2d.worker.js"], fetchesDemo3dAssets: false},
-    {page: "2d.html?backend=pixels", files: ["2d.html", "demo.css", "2d.js", "2d-pixels.js", "world2d-pixels.worker.js"], fetchesDemo3dAssets: false},
-    {page: "3d.html", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-cells.js", "world3d.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
-    {page: "3d.html?backend=pixels", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-pixels.js", "world3d-pixels.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
-    {page: "3d.html?backend=gpu", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-gpu.js", "world3d-gpu.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true},
-    {page: "swarm.html?backend=cells", files: ["swarm.html", "demo.css", "swarm.js", "swarm-cells.js", "worldswarm.worker.js"], fetchesDemo3dAssets: false},
-    {page: "swarm.html", files:["swarm.html", "demo.css", "swarm.js", "swarm-pixels.js", "worldswarm-pixels.worker.js"], fetchesDemo3dAssets: false},
+    {page: "2d.html", files: ["2d.html", "demo.css", "2d.js", "2d-cells.js", "world2d.worker.js"], fetchesDemo3dAssets: false, projectDirectory: "demo/2d"},
+    {page: "2d.html?backend=pixels", files: ["2d.html", "demo.css", "2d.js", "2d-pixels.js", "world2d-pixels.worker.js"], fetchesDemo3dAssets: false, projectDirectory: "demo/2d"},
+    {page: "3d.html", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-cells.js", "world3d.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true, projectDirectory: "demo/3d"},
+    {page: "3d.html?backend=pixels", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-pixels.js", "world3d-pixels.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true, projectDirectory: "demo/3d"},
+    {page: "3d.html?backend=gpu", files: ["3d.html", "coi-serviceworker.js", "demo.css", "3d.js", "3d-gpu.js", "world3d-gpu.worker.js", MANIFEST_3D], fetchesDemo3dAssets: true, projectDirectory: "demo/3d"},
+    {page: "swarm.html?backend=cells", files: ["swarm.html", "demo.css", "swarm.js", "swarm-cells.js", "worldswarm.worker.js"], fetchesDemo3dAssets: false, projectDirectory: "demo/swarm"},
+    {page: "swarm.html", files:["swarm.html", "demo.css", "swarm.js", "swarm-pixels.js", "worldswarm-pixels.worker.js"], fetchesDemo3dAssets: false, projectDirectory: "demo/swarm"},
 ];
+
+const PROJECT_FOLDERS_LEFT_OUT: ReadonlySet<string> = new Set([".jsengine", "node_modules"]);
+const SITE_PATH_SEPARATOR = "/";
 
 const MIN_GZIP_SAVING_FRACTION = 0.1;
 const MIN_GZIP_BYTES = 64 * KB;
@@ -196,7 +203,7 @@ function transferBytes(file: ManifestFile): number {
 }
 
 function writeDemo3dAssets(): Demo3dManifest {
-    const built = buildDemo3dManifest(ROOT, nodePlatform());
+    const built = buildDemo3dManifest(ROOT, DEMO_3D_PROJECT_DIRECTORY, nodePlatform());
     const files = built.files.map((file): ManifestFile => {
         if (file.statOnly === true) return file;
         const target = join(OUT, file.path);
@@ -211,6 +218,29 @@ function writeDemo3dAssets(): Demo3dManifest {
     const manifest: Demo3dManifest = {models: built.models, files};
     writeFileSync(join(OUT, MANIFEST_3D), JSON.stringify(manifest, null, PROD ? undefined : DEV_MANIFEST_INDENT_SPACES));
     return manifest;
+}
+
+function projectDataFilesUnder(directory: string): string[] {
+    return readdirSync(directory, {withFileTypes: true}).flatMap(entry => {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) return PROJECT_FOLDERS_LEFT_OUT.has(entry.name) ? [] : projectDataFilesUnder(path);
+        return isWebProjectDataFile(entry.name) ? [path] : [];
+    });
+}
+
+function writeDemoProjectDataFiles(): void {
+    const projects = readdirSync(DEMO, {withFileTypes: true})
+        .filter(entry => entry.isDirectory() && existsSync(join(DEMO, entry.name, PROJECT_MANIFEST_FILE)))
+        .map(entry => join(DEMO, entry.name));
+    for (const file of projects.flatMap(projectDataFilesUnder)) {
+        const target = join(OUT, relative(ROOT, file));
+        mkdirSync(dirname(target), {recursive: true});
+        copyFileSync(file, target);
+    }
+}
+
+function isProjectDataSitePath(path: string): boolean {
+    return path.startsWith("demo/") && isWebProjectDataFile(path);
 }
 
 function overPagesLimits(): string[] {
@@ -239,14 +269,17 @@ function report(manifest: Demo3dManifest): void {
         const gzipped = /\.(js|css|html)$/.test(path) ? `  (gzip ${(transitGzippedSizeOf(path) / KB).toFixed(1)} KiB)` : "";
         console.log(`${path}  ${(sizeOf(path) / KB).toFixed(1)} KiB${gzipped}`);
     }
-    const assets = site.filter(path => path.startsWith("demo/"));
+    const projectData = site.filter(isProjectDataSitePath);
+    console.log(`project data: ${projectData.length} files, ${formatSize(projectData.reduce((sum, path) => sum + sizeOf(path), 0))} (${projectData.join(", ")})`);
+    const assets = site.filter(path => path.startsWith("demo/") && !isProjectDataSitePath(path));
     const compressed = manifest.files.filter(file => file.gzipParts !== undefined);
     console.log(`3D assets: ${assets.length} files, ${formatSize(assets.reduce((sum, path) => sum + sizeOf(path), 0))}`
         + (compressed.length === 0 ? "" : `; gzip-compressed: ${compressed.map(file => `${file.path} ${formatSize(file.size)} -> ${formatSize(transferBytes(file))} in ${file.gzipParts!.length} part(s)`).join(", ")}`));
 
     const eager = manifest.files.filter(file => file.lazy !== true);
     const eagerBytes = eager.reduce((sum, file) => sum + transferBytes(file), 0);
-    for (const {page, files, fetchesDemo3dAssets} of FIRST_LOADS) {
+    for (const {page, files: pageFiles, fetchesDemo3dAssets, projectDirectory} of FIRST_LOADS) {
+        const files = [...pageFiles, ...projectData.filter(path => projectDirectory !== undefined && path.startsWith(projectDirectory + SITE_PATH_SEPARATOR))];
         const assetBytes = fetchesDemo3dAssets ? eagerBytes : 0;
         const onDisk = files.reduce((sum, path) => sum + sizeOf(path), 0) + assetBytes;
         const gzipped = files.reduce((sum, path) => sum + transitGzippedSizeOf(path), 0) + assetBytes;
@@ -287,6 +320,7 @@ async function main(): Promise<void> {
     for (const [from, to] of COPIED_STATIC_FILES) copyFileSync(from, join(OUT, to));
     writeFileSync(join(OUT, GITHUB_PAGES_NO_JEKYLL), "");
     const manifest = writeDemo3dAssets();
+    writeDemoProjectDataFiles();
 
     const scripts = outputFiles(OUT).filter(path => path.endsWith(".js"));
     const found = scripts.flatMap(leaks);

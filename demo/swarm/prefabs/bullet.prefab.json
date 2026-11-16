@@ -1,0 +1,50 @@
+{
+  "format": "jsengine-scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": "bullet",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Sprite": {
+          "image": null,
+          "tint": "#ffffff",
+          "opacity": 1
+        },
+        "SpritePattern": {
+          "rows": [
+            "#"
+          ],
+          "palette": [
+            {
+              "char": "#",
+              "rgb": "#ffff80"
+            }
+          ]
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "Bullet": {
+          "remainingDamage": 3,
+          "radiusUnits": 0.5
+        },
+        "Lifetime": {
+          "durationMs": 900,
+          "remainingMs": 900
+        },
+        "Velocity": {
+          "xUnitsPerSecond": 0,
+          "yUnitsPerSecond": 0
+        }
+      }
+    }
+  ]
+}

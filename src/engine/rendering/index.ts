@@ -16,6 +16,7 @@ export {ScreenAnchor, anchorFractionX, anchorFractionY, anchoredStart} from './s
 export type {AnchorPosition} from './screenAnchor'
 export {SCREEN_UNIT_HEIGHT_PER_WIDTH, SPRITE_PIXELS_PER_SCREEN_UNIT_X, SPRITE_PIXELS_PER_SCREEN_UNIT_Y} from './screenUnits'
 export {TextSpriteBoundsSystem} from './textSpriteBoundsSystem'
+export {ShaderSource, WGSL_FILE_SUFFIX} from './shaderSource'
 export {
     ASCII_PIXEL_FONT,
     ASCII_PIXEL_FONT_HEIGHT_PX,

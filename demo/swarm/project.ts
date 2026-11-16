@@ -1,14 +1,12 @@
 import type {World} from "../../src/engine/core";
 import type {ComponentSchemaRegistry} from "../../src/engine/scene";
 import type {ProjectHost} from "../../src/editor/project/projectEntry";
-import {SWARM_COMPONENTS} from "./components";
 import {setupSwarm} from "./game";
-import {SWARM_RESOURCES} from "./resources";
+import {registerGeneratedSchemas} from "./schemas.generated";
 import {installPixelRenderingSwarm} from "./launch/pixelRendering";
 
 export function registerProjectSchemas(registry: ComponentSchemaRegistry): void {
-    registry.registerComponentClasses(SWARM_COMPONENTS);
-    registry.registerResourceClasses(SWARM_RESOURCES);
+    registerGeneratedSchemas(registry);
 }
 
 export function setupProject(world: World, host: ProjectHost): void {

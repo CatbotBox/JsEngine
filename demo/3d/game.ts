@@ -1,40 +1,24 @@
-import {
-    EntityCommandBufferSystem,
-    FrameLoopSettings,
-    System,
-    DebugWorld,
-    Resource,
-    UNCAPPED_RENDER_RATE
-} from "../../src/engine/core";
-import {Input, Key, PointerButton} from "../../src/engine/input";
-import type {InputEvent} from "../../src/engine/input";
-
-import {Camera, HudElement, RenderBounds, RenderingSystemGroup, ScreenAnchor, TextColor, TextSprite, WHITE_RGB} from "../../src/engine/rendering";
-
-import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../../src/engine/translation";
-
-import {
-    AmbientLight,
-    DirectionalLight,
-    FaceCulling,
-    FieldOfView,
-    Mesh,
-    PointLight,
-    RenderMesh
-} from "../../src/engine/rendering/3d";
-import {ReadonlyVec3, ReadonlyVec4, Vec, Vec3} from "../../src/engine/math/types/vec";
+import {EntityCommandBufferSystem, FrameLoopSettings, NULL_ENTITY, Resource, System} from "../../src/engine/core";
+import type {Component, ComponentCtor, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
+import {Input, resolveInputAction, resolveInputActions} from "../../src/engine/input";
+import type {InputAction, InputEvent, ResolvedInputActions} from "../../src/engine/input";
+import {RenderingSystemGroup, SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../src/engine/rendering";
+import {LocalPosition, LocalRotation} from "../../src/engine/translation";
+import {AmbientLight, DirectionalLight, FieldOfView, PointLight} from "../../src/engine/rendering/3d";
+import {Vec} from "../../src/engine/math/types/vec";
+import type {ReadonlyVec3, ReadonlyVec4, Vec3, Vec4} from "../../src/engine/math/types/vec";
 import {Quaternions} from "../../src/engine/math/quaternions";
-import {createHudLabel} from "../_shared/hud";
+import {DataAssets, dataAssetPathOf, PrefabSpawner} from "../../src/engine/scene";
+import {requireDebugWorld} from "../_shared/debugWorld";
+import {formatHudLines, formatHudText, HudLabel} from "../_shared/hud";
+import {Demo3dHud, EulerAngles, FlyCamera, ModelGrid} from "./components";
+import {ModelCatalog} from "./modelCatalog";
+import type {CatalogModel, Demo3dModelFiles, ModelDownload} from "./modelCatalog";
+import {GridModels} from "./modelGrid";
+import {Demo3dTuning} from "./tuning";
+import type {Demo3dHudTuning, RenderPacingPreset} from "./tuning";
 
-export interface DemoModel {
-    readonly name: string;
-    readonly path: string;
-}
-
-export interface DemoModelFiles {
-    ready(model: DemoModel): boolean;
-    fetch(model: DemoModel, onProgress: (loadedBytes: number, totalBytes: number) => void): Promise<void>;
-}
+export type {Demo3dModelFiles} from "./modelCatalog";
 
 export interface Demo3dRenderStats {
     readonly trianglesDrawn: number;
@@ -57,599 +41,581 @@ export interface Demo3dRenderControls {
 
 export interface Demo3dHost {
     readonly render: Demo3dRenderControls;
-    listModels(): readonly DemoModel[];
-    readonly modelFiles?: DemoModelFiles;
+    readonly modelFiles?: Demo3dModelFiles;
     quit(): void;
 }
 
+const DEMO_NAME = "The 3D demo";
+const BEFORE_SIMULATION_PRIORITY = -1;
+const QUARTER_TURN_RAD = Math.PI / 2;
+const SCREEN_UNIT_WIDTH_PER_HEIGHT = 1 / SCREEN_UNIT_HEIGHT_PER_WIDTH;
+const NO_ROLL_RAD = 0;
+const NO_TURN_RAD = 0;
+const LESS_DETAIL_SIGN = 1;
+const MORE_DETAIL_SIGN = -1;
+const FIRST_MODEL = 0;
+const FIRST_PRESET = 0;
+const NEXT_INDEX_STEP = 1;
+const MS_PER_SECOND = 1000;
 const BYTES_PER_MB = 1024 * 1024;
 const COMPACT_DIGITS = 3;
 const UNIT_STEP = 1000;
-const RATE_WINDOW_MS = 500;
-const CAPPED_RENDER_RATE = 60;
-const MS_PER_SECOND = 1000;
-const LOD_LEVELS_SHOWN = 5;
-const MOVE_STEP = 0.05;
-const MODEL_ROTATE_STEP_RAD = 0.1;
-const SUN_ROTATE_STEP_RAD = 0.05;
-const SCALE_STEP = 1.02;
-const FOV_KEY_STEP = 1.01;
-const FOV_WHEEL_STEP = 1.05;
-const MIN_FOV_DEG = 10, MAX_FOV_DEG = 120;
-const PITCH_MARGIN_RAD = 0.01;
-const PITCH_LIMIT_RAD = Math.PI / 2 - PITCH_MARGIN_RAD;
-const LOOK_RAD_PER_CELL = 0.03;
-const CELL_WIDTH_PER_HEIGHT = 0.5;
-const GRID_SPACING = 5;
-const BEFORE_SIMULATION_PRIORITY = -1;
-const QUIT_ACTION = "quit";
-const LESS_DETAIL_LOD_LEVELS = 1;
-const MORE_DETAIL_LOD_LEVELS = -1;
-const HUD_TEXT_COLOR = TextColor.GREEN;
-const HELP_TEXT_COLOR = TextColor.CYAN;
+const NO_TEXT = "";
+const PREVIEW_LINE_SEPARATOR = "\n";
+const COMPACT_UNITS: readonly (readonly [value: number, suffix: string])[] = [
+    [1e12, "T"],
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "k"],
+];
+const FORWARD: ReadonlyVec3 = Vec.alloc3(0, 0, 1);
+const RIGHT: ReadonlyVec3 = Vec.alloc3(1, 0, 0);
+const INCLUDING_DISABLED = {includeDisabled: true} as const;
+const ENTITIES_INCLUDING_DISABLED = {includeEntity: true, includeDisabled: true} as const;
 
-interface Command {
-    readonly action: string;
-    readonly keys: readonly Key[];
+const Demo3dAction = {
+    MoveForward: "moveForward",
+    MoveBackward: "moveBackward",
+    MoveRight: "moveRight",
+    MoveLeft: "moveLeft",
+    MoveDown: "moveDown",
+    MoveUp: "moveUp",
+    RotateModelsUp: "rotateModelsUp",
+    RotateModelsDown: "rotateModelsDown",
+    RotateModelsLeft: "rotateModelsLeft",
+    RotateModelsRight: "rotateModelsRight",
+    ShrinkModels: "shrinkModels",
+    GrowModels: "growModels",
+    ZoomIn: "zoomIn",
+    ZoomOut: "zoomOut",
+    RotateSunUp: "rotateSunUp",
+    RotateSunDown: "rotateSunDown",
+    RotateSunLeft: "rotateSunLeft",
+    RotateSunRight: "rotateSunRight",
+    SpawnModel: "spawnModel",
+    DespawnModel: "despawnModel",
+    NextModel: "nextModel",
+    ReloadModels: "reloadModels",
+    Look: "look",
+    ToggleMeshPass: "toggleMeshPass",
+    ToggleHud: "toggleHud",
+    LogSystemOrder: "logSystemOrder",
+    ToggleTextures: "toggleTextures",
+    ToggleTextureFiltering: "toggleTextureFiltering",
+    CycleSurfaceShader: "cycleSurfaceShader",
+    ToggleHalfBlock: "toggleHalfBlock",
+    ToggleLod: "toggleLod",
+    LessDetail: "lessDetail",
+    MoreDetail: "moreDetail",
+    CycleRenderPacing: "cycleRenderPacing",
+    ToggleLights: "toggleLights",
+    ToggleLamp: "toggleLamp",
+    Quit: "quit",
+} as const;
+
+type Demo3dActions = ResolvedInputActions<typeof Demo3dAction>;
+
+interface ActionHandler {
+    readonly action: InputAction;
     readonly run: () => void;
 }
 
-interface RenderPacingPreset {
-    readonly label: string;
-    readonly renderRate: number;
-    readonly matchDisplay: boolean;
+type ScaleCombiner = (out: Vec3, scale: ReadonlyVec3, factor: ReadonlyVec3) => Vec3;
+
+class Demo3dSession extends Resource {
+    public lightsOn = true;
+    public lampOn = true;
+    public renderPacingIndex = FIRST_PRESET;
+    public selectionPrimed = false;
+
+    public constructor(public readonly host: Demo3dHost, public readonly catalog: ModelCatalog, public readonly models: GridModels) {
+        super();
+    }
 }
 
-const RENDER_PACING_PRESETS: readonly RenderPacingPreset[] = [
-    {label: CAPPED_RENDER_RATE + " fps", renderRate: CAPPED_RENDER_RATE, matchDisplay: false},
-    {label: "uncapped", renderRate: UNCAPPED_RENDER_RATE, matchDisplay: false},
-    {label: "display", renderRate: UNCAPPED_RENDER_RATE, matchDisplay: true},
-];
+function commandBufferOf(world: World): EntityCommandBuffer {
+    return world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
+}
 
-const formatCompact = (num: number): string => {
+function sessionOf(world: World): Demo3dSession {
+    return world.resources.get(Demo3dSession);
+}
+
+function cameraRotationOf(camera: Readonly<FlyCamera>, scratch: Vec3): Vec4 {
+    return Quaternions.eulerToQuat(Vec.set3(scratch, camera.pitchRad, camera.yawRad, NO_ROLL_RAD));
+}
+
+function rotateByQuat(q: ReadonlyVec4, v: ReadonlyVec3, out: Vec3): Vec3 {
+    const x = Vec.x(q), y = Vec.y(q), z = Vec.z(q), w = Vec.w(q);
+    const vx = Vec.x(v), vy = Vec.y(v), vz = Vec.z(v);
+    const tx = 2 * (y * vz - z * vy);
+    const ty = 2 * (z * vx - x * vz);
+    const tz = 2 * (x * vy - y * vx);
+    return Vec.set3(out,
+        vx + w * tx + (y * tz - z * ty),
+        vy + w * ty + (z * tx - x * tz),
+        vz + w * tz + (x * ty - y * tx),
+    );
+}
+
+function formatCompact(num: number): string {
     const abs = Math.abs(num);
-    const sign = num < 0 ? '-' : '';
-    const units: [number, string][] = [
-        [1e12, 'T'],
-        [1e9, 'B'],
-        [1e6, 'M'],
-        [1e3, 'k'],
-    ];
-
-    for (let i = 0; i < units.length; i++) {
-        const [value, suffix] = units[i];
-        if (abs >= value) {
-            let scaled = Number((abs / value).toPrecision(COMPACT_DIGITS));
-
-            if (scaled >= UNIT_STEP && i > 0) {
-                const [nextValue, nextSuffix] = units[i - 1];
-                scaled = Number((abs / nextValue).toPrecision(COMPACT_DIGITS));
-                return `${sign}${scaled}${nextSuffix}`;
-            }
-            return `${sign}${scaled}${suffix}`;
+    const sign = num < 0 ? "-" : "";
+    for (let i = 0; i < COMPACT_UNITS.length; i++) {
+        const [value, suffix] = COMPACT_UNITS[i];
+        if (abs < value) continue;
+        const scaled = Number((abs / value).toPrecision(COMPACT_DIGITS));
+        if (scaled >= UNIT_STEP && i > 0) {
+            const [nextValue, nextSuffix] = COMPACT_UNITS[i - 1];
+            return `${sign}${Number((abs / nextValue).toPrecision(COMPACT_DIGITS))}${nextSuffix}`;
         }
+        return `${sign}${scaled}${suffix}`;
     }
     return `${sign}${abs}`;
 }
 
-class SceneStats extends Resource {
-    public sourceTriangles = 0;
+function setEnabledStateOf<IncSpec extends readonly ComponentCtor<Component>[]>(query: EntityQuery<IncSpec>, enabled: boolean, buffer: EntityCommandBuffer): void {
+    query.stream({}, ENTITIES_INCLUDING_DISABLED).consume(({entity}) => buffer.setEnabledState(entity, enabled));
 }
 
-export function setupDemo3d(world: DebugWorld, host: Demo3dHost): void {
-    const sceneStats = world.resources.getOrCreate(SceneStats);
-    const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
-    const platform = world.platform;
+function renderPacingOf(tuning: Demo3dTuning, session: Demo3dSession): RenderPacingPreset | undefined {
+    return tuning.renderPacing[session.renderPacingIndex];
+}
 
+class Demo3dControlsSystem extends System {
+    private _flyCameras = this.createEntityQuery([FlyCamera, LocalPosition, LocalRotation]);
+    private _zoomCameras = this.createEntityQuery([FlyCamera, FieldOfView]);
+    private _suns = this.createEntityQuery([DirectionalLight, EulerAngles, LocalRotation]);
+    private _directionalLights = this.createEntityQuery([DirectionalLight]);
+    private _ambientLights = this.createEntityQuery([AmbientLight]);
+    private _pointLights = this.createEntityQuery([PointLight]);
+    private _grids = this.createEntityQuery([ModelGrid]);
+    private _frameLoops = this.createEntityQuery([FrameLoopSettings]);
+    private _actions!: Demo3dActions;
+    private _keyDownHandlers: readonly ActionHandler[] = [];
+    private _keyPressHandlers: readonly ActionHandler[] = [];
+    private _commandsBeforeSupersample: readonly ActionHandler[] = [];
+    private _commandsAfterSupersample: readonly ActionHandler[] = [];
+    private readonly _supersampleActions = new Map<string, InputAction>();
+    private readonly _eulerScratch: Vec3 = Vec.alloc3();
+    private readonly _directionScratch: Vec3 = Vec.alloc3();
+    private _scaleFactor: Vec3 = Vec.alloc3();
+    private _scaleStep = Number.NaN;
+    private _lastPointerX = 0;
+    private _lastPointerY = 0;
+    private _looking = false;
 
-    const cameraEntity = buffer.createEntity("cameraEntity", [new Camera(), new LocalToWorld(), new RenderBounds()]);
-    const camPos = buffer.addTrackedComponent(cameraEntity, new LocalPosition(0, 0, -10));
-    const camRot = buffer.addTrackedComponent(cameraEntity, new LocalRotation());
-    const fov = buffer.addTrackedComponent(cameraEntity, new FieldOfView());
-
-    const sunEntity = buffer.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalToWorld(), new LocalPosition()]);
-    const sunRotation = buffer.addTrackedComponent(sunEntity, new LocalRotation());
-    const sunEuler: Vec3 = Vec.alloc3(0.7, -0.6, 0);
-
-    const lampEntity = buffer.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalToWorld(), new LocalPosition(3, 2, -4)]);
-
-    const ambientEntity = buffer.createEntity("ambient", [new AmbientLight(WHITE_RGB, 0.12)]);
-
-    const frameLoopSettings = buffer.addTrackedComponent(buffer.createEntity("frameLoopSettings"), new FrameLoopSettings());
-    let renderPacingIndex = 0;
-    const renderPacing = () => RENDER_PACING_PRESETS[renderPacingIndex];
-    const cycleRenderPacing = () => {
-        renderPacingIndex = (renderPacingIndex + 1) % RENDER_PACING_PRESETS.length;
-        frameLoopSettings.renderRate = renderPacing().renderRate;
-        frameLoopSettings.matchDisplay = renderPacing().matchDisplay;
-    };
-    const renderPacingLabel = (renderRateLimit: number): string => {
-        const limited = Number.isFinite(renderRateLimit);
-        return limited ? `${renderPacing().label} (cpu limit ${renderRateLimit})` : renderPacing().label;
-    };
-
-    let lightsEnabled = true;
-    let lampEnabled = true;
-
-    interface LoadedModel {
-        mesh: Mesh;
-        color: number;
-        faceCulling: FaceCulling;
+    override priority(): number {
+        return BEFORE_SIMULATION_PRIORITY;
     }
 
-    interface ModelSlot {
-        model: DemoModel;
-        index: number;
-        loaded?: LoadedModel;
+    protected onCreate(): void {
+        const actions = resolveInputActions(this.world, Demo3dAction);
+        this._actions = actions;
+        this._keyDownHandlers = [
+            {action: actions.MoveForward, run: () => this.moveCamera(FORWARD, this.tuning().camera.moveStepUnits)},
+            {action: actions.MoveBackward, run: () => this.moveCamera(FORWARD, -this.tuning().camera.moveStepUnits)},
+            {action: actions.MoveRight, run: () => this.moveCamera(RIGHT, this.tuning().camera.moveStepUnits)},
+            {action: actions.MoveLeft, run: () => this.moveCamera(RIGHT, -this.tuning().camera.moveStepUnits)},
+            {action: actions.MoveDown, run: () => this.raiseCamera(-this.tuning().camera.moveStepUnits)},
+            {action: actions.MoveUp, run: () => this.raiseCamera(this.tuning().camera.moveStepUnits)},
+            {action: actions.RotateModelsUp, run: () => this.rotateModels(this.tuning().modelControls.rotateStepRad, NO_TURN_RAD)},
+            {action: actions.RotateModelsDown, run: () => this.rotateModels(-this.tuning().modelControls.rotateStepRad, NO_TURN_RAD)},
+            {action: actions.RotateModelsLeft, run: () => this.rotateModels(NO_TURN_RAD, -this.tuning().modelControls.rotateStepRad)},
+            {action: actions.RotateModelsRight, run: () => this.rotateModels(NO_TURN_RAD, this.tuning().modelControls.rotateStepRad)},
+            {action: actions.ShrinkModels, run: () => this.scaleModels(Vec.divInto)},
+            {action: actions.GrowModels, run: () => this.scaleModels(Vec.mulInto)},
+            {action: actions.ZoomIn, run: () => this.zoom(fieldOfView => fieldOfView.degrees /= this.tuning().camera.fovKeyStep)},
+            {action: actions.ZoomOut, run: () => this.zoom(fieldOfView => fieldOfView.degrees *= this.tuning().camera.fovKeyStep)},
+            {action: actions.RotateSunUp, run: () => this.rotateSun(this.tuning().sunRotateStepRad, NO_TURN_RAD)},
+            {action: actions.RotateSunDown, run: () => this.rotateSun(-this.tuning().sunRotateStepRad, NO_TURN_RAD)},
+            {action: actions.RotateSunLeft, run: () => this.rotateSun(NO_TURN_RAD, -this.tuning().sunRotateStepRad)},
+            {action: actions.RotateSunRight, run: () => this.rotateSun(NO_TURN_RAD, this.tuning().sunRotateStepRad)},
+        ];
+        this._keyPressHandlers = [
+            {action: actions.SpawnModel, run: () => this.spawnSelected()},
+            {action: actions.DespawnModel, run: () => this.despawnLast()},
+            {action: actions.NextModel, run: () => this.selectNextModel()},
+            {action: actions.ReloadModels, run: () => this.reloadModels()},
+        ];
+        this._commandsBeforeSupersample = [
+            {action: actions.ToggleMeshPass, run: () => this.render().toggleMeshPass()},
+            {action: actions.ToggleHud, run: () => this.render().toggleHud()},
+            {action: actions.LogSystemOrder, run: () => requireDebugWorld(this.world, DEMO_NAME).logSystemUpdateOrder()},
+            {action: actions.ToggleTextures, run: () => this.render().toggleTextures()},
+            {action: actions.ToggleTextureFiltering, run: () => this.render().toggleTextureFiltering?.()},
+            {action: actions.CycleSurfaceShader, run: () => this.render().cycleSurfaceShader?.()},
+            {action: actions.ToggleHalfBlock, run: () => this.render().toggleHalfBlockCells?.()},
+            {action: actions.ToggleLod, run: () => this.render().toggleLod()},
+            {action: actions.LessDetail, run: () => this.render().changeLodBias(LESS_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
+            {action: actions.MoreDetail, run: () => this.render().changeLodBias(MORE_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
+        ];
+        this._commandsAfterSupersample = [
+            {action: actions.CycleRenderPacing, run: () => this.cycleRenderPacing()},
+            {action: actions.ToggleLights, run: () => this.toggleLights()},
+            {action: actions.ToggleLamp, run: () => this.toggleLamp()},
+        ];
+        for (const preset of this.tuning().supersample) this.supersampleAction(preset.action);
     }
 
-    interface ModelDownload {
-        loadedBytes: number;
-        totalBytes: number;
-        queuedSpawns: number;
-        failure?: string;
-    }
-
-    let models: ModelSlot[] = [];
-    const downloads = new Map<string, ModelDownload>();
-    let previewText = "";
-
-    let selectedMeshIndex = 0;
-
-    interface SpawnedModel {
-        entity: ReturnType<typeof buffer.createEntity>;
-        position: LocalPosition;
-        rotation: LocalRotation;
-        scale: LocalScale;
-    }
-
-    const spawned: SpawnedModel[] = [];
-
-    const groupEuler: Vec3 = Vec.alloc3(0, 0, 0);
-    let groupScale: Vec3 = Vec.alloc3(1, 1, 1);
-
-    let camYaw = 0;
-    let camPitch = 0;
-    const camEulerScratch: Vec3 = Vec.alloc3();
-    let camQuat = Quaternions.eulerToQuat(Vec.alloc3(0, 0, 0));
-
-    const previewAnchor = new ScreenAnchor();
-    previewAnchor.anchorPosition = 'bottom-right';
-    const previewEntity = buffer.createEntity("spawnPreview", [new HudElement(), previewAnchor]);
-    const previewImage = buffer.addTrackedComponent(previewEntity, new TextSprite());
-    previewImage.transparentChar = undefined;
-    previewImage.foreground = HELP_TEXT_COLOR;
-
-    const controlsAnchor = new ScreenAnchor();
-    controlsAnchor.anchorPosition = 'top-left';
-    const controlsEntity = buffer.createEntity("controls", [new HudElement(), controlsAnchor]);
-    const controlsImage = buffer.addTrackedComponent(controlsEntity, new TextSprite());
-    controlsImage.transparentChar = undefined;
-    controlsImage.foreground = HELP_TEXT_COLOR;
-    controlsImage.image = [
-        'camera  wasd move  q/e down/up  drag look  wheel z/x fov  esc quit',
-        'models  space spawn  bksp despawn  n next  r reload  arrows rotate  [ ] scale',
-        'render  1-4 aa  b halfblock  t textures  m filter  f lod  - = detail  o shader  v 3d  tab hud  g order  y pacing',
-        'lights  h all  p lamp  i/k j/l sun',
-    ];
-
-    const namedColors: Record<string, number> = {
-        "bugatti": 0x4FA3F7,
-        "cube": 0xF7F14F,
-        "blender_monkey": 0xF7A44F,
-        "indoor plant_02": 0x66C96A,
-    };
-    const palette = [0xF7F14F, 0xE05DD8, 0x5DE0C8, 0xE0645D];
-    const doubleSidedModels = new Set(["bugatti"]);
-
-    const loadModel = (model: DemoModel, index: number): LoadedModel => {
-        const mesh = Mesh.fromFile(model.path, {files: platform.files, inflate: platform.inflate});
-        const textured = mesh.materials.some(material => material.diffuseTexture !== undefined);
-        return {
-            mesh,
-            color: textured ? WHITE_RGB : namedColors[model.name] ?? palette[index % palette.length],
-            faceCulling: doubleSidedModels.has(model.name) ? FaceCulling.None : FaceCulling.BackFaces,
-        };
-    }
-
-    const isReady = (model: DemoModel) => host.modelFiles?.ready(model) ?? true;
-
-    const fetchModels = () => {
-        models = host.listModels().map((model, index) => ({
-            model,
-            index,
-            loaded: isReady(model) ? loadModel(model, index) : undefined,
-        }));
-        if (selectedMeshIndex >= models.length) selectedMeshIndex = 0;
-        if (models.length > 0) downloadUnlessLoaded(models[selectedMeshIndex]);
-        updatePreview();
-    }
-
-    const downloadUnlessLoaded = (slot: ModelSlot): ModelDownload | undefined => {
-        const modelFiles = host.modelFiles;
-        if (slot.loaded !== undefined || modelFiles === undefined) return undefined;
-        const path = slot.model.path;
-        const running = downloads.get(path);
-        if (running !== undefined && running.failure === undefined) return running;
-        const started: ModelDownload = {loadedBytes: 0, totalBytes: 0, queuedSpawns: 0};
-        downloads.set(path, started);
-        modelFiles.fetch(slot.model, (loadedBytes, totalBytes) => {
-            started.loadedBytes = loadedBytes;
-            started.totalBytes = totalBytes;
-            updatePreview();
-        }).then(() => {
-            const current = models.find(candidate => candidate.model.path === path);
-            if (current !== undefined) {
-                current.loaded ??= loadModel(current.model, current.index);
-                for (let i = 0; i < started.queuedSpawns; i++) spawn(current.loaded);
-            }
-            downloads.delete(path);
-            updatePreview();
-        }).catch(error => {
-            started.failure = error instanceof Error ? error.message : String(error);
-            console.error(`Could not load ${slot.model.name}:`, error);
-            updatePreview();
-        });
-        return started;
-    }
-
-    const megabytes = (bytes: number) => (bytes / BYTES_PER_MB).toFixed(1);
-
-    const downloadLine = (name: string, progress: ModelDownload) => {
-        if (progress.failure !== undefined) return `Could not load ${name}: ${progress.failure}`;
-        const queued = progress.queuedSpawns === 0 ? '' : `, ${progress.queuedSpawns} to spawn`;
-        return `Loading ${name}... ${megabytes(progress.loadedBytes)} / ${megabytes(progress.totalBytes)} MB${queued}`;
-    }
-
-    const updatePreview = () => {
-        const lines = [...downloads].map(([path, progress]) =>
-            downloadLine(models.find(slot => slot.model.path === path)?.model.name ?? path, progress) + ' ');
-        if (models.length == 0) {
-            lines.push('no meshes found, add an obj file in the same folder as this file and press r'
-                + '  [spawned: ' + spawned.length + '] ');
-        } else {
-            lines.push('Next: ' + models[selectedMeshIndex].model.name
-                + '  [spawned: ' + spawned.length + '] ');
-        }
-        const text = lines.join('\n');
-        if (text === previewText) return;
-        previewText = text;
-        previewImage.image = lines;
-    }
-
-    const relayoutInGrid = () => {
-        const n = spawned.length;
-        if (n === 0) return;
-
-        const sx = Math.ceil(Math.cbrt(n));
-        const sy = Math.ceil(Math.sqrt(n / sx));
-        const sz = Math.ceil(n / (sx * sy));
-
-        spawned.forEach((s, i) => {
-            const x = i % sx;
-            const y = Math.floor(i / sx) % sy;
-            const z = Math.floor(i / (sx * sy));
-
-            s.position.x = (x - (sx - 1) / 2) * GRID_SPACING;
-            s.position.y = (y - (sy - 1) / 2) * GRID_SPACING;
-            s.position.z = (z - (sz - 1) / 2) * GRID_SPACING;
-        });
-    }
-
-    const spawnSelected = () => {
-        const slot = models[selectedMeshIndex];
-        if (slot === undefined) return;
-        if (slot.loaded !== undefined) {
-            spawn(slot.loaded);
+    onUpdate(): void {
+        const input = this.world.resources.get(Input);
+        const session = sessionOf(this.world);
+        session.models.sync();
+        this.primeSelection(session);
+        if (input.actionPressed(this._actions.Quit)) {
+            this.quit(session);
             return;
         }
-        const pending = downloadUnlessLoaded(slot);
-        if (pending !== undefined) pending.queuedSpawns++;
-        updatePreview();
-    }
-
-    const spawn = (model: LoadedModel) => {
-        const renderMesh = new RenderMesh(model.mesh, model.color);
-        renderMesh.faceCulling = model.faceCulling;
-        const entity = buffer.createEntity(undefined, [renderMesh, new LocalToWorld()]);
-        const position = buffer.addTrackedComponent(entity, new LocalPosition());
-        const rotation = buffer.addTrackedComponent(entity, new LocalRotation());
-        const scale = buffer.addTrackedComponent(entity, new LocalScale());
-
-        rotation.xyzw = Quaternions.eulerToQuat(groupEuler);
-        scale.xyz = groupScale;
-
-        spawned.push({entity, position, rotation, scale});
-        sceneStats.sourceTriangles += model.mesh.triangleCount;
-        relayoutInGrid();
-        updatePreview();
-    }
-
-    const despawnLast = () => {
-        const last = spawned.pop();
-        if (!last) return;
-        buffer.destroyEntity(last.entity);
-        const renderMesh = world.entityManager.getComponent(last.entity, RenderMesh) as RenderMesh;
-        sceneStats.sourceTriangles -= renderMesh.mesh!.triangleCount;
-        relayoutInGrid();
-        updatePreview();
-    }
-
-
-    const applyGroupRotation = () => {
-        const quat = Quaternions.eulerToQuat(groupEuler);
-        for (const s of spawned) {
-            s.rotation.xyzw = quat;
+        for (const event of input.events) {
+            if (event.type !== "keyDown") {
+                this.handlePointer(input, event);
+                continue;
+            }
+            for (const handler of this._keyDownHandlers) if (input.isActionEvent(event, handler.action)) handler.run();
+            if (event.repeat) continue;
+            for (const handler of this._keyPressHandlers) if (input.isActionEvent(event, handler.action)) handler.run();
         }
-    }
-
-    const applySunRotation = () => {
-        sunRotation.xyzw = Quaternions.eulerToQuat(sunEuler);
-    }
-    applySunRotation();
-
-    const applyLightEnabledState = () => {
-        buffer.setEnabledState(sunEntity, lightsEnabled);
-        buffer.setEnabledState(ambientEntity, lightsEnabled);
-        buffer.setEnabledState(lampEntity, lightsEnabled && lampEnabled);
-    }
-
-    const scaleFactor: Vec3 = Vec.alloc3(SCALE_STEP, SCALE_STEP, SCALE_STEP);
-
-    const applyGroupScale = () => {
-        for (const s of spawned) {
-            s.scale.xyz = groupScale;
+        for (const command of this._commandsBeforeSupersample) if (input.actionPressed(command.action)) command.run();
+        for (const preset of this.tuning().supersample) {
+            if (input.actionPressed(this.supersampleAction(preset.action))) this.render().setSupersample(preset.x, preset.y);
         }
+        for (const command of this._commandsAfterSupersample) if (input.actionPressed(command.action)) command.run();
     }
 
-    const applyCameraLook = () => {
-        camPitch = Math.max(-PITCH_LIMIT_RAD, Math.min(PITCH_LIMIT_RAD, camPitch));
-        camQuat = Quaternions.eulerToQuat(Vec.set3(camEulerScratch, camPitch, camYaw, 0));
-        camRot.xyzw = camQuat;
+    private tuning(): Demo3dTuning {
+        return this.world.resources.get(Demo3dTuning);
     }
 
-    const DIR_FWD: ReadonlyVec3 = Vec.alloc3(0, 0, 1);
-    const DIR_RIGHT: ReadonlyVec3 = Vec.alloc3(1, 0, 0);
-    const rotateScratch: Vec3 = Vec.alloc3();
-
-    const rotateByQuat = (q: ReadonlyVec4, v: ReadonlyVec3): Vec3 => {
-        const x = Vec.x(q), y = Vec.y(q), z = Vec.z(q), w = Vec.w(q);
-        const vx = Vec.x(v), vy = Vec.y(v), vz = Vec.z(v);
-        const tx = 2 * (y * vz - z * vy);
-        const ty = 2 * (z * vx - x * vz);
-        const tz = 2 * (x * vy - y * vx);
-        return Vec.set3(rotateScratch,
-            vx + w * tx + (y * tz - z * ty),
-            vy + w * ty + (z * tx - x * tz),
-            vz + w * tz + (x * ty - y * tx),
-        );
+    private render(): Demo3dRenderControls {
+        return sessionOf(this.world).host.render;
     }
 
-    const moveCameraLocal = (localDir: ReadonlyVec3, amount: number) => {
-        const d = rotateByQuat(camQuat, localDir);
-        const dx = Vec.x(d), dy = Vec.y(d), dz = Vec.z(d);
-        camPos.x += dx * amount;
-        camPos.y += dy * amount;
-        camPos.z += dz * amount;
+    private grid(): ModelGrid | undefined {
+        return this._grids.tryGetSingleton({grid: ModelGrid}, INCLUDING_DISABLED)?.grid;
     }
 
-    const input = world.resources.getOrCreate(Input);
-    const render = host.render;
+    private supersampleAction(name: string): InputAction {
+        let action = this._supersampleActions.get(name);
+        if (action === undefined) {
+            action = resolveInputAction(this.world, name);
+            this._supersampleActions.set(name, action);
+        }
+        return action;
+    }
 
-    const quit = () => {
-        const renderer = world.tryGetSystem(RenderingSystemGroup);
+    private quit(session: Demo3dSession): void {
+        const renderer = this.world.tryGetSystem(RenderingSystemGroup);
         if (renderer) renderer.enabled = false;
-        world.stop();
-        host.quit();
+        this.world.stop();
+        session.host.quit();
     }
 
-    const keyDownHandlers = new Map<Key, () => void>([
-        [Key.W, () => moveCameraLocal(DIR_FWD, MOVE_STEP)],
-        [Key.S, () => moveCameraLocal(DIR_FWD, -MOVE_STEP)],
-        [Key.D, () => moveCameraLocal(DIR_RIGHT, MOVE_STEP)],
-        [Key.A, () => moveCameraLocal(DIR_RIGHT, -MOVE_STEP)],
-        [Key.Q, () => camPos.y -= MOVE_STEP],
-        [Key.E, () => camPos.y += MOVE_STEP],
-        [Key.Up, () => {
-            Vec.setX(groupEuler, Vec.x(groupEuler) + MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        }],
-        [Key.Down, () => {
-            Vec.setX(groupEuler, Vec.x(groupEuler) - MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        }],
-        [Key.Left, () => {
-            Vec.setY(groupEuler, Vec.y(groupEuler) - MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        }],
-        [Key.Right, () => {
-            Vec.setY(groupEuler, Vec.y(groupEuler) + MODEL_ROTATE_STEP_RAD);
-            applyGroupRotation();
-        }],
-        [Key.BracketLeft, () => {
-            Vec.divInto(groupScale, groupScale, scaleFactor);
-            applyGroupScale();
-        }],
-        [Key.BracketRight, () => {
-            Vec.mulInto(groupScale, groupScale, scaleFactor);
-            applyGroupScale();
-        }],
-        [Key.Z, () => fov.degrees /= FOV_KEY_STEP],
-        [Key.X, () => fov.degrees *= FOV_KEY_STEP],
-        [Key.I, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) + SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        }],
-        [Key.K, () => {
-            Vec.setX(sunEuler, Vec.x(sunEuler) - SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        }],
-        [Key.J, () => {
-            Vec.setY(sunEuler, Vec.y(sunEuler) - SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        }],
-        [Key.L, () => {
-            Vec.setY(sunEuler, Vec.y(sunEuler) + SUN_ROTATE_STEP_RAD);
-            applySunRotation();
-        }],
-    ]);
+    private moveCamera(localDirection: ReadonlyVec3, amount: number): void {
+        this._flyCameras.stream({read: {camera: FlyCamera}, write: {position: LocalPosition}}, INCLUDING_DISABLED).consume(({camera, position}) => {
+            const direction = rotateByQuat(cameraRotationOf(camera, this._eulerScratch), localDirection, this._directionScratch);
+            const dx = Vec.x(direction), dy = Vec.y(direction), dz = Vec.z(direction);
+            position.x += dx * amount;
+            position.y += dy * amount;
+            position.z += dz * amount;
+        });
+    }
 
-    const keyPressHandlers = new Map<Key, () => void>([
-        [Key.Space, () => spawnSelected()],
-        [Key.Backspace, () => despawnLast()],
-        [Key.N, () => {
-            if (models.length === 0) return;
-            selectedMeshIndex = (selectedMeshIndex + 1) % models.length;
-            downloadUnlessLoaded(models[selectedMeshIndex]);
-            updatePreview();
-        }],
-        [Key.R, () => fetchModels()],
-    ]);
+    private raiseCamera(amount: number): void {
+        this._flyCameras.stream({write: {position: LocalPosition}}, INCLUDING_DISABLED).consume(({position}) => {
+            position.y += amount;
+        });
+    }
 
-    const supersamplePresets: [Key, number, number][] = [[Key.Num1, 1, 1], [Key.Num2, 2, 2], [Key.Num3, 2, 4], [Key.Num4, 4, 4]];
-    const commands: Command[] = [
-        {action: "toggleMeshPass", keys: [Key.V], run: () => render.toggleMeshPass()},
-        {action: "toggleHud", keys: [Key.Tab], run: () => render.toggleHud()},
-        {action: "logSystemOrder", keys: [Key.G], run: () => world.logSystemUpdateOrder()},
-        {action: "toggleTextures", keys: [Key.T], run: () => render.toggleTextures()},
-        {action: "toggleTextureFiltering", keys: [Key.M], run: () => render.toggleTextureFiltering?.()},
-        {action: "cycleSurfaceShader", keys: [Key.O], run: () => render.cycleSurfaceShader?.()},
-        {action: "toggleHalfBlock", keys: [Key.B], run: () => render.toggleHalfBlockCells?.()},
-        {action: "toggleLod", keys: [Key.F], run: () => render.toggleLod()},
-        {action: "lessDetail", keys: [Key.Minus], run: () => render.changeLodBias(LESS_DETAIL_LOD_LEVELS)},
-        {action: "moreDetail", keys: [Key.Equal], run: () => render.changeLodBias(MORE_DETAIL_LOD_LEVELS)},
-        ...supersamplePresets.map(([key, x, y]): Command => ({
-            action: `supersample${x}x${y}`,
-            keys: [key],
-            run: () => render.setSupersample(x, y),
-        })),
-        {action: "cycleRenderPacing", keys: [Key.Y], run: () => cycleRenderPacing()},
-        {action: "toggleLights", keys: [Key.H], run: () => {
-            lightsEnabled = !lightsEnabled;
-            applyLightEnabledState();
-        }},
-        {action: "toggleLamp", keys: [Key.P], run: () => {
-            lampEnabled = !lampEnabled;
-            applyLightEnabledState();
-        }},
-    ];
-    input.bindAction(QUIT_ACTION, [Key.Escape]);
-    for (const command of commands) input.bindAction(command.action, command.keys);
+    private look(yawRad: number, pitchRad: number): void {
+        const pitchLimit = QUARTER_TURN_RAD - this.tuning().camera.pitchMarginRad;
+        this._flyCameras.stream({write: {camera: FlyCamera, rotation: LocalRotation}}, INCLUDING_DISABLED).consume(({camera, rotation}) => {
+            camera.yawRad += yawRad;
+            camera.pitchRad += pitchRad;
+            camera.pitchRad = Math.max(-pitchLimit, Math.min(pitchLimit, camera.pitchRad));
+            rotation.xyzw = cameraRotationOf(camera, this._eulerScratch);
+        });
+    }
 
-    let lastPointerX = 0;
-    let lastPointerY = 0;
-    let looking = false;
+    private zoom(change: (fieldOfView: FieldOfView) => void): void {
+        this._zoomCameras.stream({write: {fieldOfView: FieldOfView}}, INCLUDING_DISABLED).consume(({fieldOfView}) => {
+            change(fieldOfView);
+        });
+    }
 
-    const handlePointer = (event: InputEvent) => {
+    private rotateSun(pitchRad: number, yawRad: number): void {
+        this._suns.stream({write: {euler: EulerAngles, rotation: LocalRotation}}, INCLUDING_DISABLED).consume(({euler, rotation}) => {
+            if (pitchRad !== NO_TURN_RAD) Vec.setX(euler.radians, Vec.x(euler.radians) + pitchRad);
+            if (yawRad !== NO_TURN_RAD) Vec.setY(euler.radians, Vec.y(euler.radians) + yawRad);
+            rotation.xyzw = Quaternions.eulerToQuat(euler.radians);
+        });
+    }
+
+    private rotateModels(pitchRad: number, yawRad: number): void {
+        const grid = this.grid();
+        if (grid === undefined) return;
+        if (pitchRad !== NO_TURN_RAD) Vec.setX(grid.rotationRad, Vec.x(grid.rotationRad) + pitchRad);
+        if (yawRad !== NO_TURN_RAD) Vec.setY(grid.rotationRad, Vec.y(grid.rotationRad) + yawRad);
+        sessionOf(this.world).models.rotateAll(Quaternions.eulerToQuat(grid.rotationRad));
+    }
+
+    private scaleModels(applyFactor: ScaleCombiner): void {
+        const grid = this.grid();
+        if (grid === undefined) return;
+        applyFactor(grid.scale, grid.scale, this.scaleFactor(this.tuning().modelControls.scaleStep));
+        sessionOf(this.world).models.scaleAll(grid.scale);
+    }
+
+    private scaleFactor(step: number): ReadonlyVec3 {
+        if (step !== this._scaleStep) {
+            this._scaleStep = step;
+            this._scaleFactor = Vec.alloc3(step, step, step);
+        }
+        return this._scaleFactor;
+    }
+
+    private primeSelection(session: Demo3dSession): void {
+        if (session.selectionPrimed) return;
+        const grid = this.grid();
+        if (grid === undefined) return;
+        session.selectionPrimed = true;
+        this.clampSelection(grid, session);
+        this.downloadSelected(grid, session);
+    }
+
+    private clampSelection(grid: ModelGrid, session: Demo3dSession): void {
+        if (grid.selectedModel >= session.catalog.models.length) grid.selectedModel = FIRST_MODEL;
+    }
+
+    private downloadSelected(grid: ModelGrid, session: Demo3dSession): void {
+        const model = session.catalog.models[grid.selectedModel];
+        if (model !== undefined) session.catalog.downloadUnlessLoaded(model, (loaded, queuedSpawns) => this.spawnQueued(loaded, queuedSpawns));
+    }
+
+    private spawnSelected(): void {
+        const grid = this.grid();
+        if (grid === undefined) return;
+        const session = sessionOf(this.world);
+        const model = session.catalog.models[grid.selectedModel];
+        if (model === undefined) return;
+        if (model.template !== undefined) {
+            session.models.spawn(model.template, commandBufferOf(this.world), grid);
+            return;
+        }
+        const pending = session.catalog.downloadUnlessLoaded(model, (loaded, queuedSpawns) => this.spawnQueued(loaded, queuedSpawns));
+        if (pending !== undefined) pending.queuedSpawns++;
+    }
+
+    private spawnQueued(model: CatalogModel, count: number): void {
+        const grid = this.grid();
+        const template = model.template;
+        if (grid === undefined || template === undefined) return;
+        const session = sessionOf(this.world);
+        session.models.sync();
+        for (let i = 0; i < count; i++) session.models.spawn(template, commandBufferOf(this.world), grid);
+    }
+
+    private despawnLast(): void {
+        const grid = this.grid();
+        if (grid !== undefined) sessionOf(this.world).models.despawnLast(commandBufferOf(this.world), grid);
+    }
+
+    private selectNextModel(): void {
+        const grid = this.grid();
+        const session = sessionOf(this.world);
+        const count = session.catalog.models.length;
+        if (grid === undefined || count === 0) return;
+        grid.selectedModel = (grid.selectedModel + NEXT_INDEX_STEP) % count;
+        this.downloadSelected(grid, session);
+    }
+
+    private reloadModels(): void {
+        const tuning = this.tuning();
+        const session = sessionOf(this.world);
+        const path = dataAssetPathOf(tuning);
+        try {
+            if (path !== undefined) this.world.resources.get(DataAssets).reload(path);
+        } catch (error) {
+            console.error(`Could not reload ${path}:`, error);
+        }
+        session.catalog.refresh(tuning.models);
+        const grid = this.grid();
+        if (grid === undefined) return;
+        this.clampSelection(grid, session);
+        this.downloadSelected(grid, session);
+    }
+
+    private cycleRenderPacing(): void {
+        const session = sessionOf(this.world);
+        const presets = this.tuning().renderPacing;
+        if (presets.length === 0) return;
+        session.renderPacingIndex = (session.renderPacingIndex + NEXT_INDEX_STEP) % presets.length;
+        const preset = presets[session.renderPacingIndex];
+        this._frameLoops.stream({write: {settings: FrameLoopSettings}}, INCLUDING_DISABLED).consume(({settings}) => {
+            settings.renderRate = preset.renderRate;
+            settings.matchDisplay = preset.matchDisplay;
+        });
+    }
+
+    private toggleLights(): void {
+        const session = sessionOf(this.world);
+        session.lightsOn = !session.lightsOn;
+        this.applyLightEnabledState(session);
+    }
+
+    private toggleLamp(): void {
+        const session = sessionOf(this.world);
+        session.lampOn = !session.lampOn;
+        this.applyLightEnabledState(session);
+    }
+
+    private applyLightEnabledState(session: Demo3dSession): void {
+        const buffer = commandBufferOf(this.world);
+        setEnabledStateOf(this._directionalLights, session.lightsOn, buffer);
+        setEnabledStateOf(this._ambientLights, session.lightsOn, buffer);
+        setEnabledStateOf(this._pointLights, session.lightsOn && session.lampOn, buffer);
+    }
+
+    private handlePointer(input: Input, event: InputEvent): void {
         switch (event.type) {
             case "pointerDown":
-                if (event.button !== PointerButton.Left) return;
-                looking = true;
-                lastPointerX = event.x;
-                lastPointerY = event.y;
+                if (!input.isActionEvent(event, this._actions.Look)) return;
+                this._looking = true;
+                this._lastPointerX = event.x;
+                this._lastPointerY = event.y;
                 return;
             case "pointerUp":
-                if (event.button === PointerButton.Left) looking = false;
+                if (input.isActionEvent(event, this._actions.Look)) this._looking = false;
                 return;
             case "pointerMove": {
-                if (!looking) return;
-                const dx = event.x - lastPointerX;
-                const dy = event.y - lastPointerY;
-                lastPointerX = event.x;
-                lastPointerY = event.y;
-                camYaw += dx * LOOK_RAD_PER_CELL;
-                camPitch += dy * LOOK_RAD_PER_CELL * CELL_WIDTH_PER_HEIGHT;
-                applyCameraLook();
+                if (!this._looking) return;
+                const dx = event.x - this._lastPointerX;
+                const dy = event.y - this._lastPointerY;
+                this._lastPointerX = event.x;
+                this._lastPointerY = event.y;
+                const lookRadPerUnit = this.tuning().camera.lookRadPerUnit;
+                this.look(dx * lookRadPerUnit, dy * lookRadPerUnit * SCREEN_UNIT_WIDTH_PER_HEIGHT);
                 return;
             }
-            case "wheel":
-                fov.degrees = Math.max(MIN_FOV_DEG, Math.min(MAX_FOV_DEG, fov.degrees * Math.pow(FOV_WHEEL_STEP, -event.delta)));
+            case "wheel": {
+                const camera = this.tuning().camera;
+                this.zoom(fieldOfView => {
+                    fieldOfView.degrees = Math.max(camera.minFovDegrees, Math.min(camera.maxFovDegrees, fieldOfView.degrees * Math.pow(camera.fovWheelStep, -event.delta)));
+                });
                 return;
-        }
-    }
-
-    class ControlsSystem extends System {
-        override priority(): number {
-            return BEFORE_SIMULATION_PRIORITY;
-        }
-
-        onUpdate(): void {
-            if (input.actionPressed(QUIT_ACTION)) {
-                quit();
-                return;
-            }
-            for (const event of input.events) {
-                if (event.type !== "keyDown") {
-                    handlePointer(event);
-                    continue;
-                }
-                if (event.key === Key.C && event.ctrl) {
-                    quit();
-                    return;
-                }
-                keyDownHandlers.get(event.key)?.();
-                if (!event.repeat) keyPressHandlers.get(event.key)?.();
-            }
-            for (const command of commands) {
-                if (input.actionPressed(command.action)) command.run();
             }
         }
     }
+}
 
-    class DebugSystem extends System {
-        private _toggle = true;
-        private _rateWindowStartMs = 0;
-        private _rateWindowFrames = 0;
-        private _rateWindowTicks = 0;
-        private _framesPerSecond = 0;
-        private _ticksPerSecond = 0;
-        private _entityCounterImage!: TextSprite;
-        private _fpsCounterImage!: TextSprite;
+class Demo3dHudSystem extends System {
+    private _hud = this.createEntityQuery([Demo3dHud]);
+    private _grids = this.createEntityQuery([ModelGrid]);
+    private _preview = new HudLabel();
+    private _entityCounter = new HudLabel();
+    private _fpsCounter = new HudLabel();
+    private _previewText: string | undefined;
+    private _rateWindowStartMs = 0;
+    private _rateWindowFrames = 0;
+    private _rateWindowTicks = 0;
+    private _framesPerSecond = 0;
+    private _ticksPerSecond = 0;
 
-        protected onCreate() {
-            this._rateWindowStartMs = this.world.time.elapsedTimeMs;
-            const buffer = this.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer()
-
-
-            this._entityCounterImage = createHudLabel(buffer, "entityCounter", 'HUD element', HUD_TEXT_COLOR, 'bottom-left');
-            this._fpsCounterImage = createHudLabel(buffer, "fpsCounter", 'FPS: 0', HUD_TEXT_COLOR, 'top-right');
-        }
-
-        onUpdate() {
-            if (!this._toggle) return;
-            this.measureRates();
-            this._fpsCounterImage.image = [
-                'FPS: ' + this._framesPerSecond.toFixed(1) + '  ticks/s: ' + this._ticksPerSecond.toFixed(1),
-                'render: ' + renderPacingLabel(this.world.loopTiming.renderRateLimit),
-            ]
-
-            const stats = render.stats();
-            const drawn = stats === undefined ? 0 : stats.trianglesDrawn;
-            const levels = stats === undefined ? '' : '  LOD levels: ' + Array.from(stats.lodLevelCounts.subarray(0, LOD_LEVELS_SHOWN)).join('/');
-            const rasterWorkers = stats === undefined ? 0 : stats.rasterWorkers;
-            this._entityCounterImage.image = [
-                'Entities: ' + (this.world.enabledEntityCount),
-                'Triangles: ' + formatCompact(drawn) + ' drawn / ' + formatCompact(this.world.resources.getOrCreate(SceneStats).sourceTriangles) + ' source' + levels,
-                'Raster workers: ' + (rasterWorkers === 0 ? 'none (single-threaded)' : rasterWorkers),
-            ]
-        }
-
-        private measureRates(): void {
-            const time = this.world.time;
-            const nowMs = time.elapsedTimeMs;
-            const windowMs = nowMs - this._rateWindowStartMs;
-            if (windowMs < RATE_WINDOW_MS) return;
-            this._framesPerSecond = (time.frameCount - this._rateWindowFrames) * MS_PER_SECOND / windowMs;
-            this._ticksPerSecond = (time.tickCount - this._rateWindowTicks) * MS_PER_SECOND / windowMs;
-            this._rateWindowStartMs = nowMs;
-            this._rateWindowFrames = time.frameCount;
-            this._rateWindowTicks = time.tickCount;
-        }
+    protected onCreate(): void {
+        this._rateWindowStartMs = this.world.time.elapsedTimeMs;
     }
 
-    fetchModels();
-    spawnSelected();
+    onUpdate(): void {
+        const session = sessionOf(this.world);
+        const tuning = this.world.resources.get(Demo3dTuning);
+        const hud = this._hud.tryGetSingleton({hud: Demo3dHud}, INCLUDING_DISABLED)?.hud;
+        this._preview.bindTo(this.world, hud?.preview ?? NULL_ENTITY);
+        this._entityCounter.bindTo(this.world, hud?.entityCounter ?? NULL_ENTITY);
+        this._fpsCounter.bindTo(this.world, hud?.fpsCounter ?? NULL_ENTITY);
+        session.models.sync();
+        this.refreshPreview(session, tuning.hud);
+        this.measureRates(tuning.hud.rateWindowMs);
+        const pacing = renderPacingOf(tuning, session);
+        this._fpsCounter.show(formatHudLines(tuning.hud.fpsLines, {
+            fps: this._framesPerSecond.toFixed(tuning.hud.rateDecimals),
+            ticks: this._ticksPerSecond.toFixed(tuning.hud.rateDecimals),
+            pacing: this.pacingLabel(pacing, tuning.hud),
+        }));
+        const stats = session.host.render.stats();
+        const lodLevels = stats === undefined ? NO_TEXT : formatHudText(tuning.hud.lodLevelsFormat, {
+            levels: Array.from(stats.lodLevelCounts.subarray(0, tuning.hud.lodLevelsShown)).join(tuning.hud.lodLevelSeparator),
+        });
+        const rasterWorkers = stats === undefined ? 0 : stats.rasterWorkers;
+        this._entityCounter.show(formatHudLines(tuning.hud.statsLines, {
+            entities: this.world.enabledEntityCount,
+            drawn: formatCompact(stats === undefined ? 0 : stats.trianglesDrawn),
+            source: formatCompact(session.models.sourceTriangles()),
+            lodLevels,
+            rasterWorkers: rasterWorkers === 0 ? tuning.hud.singleThreadedRasterText : rasterWorkers,
+        }));
+    }
 
-    world.ensureSystemExists(ControlsSystem);
-    world.ensureSystemExists(DebugSystem)
+    private pacingLabel(pacing: RenderPacingPreset | undefined, hud: Demo3dHudTuning): string {
+        const label = pacing?.label ?? NO_TEXT;
+        const limit = this.world.loopTiming.renderRateLimit;
+        return Number.isFinite(limit) ? formatHudText(hud.pacingWithCpuLimitFormat, {label, limit}) : label;
+    }
+
+    private refreshPreview(session: Demo3dSession, hud: Demo3dHudTuning): void {
+        const catalog = session.catalog;
+        const spawned = session.models.count;
+        const lines = [...catalog.downloads].map(([path, progress]) => this.downloadLine(catalog.modelFrom(path)?.name ?? path, progress, hud));
+        const selected = this.selectedModel(session);
+        lines.push(selected === undefined
+            ? formatHudText(hud.noModelsFormat, {spawned})
+            : formatHudText(hud.nextModelFormat, {model: selected.name, spawned}));
+        const text = lines.join(PREVIEW_LINE_SEPARATOR);
+        if (text === this._previewText) return;
+        this._previewText = text;
+        this._preview.show(lines);
+    }
+
+    private selectedModel(session: Demo3dSession): CatalogModel | undefined {
+        const models = session.catalog.models;
+        const selectedIndex = this._grids.tryGetSingleton({grid: ModelGrid}, INCLUDING_DISABLED)?.grid.selectedModel ?? FIRST_MODEL;
+        return models[selectedIndex] ?? models[FIRST_MODEL];
+    }
+
+    private downloadLine(name: string, progress: ModelDownload, hud: Demo3dHudTuning): string {
+        if (progress.failure !== undefined) return formatHudText(hud.downloadFailedFormat, {model: name, failure: progress.failure});
+        const queued = progress.queuedSpawns === 0 ? NO_TEXT : formatHudText(hud.queuedSpawnsFormat, {queued: progress.queuedSpawns});
+        return formatHudText(hud.downloadFormat, {
+            model: name,
+            loaded: (progress.loadedBytes / BYTES_PER_MB).toFixed(hud.megabyteDecimals),
+            total: (progress.totalBytes / BYTES_PER_MB).toFixed(hud.megabyteDecimals),
+            queued,
+        });
+    }
+
+    private measureRates(rateWindowMs: number): void {
+        const time = this.world.time;
+        const nowMs = time.elapsedTimeMs;
+        const windowMs = nowMs - this._rateWindowStartMs;
+        if (windowMs < rateWindowMs) return;
+        this._framesPerSecond = (time.frameCount - this._rateWindowFrames) * MS_PER_SECOND / windowMs;
+        this._ticksPerSecond = (time.tickCount - this._rateWindowTicks) * MS_PER_SECOND / windowMs;
+        this._rateWindowStartMs = nowMs;
+        this._rateWindowFrames = time.frameCount;
+        this._rateWindowTicks = time.tickCount;
+    }
+}
+
+function requirePrefabSpawner(world: World): PrefabSpawner {
+    const spawner = world.resources.tryGet(PrefabSpawner);
+    if (spawner === undefined) throw new Error(`${DEMO_NAME} spawns model prefabs through a PrefabSpawner: launch it with launchProject or startProject, whose SceneManager creates one`);
+    return spawner;
+}
+
+export function setupDemo3d(world: World, host: Demo3dHost): void {
+    const tuning = world.resources.get(Demo3dTuning);
+    const session = new Demo3dSession(host, new ModelCatalog(requirePrefabSpawner(world), host.modelFiles), new GridModels(world));
+    world.resources.insert(session);
+    session.catalog.refresh(tuning.models);
+    world.ensureSystemExists(Demo3dControlsSystem);
+    world.ensureSystemExists(Demo3dHudSystem);
 }

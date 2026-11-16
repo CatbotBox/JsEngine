@@ -1,0 +1,27 @@
+{
+  "format": "jsengine-asset",
+  "version": 1,
+  "type": "Demo2dTuning",
+  "fields": {
+    "randomSeed": null,
+    "pixelPrefab": {
+      "path": "prefabs/pixel.prefab.json"
+    },
+    "pixelsPerSpawn": 1000,
+    "spawnAreaUnits": 100,
+    "fadeMinMs": 5000,
+    "fadeJitterMs": 5000,
+    "playerStepXUnits": 1,
+    "playerStepYUnits": 0.5,
+    "cameraStepXUnits": 1,
+    "cameraStepYUnits": 1,
+    "hud": {
+      "fpsAverageFrames": 10,
+      "fpsFormat": "FPS: {fps}",
+      "fpsDecimals": 2,
+      "entitiesFormat": "Entities: {entities}",
+      "entitiesDecimals": 2,
+      "fadeSystemInactiveText": "Fade System Not Active"
+    }
+  }
+}

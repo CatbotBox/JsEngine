@@ -1,6 +1,7 @@
 import {describe, expect, test} from "../testing/harness";
 import {makeEntityHandle, NULL_ENTITY} from "../core/entity";
 import {Vec2, Vec3} from "../math/types/vec";
+import {ShaderSource} from "../rendering/shaderSource";
 import {TextColor} from "../rendering/textColor";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {structFields} from "./componentSchemaBuilder";
@@ -18,6 +19,8 @@ const KNOWN_ENTITY = makeEntityHandle(4, 1);
 const KNOWN_SCENE_ID = 2;
 const PREFAB_PATH = "prefabs/enemy.prefab.json";
 const EMPTY_PREFAB: SceneDocument = {format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: []};
+const SHADER_PATH = "shaders/glow.wgsl";
+const SHADER_CODE = "fn surface(input: SurfaceInput) -> vec4f { return input.lit; }";
 const KEYFRAME_SEPARATOR = " ";
 
 class Range {
@@ -53,6 +56,7 @@ const field = {
     plainRange: {key: "value", kind: "struct", fields: RANGE_FIELDS},
     curve: {key: "value", kind: "custom", typeName: "Curve"},
     prefab: {key: "value", kind: "asset", assetType: "prefab"},
+    shader: {key: "value", kind: "asset", assetType: "shader"},
     entities: {key: "value", kind: "list", element: {kind: "entity", nullable: true}},
 } satisfies Record<string, FieldSchema>;
 
@@ -88,7 +92,7 @@ function decode(type: FieldType, json: SceneJsonValue, registry?: ComponentSchem
     return decodeFieldValue(type, json, decodeContext(registry), PATH);
 }
 
-function prefabLoader(requested: string[]): SceneAssetLoader {
+function recordingLoader(requested: string[]): SceneAssetLoader {
     const prefab = new PrefabAsset(PREFAB_PATH, EMPTY_PREFAB);
     return {
         loadMesh: path => {
@@ -100,6 +104,10 @@ function prefabLoader(requested: string[]): SceneAssetLoader {
         loadPrefab: path => {
             requested.push(path);
             return prefab;
+        },
+        loadText: path => {
+            requested.push(path);
+            return SHADER_CODE;
         },
         loadDataAsset: path => {
             throw new Error(`no data asset ${path}`);
@@ -201,11 +209,23 @@ describe("field codec: new kinds", () => {
         expect(encode(field.prefab, prefab)).toEqual({path: PREFAB_PATH});
         expect(encode(field.prefab, undefined)).toBe(null);
         expect(() => encode(field.prefab, {path: PREFAB_PATH})).toThrow(`Scene field ${PATH}: expected a PrefabAsset or undefined`);
-        const loaded = decodeFieldValue(field.prefab, {path: PREFAB_PATH}, decodeContext(undefined, prefabLoader(requested)), PATH);
+        const loaded = decodeFieldValue(field.prefab, {path: PREFAB_PATH}, decodeContext(undefined, recordingLoader(requested)), PATH);
         expect(loaded).toBeInstanceOf(PrefabAsset);
         expect(requested).toEqual([PREFAB_PATH]);
         expect(decode(field.prefab, null)).toBeUndefined();
         expect(() => decode({kind: "asset", assetType: "Sound"}, {path: "a.wav"})).toThrow(`Scene field ${PATH}: the asset type "Sound" is not registered`);
+    });
+
+    test("a shader asset saves its path and loads its source text through the asset loader", () => {
+        const requested: string[] = [];
+        expect(encode(field.shader, new ShaderSource(SHADER_PATH, SHADER_CODE))).toEqual({path: SHADER_PATH});
+        expect(encode(field.shader, undefined)).toBe(null);
+        expect(() => encode(field.shader, SHADER_CODE)).toThrow(`Scene field ${PATH}: expected a ShaderSource or undefined`);
+        const loaded = decodeFieldValue(field.shader, {path: SHADER_PATH}, decodeContext(undefined, recordingLoader(requested)), PATH) as ShaderSource;
+        expect(loaded).toBeInstanceOf(ShaderSource);
+        expect([loaded.sourcePath, loaded.code]).toEqual([SHADER_PATH, SHADER_CODE]);
+        expect(requested).toEqual([SHADER_PATH]);
+        expect(decode(field.shader, null)).toBeUndefined();
     });
 
     test("entities inside lists map through the context like top-level ones", () => {
