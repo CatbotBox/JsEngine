@@ -1,7 +1,8 @@
+import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {PROJECT_ENTRY_EXTENSIONS} from "../project/projectManifest";
 
-export type ProjectFileKind = "scene" | "prefab" | "mesh" | "image" | "code" | "other";
+export type ProjectFileKind = "scene" | "prefab" | "dataAsset" | "mesh" | "image" | "code" | "other";
 
 export interface ProjectFolder {
     readonly path: string;
@@ -14,7 +15,15 @@ export const ROOT_FOLDER_PATH = "";
 export const SCENE_EXTENSION = ".scene.json";
 export const PREFAB_EXTENSION = ".prefab.json";
 export const SCENES_FOLDER = "scenes";
-export const PROJECT_FILE_KIND_TITLES: Readonly<Record<ProjectFileKind, string>> = {scene: "Scene", prefab: "Prefab", mesh: "Mesh", image: "Image", code: "Code", other: "File"};
+export const PROJECT_FILE_KIND_TITLES: Readonly<Record<ProjectFileKind, string>> = {
+    scene: "Scene",
+    prefab: "Prefab",
+    dataAsset: "Data Asset",
+    mesh: "Mesh",
+    image: "Image",
+    code: "Code",
+    other: "File",
+};
 
 const PATH_SEPARATOR = "/";
 const BACKSLASH = /\\/g;
@@ -27,6 +36,7 @@ const FIRST_DUPLICATE_SUFFIX = 1;
 const DUPLICATE_SEPARATOR = " ";
 const MESH_EXTENSIONS: readonly string[] = [".obj"];
 const IMAGE_EXTENSIONS: readonly string[] = [".png", ".jpg", ".jpeg", ".ppm"];
+const COMPOUND_EXTENSIONS: readonly string[] = [SCENE_EXTENSION, PREFAB_EXTENSION, DATA_ASSET_FILE_SUFFIX];
 
 export function normalizeProjectPath(path: string): string {
     return path.replace(BACKSLASH, PATH_SEPARATOR).replace(LEADING_DOT_SLASH, "").replace(REPEATED_SLASHES, PATH_SEPARATOR).replace(EDGE_SLASHES, "");
@@ -36,6 +46,7 @@ export function projectFileKind(path: string): ProjectFileKind {
     const lower = path.toLowerCase();
     if (lower.endsWith(SCENE_EXTENSION)) return "scene";
     if (lower.endsWith(PREFAB_EXTENSION)) return "prefab";
+    if (lower.endsWith(DATA_ASSET_FILE_SUFFIX)) return "dataAsset";
     if (MESH_EXTENSIONS.some(extension => lower.endsWith(extension))) return "mesh";
     if (IMAGE_EXTENSIONS.some(extension => lower.endsWith(extension))) return "image";
     if (PROJECT_ENTRY_EXTENSIONS.some(extension => lower.endsWith(extension))) return "code";
@@ -64,7 +75,7 @@ export function joinProjectPath(folder: string, name: string): string {
 
 export function extensionOf(name: string): string {
     const lower = name.toLowerCase();
-    for (const compound of [SCENE_EXTENSION, PREFAB_EXTENSION]) if (lower.endsWith(compound)) return name.slice(name.length - compound.length);
+    for (const compound of COMPOUND_EXTENSIONS) if (lower.endsWith(compound)) return name.slice(name.length - compound.length);
     const dot = name.lastIndexOf(".");
     return dot <= 0 ? "" : name.slice(dot);
 }

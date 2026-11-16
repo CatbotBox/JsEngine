@@ -87,6 +87,61 @@ describe("validateProjectManifest", () => {
     });
 });
 
+describe("validateProjectManifest resources", () => {
+    const base = {name: "Game", entry: "src/game.ts"};
+
+    test("resource bindings come back normalised", () => {
+        const resources = [{type: " SwarmTuning ", path: "./data\\swarm.tuning.asset.json"}, {type: "SwarmState", path: "data/state.asset.json"}];
+        expect(validateProjectManifest(JSON.stringify({...base, resources}), EXISTING_ENTRY)).toEqual({ok: true, manifest: {...base, resources: [
+            {type: "SwarmTuning", path: "data/swarm.tuning.asset.json"},
+            {type: "SwarmState", path: "data/state.asset.json"},
+        ]}});
+        expect(validateProjectManifest(JSON.stringify({...base, resources: []}), EXISTING_ENTRY)).toEqual({ok: true, manifest: {...base, resources: []}});
+    });
+
+    test("every binding problem is named", () => {
+        expect(problemsOf(validateProjectManifest(JSON.stringify({...base, resources: {type: "A"}}), EXISTING_ENTRY)))
+            .toEqual([`"resources" must be an array of {"type", "path"} objects when present, got {"type":"A"}`]);
+        const resources = [
+            "data/a.asset.json",
+            {path: "data/a.asset.json"},
+            {type: "Tuning", path: "../outside.asset.json"},
+            {type: "Other", path: "data/other.json"},
+            {type: "Tuning", path: 3},
+            {type: "Fine", path: "data/fine.asset.json"},
+        ];
+        expect(problemsOf(validateProjectManifest(JSON.stringify({...base, resources}), EXISTING_ENTRY))).toEqual([
+            `"resources[0]" must be an object {"type", "path"}, got "data/a.asset.json"`,
+            `"resources[1].type" must name a registered resource type, got undefined`,
+            `"resources[2].path" "../outside.asset.json" must be a relative path that stays inside the project folder`,
+            `"resources[3].path" "data/other.json" must name a .asset.json file`,
+            `"resources[4].type" "Tuning" is already bound by "resources[2]"`,
+            `"resources[4].path" must be a non-empty string path, got 3`,
+        ]);
+    });
+});
+
+describe("validateProjectManifest editorExtensions", () => {
+    const base = {name: "Game", entry: "src/game.ts"};
+    const existing = (path: string) => path === "src/game.ts" || path === "editor/extensions.ts";
+
+    test("an existing code module inside the project comes back normalised, and leaving it out is fine", () => {
+        expect(validateProjectManifest(JSON.stringify({...base, editorExtensions: " ./editor\\extensions.ts "}), existing))
+            .toEqual({ok: true, manifest: {...base, editorExtensions: "editor/extensions.ts"}});
+        expect(validateProjectManifest(JSON.stringify(base), existing)).toEqual({ok: true, manifest: base});
+    });
+
+    test("anything else is named", () => {
+        const problems = (editorExtensions: unknown) => problemsOf(validateProjectManifest(JSON.stringify({...base, editorExtensions}), existing));
+        expect(problems("")).toEqual([`"editorExtensions" must be a non-empty string path, got ""`]);
+        expect(problems(3)).toEqual([`"editorExtensions" must be a non-empty string path, got 3`]);
+        expect(problems("../shared/extensions.ts")).toEqual([`"editorExtensions" "../shared/extensions.ts" must be a relative path that stays inside the project folder`]);
+        expect(problems("C:/tools/extensions.ts")).toEqual([`"editorExtensions" "C:/tools/extensions.ts" must be a relative path that stays inside the project folder`]);
+        expect(problems("editor/extensions.json")).toEqual([`"editorExtensions" "editor/extensions.json" must name a .ts, .tsx, .js, .mjs module`]);
+        expect(problems("editor/missing.ts")).toEqual([`"editorExtensions" names editor/missing.ts, which does not exist in the project folder`]);
+    });
+});
+
 describe("createProjectFiles", () => {
     test("writes a manifest that validates against its own starter entry", () => {
         const files = createProjectFiles("My Game");

@@ -7,8 +7,9 @@ import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {EditorOnly} from "./editorOnly";
 import {parseSceneDocument} from "./sceneDocument";
 import type {SceneDocument} from "./sceneDocument";
-import {platformSceneAssetLoader, sceneAssetPaths} from "./sceneAssets";
-import type {SceneAssetLoader} from "./sceneAssets";
+import {dataAssetsOf} from "./dataAssets";
+import {preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
+import type {AssetPreload, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
 import {parentEntityOf, SceneRootOrder, untrackedComponentOf} from "./sceneHierarchy";
 import {deserializeInto, isSceneEntity, sceneEntitiesInCreationOrder} from "./sceneSerialization";
 import type {SceneLoadResult, SchemaChangePolicy, UnknownComponentTypePolicy} from "./sceneSerialization";
@@ -18,7 +19,7 @@ export type SceneLoadMode = "single" | "additive";
 
 export type PersistentEntityPolicy = "keep" | "destroy";
 
-export type ScenePreload = (paths: readonly string[]) => Promise<void>;
+export type ScenePreload = AssetPreload;
 
 export type SceneLoadedListener = (scene: LoadedScene) => void;
 
@@ -82,7 +83,7 @@ export class SceneManager {
     public constructor(private readonly world: World, private readonly registry: ComponentSchemaRegistry, private readonly options: SceneManagerOptions = {}) {
         requireMembershipSchemas(registry);
         this.files = options.files ?? world.platform.files;
-        this.assets = options.assets ?? platformSceneAssetLoader(world.platform);
+        this.assets = options.assets ?? dataAssetsOf(world, registry, {files: this.files, inflate: world.platform.inflate}, {schemaChanges: options.schemaChanges}).assets;
         this.preload = options.preload ?? noPreload;
         world.resources.getOrCreate(ActiveScene);
     }
@@ -90,9 +91,12 @@ export class SceneManager {
     public async load(path: string, request: SceneLoadRequest = {}): Promise<SceneHandle> {
         await this.preload([path]);
         const document = parseSceneDocument(this.files.readText(path));
-        const assetPaths = sceneAssetPaths(document, this.registry).map(reference => reference.path);
-        if (assetPaths.length > 0) await this.preload(assetPaths);
+        await this.preloadAssets(sceneAssetPaths(document, this.registry));
         return this.loadDocument(document, {...request, path}).handle;
+    }
+
+    public preloadAssets(references: readonly SceneAssetReference[]): Promise<void> {
+        return preloadAssetReferences(references, this.registry, this.files, this.preload);
     }
 
     public loadDocument(document: SceneDocument, request: SceneDocumentLoadRequest = {}): LoadedScene {

@@ -5,9 +5,16 @@ import type {FSWatcher} from "fs";
 import {copyFile, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile} from "fs/promises";
 import {homedir} from "os";
 import {delimiter, dirname, isAbsolute, join, relative, resolve, sep} from "path";
-import {createProjectFiles, PROJECT_ENTRY_EXTENSIONS, PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../editor/project/projectManifest";
+import {
+    createProjectFiles,
+    GENERATED_SCHEMAS_FILE,
+    PROJECT_ENTRY_EXTENSIONS,
+    PROJECT_MANIFEST_FILE,
+    validateProjectManifest,
+} from "../../editor/project/projectManifest";
 import type {ProjectManifestValidation} from "../../editor/project/projectManifest";
 import {PROJECT_ENTRY_EXPORTS} from "../../editor/project/projectEntry";
+import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensions";
 import {projectFileExtension, projectRelativePath} from "../../editor/project/projectPaths";
 import {
     isBuildSuccess,
@@ -57,7 +64,7 @@ export interface ProjectWorkerBuildError {
 }
 
 export type ProjectWorkerBuildReport =
-    | {readonly ok: true; readonly inputs: readonly string[]}
+    | {readonly ok: true; readonly inputs: readonly string[]; readonly warnings: readonly string[]; readonly editorExtensionsBundled: boolean}
     | {readonly ok: false; readonly errors: readonly ProjectWorkerBuildError[]};
 
 export interface ProjectBuildRequest {
@@ -65,10 +72,11 @@ export interface ProjectBuildRequest {
     readonly bunPath: string;
     readonly folder: string;
     readonly entry: string;
+    readonly editorExtensions?: string;
 }
 
 export type ProjectBuildOutcome =
-    | {readonly ok: true; readonly bundlePath: string; readonly inputs: readonly string[]}
+    | {readonly ok: true; readonly bundlePath: string; readonly editorExtensionsPath?: string; readonly inputs: readonly string[]; readonly warnings: readonly string[]}
     | {readonly ok: false; readonly errors: readonly string[]};
 
 export const LOOPBACK_HOSTNAMES: readonly string[] = ["localhost", "127.0.0.1", "[::1]"];
@@ -87,6 +95,8 @@ const CHANGE_DEBOUNCE_MS = 200;
 const REBUILD_DEBOUNCE_MS = 250;
 const EDITOR_PROJECTS_DIRECTORY: readonly string[] = ["dist", "editor-projects"];
 const GENERATED_ENTRY_FILE = "editorWorkerEntry.ts";
+const ENTRY_NAMESPACE = "projectEntry";
+const GENERATED_SCHEMAS_EXPORT = "registerGeneratedSchemas";
 const BUNDLE_FILE = "editor.worker.js";
 const BUILD_SCRIPT: readonly string[] = ["scripts", "buildProjectWorker.ts"];
 const WORKER_TEMPLATE: readonly string[] = ["src", "editor", "launch", "projectEditorWorker.ts"];
@@ -127,7 +137,9 @@ interface OpenProject {
     readonly inputWatchers: Map<string, FSWatcher>;
     version: number;
     bundlePath: string | undefined;
+    editorExtensionsPath: string | undefined;
     inputs: ReadonlySet<string>;
+    generatedSchemas: string | undefined;
     buildChain: Promise<unknown>;
     changeTimer: ReturnType<typeof setTimeout> | undefined;
     rebuildTimer: ReturnType<typeof setTimeout> | undefined;
@@ -191,14 +203,22 @@ export function projectBuildDirectory(repoRoot: string, folder: string): string 
     return join(repoRoot, ...EDITOR_PROJECTS_DIRECTORY, hash);
 }
 
-function generatedEntrySource(repoRoot: string, entryPath: string): string {
+function generatedSchemasPath(folder: string): string {
+    return join(folder, GENERATED_SCHEMAS_FILE);
+}
+
+function generatedEntrySource(repoRoot: string, folder: string, entryPath: string): string {
     const template = slashed(join(repoRoot, ...WORKER_TEMPLATE));
-    const exportsList = PROJECT_ENTRY_EXPORTS.join(", ");
+    const entry = JSON.stringify(slashed(entryPath));
+    const schemas = JSON.stringify(slashed(generatedSchemasPath(folder)));
+    const requiredExports = PROJECT_ENTRY_EXPORTS.join(", ");
     return [
-        `import {${exportsList}} from ${JSON.stringify(slashed(entryPath))};`,
+        `import * as ${ENTRY_NAMESPACE} from ${entry};`,
+        `import {${requiredExports}} from ${entry};`,
+        `import {${GENERATED_SCHEMAS_EXPORT}} from ${schemas};`,
         `import {runProjectEditorWorker} from ${JSON.stringify(template)};`,
         ``,
-        `runProjectEditorWorker({${exportsList}});`,
+        `runProjectEditorWorker({...${ENTRY_NAMESPACE}, ${requiredExports}}, {${GENERATED_SCHEMAS_EXPORT}});`,
         ``,
     ].join("\n");
 }
@@ -244,9 +264,10 @@ function lastJsonLine(text: string): unknown {
     return undefined;
 }
 
-function runBuildScript(request: ProjectBuildRequest, generatedEntry: string, bundlePath: string): Promise<{readonly report: unknown, readonly stderr: string, readonly exitCode: number | null}> {
+function runBuildScript(request: ProjectBuildRequest, generatedEntry: string, bundlePath: string, extensionsBundlePath: string): Promise<{readonly report: unknown, readonly stderr: string, readonly exitCode: number | null}> {
+    const extensionArguments = request.editorExtensions === undefined ? [] : [resolve(request.folder, request.editorExtensions), extensionsBundlePath];
     return new Promise((resolveRun, rejectRun) => {
-        const child = spawn(request.bunPath, [join(request.repoRoot, ...BUILD_SCRIPT), generatedEntry, bundlePath], {
+        const child = spawn(request.bunPath, [join(request.repoRoot, ...BUILD_SCRIPT), generatedEntry, bundlePath, resolve(request.folder), ...extensionArguments], {
             cwd: request.repoRoot,
             stdio: ["ignore", "pipe", "pipe"],
             windowsHide: true,
@@ -264,8 +285,9 @@ function runBuildScript(request: ProjectBuildRequest, generatedEntry: string, bu
 
 function isBuildReport(value: unknown): value is ProjectWorkerBuildReport {
     if (typeof value !== "object" || value === null) return false;
-    const report = value as {ok?: unknown, inputs?: unknown, errors?: unknown};
-    return (report.ok === true && Array.isArray(report.inputs)) || (report.ok === false && Array.isArray(report.errors));
+    const report = value as {ok?: unknown, inputs?: unknown, warnings?: unknown, editorExtensionsBundled?: unknown, errors?: unknown};
+    const succeeded = report.ok === true && Array.isArray(report.inputs) && Array.isArray(report.warnings) && typeof report.editorExtensionsBundled === "boolean";
+    return succeeded || (report.ok === false && Array.isArray(report.errors));
 }
 
 export async function buildProjectEditorWorker(request: ProjectBuildRequest): Promise<ProjectBuildOutcome> {
@@ -273,11 +295,12 @@ export async function buildProjectEditorWorker(request: ProjectBuildRequest): Pr
     await mkdir(directory, RECURSIVE);
     const generatedEntry = join(directory, GENERATED_ENTRY_FILE);
     const bundlePath = join(directory, BUNDLE_FILE);
-    const source = generatedEntrySource(request.repoRoot, resolve(request.folder, request.entry));
+    const extensionsBundlePath = join(directory, EDITOR_EXTENSIONS_BUNDLE_FILE);
+    const source = generatedEntrySource(request.repoRoot, resolve(request.folder), resolve(request.folder, request.entry));
     if (await readFile(generatedEntry, "utf8").catch(() => undefined) !== source) await writeFile(generatedEntry, source);
     let run: Awaited<ReturnType<typeof runBuildScript>>;
     try {
-        run = await runBuildScript(request, generatedEntry, bundlePath);
+        run = await runBuildScript(request, generatedEntry, bundlePath, extensionsBundlePath);
     } catch (error) {
         return {ok: false, errors: [`Could not run ${request.bunPath}: ${describeError(error)}`]};
     }
@@ -286,7 +309,8 @@ export async function buildProjectEditorWorker(request: ProjectBuildRequest): Pr
         return {ok: false, errors: [`bun build exited with ${run.exitCode}${output.length > 0 ? `: ${output}` : " and no report"}`]};
     }
     if (!run.report.ok) return {ok: false, errors: describeBuildErrors(run.report.errors, request, generatedEntry)};
-    return {ok: true, bundlePath, inputs: run.report.inputs.map(input => resolve(input))};
+    const editorExtensionsPath = run.report.editorExtensionsBundled ? {editorExtensionsPath: extensionsBundlePath} : {};
+    return {ok: true, bundlePath, ...editorExtensionsPath, inputs: run.report.inputs.map(input => resolve(input)), warnings: run.report.warnings};
 }
 
 export function splitCommandLine(text: string): string[] {
@@ -469,6 +493,9 @@ export class ProjectServer {
             case PROJECT_WORKER_FILE:
                 requireMethod(request, "GET");
                 return await this.workerBundle(project);
+            case EDITOR_EXTENSIONS_BUNDLE_FILE:
+                requireMethod(request, "GET");
+                return await this.editorExtensionsBundle(project);
             case "events":
                 requireMethod(request, "GET");
                 return project.events.respond(request, ISOLATION_HEADERS);
@@ -622,7 +649,9 @@ export class ProjectServer {
             inputWatchers: new Map(),
             version: 0,
             bundlePath: undefined,
+            editorExtensionsPath: undefined,
             inputs: new Set(),
+            generatedSchemas: undefined,
             buildChain: Promise.resolve(),
             changeTimer: undefined,
             rebuildTimer: undefined,
@@ -678,14 +707,20 @@ export class ProjectServer {
         if (unavailable !== undefined || repoRoot === undefined || !("path" in bun)) return {errors: [unavailable ?? "building is unavailable"]};
         const validation = await this.validate(project);
         if (!validation.ok) return {errors: validation.problems};
-        const outcome = await buildProjectEditorWorker({repoRoot, bunPath: bun.path, folder: project.folder, entry: validation.manifest.entry});
+        const manifest = validation.manifest;
+        const outcome = await buildProjectEditorWorker({repoRoot, bunPath: bun.path, folder: project.folder, entry: manifest.entry, editorExtensions: manifest.editorExtensions});
+        project.generatedSchemas = await readFile(generatedSchemasPath(project.folder), "utf8").catch(() => undefined);
         if (!outcome.ok) return {errors: outcome.errors};
         project.bundlePath = outcome.bundlePath;
+        project.editorExtensionsPath = outcome.editorExtensionsPath;
         project.inputs = new Set(outcome.inputs.map(input => this.pathKey(input)));
         project.version++;
         await this.copyBundleIntoProject(project, outcome.bundlePath);
         if (project.events.subscriberCount > 0) this.watchInputs(project, outcome.inputs);
-        return {workerUrl: `${PROJECT_API_PREFIX}${encodeURIComponent(project.id)}/${PROJECT_WORKER_FILE}?v=${project.version}`};
+        const projectRoute = `${PROJECT_API_PREFIX}${encodeURIComponent(project.id)}`;
+        const version = `?v=${project.version}`;
+        const editorExtensionsUrl = outcome.editorExtensionsPath === undefined ? {} : {editorExtensionsUrl: `${projectRoute}/${EDITOR_EXTENSIONS_BUNDLE_FILE}${version}`};
+        return {workerUrl: `${projectRoute}/${PROJECT_WORKER_FILE}${version}`, ...editorExtensionsUrl, warnings: outcome.warnings};
     }
 
     private async copyBundleIntoProject(project: OpenProject, bundlePath: string): Promise<void> {
@@ -701,6 +736,16 @@ export class ProjectServer {
     private async workerBundle(project: OpenProject): Promise<Response> {
         const bundle = project.bundlePath;
         if (bundle === undefined || !await pathExists(bundle)) throw new HttpError(HTTP_NOT_FOUND, "this project has not been built yet; POST build first");
+        return new Response(new Uint8Array(await readFile(bundle)), {
+            headers: {...ISOLATION_HEADERS, "Content-Type": SCRIPT_CONTENT_TYPE, "Cache-Control": NO_STORE},
+        });
+    }
+
+    private async editorExtensionsBundle(project: OpenProject): Promise<Response> {
+        const bundle = project.editorExtensionsPath;
+        if (bundle === undefined || !await pathExists(bundle)) {
+            throw new HttpError(HTTP_NOT_FOUND, `this project has no editor extensions bundle: name a module in "editorExtensions" in ${PROJECT_MANIFEST_FILE} and build it`);
+        }
         return new Response(new Uint8Array(await readFile(bundle)), {
             headers: {...ISOLATION_HEADERS, "Content-Type": SCRIPT_CONTENT_TYPE, "Cache-Control": NO_STORE},
         });
@@ -794,8 +839,21 @@ export class ProjectServer {
             const paths = [...project.pendingChanges].sort();
             project.pendingChanges.clear();
             project.events.send(PROJECT_EVENT_FILES_CHANGED, {paths});
-            if (project.bundlePath !== undefined && paths.some(isCodeFile)) this.scheduleRebuild(project);
+            const codePaths = paths.filter(isCodeFile);
+            if (project.bundlePath !== undefined && codePaths.length > 0) void this.rebuildForCodeChanges(project, codePaths);
         }, CHANGE_DEBOUNCE_MS);
+    }
+
+    private async rebuildForCodeChanges(project: OpenProject, paths: readonly string[]): Promise<void> {
+        const onlyGeneratedSchemas = paths.every(path => path === GENERATED_SCHEMAS_FILE);
+        if (onlyGeneratedSchemas && await this.generatedSchemasAsLastBuilt(project)) return;
+        this.scheduleRebuild(project);
+    }
+
+    private async generatedSchemasAsLastBuilt(project: OpenProject): Promise<boolean> {
+        await project.buildChain;
+        const current = await readFile(generatedSchemasPath(project.folder), "utf8").catch(() => undefined);
+        return current === project.generatedSchemas;
     }
 
     private scheduleRebuild(project: OpenProject): void {
@@ -803,7 +861,7 @@ export class ProjectServer {
         project.rebuildTimer = setTimeout(() => {
             project.rebuildTimer = undefined;
             void this.build(project).then(result => {
-                if (isBuildSuccess(result)) project.events.send(PROJECT_EVENT_REBUILT, {workerUrl: result.workerUrl});
+                if (isBuildSuccess(result)) project.events.send(PROJECT_EVENT_REBUILT, result);
                 else project.events.send(PROJECT_EVENT_BUILD_FAILED, {errors: result.errors});
             }, error => project.events.send(PROJECT_EVENT_BUILD_FAILED, {errors: [describeError(error)]}));
         }, REBUILD_DEBOUNCE_MS);

@@ -1,127 +1,94 @@
-import type {Entity} from "../../engine/core";
-import type {SceneJsonValue} from "../../engine/scene";
-import type {EditorEntitySummary, EditorFieldDescription, EditorFieldValue} from "../editorProtocol";
-import {capturePointer, createElement} from "./dom";
+import type {NumberFieldOptions, SceneJsonValue} from "../../engine/scene";
+import type {EditorFieldValue, NumberFieldDescription} from "../editorProtocol";
+import {ListFieldEditor, StructFieldEditor} from "./compoundFieldEditors";
+import {createElement} from "./dom";
+import {fieldDrawers} from "./fieldDrawers";
+import type {FieldDrawerRegistry} from "./fieldDrawers";
 import {
-    assetText,
-    entityLabel,
-    entityOptionValue,
+    DECIMAL_INPUT_MODE,
+    FieldEditorBase,
+    fillSelect,
+    gestureKey,
+    installScrub,
+    installStepping,
+    InvalidFieldText,
+    MIXED_CLASS,
+    MIXED_OPTION_VALUE,
+    numberInput,
+    numericOf,
+    NUMERIC_INPUT_MODE,
+    selectValue,
+    showText,
+    stepperButtons,
+    textInput,
+    toggleControl,
+    TYPING,
+} from "./fieldEditorBase";
+import type {FieldEditor, FieldEditorContext} from "./fieldEditorBase";
+import {
+    clampedWire,
+    clampToRange,
+    eulerDegreesOfQuaternion,
     eulerDegreeText,
     float32Text,
-    isInlineAssetSummary,
-    NO_ENTITY_OPTION_VALUE,
+    jsonFieldText,
     numberOfWire,
     numberText,
-    parseAssetPathText,
-    parseEntityOptionValue,
     parseFiniteNumberText,
     parseIntegerText,
+    parseJsonFieldText,
     parseNumberText,
     parseRgbText,
     parseStringText,
     parseTextColorParts,
     parseTextLinesText,
+    POSITIVE_INFINITY_WIRE,
     quaternionOfEulerDegrees,
     rgbText,
+    sliderRangeOf,
     stringText,
     TEXT_COLOR_MODES,
     textColorParts,
     textForTextColorMode,
     textLinesText,
-    VEC3_COMPONENT_COUNT,
     wireNumber,
 } from "./fieldValueText";
 import type {EulerDegrees, ParsedFieldText, TextColorMode} from "./fieldValueText";
-import {LatestOnly} from "./latestOnly";
-import {fieldValuesEqual, mixedValueOf} from "./multiSelection";
-import type {RotationEulerCache} from "./rotationEulerCache";
-import {arrowStepDirection, scrubbedValue, steppedValue, wheelStepDirection} from "./scrubMath";
+import {mixedValueOf} from "./multiSelection";
+import {AssetFieldEditor, EntityFieldEditor} from "./referenceFieldEditors";
+import {baseStepFor, scrubUnitsPerPixelForStep, steppedValue} from "./scrubMath";
 import type {ScrubKind, StepDirection, StepModifiers} from "./scrubMath";
-import type {ProjectFileKind} from "./projectFiles";
 
-export interface FieldEditorContext {
-    readonly typeName: string;
-    readonly field: EditorFieldDescription;
-    readonly entities: readonly Entity[];
-    readonly rotations: RotationEulerCache;
-    readonly label: HTMLElement;
-
-    entityChoices(): readonly EditorEntitySummary[];
-
-    commit(before: readonly EditorFieldValue[], after: readonly SceneJsonValue[], coalesceKey?: string): Promise<readonly EditorFieldValue[] | undefined>;
-
-    endGesture(coalesceKey: string): void;
-
-    reportInvalid(message: string): void;
-
-    draggedAsset(): {readonly path: string, readonly fileKind: ProjectFileKind} | undefined;
-}
-
-export interface FieldEditor {
-    readonly element: HTMLElement;
-
-    show(values: readonly EditorFieldValue[]): void;
-
-    showEntityChoices(): void;
-}
-
-export const ENTITY_CHOICE_LIMIT = 500;
-export const MIXED_VALUE_TEXT = "—";
-export const SCRUB_START_THRESHOLD_PX = 2;
+export type {FieldEditor, FieldEditorContext, FieldEditorServices} from "./fieldEditorBase";
+export {ENTITY_CHOICE_LIMIT, MIXED_VALUE_TEXT, SCRUB_START_THRESHOLD_PX} from "./fieldEditorBase";
 
 const AXIS_NAMES = ["X", "Y", "Z"];
 const AXIS_CLASSES = ["axis-x", "axis-y", "axis-z"];
+const VEC2_AXES = 2;
+const VEC3_AXES = 3;
 const DEGREE_SIGN = "°";
-const DECIMAL_INPUT_MODE = "decimal";
-const NUMERIC_INPUT_MODE = "numeric";
 const MAX_TEXTAREA_ROWS = 12;
 const MIN_TEXTAREA_ROWS = 2;
 const LINE_SEPARATOR = "\n";
-const NO_ENTITY_LABEL = "(none)";
 const NULL_STRING_PLACEHOLDER = "(none)";
-const ASSET_PATH_PLACEHOLDER = "path/to/file";
-const MIXED_OPTION_VALUE = "\u0000mixed";
+const NULL_NUMBER_PLACEHOLDER = "(none)";
+const UNCAPPED_PLACEHOLDER = "no cap";
+const NONE_TOGGLE_TEXT = "None";
+const UNCAPPED_TOGGLE_TEXT = "Uncapped";
 const ROTATION_ORDER_HINT = "Euler angles in degrees, applied Z (yaw), then Y (pitch), then X (roll)";
-const SCRUB_HINT = "Drag to change (Shift faster, Alt slower); Arrow keys and the wheel step while the field is focused";
 const TEXT_COLOR_PLACEHOLDERS: Readonly<Record<TextColorMode, string>> = {default: "", palette: "0-255", rgb: "#rrggbb"};
-const MIXED_CLASS = "mixed";
-const SCRUBBING_CLASS = "scrubbing";
-const DROP_TARGET_CLASS = "drop-target";
-const LEFT_BUTTON = 0;
-const STEP_UP: StepDirection = 1;
-const STEP_DOWN: StepDirection = -1;
-const ASSET_KIND_BY_FIELD: Readonly<Record<string, ProjectFileKind>> = {mesh: "mesh", spriteImage: "image"};
+const NO_OPTIONS: NumberFieldOptions = {};
+const NULL_VALUE: SceneJsonValue = null;
+const UNREADABLE_ROTATION: EulerDegrees = [Number.NaN, Number.NaN, Number.NaN];
+const FALLBACK_NUMBER = 0;
 
-const TYPING = true;
-
-let nextGestureId = 1;
-
-function gestureKey(prefix: string): string {
-    return `${prefix}:${nextGestureId++}`;
-}
-
-class InvalidFieldText extends Error {
-    public constructor(public readonly reason: string) {
-        super(reason);
-    }
-}
-
-function modifiersOf(event: {readonly shiftKey: boolean, readonly altKey: boolean}): StepModifiers {
-    return {faster: event.shiftKey, slower: event.altKey};
-}
-
-function numericOf(value: EditorFieldValue | undefined): number {
-    if (value === undefined) return Number.NaN;
-    return numberOfWire(value as SceneJsonValue) ?? Number.NaN;
-}
-
-function vectorComponents(value: EditorFieldValue): SceneJsonValue[] {
-    if (!Array.isArray(value) || value.length !== VEC3_COMPONENT_COUNT) throw new InvalidFieldText(`${JSON.stringify(value)} is not three numbers`);
+function vectorComponents(value: EditorFieldValue, length: number): SceneJsonValue[] {
+    if (!Array.isArray(value) || value.length !== length) throw new InvalidFieldText(`${JSON.stringify(value)} is not ${length} numbers`);
     return [...value];
 }
 
-function withComponent(value: EditorFieldValue, index: number, component: SceneJsonValue): SceneJsonValue {
-    const components = vectorComponents(value);
+function withComponent(value: EditorFieldValue, length: number, index: number, component: SceneJsonValue): SceneJsonValue {
+    const components = vectorComponents(value, length);
     components[index] = component;
     return components;
 }
@@ -130,283 +97,152 @@ function componentValues(values: readonly EditorFieldValue[], index: number): Ed
     return values.map(value => Array.isArray(value) ? value[index] ?? null : null);
 }
 
-function textInput(document: Document, ariaLabel: string): HTMLInputElement {
-    const input = createElement(document, "input", "field-input");
-    input.type = "text";
-    input.spellcheck = false;
-    input.setAttribute("aria-label", ariaLabel);
-    return input;
+function textAreaRows(text: string | undefined): number {
+    return Math.max(MIN_TEXTAREA_ROWS, Math.min(MAX_TEXTAREA_ROWS, (text ?? "").split(LINE_SEPARATOR).length));
 }
 
-function numberInput(document: Document, ariaLabel: string, inputMode: string): HTMLInputElement {
-    const input = textInput(document, ariaLabel);
-    input.inputMode = inputMode;
-    input.classList.add("number");
-    return input;
+function isEveryValue(values: readonly EditorFieldValue[], test: (value: EditorFieldValue) => boolean): boolean {
+    return values.length > 0 && values.every(test);
 }
 
-function showText(input: HTMLInputElement | HTMLTextAreaElement, text: string | undefined): void {
-    input.value = text ?? "";
-    input.placeholder = text === undefined ? MIXED_VALUE_TEXT : input.dataset.placeholder ?? "";
-    input.classList.toggle(MIXED_CLASS, text === undefined);
+function isNullValue(value: EditorFieldValue): boolean {
+    return value === null;
 }
 
-function fillSelect(select: HTMLSelectElement, options: readonly {readonly value: string, readonly label: string}[]): void {
-    select.replaceChildren(...options.map(({value, label}) => {
-        const option = select.ownerDocument.createElement("option");
-        option.value = value;
-        option.textContent = label;
-        return option;
-    }));
+function isUncappedValue(value: EditorFieldValue): boolean {
+    return value === POSITIVE_INFINITY_WIRE;
 }
 
-function selectValue(select: HTMLSelectElement, value: string | undefined): void {
-    const existing = [...select.options].find(option => option.value === MIXED_OPTION_VALUE);
-    if (value === undefined) {
-        if (existing === null) {
-            const option = select.ownerDocument.createElement("option");
-            option.value = MIXED_OPTION_VALUE;
-            option.textContent = MIXED_VALUE_TEXT;
-            select.prepend(option);
-        }
-        select.value = MIXED_OPTION_VALUE;
-        return;
-    }
-    existing?.remove();
-    select.value = value;
-}
-
-interface ScrubSpec {
-    readonly kind: ScrubKind;
-
-    startValues(): readonly number[] | undefined;
-
-    apply(values: readonly number[], coalesceKey: string): Promise<unknown>;
-}
-
-function installScrub(handle: HTMLElement, spec: ScrubSpec, onEnd: (coalesceKey: string) => void): void {
-    handle.classList.add("scrub-handle");
-    handle.title = SCRUB_HINT;
-    handle.addEventListener("pointerdown", event => {
-        if (event.button !== LEFT_BUTTON) return;
-        const start = spec.startValues();
-        if (start === undefined || start.length === 0) return;
-        event.preventDefault();
-        capturePointer(handle, event.pointerId);
-        const startX = event.clientX;
-        const key = gestureKey("scrub");
-        const sender = new LatestOnly();
-        let scrubbing = false;
-        const onMove = (move: PointerEvent): void => {
-            const pixels = move.clientX - startX;
-            if (!scrubbing && Math.abs(pixels) < SCRUB_START_THRESHOLD_PX) return;
-            scrubbing = true;
-            handle.classList.add(SCRUBBING_CLASS);
-            const values = start.map(value => scrubbedValue(value, pixels, modifiersOf(move), spec.kind));
-            sender.run(() => spec.apply(values, key));
-        };
-        const onUp = (): void => {
-            handle.removeEventListener("pointermove", onMove);
-            handle.removeEventListener("pointerup", onUp);
-            handle.removeEventListener("pointercancel", onUp);
-            handle.classList.remove(SCRUBBING_CLASS);
-            sender.whenDrained(() => onEnd(key));
-        };
-        handle.addEventListener("pointermove", onMove);
-        handle.addEventListener("pointerup", onUp);
-        handle.addEventListener("pointercancel", onUp);
-    });
-}
-
-function installStepping(input: HTMLInputElement, step: (direction: StepDirection, modifiers: StepModifiers) => void): void {
-    input.addEventListener("keydown", event => {
-        const direction = arrowStepDirection(event.key);
-        if (direction === undefined) return;
-        event.preventDefault();
-        step(direction, modifiersOf(event));
-    });
-    input.addEventListener("wheel", event => {
-        if (input.ownerDocument.activeElement !== input) return;
-        const direction = wheelStepDirection(event.deltaY);
-        if (direction === undefined) return;
-        event.preventDefault();
-        step(direction, modifiersOf(event));
-    }, {passive: false});
-}
-
-function stepperButtons(document: Document, ariaLabel: string, step: (direction: StepDirection, modifiers: StepModifiers) => void): HTMLElement {
-    const steppers = createElement(document, "span", "field-steppers");
-    for (const [direction, text, name] of [[STEP_UP, "▲", "Increase"], [STEP_DOWN, "▼", "Decrease"]] as const) {
-        const button = createElement(document, "button", "field-stepper", text);
-        button.type = "button";
-        button.tabIndex = -1;
-        button.title = `${name} ${ariaLabel} (Shift faster, Alt slower)`;
-        button.addEventListener("pointerdown", event => event.preventDefault());
-        button.addEventListener("click", event => step(direction, modifiersOf(event)));
-        steppers.append(button);
-    }
-    return steppers;
-}
-
-abstract class FieldEditorBase implements FieldEditor {
-    public readonly element: HTMLElement;
-    protected values: readonly EditorFieldValue[] = [];
-    protected focusKey = gestureKey("focus");
-    private readonly typingSender = new LatestOnly();
-
-    protected constructor(protected readonly context: FieldEditorContext, protected readonly document: Document) {
-        this.element = createElement(document, "div", `field-editor kind-${context.field.kind}`);
-    }
-
-    protected trackFocusGesture(control: HTMLElement): void {
-        control.addEventListener("focus", () => this.focusKey = gestureKey("focus"));
-        control.addEventListener("blur", () => {
-            const key = this.focusKey;
-            this.typingSender.whenDrained(() => this.endGesture(key));
-        });
-    }
-
-    protected sendWhileTyping(control: HTMLElement, send: (coalesceKey: string) => Promise<unknown> | undefined): void {
-        this.trackFocusGesture(control);
-        control.addEventListener("input", () => this.typingSender.run(() => send(this.focusKey) ?? Promise.resolve()));
-    }
-
-    protected commitParsedWhileTyping(control: HTMLInputElement | HTMLTextAreaElement, parse: (text: string) => ParsedFieldText): void {
-        this.sendWhileTyping(control, key => {
-            const parsed = parse(control.value);
-            return parsed.valid ? this.commitEach(() => parsed.value, key, TYPING) : undefined;
-        });
-    }
-
-    protected afterTyping(commit: () => void): void {
-        this.typingSender.whenDrained(commit);
-    }
-
-    protected get fieldLabel(): string {
-        return `${this.context.typeName}.${this.context.field.key}`;
-    }
-
-    public show(values: readonly EditorFieldValue[]): void {
-        this.values = values;
-        if (!this.hasFocus()) this.render(values);
-    }
-
-    public showEntityChoices(): void {
-    }
-
-    protected abstract render(values: readonly EditorFieldValue[]): void;
-
-    protected revert(): void {
-        this.render(this.values);
-    }
-
-    protected rejectText(reason: string): void {
-        this.context.reportInvalid(`${this.fieldLabel}: ${reason}`);
-        this.revert();
-    }
-
-    protected mapValues(map: (current: EditorFieldValue, index: number) => SceneJsonValue): SceneJsonValue[] | undefined {
-        try {
-            return this.values.map(map);
-        } catch (error) {
-            if (!(error instanceof InvalidFieldText)) throw error;
-            this.rejectText(error.reason);
-            return undefined;
-        }
-    }
-
-    protected commitEach(map: (current: EditorFieldValue, index: number) => SceneJsonValue, coalesceKey?: string, typing = false): Promise<unknown> {
-        const mapped = typing ? this.mapValuesQuietly(map) : this.mapValues(map);
-        if (mapped === undefined || mapped.length === 0) return Promise.resolve();
-        const unchanged = mapped.every((value, index) => fieldValuesEqual(value, this.values[index]));
-        if (unchanged && typing) return Promise.resolve();
-        if (unchanged && coalesceKey === undefined) {
-            this.revert();
-            return Promise.resolve();
-        }
-        const before = this.values;
-        this.values = mapped;
-        return this.context.commit(before, mapped, coalesceKey).then(stored => {
-            if (stored === undefined) {
-                this.values = before;
-                if (!typing) this.revert();
-                return;
-            }
-            this.stored(stored, mapped);
-            this.values = stored;
-            if (!this.hasFocus() || (coalesceKey !== undefined && !typing)) this.render(stored);
-        });
-    }
-
-    protected commitAll(value: SceneJsonValue): void {
-        this.afterTyping(() => void this.commitEach(() => value));
-    }
-
-    protected commitParsed(parsed: ParsedFieldText): void {
-        if (parsed.valid) this.commitAll(parsed.value);
-        else this.afterTyping(() => this.rejectText(parsed.reason));
-    }
-
-    private mapValuesQuietly(map: (current: EditorFieldValue, index: number) => SceneJsonValue): SceneJsonValue[] | undefined {
-        try {
-            return this.values.map(map);
-        } catch (error) {
-            if (error instanceof InvalidFieldText) return undefined;
-            throw error;
-        }
-    }
-
-    protected stored(_stored: readonly EditorFieldValue[], _sent: readonly SceneJsonValue[]): void {
-    }
-
-    protected hasFocus(): boolean {
-        const active = this.document.activeElement;
-        return active !== null && this.element.contains(active);
-    }
-
-    protected endGesture(coalesceKey: string): void {
-        this.context.endGesture(coalesceKey);
-    }
+function showToggle(input: HTMLInputElement, values: readonly EditorFieldValue[], test: (value: EditorFieldValue) => boolean): boolean {
+    const all = isEveryValue(values, test);
+    input.checked = all;
+    input.indeterminate = !all && values.some(test);
+    return all;
 }
 
 class NumberFieldEditor extends FieldEditorBase {
     private readonly input: HTMLInputElement;
+    private readonly slider: HTMLInputElement | undefined;
+    private readonly noneToggle: HTMLInputElement | undefined;
+    private readonly uncappedToggle: HTMLInputElement | undefined;
     private readonly scrubKind: ScrubKind;
+    private readonly options: NumberFieldOptions;
+    private readonly uncapped: boolean;
+    private lastFinite: number | undefined;
 
-    public constructor(context: FieldEditorContext, document: Document, integer: boolean) {
+    public constructor(context: FieldEditorContext, document: Document, field: NumberFieldDescription) {
         super(context, document);
+        const integer = field.kind === "integer";
         this.scrubKind = integer ? "integer" : "number";
+        this.options = field.options ?? NO_OPTIONS;
+        this.uncapped = field.kind === "number" && field.uncapped === true;
         this.input = numberInput(document, this.fieldLabel, integer ? NUMERIC_INPUT_MODE : DECIMAL_INPUT_MODE);
-        const parse = integer ? parseIntegerText : parseNumberText;
+        const parse = (text: string): ParsedFieldText => clampedWire(integer ? parseIntegerText(text) : parseNumberText(text), this.options, this.uncapped);
         this.commitParsedWhileTyping(this.input, parse);
         this.input.addEventListener("change", () => this.commitParsed(parse(this.input.value)));
-        const step = (direction: StepDirection, modifiers: StepModifiers): void => {
-            void this.commitEach(current => wireNumber(steppedValue(numericOf(current), direction, modifiers, this.scrubKind)), this.focusKey);
-        };
-        installStepping(this.input, step);
+        installStepping(this.input, (direction, modifiers) => void this.commitEach(current => this.stepped(current, direction, modifiers), this.focusKey));
         installScrub(context.label, {
             kind: this.scrubKind,
+            unitsPerPixel: scrubUnitsPerPixelForStep(this.options.step, this.scrubKind),
             startValues: () => this.values.map(numericOf),
-            apply: (values, key) => this.commitEach((_, index) => wireNumber(values[index]), key),
+            apply: (values, key) => this.commitEach((_, index) => this.bounded(values[index]), key),
         }, key => this.endGesture(key));
-        this.element.append(this.input, stepperButtons(document, this.fieldLabel, (direction, modifiers) => {
+        const range = sliderRangeOf(this.options);
+        if (range !== undefined) {
+            const slider = createElement(document, "input", "field-input slider");
+            slider.type = "range";
+            slider.min = String(range.min);
+            slider.max = String(range.max);
+            slider.step = this.options.step === undefined ? "any" : String(this.options.step);
+            slider.setAttribute("aria-label", `${this.fieldLabel} slider`);
+            this.sendWhileTyping(slider, key => this.commitValues(() => this.bounded(Number(slider.value)), key, TYPING).then(stored => {
+                if (stored !== undefined) this.render(stored);
+            }));
+            slider.addEventListener("change", () => {
+                const key = this.focusKey;
+                this.focusKey = gestureKey("slider");
+                this.afterTyping(() => this.endGesture(key));
+            });
+            this.slider = slider;
+            this.element.append(slider);
+        }
+        this.element.append(this.input);
+        if (this.options.unit !== undefined) this.element.append(createElement(document, "span", "field-unit", this.options.unit));
+        this.element.append(stepperButtons(document, this.fieldLabel, (direction, modifiers) => {
             const key = gestureKey("stepper");
-            void this.commitEach(current => wireNumber(steppedValue(numericOf(current), direction, modifiers, this.scrubKind)), key).then(() => this.endGesture(key));
+            void this.commitEach(current => this.stepped(current, direction, modifiers), key).then(() => this.endGesture(key));
         }));
+        if (field.nullable === true) {
+            const toggle = toggleControl(document, NONE_TOGGLE_TEXT, `${this.fieldLabel} has no value`);
+            toggle.input.addEventListener("change", () => this.commitAll(toggle.input.checked ? NULL_VALUE : this.bounded(this.lastFinite ?? FALLBACK_NUMBER)));
+            this.noneToggle = toggle.input;
+            this.element.append(toggle.element);
+        }
+        if (this.uncapped) {
+            const toggle = toggleControl(document, UNCAPPED_TOGGLE_TEXT, `${this.fieldLabel} has no cap (Infinity)`);
+            toggle.input.addEventListener("change", () => this.toggleUncapped(toggle.input.checked));
+            this.uncappedToggle = toggle.input;
+            this.element.append(toggle.element);
+        }
     }
 
     protected render(values: readonly EditorFieldValue[]): void {
+        const none = this.noneToggle === undefined ? false : showToggle(this.noneToggle, values, isNullValue);
+        const unbounded = this.uncappedToggle === undefined ? false : showToggle(this.uncappedToggle, values, isUncappedValue);
         const shared = mixedValueOf(values);
-        showText(this.input, shared === undefined || shared.mixed ? undefined : numberText(shared.value));
+        const number = shared === undefined || shared.mixed ? undefined : numberOfWire(shared.value as SceneJsonValue);
+        if (number !== undefined && Number.isFinite(number)) this.lastFinite = number;
+        const placeholder = none ? NULL_NUMBER_PLACEHOLDER : unbounded ? UNCAPPED_PLACEHOLDER : undefined;
+        if (placeholder === undefined) delete this.input.dataset.placeholder;
+        else this.input.dataset.placeholder = placeholder;
+        const hidesNumber = none || unbounded;
+        this.input.disabled = hidesNumber;
+        showText(this.input, shared === undefined || shared.mixed ? undefined : hidesNumber ? "" : numberText(shared.value));
+        if (this.slider !== undefined) {
+            const finite = number !== undefined && Number.isFinite(number);
+            this.slider.disabled = !finite;
+            if (finite) this.slider.value = String(number);
+            this.slider.classList.toggle(MIXED_CLASS, shared?.mixed === true);
+        }
+    }
+
+    protected override hasFocus(): boolean {
+        const active = this.document.activeElement;
+        return active === this.input || (this.slider !== undefined && active === this.slider);
+    }
+
+    private bounded(value: number): SceneJsonValue {
+        return wireNumber(clampToRange(value, this.options, this.uncapped));
+    }
+
+    private stepped(current: EditorFieldValue, direction: StepDirection, modifiers: StepModifiers): SceneJsonValue {
+        const value = numericOf(current);
+        if (value === Number.POSITIVE_INFINITY && this.uncapped) return wireNumber(value);
+        return this.bounded(steppedValue(value, direction, modifiers, this.scrubKind, baseStepFor(this.options.step, this.scrubKind)));
+    }
+
+    private toggleUncapped(uncapped: boolean): void {
+        if (uncapped) {
+            this.commitAll(POSITIVE_INFINITY_WIRE);
+            return;
+        }
+        if (this.lastFinite !== undefined) {
+            this.commitAll(this.bounded(this.lastFinite));
+            return;
+        }
+        this.input.disabled = false;
+        delete this.input.dataset.placeholder;
+        showText(this.input, "");
+        this.input.focus();
     }
 }
 
 abstract class AxisFieldEditor extends FieldEditorBase {
     protected readonly inputs: HTMLInputElement[];
 
-    protected constructor(context: FieldEditorContext, document: Document, private readonly scrubKind: ScrubKind, unitSuffix: string) {
+    protected constructor(context: FieldEditorContext, document: Document, axisCount: number, private readonly scrubKind: ScrubKind, unitSuffix: string) {
         super(context, document);
-        this.inputs = AXIS_NAMES.map((axis, index) => {
+        this.inputs = AXIS_NAMES.slice(0, axisCount).map((axis, index) => {
             const label = createElement(document, "span", `axis-label ${AXIS_CLASSES[index]}`, axis);
             const input = numberInput(document, `${this.fieldLabel} ${axis}${unitSuffix}`, DECIMAL_INPUT_MODE);
             this.sendWhileTyping(input, key => {
@@ -444,9 +280,9 @@ abstract class AxisFieldEditor extends FieldEditorBase {
     protected abstract commitAxisValue(index: number, value: SceneJsonValue, coalesceKey?: string, typing?: boolean): Promise<unknown>;
 }
 
-class Vec3FieldEditor extends AxisFieldEditor {
-    public constructor(context: FieldEditorContext, document: Document) {
-        super(context, document, "number", "");
+class VectorFieldEditor extends AxisFieldEditor {
+    public constructor(context: FieldEditorContext, document: Document, private readonly length: number) {
+        super(context, document, length, "number", "");
     }
 
     protected render(values: readonly EditorFieldValue[]): void {
@@ -462,7 +298,7 @@ class Vec3FieldEditor extends AxisFieldEditor {
     }
 
     protected commitAxisNumbers(index: number, map: (current: number, entityIndex: number) => number, coalesceKey?: string): Promise<unknown> {
-        return this.commitEach((current, entityIndex) => withComponent(current, index, wireNumber(map(numericOf(vectorComponents(current)[index]), entityIndex))), coalesceKey);
+        return this.commitEach((current, entityIndex) => withComponent(current, this.length, index, wireNumber(map(numericOf(vectorComponents(current, this.length)[index]), entityIndex))), coalesceKey);
     }
 
     protected parseAxisText(text: string): ParsedFieldText {
@@ -470,7 +306,7 @@ class Vec3FieldEditor extends AxisFieldEditor {
     }
 
     protected commitAxisValue(index: number, value: SceneJsonValue, coalesceKey?: string, typing = false): Promise<unknown> {
-        return this.commitEach(current => withComponent(current, index, value), coalesceKey, typing);
+        return this.commitEach(current => withComponent(current, this.length, index, value), coalesceKey, typing);
     }
 }
 
@@ -478,7 +314,7 @@ class RotationFieldEditor extends AxisFieldEditor {
     private pendingDegrees: readonly EulerDegrees[] | undefined;
 
     public constructor(context: FieldEditorContext, document: Document) {
-        super(context, document, "degrees", ` in degrees`);
+        super(context, document, VEC3_AXES, "degrees", ` in degrees`);
         this.inputs.forEach(input => input.dataset.placeholder = DEGREE_SIGN);
         this.element.title = ROTATION_ORDER_HINT;
     }
@@ -522,18 +358,19 @@ class RotationFieldEditor extends AxisFieldEditor {
         const degrees = this.pendingDegrees;
         this.pendingDegrees = undefined;
         if (degrees === undefined) return;
-        const {typeName, field, rotations, entities} = this.context;
+        const {typeName, field, entities} = this.context;
         stored.forEach((value, index) => {
             const entity = entities[index];
-            if (entity !== undefined && degrees[index] !== undefined) rotations.remember(entity, typeName, field.key, value as SceneJsonValue, degrees[index]);
+            if (entity !== undefined && degrees[index] !== undefined) this.services.rotations.remember(entity, typeName, field.key, value as SceneJsonValue, degrees[index]);
         });
     }
 
     private degreesOf(values: readonly EditorFieldValue[]): EulerDegrees[] {
-        const {typeName, field, rotations, entities} = this.context;
+        const {typeName, field, entities} = this.context;
         return values.map((value, index) => {
             const entity = entities[index];
-            return entity === undefined ? [Number.NaN, Number.NaN, Number.NaN] : rotations.degreesFor(entity, typeName, field.key, value);
+            if (entity !== undefined) return this.services.rotations.degreesFor(entity, typeName, field.key, value);
+            return values.length === 1 ? eulerDegreesOfQuaternion(value) : UNREADABLE_ROTATION;
         });
     }
 }
@@ -662,7 +499,7 @@ class TextLinesFieldEditor extends FieldEditorBase {
         const shared = mixedValueOf(values);
         const text = shared === undefined || shared.mixed ? undefined : textLinesText(shared.value);
         showText(this.textarea, text);
-        this.textarea.rows = Math.max(MIN_TEXTAREA_ROWS, Math.min(MAX_TEXTAREA_ROWS, (text ?? "").split(LINE_SEPARATOR).length));
+        this.textarea.rows = textAreaRows(text);
     }
 }
 
@@ -686,102 +523,37 @@ class EnumFieldEditor extends FieldEditorBase {
     }
 }
 
-class EntityFieldEditor extends FieldEditorBase {
-    private readonly select: HTMLSelectElement;
-    private shownKey: string | undefined;
-
-    public constructor(context: FieldEditorContext, document: Document, private readonly nullable: boolean) {
-        super(context, document);
-        this.select = createElement(document, "select", "field-input");
-        this.select.setAttribute("aria-label", this.fieldLabel);
-        this.select.addEventListener("change", () => {
-            if (this.select.value !== MIXED_OPTION_VALUE) this.commitAll(parseEntityOptionValue(this.select.value));
-        });
-        this.element.append(this.select);
-    }
-
-    public override showEntityChoices(): void {
-        if (!this.hasFocus()) this.render(this.values);
-    }
-
-    protected render(values: readonly EditorFieldValue[]): void {
-        const shared = mixedValueOf(values);
-        const selected = shared === undefined || shared.mixed ? undefined : entityOptionValue(shared.value);
-        const choices = this.context.entityChoices();
-        const key = `${choices.length}:${selected}:${choices.slice(0, ENTITY_CHOICE_LIMIT).map(summary => `${summary.entity}=${summary.name ?? ""}`).join(",")}`;
-        if (key !== this.shownKey) {
-            this.shownKey = key;
-            fillSelect(this.select, this.options(choices, selected));
-        }
-        selectValue(this.select, selected);
-    }
-
-    private options(choices: readonly EditorEntitySummary[], selected: string | undefined): {value: string, label: string}[] {
-        const options = choices.slice(0, ENTITY_CHOICE_LIMIT).map(summary => ({value: String(summary.entity), label: entityLabel(summary.entity, summary.name)}));
-        if (this.nullable) options.unshift({value: NO_ENTITY_OPTION_VALUE, label: NO_ENTITY_LABEL});
-        if (selected !== undefined && !options.some(option => option.value === selected)) {
-            const pastLimit = choices.find(summary => String(summary.entity) === selected);
-            options.push({
-                value: selected,
-                label: selected === NO_ENTITY_OPTION_VALUE ? NO_ENTITY_LABEL
-                    : pastLimit === undefined ? `Entity ${selected} (not listed)` : entityLabel(pastLimit.entity, pastLimit.name),
-            });
-        }
-        return options;
-    }
-}
-
-class AssetFieldEditor extends FieldEditorBase {
-    private readonly input: HTMLInputElement;
-    private readonly inline: HTMLElement;
+class JsonFieldEditor extends FieldEditorBase {
+    private readonly textarea: HTMLTextAreaElement;
 
     public constructor(context: FieldEditorContext, document: Document) {
         super(context, document);
-        this.input = textInput(document, `${this.fieldLabel} file path`);
-        this.input.dataset.placeholder = ASSET_PATH_PLACEHOLDER;
-        this.input.addEventListener("change", () => this.commitAll(parseAssetPathText(this.input.value)));
-        this.inline = createElement(document, "span", "field-read-only");
-        this.element.append(this.input, this.inline);
-        const wanted = ASSET_KIND_BY_FIELD[context.field.kind];
-        const acceptedPath = (): string | undefined => {
-            const dragged = this.context.draggedAsset();
-            return dragged !== undefined && dragged.fileKind === wanted ? dragged.path : undefined;
-        };
-        this.element.addEventListener("dragover", event => {
-            if (acceptedPath() === undefined) return;
-            event.preventDefault();
-            this.element.classList.add(DROP_TARGET_CLASS);
-        });
-        this.element.addEventListener("dragleave", () => this.element.classList.remove(DROP_TARGET_CLASS));
-        this.element.addEventListener("drop", event => {
-            this.element.classList.remove(DROP_TARGET_CLASS);
-            const path = acceptedPath();
-            if (path === undefined) return;
-            event.preventDefault();
-            this.commitAll({path});
-        });
+        this.textarea = createElement(document, "textarea", "field-input text-lines json-value");
+        this.textarea.spellcheck = false;
+        this.textarea.wrap = "off";
+        this.textarea.setAttribute("aria-label", `${this.fieldLabel} as JSON`);
+        this.textarea.addEventListener("change", () => this.commitParsed(parseJsonFieldText(this.textarea.value)));
+        this.element.append(this.textarea);
     }
 
     protected render(values: readonly EditorFieldValue[]): void {
         const shared = mixedValueOf(values);
-        const value = shared === undefined || shared.mixed ? undefined : shared.value;
-        const inline = value !== undefined && isInlineAssetSummary(value);
-        this.input.hidden = inline;
-        this.inline.hidden = !inline;
-        if (inline) this.inline.textContent = assetText(value);
-        else showText(this.input, value === undefined ? undefined : assetText(value));
+        const text = shared === undefined || shared.mixed ? undefined : jsonFieldText(shared.value);
+        showText(this.textarea, text);
+        this.textarea.rows = textAreaRows(text);
     }
 }
 
-export function createFieldEditor(document: Document, context: FieldEditorContext): FieldEditor {
+function builtInFieldEditor(document: Document, context: FieldEditorContext, nested: (document: Document, context: FieldEditorContext) => FieldEditor): FieldEditor {
     const field = context.field;
     switch (field.kind) {
         case "number":
-            return new NumberFieldEditor(context, document, false);
         case "integer":
-            return new NumberFieldEditor(context, document, true);
+            return new NumberFieldEditor(context, document, field);
+        case "vec2":
+            return new VectorFieldEditor(context, document, VEC2_AXES);
         case "vec3":
-            return new Vec3FieldEditor(context, document);
+            return new VectorFieldEditor(context, document, VEC3_AXES);
         case "rotation":
             return new RotationFieldEditor(context, document);
         case "rgb":
@@ -798,8 +570,19 @@ export function createFieldEditor(document: Document, context: FieldEditorContex
             return new EnumFieldEditor(context, document, field.enumNames);
         case "entity":
             return new EntityFieldEditor(context, document, field.nullable);
-        case "mesh":
-        case "spriteImage":
-            return new AssetFieldEditor(context, document);
+        case "asset":
+            return new AssetFieldEditor(context, document, field.assetType);
+        case "list":
+            return new ListFieldEditor(context, document, field, nested);
+        case "struct":
+            return new StructFieldEditor(context, document, field, nested);
+        case "custom":
+            return new JsonFieldEditor(context, document);
     }
+}
+
+export function createFieldEditor(document: Document, context: FieldEditorContext, drawers: FieldDrawerRegistry = fieldDrawers): FieldEditor {
+    const drawer = drawers.drawerFor(context.field);
+    if (drawer !== undefined) return drawer(document, context);
+    return builtInFieldEditor(document, context, (nestedDocument, nestedContext) => createFieldEditor(nestedDocument, nestedContext, drawers));
 }

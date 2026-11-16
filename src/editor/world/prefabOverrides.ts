@@ -1,5 +1,5 @@
-import {isSceneJsonObject, PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY, SCENE_INSTANCE_COMPONENT_NAME} from "../../engine/scene";
-import type {ComponentSchemaRegistry, SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonValue} from "../../engine/scene";
+import {isSceneJsonObject, PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY, refersToEntities, SCENE_INSTANCE_COMPONENT_NAME} from "../../engine/scene";
+import type {ComponentSchemaRegistry, FieldType, SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonObject, SceneJsonValue} from "../../engine/scene";
 
 export const PREFAB_INSTANCE_COMPONENT_NAME = "PrefabInstance";
 export const ROOT_DEFAULT_OVERRIDE_TYPES: readonly string[] = ["LocalPosition", "LocalRotation"];
@@ -109,6 +109,26 @@ class DocumentView {
         const index = this.tree.indexById.get(value);
         return index === undefined ? OUTSIDE_REFERENCE : this.pathByIndex.get(index) ?? OUTSIDE_REFERENCE;
     }
+
+    public withReferencedPaths(type: FieldType, value: SceneJsonValue): SceneJsonValue {
+        switch (type.kind) {
+            case "entity":
+                return this.referencedPath(value);
+            case "list":
+                return Array.isArray(value) ? value.map(element => this.withReferencedPaths(type.element, element)) : value;
+            case "struct": {
+                if (!isSceneJsonObject(value)) return value;
+                const resolved: SceneJsonObject = {...value};
+                for (const member of type.fields) {
+                    const memberValue = value[member.key];
+                    if (memberValue !== undefined && refersToEntities(member)) resolved[member.key] = this.withReferencedPaths(member, memberValue);
+                }
+                return resolved;
+            }
+            default:
+                return value;
+        }
+    }
 }
 
 function fieldValuesDiffer(
@@ -121,7 +141,9 @@ function fieldValuesDiffer(
     instanceValue: SceneJsonValue,
 ): boolean {
     const field = registry?.byName(typeName)?.fields.find(candidate => candidate.key === key);
-    if (field?.kind === "entity") return prefab.referencedPath(prefabValue) !== instance.referencedPath(instanceValue);
+    if (field !== undefined && refersToEntities(field)) {
+        return !nearlyEqual(prefab.withReferencedPaths(field, prefabValue), instance.withReferencedPaths(field, instanceValue));
+    }
     return !nearlyEqual(prefabValue, instanceValue);
 }
 

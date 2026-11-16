@@ -38,8 +38,8 @@ const field = {
         {name: "None", value: FaceCulling.None},
     ]},
     entity: {key: "value", kind: "entity", nullable: true},
-    mesh: {key: "value", kind: "mesh"},
-    spriteImage: {key: "value", kind: "spriteImage"},
+    mesh: {key: "value", kind: "asset", assetType: "mesh"},
+    spriteImage: {key: "value", kind: "asset", assetType: "spriteImage"},
 } satisfies Record<string, FieldSchema>;
 
 interface EncodeRecorder {
@@ -219,6 +219,12 @@ describe("field value codec", () => {
             },
             loadSpriteImage: path => {
                 throw new Error(`no image ${path}`);
+            },
+            loadPrefab: path => {
+                throw new Error(`no prefab ${path}`);
+            },
+            loadDataAsset: path => {
+                throw new Error(`no data asset ${path}`);
             },
         };
         expect(decodeFieldValue(field.mesh, {path: "models/tri.obj"}, decodeRecorder(assets).context, PATH)).toBe(loaded);

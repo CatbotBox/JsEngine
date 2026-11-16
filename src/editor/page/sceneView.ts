@@ -31,6 +31,7 @@ import {LatestOnly} from "./latestOnly";
 import {isAssetKind} from "./projectFiles";
 import {chainLinear, chainRotation, IDENTITY_MATRIX3, localDeltaOf, rotatedAboutWorldAxis, snapToIncrement, snapVector, UNIT_SCALE} from "./transformMath";
 import type {LocalTransform, Matrix3} from "./transformMath";
+import {HOLDS_NO_ENTITIES} from "./undoStack";
 import type {FieldChange} from "./undoStack";
 import {
     amountAlongScreenAxis,
@@ -88,6 +89,7 @@ const MESSAGE_MARGIN_PX = 10;
 const LINE_WIDTH_PX = 2;
 const OUTLINE_WIDTH_PX = 1.5;
 const INTERACTIVE_CLASS = "interactive";
+const PICKING_CLASS = "picking-entity";
 const LOCAL_POSITION = "LocalPosition";
 const LOCAL_ROTATION = "LocalRotation";
 const LOCAL_SCALE = "LocalScale";
@@ -148,6 +150,7 @@ interface PendingClick {
     readonly overSelection: boolean;
     readonly toggle: boolean;
     readonly add: boolean;
+    readonly forEntityPick: boolean;
 }
 
 type Gesture = TransformGesture | CameraGesture | PendingClick;
@@ -241,6 +244,7 @@ export class SceneView {
             this.pickCycle = undefined;
         });
         workspace.on("state", () => this.stateChanged());
+        workspace.on("entityPick", () => this.overlay.classList.toggle(PICKING_CLASS, workspace.pickingEntity));
         this.frameHandle = this.window()?.requestAnimationFrame(this.frame);
     }
 
@@ -448,6 +452,10 @@ export class SceneView {
             return;
         }
         if (event.button !== LEFT_BUTTON) return;
+        if (this.workspace.pickingEntity && !event.altKey) {
+            this.gesture = {kind: "pending", start: point, overSelection: false, toggle: false, add: false, forEntityPick: true};
+            return;
+        }
         if (event.altKey && perspective) {
             this.gesture = {kind: "camera", button: event.button, mode: "orbit", last: point};
             return;
@@ -462,7 +470,7 @@ export class SceneView {
             return;
         }
         const overSelection = info !== undefined && scale !== undefined && this.isOverSelection(point, info, scale);
-        this.gesture = {kind: "pending", start: point, overSelection, toggle: hasCommandModifier(event), add: event.shiftKey};
+        this.gesture = {kind: "pending", start: point, overSelection, toggle: hasCommandModifier(event), add: event.shiftKey, forEntityPick: false};
     }
 
     private onPointerMove(event: PointerEvent): void {
@@ -572,6 +580,11 @@ export class SceneView {
         const screen = screenPointOf(scale, click.start);
         try {
             const {entities: hits} = await this.workspace.request({op: "pickEntities", x: screen.x, y: screen.y, view: "scene"});
+            if (click.forEntityPick) {
+                const picked = hits[0];
+                if (picked !== undefined) this.workspace.finishEntityPick(picked);
+                return;
+            }
             const previous = this.pickCycle;
             const repeated = previous !== undefined && distance(previous.point, click.start) <= CLICK_SLOP_PX && sameEntities(previous.hits, hits);
             this.pickCycle = {point: click.start, hits};
@@ -696,7 +709,7 @@ export class SceneView {
         const pointerDelta = {x: gesture.current.x - gesture.start.x, y: gesture.current.y - gesture.start.y};
         const changes: FieldChange[] = [];
         const field = (target: TransformTarget, typeName: string, key: string, before: SceneJsonValue, after: Vector3 | Quaternion): FieldChange =>
-            ({entity: target.entity, typeName, key, before, after: [...after], entityValued: false});
+            ({entity: target.entity, typeName, key, before, after: [...after], entityShape: HOLDS_NO_ENTITIES});
         switch (handle.kind) {
             case "free":
             case "moveAxis": {

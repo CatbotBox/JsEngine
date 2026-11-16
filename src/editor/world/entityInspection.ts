@@ -8,14 +8,16 @@ import {SpriteImage} from "../../engine/rendering/2d/spriteImage";
 import {
     categoryOf,
     childEntitiesOf,
+    defaultFieldValue,
     EditorOnly,
     encodeFieldValue,
     inferComponentSchema,
     orderedSceneRoots,
     PrefabInstance,
     siblingOrderOf,
+    SPRITE_IMAGE_ASSET_TYPE_NAME,
 } from "../../engine/scene";
-import type {ComponentSchema, ComponentSchemaRegistry, FieldEncodeContext, FieldSchema} from "../../engine/scene";
+import type {ComponentSchema, ComponentSchemaRegistry, FieldEncodeContext, FieldSchema, FieldType, SceneJsonValue} from "../../engine/scene";
 import {ENTITY_HANDLE_LIMIT} from "../editorProtocol";
 import type {
     DescribeSchemasResult,
@@ -24,6 +26,7 @@ import type {
     EditorEntityDetails,
     EditorEntitySummary,
     EditorFieldDescription,
+    EditorFieldTypeDescription,
     EditorFieldValue,
     ListEntitiesResult,
 } from "../editorProtocol";
@@ -36,6 +39,8 @@ interface EntityRow {
 }
 
 const editorOnlyType = (): AnyCT => ComponentType.of(EditorOnly);
+const UNENCODABLE_DEFAULT: SceneJsonValue = null;
+const LIST_ELEMENT_PATH_SUFFIX = "[]";
 
 function ignore(): void {
 }
@@ -61,23 +66,58 @@ export function requireSceneEntity(world: World, entity: Entity): Entity {
     return entity;
 }
 
-function describeField(field: FieldSchema): EditorFieldDescription {
-    switch (field.kind) {
-        case "enum":
-            return {key: field.key, kind: field.kind, enumNames: field.members.map(member => member.name)};
-        case "string":
-        case "entity":
-            return {key: field.key, kind: field.kind, nullable: field.nullable};
-        default:
-            return {key: field.key, kind: field.kind};
+function withoutUndefined<T extends object>(value: T): T {
+    return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function defaultValueEncoding(registry: ComponentSchemaRegistry): FieldEncodeContext {
+    return {sceneIdOf: () => undefined, reportDanglingEntity: ignore, reportUnsavedAsset: ignore, fieldTypes: registry};
+}
+
+export function encodedDefaultValue(registry: ComponentSchemaRegistry, type: FieldType, path: string): SceneJsonValue {
+    try {
+        return encodeFieldValue(type, defaultFieldValue(type, registry, path), defaultValueEncoding(registry), path);
+    } catch {
+        return UNENCODABLE_DEFAULT;
     }
 }
 
-function describeComponent(schema: ComponentSchema): EditorComponentDescription {
+function describeFieldType(registry: ComponentSchemaRegistry, type: FieldType, path: string): EditorFieldTypeDescription {
+    switch (type.kind) {
+        case "number":
+            return withoutUndefined({kind: type.kind, nullable: type.nullable, uncapped: type.uncapped, typeName: type.typeName, options: type.options});
+        case "integer":
+            return withoutUndefined({kind: type.kind, nullable: type.nullable, typeName: type.typeName, options: type.options});
+        case "string":
+            return withoutUndefined({kind: type.kind, nullable: type.nullable, typeName: type.typeName});
+        case "entity":
+            return {kind: type.kind, nullable: type.nullable};
+        case "enum":
+            return withoutUndefined({kind: type.kind, enumNames: type.members.map(member => member.name), typeName: type.typeName});
+        case "asset":
+            return {kind: type.kind, assetType: type.assetType};
+        case "list": {
+            const elementPath = path + LIST_ELEMENT_PATH_SUFFIX;
+            return {kind: type.kind, element: describeFieldType(registry, type.element, elementPath), elementDefault: encodedDefaultValue(registry, type.element, elementPath)};
+        }
+        case "struct":
+            return withoutUndefined({kind: type.kind, typeName: type.typeName, fields: describeFields(registry, type.fields, path)});
+        case "custom":
+            return {kind: type.kind, typeName: type.typeName};
+        default:
+            return {kind: type.kind};
+    }
+}
+
+export function describeFields(registry: ComponentSchemaRegistry, fields: readonly FieldSchema[], ownerPath: string): EditorFieldDescription[] {
+    return fields.map(field => ({key: field.key, ...describeFieldType(registry, field, `${ownerPath}.${field.key}`)}));
+}
+
+function describeComponent(registry: ComponentSchemaRegistry, schema: ComponentSchema): EditorComponentDescription {
     return {
         typeName: schema.name,
         persistence: schema.persistence,
-        fields: schema.fields.map(describeField),
+        fields: describeFields(registry, schema.fields, schema.name),
         inferred: schema.inferred === true,
         category: categoryOf(schema),
     };
@@ -104,8 +144,8 @@ export function describeSchemas(world: World, registry: ComponentSchemaRegistry)
         .map(instance => inferComponentSchema(instance))
         .sort((a, b) => a.name.localeCompare(b.name));
     return {
-        components: [...registry.schemas, ...inferred].map(describeComponent),
-        resources: registry.resourceSchemas.map(schema => ({typeName: schema.name, fields: schema.fields.map(describeField)})),
+        components: [...registry.schemas, ...inferred].map(schema => describeComponent(registry, schema)),
+        resources: registry.resourceSchemas.map(schema => ({typeName: schema.name, fields: describeFields(registry, schema.fields, schema.name)})),
     };
 }
 
@@ -190,19 +230,21 @@ export function listEntities(world: World, registry: ComponentSchemaRegistry): L
     return {entities};
 }
 
-function editorEncodeContext(world: World): FieldEncodeContext {
+function editorEncodeContext(world: World, registry: ComponentSchemaRegistry): FieldEncodeContext {
     return {
         sceneIdOf: entity => isLiveEntity(world, entity) ? entity : undefined,
         reportDanglingEntity: ignore,
         reportUnsavedAsset: ignore,
+        fieldTypes: registry,
     };
 }
 
-export function encodeEditorFieldValue(world: World, field: FieldSchema, value: unknown, path: string): EditorFieldValue {
-    if (field.kind === "spriteImage" && value instanceof SpriteImage && value.sourcePath === undefined) {
+export function encodeEditorFieldValue(world: World, registry: ComponentSchemaRegistry, field: FieldSchema, value: unknown, path: string): EditorFieldValue {
+    const isSpriteImageField = field.kind === "asset" && field.assetType === SPRITE_IMAGE_ASSET_TYPE_NAME;
+    if (isSpriteImageField && value instanceof SpriteImage && value.sourcePath === undefined) {
         return {inline: {width: value.sizeX, height: value.sizeY}};
     }
-    return encodeFieldValue(field, value, editorEncodeContext(world), path);
+    return encodeFieldValue(field, value, editorEncodeContext(world, registry), path);
 }
 
 export function schemaOfComponent(registry: ComponentSchemaRegistry, type: AnyCT, component: Component): ComponentSchema {
@@ -213,7 +255,7 @@ function componentDetails(world: World, registry: ComponentSchemaRegistry, type:
     const schema = schemaOfComponent(registry, type, component);
     const values = fieldsOf(component);
     const fields: {[key: string]: EditorFieldValue} = {};
-    for (const field of schema.fields) fields[field.key] = encodeEditorFieldValue(world, field, values[field.key], `${schema.name}.${field.key}`);
+    for (const field of schema.fields) fields[field.key] = encodeEditorFieldValue(world, registry, field, values[field.key], `${schema.name}.${field.key}`);
     return {typeName: schema.name, inspectable: schema.persistence === "fields", inferred: schema.inferred === true, fields};
 }
 

@@ -35,21 +35,33 @@ function finiteOrZero(value: number): number {
     return Number.isFinite(value) ? value : 0;
 }
 
-export function scrubbedValue(start: number, pixelsMoved: number, modifiers: StepModifiers, kind: ScrubKind): number {
+function isUsableStep(step: number | undefined): step is number {
+    return step !== undefined && step > 0 && Number.isFinite(step);
+}
+
+export function scrubUnitsPerPixelForStep(step: number | undefined, kind: ScrubKind): number {
+    return isUsableStep(step) ? SCRUB_UNITS_PER_PIXEL[kind] / STEP_UNITS[kind] * step : SCRUB_UNITS_PER_PIXEL[kind];
+}
+
+export function baseStepFor(step: number | undefined, kind: ScrubKind): number {
+    return isUsableStep(step) ? step : STEP_UNITS[kind];
+}
+
+export function scrubbedValue(start: number, pixelsMoved: number, modifiers: StepModifiers, kind: ScrubKind, unitsPerPixel: number = SCRUB_UNITS_PER_PIXEL[kind]): number {
     const base = finiteOrZero(start);
     if (pixelsMoved === 0) return base;
-    const increment = SCRUB_UNITS_PER_PIXEL[kind] * modifierMultiplier(modifiers);
+    const increment = unitsPerPixel * modifierMultiplier(modifiers);
     const moved = base + pixelsMoved * increment;
     return kind === "integer" ? Math.round(moved) + 0 : roundToIncrement(moved, increment);
 }
 
-export function stepIncrement(modifiers: StepModifiers, kind: ScrubKind): number {
-    const increment = STEP_UNITS[kind] * modifierMultiplier(modifiers);
+export function stepIncrement(modifiers: StepModifiers, kind: ScrubKind, baseStep: number = STEP_UNITS[kind]): number {
+    const increment = baseStep * modifierMultiplier(modifiers);
     return kind === "integer" ? Math.max(SMALLEST_INTEGER_STEP, Math.round(increment)) : increment;
 }
 
-export function steppedValue(current: number, direction: StepDirection, modifiers: StepModifiers, kind: ScrubKind): number {
-    const increment = stepIncrement(modifiers, kind);
+export function steppedValue(current: number, direction: StepDirection, modifiers: StepModifiers, kind: ScrubKind, baseStep: number = STEP_UNITS[kind]): number {
+    const increment = stepIncrement(modifiers, kind, baseStep);
     const stepped = finiteOrZero(current) + direction * increment;
     return kind === "integer" ? Math.round(stepped) + 0 : roundToIncrement(stepped, increment);
 }

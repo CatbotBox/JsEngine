@@ -292,7 +292,7 @@ class Page {
     }
 
     public dispose(): void {
-        this.worker.terminate();
+        this.connection.close();
     }
 }
 

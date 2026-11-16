@@ -7,8 +7,8 @@ import type {AnyCT} from "../util/tokenUtils";
 import {Children} from "../translation/children";
 import {Parent} from "../translation/parent";
 import type {SpriteImage} from "../rendering/2d/spriteImage";
-import type {ComponentSchema, EntityFieldSchema, FieldSchema, ResourceSchema} from "./fieldSchema";
-import {hasEntityFields, isEntityField} from "./fieldSchema";
+import type {ComponentSchema, FieldSchema, ResourceSchema} from "./fieldSchema";
+import {hasEntityFields, isEntityField, refersToEntities} from "./fieldSchema";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {decodeFieldValue, encodeFieldValue, readSceneEntityId} from "./fieldValueCodec";
 import type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
@@ -17,16 +17,14 @@ import {FIRST_SCENE_ENTITY_ID, isSceneJsonObject, SCENE_DOCUMENT_FORMAT, SCENE_D
 import type {SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonValue} from "./sceneDocument";
 import {EditorOnly} from "./editorOnly";
 import {childEntitiesOf, orderedSceneRoots, parentEntityOf, setSceneRootOrder, siblingOrderOf} from "./sceneHierarchy";
+import {DEFAULT_SCHEMA_CHANGE_POLICY, SchemaChangeCollector} from "./schemaChanges";
+import type {SchemaChange, SchemaChangePolicy} from "./schemaChanges";
+
+export type {SchemaChange, SchemaChangePolicy} from "./schemaChanges";
 
 export interface SkippedComponentType {
     readonly typeName: string;
     readonly entityCount: number;
-}
-
-export interface SchemaChange {
-    readonly typeName: string;
-    readonly addedKeys: readonly string[];
-    readonly removedKeys: readonly string[];
 }
 
 export interface SceneSaveReport {
@@ -45,8 +43,6 @@ export interface SerializedScene extends SceneSnapshot {
 }
 
 export type UnknownComponentTypePolicy = "throw" | "skip";
-
-export type SchemaChangePolicy = "strict" | "report";
 
 export interface SceneLoadOptions {
     readonly assets?: SceneAssetLoader;
@@ -80,7 +76,6 @@ export const PARENT_COMPONENT_NAME = "Parent";
 export const PARENT_ENTITY_KEY = "entity";
 
 const DEFAULT_UNKNOWN_COMPONENT_TYPE_POLICY: UnknownComponentTypePolicy = "throw";
-const DEFAULT_SCHEMA_CHANGE_POLICY: SchemaChangePolicy = "strict";
 const DISABLED = false;
 const UNORDERED_SIBLING = Number.POSITIVE_INFINITY;
 
@@ -98,8 +93,8 @@ interface PlannedValueField {
 }
 
 interface PlannedEntityField {
-    readonly field: EntityFieldSchema;
-    readonly sceneId: number | null;
+    readonly field: FieldSchema;
+    readonly json: SceneJsonValue;
     readonly path: string;
 }
 
@@ -171,25 +166,6 @@ class SkippedTypeCounter {
 
     public list(): SkippedComponentType[] {
         return [...this.counts.keys()].sort().map(typeName => ({typeName, entityCount: this.counts.get(typeName)!}));
-    }
-}
-
-class SchemaChangeCollector {
-    private readonly changes = new Map<string, {readonly added: Set<string>, readonly removed: Set<string>}>();
-
-    public add(typeName: string, addedKeys: readonly string[], removedKeys: readonly string[]): void {
-        if (addedKeys.length === 0 && removedKeys.length === 0) return;
-        let change = this.changes.get(typeName);
-        if (change === undefined) this.changes.set(typeName, change = {added: new Set(), removed: new Set()});
-        for (const key of addedKeys) change.added.add(key);
-        for (const key of removedKeys) change.removed.add(key);
-    }
-
-    public list(): SchemaChange[] {
-        return [...this.changes.keys()].sort().map(typeName => {
-            const change = this.changes.get(typeName)!;
-            return {typeName, addedKeys: [...change.added].sort(), removedKeys: [...change.removed].sort()};
-        });
     }
 }
 
@@ -290,6 +266,7 @@ function serializeRows(world: World, registry: ComponentSchemaRegistry, rows: re
         reportDanglingEntity: path => danglingEntityRefs.push(path),
         reportUnsavedAsset: path => unsavedAssets.push(path),
         inlineSpriteImageEncodings: new Map<SpriteImage, string>(),
+        fieldTypes: registry,
     };
 
     const records = rows.map((row, index): SceneEntityRecord => {
@@ -416,6 +393,7 @@ function planFieldGroup(
     path: string,
     options: SceneLoadOptions,
     report: LoadReportBuilder,
+    validation: FieldDecodeContext,
 ): {valueFields: PlannedValueField[], entityFields: PlannedEntityField[]} {
     const policy = options.schemaChanges ?? DEFAULT_SCHEMA_CHANGE_POLICY;
     const unknownKeys = Object.keys(json).filter(key => !fields.some(field => field.key === key));
@@ -429,14 +407,20 @@ function planFieldGroup(
         const value = json[field.key];
         if (value === undefined) continue;
         const fieldPath = `${path}.${field.key}`;
-        if (isEntityField(field)) entityFields.push({field, sceneId: readSceneEntityId(value, fieldPath), path: fieldPath});
-        else valueFields.push({field, json: value, path: fieldPath});
+        if (!refersToEntities(field)) {
+            valueFields.push({field, json: value, path: fieldPath});
+            continue;
+        }
+        if (isEntityField(field)) readSceneEntityId(value, fieldPath);
+        else decodeFieldValue(field, value, validation, fieldPath);
+        entityFields.push({field, json: value, path: fieldPath});
     }
     return {valueFields, entityFields};
 }
 
 function planComponents(registry: ComponentSchemaRegistry, document: SceneDocument, options: SceneLoadOptions, report: LoadReportBuilder): PlannedComponent[][] {
     const policy = options.unknownComponentTypes ?? DEFAULT_UNKNOWN_COMPONENT_TYPE_POLICY;
+    const validation = valueDecodeContext(registry, options, report);
     return document.entities.map((record, index) => {
         const planned: PlannedComponent[] = [];
         for (const componentName of Object.keys(record.components)) {
@@ -450,7 +434,7 @@ function planComponents(registry: ComponentSchemaRegistry, document: SceneDocume
                 throw new Error(`Scene document: ${path}: the component type "${componentName}" is not registered`);
             }
             if (schema.persistence === "implied") continue;
-            const {valueFields, entityFields} = planFieldGroup(componentName, schema.fields, record.components[componentName], path, options, report);
+            const {valueFields, entityFields} = planFieldGroup(componentName, schema.fields, record.components[componentName], path, options, report, validation);
             planned.push({
                 schema,
                 type: ComponentType.of(schema.ctor),
@@ -468,6 +452,7 @@ function planResources(registry: ComponentSchemaRegistry, document: SceneDocumen
     const resources = document.resources;
     if (resources === undefined) return [];
     const policy = options.unknownComponentTypes ?? DEFAULT_UNKNOWN_COMPONENT_TYPE_POLICY;
+    const validation = valueDecodeContext(registry, options, report);
     const planned: PlannedResource[] = [];
     for (const resourceName of Object.keys(resources)) {
         const path = resourcePath(resourceName);
@@ -479,19 +464,23 @@ function planResources(registry: ComponentSchemaRegistry, document: SceneDocumen
             }
             throw new Error(`Scene document: ${path}: the resource type "${resourceName}" is not registered`);
         }
-        const {valueFields, entityFields} = planFieldGroup(resourceName, schema.fields, resources[resourceName], path, options, report);
+        const {valueFields, entityFields} = planFieldGroup(resourceName, schema.fields, resources[resourceName], path, options, report, validation);
         planned.push({schema, path, valueFields, entityFields});
     }
     return planned;
 }
 
-function valueDecodeContext(options: SceneLoadOptions): FieldDecodeContext {
-    return {
+function valueDecodeContext(registry: ComponentSchemaRegistry, options: SceneLoadOptions, report: LoadReportBuilder): FieldDecodeContext {
+    const context: FieldDecodeContext = {
         entityOf: () => undefined,
         reportDanglingEntity: ignore,
         assets: options.assets,
         inlineSpriteImages: new Map<string, SpriteImage>(),
+        fieldTypes: registry,
     };
+    const reportsSchemaChanges = (options.schemaChanges ?? DEFAULT_SCHEMA_CHANGE_POLICY) === "report";
+    if (!reportsSchemaChanges) return context;
+    return {...context, reportSchemaChange: (typeName, addedKeys, removedKeys) => report.schemaChanges.add(typeName, addedKeys, removedKeys)};
 }
 
 function decodeValueFields(fields: readonly PlannedValueField[], context: FieldDecodeContext): DecodedField[] {
@@ -513,10 +502,11 @@ function instantiate(prepared: PreparedComponent): Component {
     return component;
 }
 
-function referenceContext(document: SceneDocument, entities: readonly Entity[], report: LoadReportBuilder): FieldDecodeContext {
+function referenceContext(document: SceneDocument, entities: readonly Entity[], report: LoadReportBuilder, values: FieldDecodeContext): FieldDecodeContext {
     const indexBySceneId = new Map<number, number>();
     document.entities.forEach((record, index) => indexBySceneId.set(record.id, index));
     return {
+        ...values,
         entityOf: sceneId => {
             const index = indexBySceneId.get(sceneId);
             return index === undefined ? undefined : entities[index];
@@ -528,7 +518,7 @@ function referenceContext(document: SceneDocument, entities: readonly Entity[], 
 function decodeEntityFields(fields: readonly PlannedEntityField[], context: FieldDecodeContext): DecodedField[] {
     return fields.map(reference => ({
         key: reference.field.key,
-        value: decodeFieldValue(reference.field, reference.sceneId, context, reference.path),
+        value: decodeFieldValue(reference.field, reference.json, context, reference.path),
     }));
 }
 
@@ -615,13 +605,14 @@ interface CreatedDocumentEntities {
 
 function createDocumentEntities(
     world: World,
+    registry: ComponentSchemaRegistry,
     document: SceneDocument,
     planned: readonly PlannedComponent[][],
     options: SceneLoadOptions,
     report: LoadReportBuilder,
 ): CreatedDocumentEntities {
     const entityManager = world.entityManager;
-    const valueContext = valueDecodeContext(options);
+    const valueContext = valueDecodeContext(registry, options, report);
     const prepared = planned.map(components => components.map(component => prepare(component, valueContext)));
 
     const entities = document.entities.map((record, index) => entityManager.createEntity(
@@ -630,7 +621,7 @@ function createDocumentEntities(
     ));
 
     // Second pass: entity-referencing components (Parent.setup adds Children to its target) need every entity to exist.
-    const references = referenceContext(document, entities, report);
+    const references = referenceContext(document, entities, report, valueContext);
     prepared.forEach((components, index) => {
         const referring: Component[] = [];
         for (const component of components) {
@@ -668,12 +659,12 @@ function assignResourceFields(world: World, prepared: PreparedResource, referenc
 export function deserializeInto(world: World, registry: ComponentSchemaRegistry, document: SceneDocument, options: SceneLoadOptions = {}): SceneLoadResult {
     const report = new LoadReportBuilder();
     const planned = planComponents(registry, document, options, report);
-    const resourceContext = valueDecodeContext(options);
+    const resourceContext = valueDecodeContext(registry, options, report);
     const preparedResources = planResources(registry, document, options, report).map(resource => prepareResource(resource, resourceContext));
-    const created = createDocumentEntities(world, document, planned, options, report);
+    const created = createDocumentEntities(world, registry, document, planned, options, report);
     const rootEntities = created.hierarchy.rootIndices.map(index => created.entities[index]);
     if (rootsHaveSiblingIndex(document, created.hierarchy.rootIndices)) placeRoots(world, rootEntities, undefined);
-    const references = referenceContext(document, created.entities, report);
+    const references = referenceContext(document, created.entities, report, resourceContext);
     for (const resource of preparedResources) assignResourceFields(world, resource, references, undefined);
     return {entities: created.entities, report: report.build()};
 }
@@ -699,7 +690,7 @@ export function instantiateDocument(world: World, registry: ComponentSchemaRegis
     const placed = withoutDetachedParents(registry, document);
     const report = new LoadReportBuilder();
     const planned = planComponents(registry, placed, options, report);
-    const created = createDocumentEntities(world, placed, planned, options, report);
+    const created = createDocumentEntities(world, registry, placed, planned, options, report);
     const roots = created.hierarchy.rootIndices.map(index => created.entities[index]);
     if (parent !== undefined) {
         const entityManager = world.entityManager;
@@ -814,12 +805,13 @@ export function applySceneInPlace(world: World, registry: ComponentSchemaRegistr
     const live = liveEntities.filter((entity): entity is Entity => entity !== undefined);
     if (new Set(live).size !== live.length) throw new Error("applySceneInPlace: the snapshot lists an entity twice");
     const report = new LoadReportBuilder();
-    const valueContext = valueDecodeContext(options);
+    const valueContext = valueDecodeContext(registry, options, report);
     const comparisonContext: FieldEncodeContext = {
         sceneIdOf: () => undefined,
         reportDanglingEntity: ignore,
         reportUnsavedAsset: ignore,
         inlineSpriteImageEncodings: new Map<SpriteImage, string>(),
+        fieldTypes: registry,
     };
     const planned = planComponents(registry, document, options, report);
     const preparedResources = planResources(registry, document, options, report).map(resource => prepareResource(resource, valueContext));
@@ -839,7 +831,7 @@ export function applySceneInPlace(world: World, registry: ComponentSchemaRegistr
         return existing;
     });
 
-    const references = referenceContext(document, entities, report);
+    const references = referenceContext(document, entities, report, valueContext);
     changes.forEach((entityChanges, index) => {
         const added: Component[] = [];
         for (const prepared of entityChanges.referringComponents) {

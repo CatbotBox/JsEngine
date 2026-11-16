@@ -1,5 +1,5 @@
 import type {Entity} from "../engine/core";
-import type {ComponentPersistence, PlainFieldKind, SceneJsonObject, SceneJsonValue, SceneLoadReport, SceneSaveReport} from "../engine/scene";
+import type {ComponentPersistence, NumberFieldOptions, PlainFieldKind, SceneJsonObject, SceneJsonValue, SceneLoadReport, SceneSaveReport} from "../engine/scene";
 
 export const EDITOR_MESSAGE_TYPE = "jsengine-editor";
 
@@ -202,6 +202,36 @@ export interface StepRequest {
     readonly op: "step";
 }
 
+export interface DescribeAssetTypesRequest {
+    readonly op: "describeAssetTypes";
+}
+
+export interface GetResourceRequest {
+    readonly op: "getResource";
+    readonly typeName: string;
+}
+
+export interface SetResourceFieldRequest {
+    readonly op: "setResourceField";
+    readonly typeName: string;
+    readonly key: string;
+    readonly value: SceneJsonValue;
+}
+
+export interface ListSettingsRequest {
+    readonly op: "listSettings";
+}
+
+export interface ReloadDataAssetRequest {
+    readonly op: "reloadDataAsset";
+    readonly path: string;
+}
+
+export interface DefaultResourceFieldsRequest {
+    readonly op: "defaultResourceFields";
+    readonly typeName: string;
+}
+
 export type EditorRequest =
     | DescribeSchemasRequest
     | ListEntitiesRequest
@@ -231,28 +261,79 @@ export type EditorRequest =
     | ExportSnapshotRequest
     | ImportSnapshotRequest
     | SetModeRequest
-    | StepRequest;
+    | StepRequest
+    | DescribeAssetTypesRequest
+    | GetResourceRequest
+    | SetResourceFieldRequest
+    | ListSettingsRequest
+    | ReloadDataAssetRequest
+    | DefaultResourceFieldsRequest;
 
 export type EditorOp = EditorRequest["op"];
 
+export interface NumberFieldDescription {
+    readonly kind: "number" | "integer";
+    readonly nullable?: boolean;
+    readonly uncapped?: boolean;
+    readonly typeName?: string;
+    readonly options?: NumberFieldOptions;
+}
+
 export interface PlainFieldDescription {
-    readonly key: string;
     readonly kind: PlainFieldKind;
 }
 
-export interface NullableFieldDescription {
-    readonly key: string;
-    readonly kind: "string" | "entity";
+export interface StringFieldDescription {
+    readonly kind: "string";
+    readonly nullable: boolean;
+    readonly typeName?: string;
+}
+
+export interface EntityFieldDescription {
+    readonly kind: "entity";
     readonly nullable: boolean;
 }
 
 export interface EnumFieldDescription {
-    readonly key: string;
     readonly kind: "enum";
     readonly enumNames: readonly string[];
+    readonly typeName?: string;
 }
 
-export type EditorFieldDescription = PlainFieldDescription | NullableFieldDescription | EnumFieldDescription;
+export interface AssetFieldDescription {
+    readonly kind: "asset";
+    readonly assetType: string;
+}
+
+export interface ListFieldDescription {
+    readonly kind: "list";
+    readonly element: EditorFieldTypeDescription;
+    readonly elementDefault: SceneJsonValue;
+}
+
+export interface StructFieldDescription {
+    readonly kind: "struct";
+    readonly typeName?: string;
+    readonly fields: readonly EditorFieldDescription[];
+}
+
+export interface CustomFieldDescription {
+    readonly kind: "custom";
+    readonly typeName: string;
+}
+
+export type EditorFieldTypeDescription =
+    | NumberFieldDescription
+    | PlainFieldDescription
+    | StringFieldDescription
+    | EntityFieldDescription
+    | EnumFieldDescription
+    | AssetFieldDescription
+    | ListFieldDescription
+    | StructFieldDescription
+    | CustomFieldDescription;
+
+export type EditorFieldDescription = EditorFieldTypeDescription & {readonly key: string};
 
 export interface EditorComponentDescription {
     readonly typeName: string;
@@ -270,6 +351,16 @@ export interface EditorResourceDescription {
 export interface DescribeSchemasResult {
     readonly components: readonly EditorComponentDescription[];
     readonly resources: readonly EditorResourceDescription[];
+}
+
+export interface EditorAssetTypeDescription {
+    readonly name: string;
+    readonly fileSuffixes: readonly string[];
+    readonly dataAsset: boolean;
+}
+
+export interface DescribeAssetTypesResult {
+    readonly assetTypes: readonly EditorAssetTypeDescription[];
 }
 
 export interface EditorEntitySummary {
@@ -311,6 +402,37 @@ export interface EditorEntityDetails {
 
 export interface SetFieldResult {
     readonly value: EditorFieldValue;
+}
+
+export interface EditorResourceDetails {
+    readonly typeName: string;
+    readonly dataAssetPath: string | null;
+    readonly fields: {readonly [key: string]: EditorFieldValue};
+}
+
+export interface EditorSettingsEntity {
+    readonly entity: Entity;
+    readonly name: string | null;
+    readonly enabled: boolean;
+    readonly settingsComponentTypeNames: readonly string[];
+}
+
+export interface EditorResourceSummary {
+    readonly typeName: string;
+    readonly dataAssetPath: string | null;
+}
+
+export interface ReloadDataAssetResult {
+    readonly reloaded: boolean;
+}
+
+export interface DefaultResourceFieldsResult {
+    readonly fields: SceneJsonObject;
+}
+
+export interface ListSettingsResult {
+    readonly entities: readonly EditorSettingsEntity[];
+    readonly resources: readonly EditorResourceSummary[];
 }
 
 export interface SetFieldsResult {
@@ -443,6 +565,12 @@ export interface EditorResultByOp {
     readonly importSnapshot: ImportSnapshotResult;
     readonly setMode: EditorServiceState;
     readonly step: EditorServiceState;
+    readonly describeAssetTypes: DescribeAssetTypesResult;
+    readonly getResource: EditorResourceDetails;
+    readonly setResourceField: SetFieldResult;
+    readonly listSettings: ListSettingsResult;
+    readonly reloadDataAsset: ReloadDataAssetResult;
+    readonly defaultResourceFields: DefaultResourceFieldsResult;
 }
 
 export type EditorResultOf<R extends EditorRequest> = EditorResultByOp[R["op"]];
@@ -581,6 +709,8 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
         case "saveScene":
         case "exportSnapshot":
         case "step":
+        case "describeAssetTypes":
+        case "listSettings":
             return true;
         case "getEntity":
         case "destroyEntity":
@@ -635,6 +765,13 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
                 && isAbsentOr(value.gameplayTicks, isWholeNumber);
         case "setMode":
             return isEditorMode(value.mode);
+        case "getResource":
+        case "defaultResourceFields":
+            return isString(value.typeName);
+        case "reloadDataAsset":
+            return isString(value.path);
+        case "setResourceField":
+            return isString(value.typeName) && isString(value.key) && value.value !== undefined;
         default:
             return false;
     }

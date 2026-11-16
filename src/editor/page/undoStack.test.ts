@@ -1,26 +1,40 @@
 import {beforeEach, describe, expect, test} from "../../engine/testing/harness";
 import type {Entity} from "../../engine/core";
 import type {SceneJsonValue} from "../../engine/scene";
-import type {EditorRequest, EditorResultOf} from "../editorProtocol";
+import type {EditorFieldTypeDescription, EditorRequest, EditorResultOf} from "../editorProtocol";
 import {planMoves, siblingListsOf} from "./hierarchyDrop";
 import {
     ComponentPresenceCommand,
     DeadEntityRefError,
+    entityValueShapeOf,
     EntityRefs,
     ExistenceCommand,
     FieldsCommand,
+    HOLDS_NO_ENTITIES,
+    IS_ENTITY,
+    jsonOfStoredValue,
     recordSubtree,
     RenameCommand,
     SiblingOrderCommand,
+    storedValueOf,
     storedValuesOf,
     UndoStack,
 } from "./undoStack";
-import type {EditorRequester, FieldChange, UndoContext} from "./undoStack";
+import type {EditorRequester, EntityValueShapes, FieldChange, UndoContext} from "./undoStack";
 
 const FIRST_NEW_HANDLE = 100;
 const ENTITY = 1 as Entity;
 const OTHER = 2 as Entity;
-const NO_ENTITY_KEYS: ReadonlySet<string> = new Set();
+const NO_ENTITY_SHAPES: EntityValueShapes = new Map();
+const PATROL_TYPE: EditorFieldTypeDescription = {
+    kind: "struct",
+    typeName: "Patrol",
+    fields: [
+        {key: "stops", kind: "list", element: {kind: "entity", nullable: true}, elementDefault: null},
+        {key: "speed", kind: "number"},
+        {key: "leader", kind: "entity", nullable: true},
+    ],
+};
 
 class FakeWorld implements EditorRequester {
     public readonly requests: string[] = [];
@@ -79,7 +93,7 @@ class FakeWorld implements EditorRequester {
 }
 
 function change(entity: Entity, before: SceneJsonValue, after: SceneJsonValue, key = "xyz"): FieldChange {
-    return {entity, typeName: "LocalPosition", key, before, after, entityValued: false};
+    return {entity, typeName: "LocalPosition", key, before, after, entityShape: HOLDS_NO_ENTITIES};
 }
 
 describe("undo stack", () => {
@@ -165,7 +179,7 @@ describe("undo stack", () => {
     });
 
     test("entity-valued fields store references, so they follow remaps too", async () => {
-        stack.push(FieldsCommand.record(refs, "Target", [{entity: ENTITY, typeName: "Follow", key: "target", before: OTHER, after: null, entityValued: true}]));
+        stack.push(FieldsCommand.record(refs, "Target", [{entity: ENTITY, typeName: "Follow", key: "target", before: OTHER, after: null, entityShape: IS_ENTITY}]));
         world.live.add(8 as Entity);
         world.live.add(9 as Entity);
         refs.remap(new Map([[ENTITY, 8 as Entity], [OTHER, 9 as Entity]]));
@@ -173,8 +187,23 @@ describe("undo stack", () => {
         expect(world.fields.get("8/Follow.target")).toBe(9);
     });
 
+    test("entity references nested in lists and structs are stored as references and follow remaps", async () => {
+        const shape = entityValueShapeOf(PATROL_TYPE);
+        expect(entityValueShapeOf({kind: "list", element: {kind: "number"}, elementDefault: 0})).toBe(HOLDS_NO_ENTITIES);
+        const before = {stops: [OTHER, null, ENTITY], speed: 2, leader: OTHER};
+        const stored = storedValueOf(refs, before, shape);
+        expect(jsonOfStoredValue(stored)).toEqual(before);
+        world.live.add(8 as Entity);
+        world.live.add(9 as Entity);
+        refs.remap(new Map([[ENTITY, 8 as Entity], [OTHER, 9 as Entity]]));
+        expect(jsonOfStoredValue(stored)).toEqual({stops: [9, null, 8], speed: 2, leader: 9});
+        const list = storedValueOf(refs, [{stops: [9], speed: 1, leader: null}], {element: shape});
+        refs.remap(new Map([[8 as Entity, 8 as Entity], [9 as Entity, 4 as Entity]]));
+        expect(jsonOfStoredValue(list)).toEqual([{stops: [4], speed: 1, leader: null}]);
+    });
+
     test("removing a component undoes by adding it back with its values", async () => {
-        const values = storedValuesOf(refs, {tint: "#ff0000", opacity: 0.5}, NO_ENTITY_KEYS);
+        const values = storedValuesOf(refs, {tint: "#ff0000", opacity: 0.5}, NO_ENTITY_SHAPES);
         stack.push(new ComponentPresenceCommand("Remove Sprite", refs.refOf(ENTITY), "Sprite", values, false));
         await stack.undo();
         expect(world.requests).toEqual([`add 1 Sprite {"tint":"#ff0000","opacity":0.5}`]);

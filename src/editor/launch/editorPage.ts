@@ -19,6 +19,7 @@ import type {BuildProjectResult, OpenProjectResult} from "../project/projectServ
 import type {ServerEventStream} from "../project/serverEvents";
 import {chooseEditorRenderBackend, EDITOR_DEFAULT_RENDER_BACKEND, editorViewportFromQuery, renderBackendLabelText} from "./editorViewport";
 import type {EditorRenderBackend} from "./editorViewport";
+import {EditorExtensionLoader} from "./editorExtensionLoader";
 import {browseForFolder} from "./folderBrowser";
 import {ProjectRunner} from "./projectRunner";
 import {ProjectServerClient} from "./projectServerClient";
@@ -44,13 +45,16 @@ const BROWSER_MODE_NOTE = "No dev server: projects open through the browser's fo
 const NOT_BUNDLED = "This project's code is not bundled. Open it with the dev server (bun run editor:web) or the desktop editor (bun run editor:window) to build it.";
 const CREATE_NEEDS_SERVER = "Creating a project needs the dev server (bun run editor:web) or the desktop editor (bun run editor:window).";
 const NO_FOLDER_ACCESS = "This browser cannot open folders (it has no File System Access API). Use a Chromium-based browser, the dev server (bun run editor:web) or the desktop editor (bun run editor:window).";
-const PROJECT_QUERY_NEEDS_SERVER = "?project= opens a folder on the dev server or in the desktop editor, and neither is answering here.";
+const BUILD_WARNINGS_TITLE = "The game code built with warnings:";
+const PROJECT_QUERY_NEEDS_SERVER ="?project= opens a folder on the dev server or in the desktop editor, and neither is answering here.";
 
 interface ProjectLaunch {
     readonly manifest: ProjectManifest;
     readonly files: ProjectFileSystem;
     readonly workerUrl: string;
+    readonly buildWarnings?: readonly string[];
     readonly events?: ServerEventStream;
+    readonly editorExtensionsUrl?: string;
 }
 
 interface DirectoryPickerWindow {
@@ -199,7 +203,7 @@ class EditorStart {
         }
         const events = server.events(opened.id);
         const files = server.files(opened.id, folderName(opened.path), events);
-        await this.launch({manifest, files, workerUrl: built.workerUrl, events});
+        await this.launch({manifest, files, workerUrl: built.workerUrl, buildWarnings: built.warnings, events, editorExtensionsUrl: built.editorExtensionsUrl});
     }
 
     private async openWithDirectoryPicker(): Promise<void> {
@@ -254,8 +258,23 @@ class EditorStart {
         });
         installDomInput(shell.viewport, {sink: runner.input, cellArea: () => viewport.cellArea()});
         window.addEventListener("pagehide", () => runner.exit());
+        let shownWarnings = "";
+        const showBuildWarnings = (warnings: readonly string[]) => {
+            const text = warnings.join("\n");
+            if (text === shownWarnings) return;
+            shownWarnings = text;
+            if (warnings.length > 0) shell.notice("warn", `${BUILD_WARNINGS_TITLE}\n${text}`);
+        };
+        showBuildWarnings(launch.buildWarnings ?? []);
+        const extensions = new EditorExtensionLoader({reportError: text => shell.notice("error", text)});
+        let extensionsUrl = launch.editorExtensionsUrl;
+        let sessionStarted = false;
         launch.events?.on(PROJECT_EVENT_REBUILT, data => {
-            if (isRebuiltEvent(data)) runner.reload(data.workerUrl);
+            if (!isRebuiltEvent(data)) return;
+            showBuildWarnings(data.warnings);
+            runner.reload(data.workerUrl);
+            extensionsUrl = data.editorExtensionsUrl;
+            if (sessionStarted) void extensions.load(extensionsUrl);
         });
         launch.events?.on(PROJECT_EVENT_BUILD_FAILED, data => {
             if (isBuildFailedEvent(data)) shell.notice("error", `The game code did not build:\n${data.errors.join("\n")}`);
@@ -265,7 +284,10 @@ class EditorStart {
         } catch (error) {
             setPageState("failed");
             viewport.showError(describeError(error));
+            return;
         }
+        sessionStarted = true;
+        await extensions.load(extensionsUrl);
     }
 }
 

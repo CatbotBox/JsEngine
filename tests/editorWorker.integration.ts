@@ -192,7 +192,7 @@ class EditorPage {
     public dispose(): void {
         this.client.close();
         this.fileServing.dispose();
-        this.worker.terminate();
+        this.connection.close();
     }
 }
 
