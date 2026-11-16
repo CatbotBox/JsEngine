@@ -1,0 +1,47 @@
+{
+  "format": "jsengine-scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": "cube",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "LocalScale": {
+          "xyz": [
+            1,
+            1,
+            1
+          ]
+        },
+        "RenderMesh": {
+          "mesh": {
+            "path": "cube.obj"
+          },
+          "color": "#ffffff",
+          "faceCulling": "BackFaces"
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {},
+        "GridModel": {
+          "slot": 0
+        }
+      }
+    }
+  ]
+}

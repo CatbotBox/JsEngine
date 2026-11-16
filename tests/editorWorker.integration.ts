@@ -48,7 +48,20 @@ const AXES = 3;
 const BOUNDS_SETTLE_FRAMES = 3;
 
 const SWARM_STATE_RESOURCE = "SwarmState";
+const SWARM_TUNING_RESOURCE = "SwarmTuning";
+const SWARM_TUNING_PATH = "assets/swarm.tuning.asset.json";
+const SWARM_START_SCENE = "scenes/main.scene.json";
 const SHIP_NAME = "ship";
+const EDITED_PATTERN_ROWS = ["#"];
+const EDITED_PATTERN_IMAGE_SUMMARY = {inline: {width: 1, height: 1}};
+const DEMO_2D_TUNING_RESOURCE = "Demo2dTuning";
+const DEMO_2D_TUNING_PATH = "assets/demo2d.asset.json";
+const DEMO_2D_EDITED_TUNING_KEY = "pixelsPerSpawn";
+const DEMO_2D_EDITED_TUNING_VALUE = 10;
+const DEMO_3D_TUNING_RESOURCE = "Demo3dTuning";
+const DEMO_3D_TUNING_PATH = "assets/demo3d.asset.json";
+const DEMO_3D_EDITED_TUNING_KEY = "sunRotateStepRad";
+const DEMO_3D_EDITED_TUNING_VALUE = 0.25;
 
 interface BuiltProject {
     readonly folder: string;
@@ -390,6 +403,9 @@ async function verify2d(project: BuiltProject): Promise<void> {
         await verifyUndoOfDestroy(page, label, PLAYER_NAME);
         await verifyPrefabs(page, label, PLAYER_NAME);
         await verifySaveLoad(page, label, PLAYER_NAME);
+        await verifyTuningEdit(page, label, DEMO_2D_TUNING_RESOURCE, DEMO_2D_TUNING_PATH, DEMO_2D_EDITED_TUNING_KEY, DEMO_2D_EDITED_TUNING_VALUE);
+        const cross = await page.entityNamed(PLAYER_NAME);
+        if (cross !== undefined) await verifySpritePatternEdit(page, label, cross.entity, PLAYER_NAME);
         await verifyDomainReload(project, page, label, PLAYER_NAME);
         page.expectNoErrors(label);
     } catch (error) {
@@ -430,6 +446,7 @@ async function verify3d(project: BuiltProject): Promise<void> {
         const meshPath = reloadedMeshes.length === 0 ? undefined : await page.fieldOf(reloadedMeshes[0].entity, "RenderMesh", "mesh");
         expect(reloadedMeshes.length === meshes.length && typeof (meshPath as {path?: unknown} | undefined)?.path === "string",
             `${label}: the loaded scene has its meshes back by path (${JSON.stringify(meshPath)})`);
+        await verifyTuningEdit(page, label, DEMO_3D_TUNING_RESOURCE, DEMO_3D_TUNING_PATH, DEMO_3D_EDITED_TUNING_KEY, DEMO_3D_EDITED_TUNING_VALUE);
         await verifyDomainReload(project, page, label, CAMERA_NAME);
         page.expectNoErrors(label);
     } catch (error) {
@@ -439,16 +456,54 @@ async function verify3d(project: BuiltProject): Promise<void> {
     }
 }
 
+async function openStartScene(page: EditorPage, project: BuiltProject, label: string, path: string): Promise<void> {
+    const sceneText = await project.files.readText(path);
+    const loaded = await page.ask({op: "loadScene", sceneText, path});
+    expect(loaded.entityCount > 0, `${label}: the start scene ${path} opens (${loaded.entityCount} entities)`);
+}
+
+async function verifySpritePatternEdit(page: EditorPage, label: string, entity: Entity, name: string): Promise<void> {
+    await page.ask({op: "setField", entity, typeName: "SpritePattern", key: "rows", value: EDITED_PATTERN_ROWS});
+    const rows = await page.fieldOf(entity, "SpritePattern", "rows");
+    expect(sameJson(rows, EDITED_PATTERN_ROWS), `${label}: the sprite pattern rows of ${name} are editable (${JSON.stringify(rows)})`);
+    expect(await page.framesPass(BOUNDS_SETTLE_FRAMES), `${label}: frames pass after editing the sprite pattern`);
+    const image = await page.fieldOf(entity, "Sprite", "image");
+    expect(sameJson(image, EDITED_PATTERN_IMAGE_SUMMARY), `${label}: the sprite image of ${name} is rebuilt from the edited pattern (${JSON.stringify(image)})`);
+    const saved = parseSceneDocument((await page.ask({op: "saveScene"})).sceneText);
+    const savedImage = saved.entities.find(record => record.name === name)?.components.Sprite?.image;
+    expect(savedImage === null, `${label}: the rebuilt sprite image saves as null, its pattern is the saved form (${JSON.stringify(savedImage)})`);
+}
+
+async function verifyTuningEdit(page: EditorPage, label: string, typeName: string, path: string, key: string, value: SceneJsonValue): Promise<void> {
+    const loaded = await page.ask({op: "getResource", typeName});
+    expect(loaded.dataAssetPath === path, `${label}: ${typeName} is loaded from ${path} (${loaded.dataAssetPath})`);
+    await page.ask({op: "setMode", mode: "paused"});
+    await page.ask({op: "setResourceField", typeName, key, value});
+    const edited = await page.ask({op: "getResource", typeName});
+    expect(sameJson(edited.fields[key], value), `${label}: ${typeName}.${key} is editable while paused (${JSON.stringify(edited.fields[key])})`);
+    const {reloaded} = await page.ask({op: "reloadDataAsset", path});
+    const restored = await page.ask({op: "getResource", typeName});
+    expect(reloaded && sameJson(restored.fields[key], loaded.fields[key]), `${label}: reloading ${path} restores ${typeName}.${key} from the file (${JSON.stringify(restored.fields[key])})`);
+    await page.ask({op: "setMode", mode: "edit"});
+}
+
 async function verifySwarm(project: BuiltProject): Promise<void> {
     const label = "Swarm editor";
     const page = new EditorPage(project, "the Swarm editor");
     try {
         await verifyStartsInEditMode(page, label);
-        await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SpritePixelPassSettings"]);
+        await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SwarmHud", "SpritePattern", "SpritePixelPassSettings"]);
         const {resources} = await page.ask({op: "describeSchemas"});
-        expect(resources.some(resource => resource.typeName === SWARM_STATE_RESOURCE), `${label}: describeSchemas lists the ${SWARM_STATE_RESOURCE} resource`);
+        for (const typeName of [SWARM_STATE_RESOURCE, SWARM_TUNING_RESOURCE]) {
+            expect(resources.some(resource => resource.typeName === typeName), `${label}: describeSchemas lists the ${typeName} resource`);
+        }
+        const tuning = await page.ask({op: "getResource", typeName: SWARM_TUNING_RESOURCE});
+        expect(tuning.dataAssetPath === SWARM_TUNING_PATH, `${label}: ${SWARM_TUNING_RESOURCE} is loaded from ${SWARM_TUNING_PATH} (${tuning.dataAssetPath})`);
+        await openStartScene(page, project, label, SWARM_START_SCENE);
         const ship = await page.entityNamed(SHIP_NAME);
-        expect(ship !== undefined && ship.componentTypeNames.includes("Ship"), `${label}: listEntities has the ship with its Ship component`);
+        expect(ship !== undefined && ship.componentTypeNames.includes("Ship") && ship.componentTypeNames.includes("SpritePattern"),
+            `${label}: the start scene has the ship with its Ship and SpritePattern components`);
+        if (ship !== undefined) await verifySpritePatternEdit(page, label, ship.entity, SHIP_NAME);
         await verifySaveLoad(page, label, SHIP_NAME);
         await verifyDomainReload(project, page, label, SHIP_NAME);
         page.expectNoErrors(label);

@@ -1,54 +1,49 @@
-import type {DebugWorld, World} from "../../src/engine/core";
-import {meshCachePathFor, Mesh} from "../../src/engine/rendering/3d";
-import type {ComponentSchemaRegistry} from "../../src/engine/scene";
-import type {ProjectAssetFiles, ProjectHost, ProjectRenderBackend} from "../../src/editor/project/projectEntry";
-import {requireDebugWorld} from "../_shared/debugWorld";
+import type {World} from "../../src/engine/core";
+import {PrefabSpawner} from "../../src/engine/scene";
+import type {ComponentSchemaRegistry, PrefabAsset} from "../../src/engine/scene";
+import type {ProjectHost, ProjectRenderBackend} from "../../src/editor/project/projectEntry";
 import {setupDemo3d} from "./game";
-import type {Demo3dRenderControls, DemoModel, DemoModelFiles} from "./game";
-import {DEFAULT_LAZY_MODEL_BYTES, demoModelsAmong} from "./projectModels";
+import type {Demo3dModelFiles, Demo3dRenderControls} from "./game";
+import type {ModelLoadProgressListener} from "./modelCatalog";
+import {requireModelPrefab} from "./modelCatalog";
+import {registerGeneratedSchemas} from "./schemas.generated";
+import {Demo3dTuning} from "./tuning";
 import {installPixelRendering3d} from "./launch/pixelRendering";
 import {installGpuRendering3d} from "./launch/gpuRendering";
 
 const GPU_BACKEND: ProjectRenderBackend = "gpu";
 
-function installRendering(world: DebugWorld, host: ProjectHost): Demo3dRenderControls {
+function ignoreProgress(): void {
+}
+
+function installRendering(world: World, host: ProjectHost): Demo3dRenderControls {
     return host.renderBackend === GPU_BACKEND ? installGpuRendering3d(world) : installPixelRendering3d(world);
 }
 
+function projectModelFiles(world: World, host: ProjectHost): Demo3dModelFiles {
+    const spawner = world.resources.get(PrefabSpawner);
+    const loaded = new Set<PrefabAsset>();
+    return {
+        ready: prefab => loaded.has(prefab),
+        fetch: async (prefab: PrefabAsset, onProgress: ModelLoadProgressListener) => {
+            await host.files.loadFetchingAsNeeded(() => spawner.templateOf(prefab), progress => onProgress(progress.loadedBytes, progress.totalBytes));
+            loaded.add(prefab);
+        },
+    };
+}
+
 export function registerProjectSchemas(registry: ComponentSchemaRegistry): void {
-}
-
-function projectModels(files: ProjectAssetFiles): DemoModel[] {
-    return demoModelsAmong(files.list().map(file => file.path));
-}
-
-function fetchedBytesOf(model: DemoModel, files: ProjectAssetFiles): number {
-    const sizes = new Map(files.list().map(file => [file.path, file.size]));
-    return sizes.get(meshCachePathFor(model.path)) ?? sizes.get(model.path) ?? 0;
+    registerGeneratedSchemas(registry);
 }
 
 export async function setupProject(world: World, host: ProjectHost): Promise<void> {
-    const debugWorld = requireDebugWorld(world, "The 3D demo");
-    const platform = world.platform;
-    const files = host.files;
-    const loaded = new Set<string>();
-    const load = async (model: DemoModel, onProgress?: (loadedBytes: number, totalBytes: number) => void): Promise<void> => {
-        await files.loadFetchingAsNeeded(
-            () => Mesh.fromFile(model.path, {files: platform.files, inflate: platform.inflate}),
-            progress => onProgress?.(progress.loadedBytes, progress.totalBytes),
-        );
-        loaded.add(model.path);
-    };
-    for (const model of projectModels(files)) {
-        if (fetchedBytesOf(model, files) <= DEFAULT_LAZY_MODEL_BYTES) await load(model);
+    const modelFiles = projectModelFiles(world, host);
+    const models = world.resources.get(Demo3dTuning).models;
+    for (const [index, entry] of models.entries()) {
+        if (!entry.loadOnDemand) await modelFiles.fetch(requireModelPrefab(entry, index), ignoreProgress);
     }
-    const modelFiles: DemoModelFiles = {
-        ready: model => loaded.has(model.path),
-        fetch: (model, onProgress) => load(model, onProgress),
-    };
-    setupDemo3d(debugWorld, {
-        render: installRendering(debugWorld, host),
-        listModels: () => projectModels(files),
+    setupDemo3d(world, {
+        render: installRendering(world, host),
         modelFiles,
         quit: () => host.quit(),
     });

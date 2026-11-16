@@ -4,11 +4,13 @@ import {consoleOverride} from "../../src/engine/debugging";
 import {CellPresenterResource} from "../../src/backends/cells";
 import {AnsiCellPresenter, nodePlatform, nodeTerminal, TerminalInput} from "../../src/hosts/terminal";
 import {fileLogger} from "../../src/hosts/terminal/fileLogger";
-import {exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
-import {setupSwarm} from "./game";
+import {exitAfterLaunchFailure, exitUnlessInteractiveTerminal} from "../_shared/interactiveTerminal";
 import {installCellRenderingSwarm} from "./launch/cellRendering";
+import {launchSwarm} from "./launch/swarmLaunch";
 
-exitUnlessInteractiveTerminal("Swarm");
+const DEMO_NAME = "Swarm";
+
+exitUnlessInteractiveTerminal(DEMO_NAME);
 
 consoleOverride.addConsoleEventListener(fileLogger);
 
@@ -22,13 +24,15 @@ const terminalInput = new TerminalInput({
     mouse: false,
 });
 
-setupSwarm(world, {
-    render: installCellRenderingSwarm(world),
+launchSwarm(world, {
+    renderBackend: "cells",
+    directory: __dirname,
+    installRendering: installCellRenderingSwarm,
     quit: () => {
         terminalInput.stop();
         process.exit(0);
     },
-});
-
-world.startLoop();
-terminalInput.start();
+}).then(() => {
+    world.startLoop();
+    terminalInput.start();
+}, error => exitAfterLaunchFailure(DEMO_NAME, error));

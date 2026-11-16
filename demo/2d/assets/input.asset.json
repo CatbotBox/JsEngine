@@ -1,0 +1,135 @@
+{
+  "format": "jsengine-asset",
+  "version": 1,
+  "type": "InputMap",
+  "fields": {
+    "actions": [
+      {
+        "name": "movePlayerUp",
+        "keys": [
+          "Up"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "movePlayerDown",
+        "keys": [
+          "Down"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "movePlayerLeft",
+        "keys": [
+          "Left"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "movePlayerRight",
+        "keys": [
+          "Right"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveCameraUp",
+        "keys": [
+          "W"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveCameraDown",
+        "keys": [
+          "S"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveCameraLeft",
+        "keys": [
+          "A"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "moveCameraRight",
+        "keys": [
+          "D"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "spawnPixels",
+        "keys": [
+          "Space"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleRendering",
+        "keys": [
+          "Enter"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleSpritePass",
+        "keys": [
+          "Backspace"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleHalfBlockCells",
+        "keys": [
+          "H"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "logSystemOrder",
+        "keys": [
+          "G"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "toggleHud",
+        "keys": [
+          "Tab"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "quit",
+        "keys": [],
+        "chords": [
+          {
+            "key": "C",
+            "ctrl": true,
+            "alt": false,
+            "shift": false,
+            "meta": false
+          }
+        ],
+        "buttons": []
+      }
+    ]
+  }
+}

@@ -21,6 +21,7 @@ const STEPS: readonly CheckStep[] = [
     {label: "integration tests (bun)", script: "test:integration:bun", runtime: "bun"},
     {label: "integration tests (node)", script: "test:integration:node", runtime: "node"},
     {label: "frame hashes", script: "test:frame-hashes", runtime: "bun"},
+    {label: "demo frame hashes", script: "test:demo-frame-hashes", runtime: "bun"},
 ];
 
 function realNodeIsInstalled(): boolean {

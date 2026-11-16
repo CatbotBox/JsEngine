@@ -61,11 +61,15 @@ export {
     PREFAB_ASSET_TYPE,
     PREFAB_ASSET_TYPE_NAME,
     PREFAB_FILE_SUFFIX,
+    SHADER_ASSET_TYPE,
+    SHADER_ASSET_TYPE_NAME,
     SPRITE_IMAGE_ASSET_TYPE,
     SPRITE_IMAGE_ASSET_TYPE_NAME,
 } from "./assetTypes";
 export type {AssetType, InlineAssetCodec} from "./assetTypes";
 export {PrefabAsset} from "./prefabAsset";
+export {PrefabSpawner, prefabSpawnerOf, PrefabTemplate, SpawnedPrefab} from "./prefabSpawner";
+export type {PrefabSpawnerSettings} from "./prefabSpawner";
 export {
     DATA_ASSET_FILE_SUFFIX,
     DATA_ASSET_FORMAT,
@@ -79,7 +83,23 @@ export type {DataAssetDocument} from "./dataAssetDocument";
 export {DataAssets, dataAssetsOf, encodeDataAssetFields, serializeDataAsset} from "./dataAssets";
 export type {DataAssetReloaded, DataAssetSchemaChanges, DataAssetsSettings} from "./dataAssets";
 export {DEFAULT_SCHEMA_CHANGE_POLICY, describeSchemaChange, SchemaChangeCollector} from "./schemaChanges";
-export {ENGINE_COMPONENT_CATEGORIES, registerEngineComponentSchemas} from "./engineComponentSchemas";
+export {
+    ENGINE_COMPONENT_CATEGORIES,
+    registerEngineComponentSchemas,
+    SPRITE_PATTERN_COLOR_FIELD_TYPE,
+    SPRITE_PATTERN_COLOR_TYPE_NAME,
+} from "./engineComponentSchemas";
+export {
+    INPUT_MAP_ACTION_FIELD_TYPE,
+    INPUT_MAP_ACTION_TYPE_NAME,
+    INPUT_MAP_SCHEMA,
+    KEY_CHORD_FIELD_TYPE,
+    KEY_CHORD_TYPE_NAME,
+    KEY_FIELD_TYPE,
+    KEY_TYPE_NAME,
+    POINTER_BUTTON_FIELD_TYPE,
+    POINTER_BUTTON_TYPE_NAME,
+} from "./inputMapSchema";
 export {assignInferredFieldValue, inferComponentSchema} from "./inferredSchema";
 export {EditorOnly} from "./editorOnly";
 export {PrefabInstance} from "./prefabInstance";
@@ -95,6 +115,7 @@ export {SceneManager} from "./sceneManager";
 export type {
     LoadedScene,
     PersistentEntityPolicy,
+    SceneActivation,
     SceneDocumentLoadRequest,
     SceneHandle,
     SceneLoadedListener,

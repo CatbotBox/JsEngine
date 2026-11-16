@@ -1,6 +1,6 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
-import {Resource, World} from "../../engine/core";
+import {EntityCommandBufferSystem, Resource, World} from "../../engine/core";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {
     ComponentSchemaRegistry,
@@ -86,6 +86,15 @@ describe("startProject", () => {
         expect(handle?.path).toBe(START_SCENE);
         expect(host.scenes.active()).toBe(handle);
         expect(namesIn(world)).toEqual(["Systems", "Start"]);
+    });
+
+    test("the start scene becomes active on the next command-buffer playback, like entities setup queues", async () => {
+        const {world, host, entry, registry} = launch();
+        await startProject(world, entry, host, MANIFEST_WITH_START_SCENE, registry);
+        const start = sceneEntitiesInCreationOrder(world).find(entity => world.entityManager.nameOf(entity) === "Start")!;
+        expect(world.entityManager.isEnabled(start)).toBe(false);
+        world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer().playback(world.entityManager);
+        expect(world.entityManager.isEnabled(start)).toBe(true);
     });
 
     test("without a start scene it only sets the project up", async () => {

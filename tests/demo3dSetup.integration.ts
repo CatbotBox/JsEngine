@@ -2,7 +2,7 @@ import {readFileSync} from "fs";
 import {join, resolve} from "path";
 import {DebugWorld, EntityQuery} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
-import {PreloadedFileSource} from "../src/hosts/web";
+import {PreloadedFileSource, projectFilePreload} from "../src/hosts/web";
 import type {FileSource, FileStat} from "../src/engine/platform";
 import type {FetchedFile} from "../src/hosts/web";
 import {Input} from "../src/engine/input";
@@ -18,7 +18,7 @@ import {MeshCellPassSystem} from "../src/backends/cells/3d";
 import {inflate, meshCachePathFor} from "../src/engine/rendering/3d";
 import {normalizePath} from "../src/engine/platform";
 import {TerminalScreen} from "./support/terminalScreen";
-import {setupDemo3d} from "../demo/3d/game";
+import {DEMO_3D_PROJECT_DIRECTORY, launchDemo3d} from "../demo/3d/launch/demo3dLaunch";
 import {installCellRendering3d} from "../demo/3d/launch/cellRendering";
 import {buildDemo3dManifest} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
     errorRecorder.error = (...data: unknown[]) => errors.push(data.map(String).join(" "));
     consoleOverride.addConsoleEventListener(errorRecorder);
 
-    const manifest = buildDemo3dManifest(ROOT, nodePlatform());
+    const manifest = buildDemo3dManifest(ROOT, DEMO_3D_PROJECT_DIRECTORY, nodePlatform());
     const preloaded = new PreloadedFileSource({fetch: fetchFromDisk});
     await preloaded.preload(manifest.files);
     await preloaded.ensureLoaded(manifest.files.map(file => file.path));
@@ -120,7 +120,7 @@ async function main(): Promise<void> {
     });
 
     const statOnly = manifest.files.filter(file => file.statOnly === true).map(file => file.path);
-    const cached = manifest.models.filter(model => manifest.files.some(file => file.path === meshCachePathFor(model.path)));
+    const cached = manifest.models.filter(model => model.meshes.some(mesh => manifest.files.some(file => file.path === meshCachePathFor(mesh))));
     const fetchedBytes = manifest.files.reduce((sum, file) => sum + (file.statOnly === true ? 0 : file.size), 0);
     const lazy = manifest.files.filter(file => file.lazy === true).map(file => file.path);
     log(`manifest: ${manifest.models.length} models, ${manifest.files.length} files, ${(fetchedBytes / BYTES_PER_MB).toFixed(1)} MB preloaded, stat-only: ${statOnly.join(", ")}, lazy: ${lazy.join(", ") || "none"}`);
@@ -138,7 +138,12 @@ async function main(): Promise<void> {
     }).start();
     let quits = 0;
     const loadStart = performance.now();
-    setupDemo3d(world, {render: installCellRendering3d(world), listModels: () => manifest.models, quit: () => quits++});
+    await launchDemo3d(world, {
+        renderBackend: "cells",
+        preload: projectFilePreload(preloaded, DEMO_3D_PROJECT_DIRECTORY),
+        installRendering: installCellRendering3d,
+        quit: () => quits++,
+    });
     log(`models loaded in ${(performance.now() - loadStart).toFixed(0)} ms`);
 
     expect(gameTerminal.started && gameTerminal.text().includes("\x1b[?1003h\x1b[?1006h\x1b[?25l"), "the launch wiring started terminal input with the mouse on and the cursor hidden");
@@ -177,8 +182,8 @@ async function main(): Promise<void> {
     expect(world.enabledEntityCount > 0 && spawned === manifest.models.length - 1, `every model was spawned once (${spawned + 1} models)`);
     expect(cached.length > 0, `models with a mesh cache: ${cached.map(model => model.name).join(", ")}`);
     for (const model of cached) {
-        const objPath = normalizePath(model.path);
-        const hit = files.read.has(meshCachePathFor(objPath)) && !files.read.has(objPath);
+        const objPaths = model.meshes.map(normalizePath);
+        const hit = objPaths.every(objPath => files.read.has(meshCachePathFor(objPath)) && !files.read.has(objPath));
         expect(hit, `${model.name} loaded from its mesh cache, its obj never read`);
     }
     const pngs = manifest.files.filter(file => file.path.toLowerCase().endsWith(".png"));

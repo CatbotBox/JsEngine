@@ -18,9 +18,10 @@ import {isPixelFrame, MemoryPixelPresenter, PixelPresenterResource, RGBA_BYTES_P
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {MeshPixelPassSystem} from "../src/backends/pixels/3d";
 import {nodePlatform} from "../src/hosts/terminal";
-import {setupDemo2d} from "../demo/2d/game";
-import {setupDemo3d} from "../demo/3d/game";
-import type {DemoModel} from "../demo/3d/game";
+import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
+import type {Demo2dRenderControls} from "../demo/2d/game";
+import {launchDemo3d} from "../demo/3d/launch/demo3dLaunch";
+import type {Demo3dRenderControls} from "../demo/3d/game";
 import {installPixelRendering2d} from "../demo/2d/launch/pixelRendering";
 import {installPixelRendering3d} from "../demo/3d/launch/pixelRendering";
 
@@ -43,10 +44,6 @@ const HALF = 0.5;
 const PLAYER_STEP_PX = 8;
 const SPAWN_SETTLE_FRAMES = 3;
 const MIN_SCENE_PIXEL_DIVISOR = 50;
-const MODELS: readonly DemoModel[] = [
-    {name: "cube", path: "./demo/3d/cube.obj"},
-    {name: "blender_monkey", path: "./demo/3d/blender_monkey.obj"},
-];
 
 function log(message: string) {
     process.stdout.write(message + "\n");
@@ -111,16 +108,25 @@ function expectFrameShape(presenter: MemoryPixelPresenter, world: DebugWorld, si
     return frame;
 }
 
-function runDemo2d(): void {
+function capturing<W, R>(install: (world: W) => R, captured: R[]): (world: W) => R {
+    return world => {
+        const render = install(world);
+        captured.push(render);
+        return render;
+    };
+}
+
+async function runDemo2d(): Promise<void> {
     log("--- 2D demo on pixels");
     const presenter = new MemoryPixelPresenter(START);
-    const world = new DebugWorld({platform: new MemoryPlatform()});
+    const world = new DebugWorld({platform: new MemoryPlatform({fileSource: nodePlatform().files})});
     world.resources.insert(new PixelPresenterResource(presenter));
     const input = world.resources.getOrCreate(Input);
     let quits = 0;
-    const render = installPixelRendering2d(world);
+    const installed: Demo2dRenderControls[] = [];
+    await launchDemo2d(world, {renderBackend: "pixels", installRendering: capturing(installPixelRendering2d, installed), quit: () => quits++});
+    const [render] = installed;
     expect(render.toggleHalfBlockCells === undefined, "the pixel render controls have no half-block toggle");
-    setupDemo2d(world, {render, quit: () => quits++});
 
     const tick = () => {
         world.step(FRAME_MS);
@@ -164,7 +170,7 @@ function runDemo2d(): void {
     expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
 }
 
-function runDemo3d(): void {
+async function runDemo3d(): Promise<void> {
     log("--- 3D demo on pixels");
     const host = nodePlatform();
     const platform = new MemoryPlatform({fileSource: host.files, inflate: host.inflate});
@@ -173,9 +179,10 @@ function runDemo3d(): void {
     world.resources.insert(new PixelPresenterResource(presenter));
     const input = world.resources.getOrCreate(Input);
     let quits = 0;
-    const render = installPixelRendering3d(world);
+    const installed: Demo3dRenderControls[] = [];
+    await launchDemo3d(world, {renderBackend: "pixels", installRendering: capturing(installPixelRendering3d, installed), quit: () => quits++});
+    const [render] = installed;
     expect(render.toggleHalfBlockCells === undefined, "the pixel render controls have no half-block toggle");
-    setupDemo3d(world, {render, listModels: () => MODELS, quit: () => quits++});
 
     const pass = world.tryGetSystem(MeshPixelPassSystem);
     let maxTriangles = 0;
@@ -203,12 +210,16 @@ function runDemo3d(): void {
     expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
 }
 
-runDemo2d();
-runDemo3d();
-consoleOverride.removeConsoleEventListener(errorRecorder);
+async function main(): Promise<void> {
+    await runDemo2d();
+    await runDemo3d();
+    consoleOverride.removeConsoleEventListener(errorRecorder);
 
-if (failures > 0) {
-    console.error(`${failures} pixel demo smoke-test failures`);
-    process.exit(1);
+    if (failures > 0) {
+        console.error(`${failures} pixel demo smoke-test failures`);
+        process.exit(1);
+    }
+    log("pixel demo smoke test OK");
 }
-log("pixel demo smoke test OK");
+
+void main();

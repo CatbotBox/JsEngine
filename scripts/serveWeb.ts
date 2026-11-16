@@ -2,7 +2,7 @@ import {existsSync, watch} from "fs";
 import {join, relative, resolve} from "path";
 import {createProjectServer, LOOPBACK_HOSTNAMES, locateBun, ServerSentEventChannel} from "../src/hosts/desktop";
 import {DEV_EVENTS_PATH, DEV_RELOAD_EVENT} from "../src/hosts/web/devReload";
-import {contentTypeOf, distFileFor, ISOLATION_HEADERS, pageFromArgumentsOrUndefined} from "./webDistFiles";
+import {contentTypeOf, distFileFor, ISOLATION_HEADERS, isWebProjectDataFile, pageFromArgumentsOrUndefined} from "./webDistFiles";
 
 const ROOT = resolve(__dirname, "..");
 const PROD = process.argv.includes("--prod");
@@ -20,7 +20,7 @@ const ALL_INTERFACES = "0.0.0.0";
 const MAX_IDLE_TIMEOUT_SECONDS = 255;
 const WATCHED_DIRECTORIES: readonly string[] = ["src", "demo"];
 const REBUILD_DEBOUNCE_MS = 300;
-const IGNORED_CHANGE_MARKERS: readonly string[] = [".jsengine", "node_modules", ".scene.json", ".prefab.json", "jsengine.project.json"];
+const IGNORED_CHANGE_MARKERS: readonly string[] = [".jsengine", "node_modules"];
 const REBUILT_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".mjs", ".html", ".css", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".ppm"];
 const WATCH_RECURSIVE = {recursive: true} as const;
 
@@ -55,7 +55,8 @@ async function respond(request: Request): Promise<Response> {
 
 function isIgnoredChange(filename: string): boolean {
     const lower = filename.toLowerCase();
-    return IGNORED_CHANGE_MARKERS.some(marker => lower.includes(marker)) || !REBUILT_EXTENSIONS.some(extension => lower.endsWith(extension));
+    if (IGNORED_CHANGE_MARKERS.some(marker => lower.includes(marker))) return true;
+    return !REBUILT_EXTENSIONS.some(extension => lower.endsWith(extension)) && !isWebProjectDataFile(lower);
 }
 
 function watchAndRebuild(events: ServerSentEventChannel): void {

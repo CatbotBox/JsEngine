@@ -21,6 +21,8 @@ import {types} from "util";
 
 const isProxy = types.isProxy;
 const STAMPS_AHEAD = 1000;
+const ENABLED = true;
+const DISABLED = false;
 
 class Position extends Component {
     constructor(public x = 0, public y = 0) {
@@ -633,6 +635,22 @@ describe("EntityCommandBuffer", () => {
         cbSystem.update();
         expect(new EntityQuery(world, [Position]).enabledEntityCount()).toBe(1);
         expect(em.getComponent<Position>(e, Position)!.x).toBe(1);
+    });
+
+    test("commands for an entity destroyed before playback are dropped", () => {
+        const cbSystem = world.getOrCreateSystem(EntityCommandBufferSystem);
+        const cb = cbSystem.getEntityCommandBuffer();
+        const gone = em.createEntity("gone", [new Position()]);
+        const kept = em.createEntity("kept", [new Position()]);
+        em.setEnabledState(kept, DISABLED);
+        cb.setEnabledState(gone, ENABLED);
+        cb.addComponent(gone, new Tag());
+        cb.setEnabledState(kept, ENABLED);
+        em.destroyEntity(gone);
+
+        cbSystem.update();
+        expect(em.exists(gone)).toBe(false);
+        expect(em.isEnabled(kept)).toBe(true);
     });
 });
 
