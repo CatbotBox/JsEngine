@@ -1,24 +1,16 @@
 import type {Component, ComponentCtor, Resource} from "../core";
 import type {ResourceCtor} from "../core/resource";
+import type {AssetType} from "./assetTypes";
+import type {SceneJsonValue} from "./sceneDocument";
 
 export const DEFAULT_COMPONENT_CATEGORY = "Game";
+export const STATIC_SCHEMA_KEY = "schema";
+export const MESH_ASSET_TYPE_NAME = "mesh";
+export const SPRITE_IMAGE_ASSET_TYPE_NAME = "spriteImage";
+export const PREFAB_ASSET_TYPE_NAME = "prefab";
+export const PREFAB_FILE_SUFFIX = ".prefab.json";
 
-export type FieldKind =
-    | "number"
-    | "integer"
-    | "boolean"
-    | "string"
-    | "textLines"
-    | "vec3"
-    | "rotation"
-    | "rgb"
-    | "textColor"
-    | "enum"
-    | "entity"
-    | "mesh"
-    | "spriteImage";
-
-export type PlainFieldKind = Exclude<FieldKind, "string" | "enum" | "entity">;
+export type PlainFieldKind = "boolean" | "textLines" | "vec2" | "vec3" | "rotation" | "rgb" | "textColor";
 
 export type ComponentPersistence = "fields" | "presenceOnly" | "implied";
 
@@ -29,30 +21,118 @@ export interface EnumMember {
     readonly value: EnumValue;
 }
 
-export interface PlainFieldSchema {
-    readonly key: string;
+export interface NumberFieldOptions {
+    readonly min?: number;
+    readonly max?: number;
+    readonly step?: number;
+    readonly slider?: boolean;
+    readonly unit?: string;
+}
+
+export interface NumberFieldType {
+    readonly kind: "number";
+    readonly nullable?: boolean;
+    readonly uncapped?: boolean;
+    readonly typeName?: string;
+    readonly options?: NumberFieldOptions;
+}
+
+export interface IntegerFieldType {
+    readonly kind: "integer";
+    readonly nullable?: boolean;
+    readonly typeName?: string;
+    readonly options?: NumberFieldOptions;
+}
+
+export interface PlainFieldType {
     readonly kind: PlainFieldKind;
 }
 
-export interface StringFieldSchema {
-    readonly key: string;
+export interface StringFieldType {
     readonly kind: "string";
     readonly nullable: boolean;
+    readonly typeName?: string;
 }
 
-export interface EntityFieldSchema {
-    readonly key: string;
+export interface EnumFieldType {
+    readonly kind: "enum";
+    readonly members: readonly EnumMember[];
+    readonly typeName?: string;
+}
+
+export interface EntityFieldType {
     readonly kind: "entity";
     readonly nullable: boolean;
 }
 
-export interface EnumFieldSchema {
-    readonly key: string;
-    readonly kind: "enum";
-    readonly members: readonly EnumMember[];
+export interface AssetFieldType {
+    readonly kind: "asset";
+    readonly assetType: string;
 }
 
-export type FieldSchema = PlainFieldSchema | StringFieldSchema | EntityFieldSchema | EnumFieldSchema;
+export interface ListFieldType {
+    readonly kind: "list";
+    readonly element: FieldType;
+}
+
+export interface StructFieldType {
+    readonly kind: "struct";
+    readonly typeName?: string;
+    readonly fields: readonly FieldSchema[];
+    readonly create?: () => object;
+}
+
+export interface CustomFieldType {
+    readonly kind: "custom";
+    readonly typeName: string;
+}
+
+export type FieldType =
+    | NumberFieldType
+    | IntegerFieldType
+    | PlainFieldType
+    | StringFieldType
+    | EnumFieldType
+    | EntityFieldType
+    | AssetFieldType
+    | ListFieldType
+    | StructFieldType
+    | CustomFieldType;
+
+export type FieldKind = FieldType["kind"];
+
+export interface FieldKeyed {
+    readonly key: string;
+}
+
+export type FieldSchema = FieldType & FieldKeyed;
+export type PlainFieldSchema = PlainFieldType & FieldKeyed;
+export type StringFieldSchema = StringFieldType & FieldKeyed;
+export type EntityFieldSchema = EntityFieldType & FieldKeyed;
+export type EnumFieldSchema = EnumFieldType & FieldKeyed;
+
+export interface FieldTypeDefinition<V = unknown> {
+    readonly name: string;
+
+    encode(value: V, path: string): SceneJsonValue;
+
+    decode(json: SceneJsonValue, path: string): V;
+
+    defaultValue(): V;
+}
+
+export type AliasedNumberKind = "number" | "integer";
+
+export interface FieldAlias {
+    readonly kind?: AliasedNumberKind;
+    readonly options: NumberFieldOptions;
+}
+
+export interface FieldTypeResolver {
+    customFieldType(name: string): FieldTypeDefinition | undefined;
+
+    assetType(name: string): AssetType | undefined;
+}
 
 export interface ComponentSchema<T extends Component = Component> {
     readonly name: string;
@@ -81,6 +161,19 @@ export function isEntityField(field: FieldSchema): field is EntityFieldSchema {
     return field.kind === "entity";
 }
 
-export function hasEntityFields(schema: ComponentSchema): boolean {
-    return schema.fields.some(isEntityField);
+export function refersToEntities(type: FieldType): boolean {
+    switch (type.kind) {
+        case "entity":
+            return true;
+        case "list":
+            return refersToEntities(type.element);
+        case "struct":
+            return type.fields.some(refersToEntities);
+        default:
+            return false;
+    }
+}
+
+export function hasEntityFields(schema: {readonly fields: readonly FieldSchema[]}): boolean {
+    return schema.fields.some(refersToEntities);
 }

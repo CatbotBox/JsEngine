@@ -7,11 +7,21 @@ export interface MenuAction {
     readonly run: () => void;
 }
 
+export interface MenuSubmenu {
+    readonly label: string;
+    readonly items: readonly MenuItem[];
+}
+
 export const MENU_SEPARATOR = "separator";
 
-export type MenuItem = MenuAction | typeof MENU_SEPARATOR;
+export type MenuItem = MenuAction | MenuSubmenu | typeof MENU_SEPARATOR;
 
 const VIEWPORT_MARGIN_PX = 4;
+const SUBMENU_ARROW = "▸";
+
+function isSubmenu(item: MenuAction | MenuSubmenu): item is MenuSubmenu {
+    return "items" in item;
+}
 const openMenus = new WeakMap<Document, () => void>();
 
 export function closePopupMenu(document: Document): void {
@@ -47,13 +57,24 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
         const entry = createElement(document, "button", "popup-menu-item");
         entry.type = "button";
         entry.setAttribute("role", "menuitem");
-        entry.disabled = item.disabled === true;
         entry.append(createElement(document, "span", "popup-menu-label", item.label));
-        if (item.shortcut !== undefined) entry.append(createElement(document, "span", "popup-menu-shortcut", item.shortcut));
-        entry.addEventListener("click", () => {
-            close();
-            item.run();
-        });
+        if (isSubmenu(item)) {
+            entry.disabled = item.items.length === 0;
+            entry.setAttribute("aria-haspopup", "menu");
+            entry.append(createElement(document, "span", "popup-menu-shortcut", SUBMENU_ARROW));
+            entry.addEventListener("click", () => {
+                const bounds = entry.getBoundingClientRect();
+                close();
+                showPopupMenu(document, bounds.right, bounds.top, item.items);
+            });
+        } else {
+            entry.disabled = item.disabled === true;
+            if (item.shortcut !== undefined) entry.append(createElement(document, "span", "popup-menu-shortcut", item.shortcut));
+            entry.addEventListener("click", () => {
+                close();
+                item.run();
+            });
+        }
         menu.append(entry);
     }
     document.body.append(menu);

@@ -1,4 +1,5 @@
 import type {Entity} from "../../engine/core";
+import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
 import {SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene/sceneDocument";
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {askForChoice, askForText} from "./dialogs";
@@ -31,7 +32,7 @@ import {EXTERNAL_EDITOR_UNAVAILABLE_TEXT} from "./projectPreview";
 
 type ItemKind = ProjectFileKind | "folder";
 
-const ICON_TEXT: Readonly<Record<ItemKind, string>> = {folder: "DIR", scene: "SCN", prefab: "PFB", mesh: "OBJ", image: "IMG", code: "CODE", other: "FILE"};
+const ICON_TEXT: Readonly<Record<ItemKind, string>> = {folder: "DIR", scene: "SCN", prefab: "PFB", dataAsset: "DATA", mesh: "OBJ", image: "IMG", code: "CODE", other: "FILE"};
 const KIND_TITLES: Readonly<Record<ItemKind, string>> = {folder: "Folder", ...PROJECT_FILE_KIND_TITLES};
 const DRAG_TEXT_TYPE = "text/plain";
 const DROP_TARGET_CLASS = "drop-target";
@@ -92,6 +93,7 @@ export class ProjectView {
                 const normalized = normalizeProjectPath(path);
                 if (projectFileKind(normalized) === "prefab") void this.workspace.updateInstancesOf(normalized);
             }
+            void this.workspace.reloadDataAssets(change.paths);
         });
         void this.reload();
     }
@@ -241,6 +243,7 @@ export class ProjectView {
     private activate(path: string, kind: ItemKind): void {
         if (kind === "folder") this.openFolder(path);
         else if (kind === "scene" || kind === "prefab") void this.workspace.openDocument(path);
+        else if (kind === "dataAsset") this.workspace.openDataAsset(path);
         else if (kind === "code") void this.openExternally(path);
     }
 
@@ -302,6 +305,7 @@ export class ProjectView {
         const items: MenuItem[] = [
             {label: "New Folder", run: () => void this.createFolder(folder)},
             {label: "New Scene", run: () => void this.createScene(folder)},
+            {label: "Create", items: [{label: "Data Asset", items: this.dataAssetCreationItems(folder)}]},
         ];
         if (folder !== ROOT_FOLDER_PATH) {
             items.push(MENU_SEPARATOR,
@@ -311,6 +315,10 @@ export class ProjectView {
         showPopupMenu(this.grid.ownerDocument, event.clientX, event.clientY, items);
     }
 
+    private dataAssetCreationItems(folder: string): MenuItem[] {
+        return this.workspace.dataAssetTypeNames().map(typeName => ({label: typeName, run: () => void this.createDataAsset(folder, typeName)}));
+    }
+
     private showItemMenu(event: MouseEvent, path: string, kind: ItemKind): void {
         if (kind === "folder") {
             this.showFolderMenu(event, path);
@@ -318,6 +326,7 @@ export class ProjectView {
         }
         const items: MenuItem[] = [];
         if (kind === "scene" || kind === "prefab") items.push({label: "Open", run: () => void this.workspace.openDocument(path)});
+        else if (kind === "dataAsset") items.push({label: "Open", run: () => this.workspace.openDataAsset(path)});
         else items.push({label: "Open in Editor", run: () => void this.openExternally(path)});
         if (isAssetKind(kind)) items.push({label: "Add to Scene", run: () => void this.workspace.instantiateAsset(path, {target: {parent: null, before: null}})});
         if (items.length > 0) items.push(MENU_SEPARATOR);
@@ -349,6 +358,19 @@ export class ProjectView {
         } catch (error) {
             this.workspace.reportError(error);
         }
+    }
+
+    private async createDataAsset(folder: string, typeName: string): Promise<void> {
+        const name = await askForText(this.grid.ownerDocument, {
+            title: `New ${typeName} data asset`,
+            label: "Data asset name",
+            initialValue: typeName,
+            confirmText: "Create",
+            validate: value => this.nameProblem(folder, `${value.trim()}${DATA_ASSET_FILE_SUFFIX}`),
+        });
+        if (name === undefined) return;
+        const path = uniqueChildPath(allProjectPaths(this.entries), folder, name.trim(), DATA_ASSET_FILE_SUFFIX);
+        if (await this.workspace.createDataAsset(typeName, path)) await this.reload();
     }
 
     private nameProblem(folder: string, name: string): string | undefined {

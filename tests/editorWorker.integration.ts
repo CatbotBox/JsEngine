@@ -10,7 +10,7 @@ import {EditorClient} from "../src/editor/page/editorClient";
 import type {EditorChannel} from "../src/editor/page/editorClient";
 import {isEditorEventMessage} from "../src/editor/editorProtocol";
 import type {EditorEntityDetails, EditorEntitySummary, EditorEvent, EditorRequest, EditorResultOf, EditorView} from "../src/editor/editorProtocol";
-import {parseSceneDocument} from "../src/engine/scene";
+import {parseSceneDocument, SCENE_INSTANCE_COMPONENT_NAME} from "../src/engine/scene";
 import {createProjectServer} from "../src/hosts/desktop";
 import type {ProjectServer} from "../src/hosts/desktop";
 import {HttpProjectFileSystem} from "../src/editor/project/httpProjectFileSystem";
@@ -30,6 +30,7 @@ const SURFACE: PixelPresenterSize = {widthPx: 640, heightPx: 384};
 const TIMEOUT_MS = 20_000;
 const POLL_INTERVAL_MS = 10;
 const FRAME_ARRIVAL_WINDOW_MS = 300;
+const SAVED_SCENE_PATH = "scenes/saved.scene.json";
 const EDIT_FRAMES_AFTER_KEY = 10;
 const PLAYER_NAME = "cross1";
 const CAMERA_NAME = "cameraEntity";
@@ -191,7 +192,7 @@ class EditorPage {
     public dispose(): void {
         this.client.close();
         this.fileServing.dispose();
-        this.worker.terminate();
+        this.connection.close();
     }
 }
 
@@ -216,7 +217,7 @@ async function verifySaveLoad(page: EditorPage, label: string, checkedName: stri
     const saved = await page.ask({op: "saveScene"});
     const checked = before.find(entity => entity.name === checkedName);
     const checkedXyz = checked === undefined ? undefined : await page.fieldOf(checked.entity, "LocalPosition", "xyz");
-    const loaded = await page.ask({op: "loadScene", sceneText: saved.sceneText});
+    const loaded = await page.ask({op: "loadScene", sceneText: saved.sceneText, path: SAVED_SCENE_PATH});
     const after = (await page.ask({op: "listEntities"})).entities;
     expect(loaded.entityCount === before.length && after.length === before.length,
         `${label}: saveScene -> loadScene keeps the entity count (${before.length} -> ${loaded.entityCount} loaded, ${after.length} listed)`);
@@ -226,6 +227,7 @@ async function verifySaveLoad(page: EditorPage, label: string, checkedName: stri
     expect(checkedXyz !== undefined && sameJson(reloadedXyz, checkedXyz), `${label}: ${checkedName} kept its position through save and load (${JSON.stringify(reloadedXyz)})`);
     const resaved = await page.ask({op: "saveScene"});
     expect(resaved.sceneText === saved.sceneText, `${label}: saving the loaded scene gives the same scene text`);
+    expect(!resaved.sceneText.includes(SCENE_INSTANCE_COMPONENT_NAME), `${label}: the saved scene text carries no scene membership`);
     const arrived = await page.framesKeepArriving();
     expect(arrived > 0, `${label}: frames still arrive after loading (${arrived} in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
 }

@@ -1,5 +1,6 @@
 import type {Entity} from "../../engine/core";
 import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
+import {describeSchemaChange} from "../../engine/scene/schemaChanges";
 import type {SceneLoadReport} from "../../engine/scene/sceneSerialization";
 import type {EditorNoticeLevel, EditorProject, EditorSession, EditorShell, EntityRemap} from "../page/editorSession";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
@@ -44,12 +45,7 @@ function listed(names: readonly string[]): string {
 
 export function reloadNotices(report: SceneLoadReport, entityCount: number): ReloadNotice[] {
     const notices: ReloadNotice[] = [{level: "info", text: `Reloaded the game code (${entityCount} entities carried over)`}];
-    for (const change of report.changedSchemas) {
-        const parts: string[] = [];
-        if (change.addedKeys.length > 0) parts.push(`new fields ${listed(change.addedKeys)} start at their defaults`);
-        if (change.removedKeys.length > 0) parts.push(`removed fields ${listed(change.removedKeys)} were dropped`);
-        notices.push({level: "warn", text: `${change.typeName} changed: ${parts.join("; ")}`});
-    }
+    for (const change of report.changedSchemas) notices.push({level: "warn", text: describeSchemaChange(change)});
     for (const skipped of report.skippedComponentTypes) {
         notices.push({level: "warn", text: `${skipped.typeName} was dropped from ${skipped.entityCount} entities: it has no registered schema in the new code`});
     }

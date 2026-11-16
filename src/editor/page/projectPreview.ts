@@ -28,7 +28,7 @@ const IMAGE_DECODERS: Readonly<Record<string, (bytes: Uint8Array) => DecodedImag
     ".jpeg": decodeJpeg,
     ".ppm": decodePpm,
 };
-const TEXT_EXCERPT_KINDS: ReadonlySet<ProjectFileKind> = new Set(["mesh", "other"]);
+const TEXT_EXCERPT_KINDS: ReadonlySet<ProjectFileKind> = new Set(["mesh", "dataAsset", "other"]);
 const BYTES_PER_KILOBYTE = 1024;
 const SIZE_UNITS: readonly string[] = ["KB", "MB", "GB"];
 const SIZE_DECIMALS = 1;
@@ -45,6 +45,7 @@ const LOADING_TEXT = "Loading…";
 const NO_OUTLINE_TEXT = "No components, systems, resources or exports found.";
 const OPEN_EXTERNALLY_HINT = "Double-click to open in your editor";
 const OPEN_DOCUMENT_HINT = "Double-click to open";
+const OPEN_DATA_ASSET_HINT = "Double-click to open in the Data Assets window";
 const NOT_REGISTERED_TEXT = "not registered";
 
 function formatFileSize(bytes: number): string {
@@ -140,6 +141,7 @@ export class ProjectFilePreview {
 
     private hintOf(kind: ProjectFileKind): string | undefined {
         if (kind === "scene" || kind === "prefab") return OPEN_DOCUMENT_HINT;
+        if (kind === "dataAsset") return OPEN_DATA_ASSET_HINT;
         if (kind !== "code") return undefined;
         return this.workspace.session.files.openExternally === undefined ? EXTERNAL_EDITOR_UNAVAILABLE_TEXT : OPEN_EXTERNALLY_HINT;
     }

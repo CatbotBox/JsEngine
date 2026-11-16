@@ -33,6 +33,7 @@ describe("editor protocol guards", () => {
             {op: "setEnabled", entity: ENTITY, enabled: false},
             {op: "saveScene"},
             {op: "loadScene", sceneText: "{}"},
+            {op: "loadScene", sceneText: "{}", path: "scenes/main.scene.json"},
             {op: "setMode", mode: "edit"},
             {op: "setMode", mode: "play"},
             {op: "setMode", mode: "paused"},
@@ -61,6 +62,14 @@ describe("editor protocol guards", () => {
             {op: "exportSnapshot"},
             {op: "importSnapshot", documentText: "{}", mode: "edit"},
             {op: "importSnapshot", documentText: "{}", editSnapshotText: "{}", editSnapshotRecords: [0, -1], mode: "play", gameplayTicks: 4},
+            {op: "describeAssetTypes"},
+            {op: "listSettings"},
+            {op: "getResource", typeName: "SwarmTuning"},
+            {op: "setResourceField", typeName: "SwarmTuning", key: "speed", value: 2},
+            {op: "setResourceField", typeName: "SwarmTuning", key: "waves", value: [{count: 3}]},
+            {op: "setResourceField", typeName: "SwarmTuning", key: "limit", value: null},
+            {op: "reloadDataAsset", path: "data/swarm.tuning.asset.json"},
+            {op: "defaultResourceFields", typeName: "SwarmTuning"},
         ];
         expect(requests.filter(request => !isEditorRequest(request))).toEqual([]);
         expect(requests.every(request => isEditorRequestMessage(message(request)))).toBe(true);
@@ -86,6 +95,7 @@ describe("editor protocol guards", () => {
             {op: "createEntity", parent: "root"},
             {op: "setEnabled", entity: ENTITY, enabled: "yes"},
             {op: "loadScene", sceneText: {}},
+            {op: "loadScene", sceneText: "{}", path: 7},
             {op: "setMode", mode: "stopped"},
             {op: "renameEntity", entity: ENTITY},
             {op: "renameEntity", entity: ENTITY, name: 3},
@@ -111,6 +121,14 @@ describe("editor protocol guards", () => {
             {op: "importSnapshot", documentText: "{}"},
             {op: "importSnapshot", documentText: "{}", mode: "edit", editSnapshotRecords: [-2]},
             {op: "importSnapshot", documentText: "{}", mode: "edit", gameplayTicks: -1},
+            {op: "getResource"},
+            {op: "getResource", typeName: 3},
+            {op: "setResourceField", typeName: "SwarmTuning", key: "speed"},
+            {op: "setResourceField", typeName: "SwarmTuning", value: 2},
+            {op: "setResourceField", key: "speed", value: 2},
+            {op: "reloadDataAsset"},
+            {op: "reloadDataAsset", path: 1},
+            {op: "defaultResourceFields"},
         ];
         expect(requests.filter(request => isEditorRequest(request))).toEqual([]);
     });

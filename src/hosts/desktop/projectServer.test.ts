@@ -149,6 +149,10 @@ describe("project server", () => {
         const {id} = await opened(folder);
         expect((await request(`${id}/files`, {method: "DELETE"})).status).toBe(HTTP_METHOD_NOT_ALLOWED);
         expect((await request(`${id}/worker.js`)).status).toBe(HTTP_NOT_FOUND);
+        const extensions = await request(`${id}/editor-extensions.js`);
+        expect(extensions.status).toBe(HTTP_NOT_FOUND);
+        expect((await extensions.json()).error).toBe(`this project has no editor extensions bundle: name a module in "editorExtensions" in ${PROJECT_MANIFEST_FILE} and build it`);
+        expect((await request(`${id}/editor-extensions.js`, {method: "POST"})).status).toBe(HTTP_METHOD_NOT_ALLOWED);
         const build = await post(`${id}/build`, {});
         expect(build.status).toBe(HTTP_OK);
         expect(await build.json()).toEqual({errors: ["building project code needs the JsEngine source tree; start the editor from the repository"]});

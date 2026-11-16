@@ -25,9 +25,10 @@ function folder(path: string): ProjectEntry {
 }
 
 describe("project file typing", () => {
-    test("scenes, prefabs, meshes, images and code are told apart by extension, case-insensitively", () => {
+    test("scenes, prefabs, data assets, meshes, images and code are told apart by extension, case-insensitively", () => {
         expect(projectFileKind("scenes/Main.scene.json")).toBe("scene");
         expect(projectFileKind("prefabs/Ship.PREFAB.JSON")).toBe("prefab");
+        expect(projectFileKind("assets/swarm.tuning.Asset.Json")).toBe("dataAsset");
         expect(projectFileKind("models/cube.obj")).toBe("mesh");
         expect(projectFileKind("art/a.png")).toBe("image");
         expect(projectFileKind("art/b.JPEG")).toBe("image");
@@ -40,9 +41,10 @@ describe("project file typing", () => {
         expect(projectFileKind("models/cube.mtl")).toBe("other");
     });
 
-    test("stems drop compound scene and prefab extensions", () => {
+    test("stems drop compound scene, prefab and data asset extensions", () => {
         expect(stemOf("scenes/Main.scene.json")).toBe("Main");
         expect(stemOf("prefabs/Ship.prefab.json")).toBe("Ship");
+        expect(stemOf("assets/swarm.tuning.asset.json")).toBe("swarm.tuning");
         expect(stemOf("models/cube.obj")).toBe("cube");
         expect(stemOf("README")).toBe("README");
         expect(extensionOf(".hidden")).toBe("");

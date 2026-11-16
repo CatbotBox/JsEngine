@@ -7,15 +7,23 @@ import {Parent, ParentTransform} from "../../engine/translation/parent";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {
+    assetReferencesOfFields,
     assignInferredFieldValue,
     decodeFieldValue,
     EditorOnly,
     inferComponentSchema,
     isEntityField,
-    isSceneJsonObject,
     untrackedComponentOf,
 } from "../../engine/scene";
-import type {ComponentSchema, ComponentSchemaRegistry, FieldDecodeContext, FieldSchema, SceneAssetLoader, SceneJsonObject} from "../../engine/scene";
+import type {
+    ComponentSchema,
+    ComponentSchemaRegistry,
+    FieldDecodeContext,
+    FieldSchema,
+    SceneAssetLoader,
+    SceneAssetReference,
+    SceneJsonObject,
+} from "../../engine/scene";
 import type {EditorFieldEdit, EditorFieldValue} from "../editorProtocol";
 import {encodeEditorFieldValue, isSceneEntityHandle, parentOf, requireSceneEntity, unregisteredComponentTypes} from "./entityInspection";
 import {linkChild, reparentKeepingLocals, requireNoCycle, subtreeOf, unlinkChild} from "./hierarchyEditing";
@@ -83,13 +91,14 @@ function requireField(schema: ComponentSchema, key: string): FieldSchema {
     return field;
 }
 
-function decodeContext(world: World, assets: SceneAssetLoader): FieldDecodeContext {
+export function editorDecodeContext(world: World, registry: ComponentSchemaRegistry, assets: SceneAssetLoader): FieldDecodeContext {
     return {
         entityOf: entity => isSceneEntityHandle(world, entity) ? entity as Entity : undefined,
         reportDanglingEntity: path => {
             throw new Error(`${path} names no entity of this world`);
         },
         assets,
+        fieldTypes: registry,
     };
 }
 
@@ -105,18 +114,13 @@ export function markComponentChanged(world: World, entity: Entity, type: AnyCT):
     archetype.getColumn(type)?.markBlockAt(row, world.changeStamps.current);
 }
 
-export function assetPathsOf(registry: ComponentSchemaRegistry, typeName: string, values: SceneJsonObject): string[] {
+export function assetReferencesOf(registry: ComponentSchemaRegistry, typeName: string, values: SceneJsonObject): SceneAssetReference[] {
     const schema = registry.byName(typeName);
-    if (schema === undefined) return [];
-    return schema.fields.flatMap(field => {
-        if (field.kind !== "mesh" && field.kind !== "spriteImage") return [];
-        const value = values[field.key];
-        return isSceneJsonObject(value) && typeof value.path === "string" ? [value.path] : [];
-    });
+    return schema === undefined ? [] : assetReferencesOfFields(schema.fields, values);
 }
 
-export function assetPathsOfEdits(registry: ComponentSchemaRegistry, edits: readonly EditorFieldEdit[]): string[] {
-    return [...new Set(edits.flatMap(edit => assetPathsOf(registry, edit.typeName, {[edit.key]: edit.value})))];
+export function assetReferencesOfEdits(registry: ComponentSchemaRegistry, edits: readonly EditorFieldEdit[]): SceneAssetReference[] {
+    return edits.flatMap(edit => assetReferencesOf(registry, edit.typeName, {[edit.key]: edit.value}));
 }
 
 function prepareEdit(world: World, registry: ComponentSchemaRegistry, context: FieldDecodeContext, edit: EditorFieldEdit): PreparedEdit {
@@ -143,20 +147,20 @@ function applyEdit(world: World, prepared: PreparedEdit): void {
     else fieldsOf(component)[field.key] = value;
 }
 
-function encodedValueOf(world: World, prepared: PreparedEdit): EditorFieldValue {
+function encodedValueOf(world: World, registry: ComponentSchemaRegistry, prepared: PreparedEdit): EditorFieldValue {
     const component = untrackedComponentOf<Component>(world, prepared.edit.entity, prepared.target.type)!;
-    return encodeEditorFieldValue(world, prepared.field, fieldsOf(component)[prepared.field.key], `${prepared.edit.typeName}.${prepared.edit.key}`);
+    return encodeEditorFieldValue(world, registry, prepared.field, fieldsOf(component)[prepared.field.key], `${prepared.edit.typeName}.${prepared.edit.key}`);
 }
 
 export function assignField(world: World, registry: ComponentSchemaRegistry, assets: SceneAssetLoader, edit: EditorFieldEdit): EditorFieldValue {
-    const prepared = prepareEdit(world, registry, decodeContext(world, assets), edit);
+    const prepared = prepareEdit(world, registry, editorDecodeContext(world, registry, assets), edit);
     if (prepared.target.schema.ctor === Parent) requireNoCycle(world, edit.entity, prepared.value as Entity);
     applyEdit(world, prepared);
-    return encodedValueOf(world, prepared);
+    return encodedValueOf(world, registry, prepared);
 }
 
 export function assignFields(world: World, registry: ComponentSchemaRegistry, assets: SceneAssetLoader, edits: readonly EditorFieldEdit[]): EditorFieldValue[] {
-    const context = decodeContext(world, assets);
+    const context = editorDecodeContext(world, registry, assets);
     const prepared = edits.map((edit, index) => {
         if (registry.byName(edit.typeName)?.ctor === Parent) throw new Error(`edits[${index}]: setFields cannot edit Parent; use setParent`);
         try {
@@ -166,13 +170,21 @@ export function assignFields(world: World, registry: ComponentSchemaRegistry, as
         }
     });
     for (const edit of prepared) applyEdit(world, edit);
-    return prepared.map(edit => encodedValueOf(world, edit));
+    return prepared.map(edit => encodedValueOf(world, registry, edit));
 }
 
-function decodeValuesOnto(world: World, assets: SceneAssetLoader, schema: ComponentSchema, component: Component, values: SceneJsonObject, typeName: string): void {
+function decodeValuesOnto(
+    world: World,
+    registry: ComponentSchemaRegistry,
+    assets: SceneAssetLoader,
+    schema: ComponentSchema,
+    component: Component,
+    values: SceneJsonObject,
+    typeName: string,
+): void {
     const unknownKeys = Object.keys(values).filter(key => !schema.fields.some(field => field.key === key));
     if (unknownKeys.length > 0) throw new Error(`${typeName} has no field${unknownKeys.length === 1 ? "" : "s"} ${quotedKeys(unknownKeys)}`);
-    const context = decodeContext(world, assets);
+    const context = editorDecodeContext(world, registry, assets);
     for (const field of schema.fields) {
         const json = values[field.key];
         if (json === undefined) continue;
@@ -206,14 +218,14 @@ export function addComponentTo(
         if (type === undefined) throw new Error(`No component type named "${typeName}" is registered`);
         if (entityManager.hasComponent(entity, type)) throw new Error(`Entity ${entity} already has ${typeName}`);
         const component = createInferred(type, typeName);
-        decodeValuesOnto(world, assets, inferComponentSchema(component), component, values, typeName);
+        decodeValuesOnto(world, registry, assets, inferComponentSchema(component), component, values, typeName);
         entityManager.addComponent(entity, component);
         return;
     }
     const schema = requireFieldsSchema(registry, typeName);
     if (entityManager.hasComponent(entity, ComponentType.of(schema.ctor))) throw new Error(`Entity ${entity} already has ${typeName}`);
     const component = schema.create();
-    decodeValuesOnto(world, assets, schema, component, values, typeName);
+    decodeValuesOnto(world, registry, assets, schema, component, values, typeName);
     const missing = missingRequiredEntities(schema, component);
     if (missing.length > 0) throw new Error(`${typeName} needs ${quotedKeys(missing)} set to an entity in its values`);
     if (component instanceof Parent) requireNoCycle(world, entity, component.entity);
