@@ -1,4 +1,5 @@
 import {NULL_ENTITY} from "../core/entity";
+import {FrameLoopSettings} from "../core/frameLoopSettings";
 import {LocalPosition} from "../translation/localPosition";
 import {LocalRotation} from "../translation/localRotation";
 import {LocalScale} from "../translation/localScale";
@@ -27,6 +28,7 @@ import {ACTIVE_SCENE_RESOURCE_NAME, ActiveScene, SCENE_INSTANCE_COMPONENT_NAME, 
 import {PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY} from "./sceneSerialization";
 
 const REQUIRED_ENTITY = {nullable: false};
+const UNCAPPED_RATE = {uncapped: true};
 
 export const ENGINE_COMPONENT_CATEGORIES = {
     transform: "Transform",
@@ -83,5 +85,7 @@ export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry
     registry.register(componentSchema(Children, "Children").implied().category(CATEGORY.transform).build());
     registry.register(componentSchema(WorldSpaceRenderBounds, "WorldSpaceRenderBounds").implied().category(CATEGORY.rendering).build());
     registry.register(componentSchema(ScreenSize, "ScreenSize").implied().category(CATEGORY.camera).build());
+    registry.register(componentSchema(FrameLoopSettings, "FrameLoopSettings").number("simulationTickRate").number("renderRate", UNCAPPED_RATE)
+        .boolean("matchDisplay").number("cpuRenderRateLimit", UNCAPPED_RATE).integer("maxCatchUpTicks").category(CATEGORY.settings).build());
     registry.registerResource(resourceSchema(ActiveScene, ACTIVE_SCENE_RESOURCE_NAME).integer("sceneId").nullableString("path").build());
 }

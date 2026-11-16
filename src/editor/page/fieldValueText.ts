@@ -2,7 +2,7 @@ import type {Entity} from "../../engine/core";
 import {Quaternions} from "../../engine/math/quaternions";
 import {asFloat32Array, Vec3, Vec4} from "../../engine/math/types/vec";
 import {isSceneJsonObject} from "../../engine/scene/sceneDocument";
-import type {SceneJsonValue} from "../../engine/scene";
+import type {NumberFieldOptions, SceneJsonValue} from "../../engine/scene";
 import type {EditorFieldValue, InlineSpriteImageSummary} from "../editorProtocol";
 
 export type ParsedFieldText =
@@ -28,6 +28,16 @@ export interface TextColorParts {
     readonly text: string;
 }
 
+export interface InlineImageSize {
+    readonly width: number;
+    readonly height: number;
+}
+
+export interface SliderRange {
+    readonly min: number;
+    readonly max: number;
+}
+
 export const VEC3_COMPONENT_COUNT = 3;
 export const QUATERNION_COMPONENT_COUNT = 4;
 export const NOT_A_NUMBER_WIRE = "NaN";
@@ -46,6 +56,7 @@ const HEX_COLOR_TEXT = /^#?([0-9a-fA-F]{6})$/;
 const LINE_BREAK = /\r?\n/;
 const LINE_SEPARATOR = "\n";
 const FALLBACK_RGB_TEXT = "#000000";
+const JSON_TEXT_INDENT_SPACES = 2;
 const ZYX_ORDER: Quaternions.EulerOrder = "ZYX";
 const IN_DEGREES = {deg: true};
 const UNREADABLE_ROTATION: EulerDegrees = [Number.NaN, Number.NaN, Number.NaN];
@@ -258,14 +269,55 @@ export function isInlineAssetSummary(value: EditorFieldValue): value is InlineSp
     return isSceneJsonObject(inline) && typeof inline.width === "number" && typeof inline.height === "number";
 }
 
+export function inlineImageSize(value: EditorFieldValue): InlineImageSize | undefined {
+    if (isInlineAssetSummary(value)) return {width: value.inline.width, height: value.inline.height};
+    const isEncodedImage = isSceneJsonObject(value) && typeof value.width === "number" && typeof value.height === "number" && typeof value.rgbaBase64 === "string";
+    return isEncodedImage ? {width: value.width as number, height: value.height as number} : undefined;
+}
+
+export function assetPathOf(value: EditorFieldValue | undefined): string | undefined {
+    return isSceneJsonObject(value) && typeof value.path === "string" ? value.path : undefined;
+}
+
 export function assetText(value: EditorFieldValue): string {
     if (value === null) return "";
-    if (isInlineAssetSummary(value)) return `(inline ${value.inline.width}x${value.inline.height})`;
-    if (isSceneJsonObject(value) && typeof value.path === "string") return value.path;
-    return fallbackText(value);
+    const inline = inlineImageSize(value);
+    if (inline !== undefined) return `(inline ${inline.width}x${inline.height})`;
+    return assetPathOf(value) ?? fallbackText(value);
+}
+
+export function clampToRange(value: number, options: NumberFieldOptions | undefined, keepsInfinity: boolean): number {
+    if (Number.isNaN(value) || (keepsInfinity && value === Number.POSITIVE_INFINITY)) return value;
+    const min = options?.min, max = options?.max;
+    const atLeastMin = min !== undefined && Number.isFinite(min) ? Math.max(min, value) : value;
+    return max !== undefined && Number.isFinite(max) ? Math.min(max, atLeastMin) : atLeastMin;
+}
+
+export function clampedWire(parsed: ParsedFieldText, options: NumberFieldOptions | undefined, keepsInfinity: boolean): ParsedFieldText {
+    if (!parsed.valid) return parsed;
+    const number = numberOfWire(parsed.value);
+    return number === undefined ? parsed : valid(wireNumber(clampToRange(number, options, keepsInfinity)));
+}
+
+export function sliderRangeOf(options: NumberFieldOptions | undefined): SliderRange | undefined {
+    const min = options?.min, max = options?.max;
+    const usable = options?.slider === true && min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && min < max;
+    return usable ? {min, max} : undefined;
 }
 
 export function parseAssetPathText(text: string): SceneJsonValue {
     const path = text.trim();
     return path.length === 0 ? null : {path};
+}
+
+export function jsonFieldText(value: EditorFieldValue): string {
+    return JSON.stringify(value, null, JSON_TEXT_INDENT_SPACES) ?? "";
+}
+
+export function parseJsonFieldText(text: string): ParsedFieldText {
+    try {
+        return valid(JSON.parse(text) as SceneJsonValue);
+    } catch (error) {
+        return invalid(`not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }

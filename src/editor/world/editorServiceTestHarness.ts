@@ -91,6 +91,7 @@ export interface EditorWorldOptions {
     readonly register?: (registry: ComponentSchemaRegistry) => void;
     readonly files?: Readonly<Record<string, string | Uint8Array>>;
     readonly tickMs?: number;
+    readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
 }
 
 const running: Harnessed[] = [];
@@ -129,6 +130,7 @@ export function editorWorld(populate: (world: World) => void = () => undefined, 
         addEventListener: (_type, listener) => toWorld.listen(listener),
     }, world, registry, {
         tickIntervalMs: options.tickMs ?? TICK_MS,
+        refetchFiles: options.refetchFiles,
         preloadAssets: async paths => {
             preloaded.push([...paths]);
             await sleep(PRELOAD_DELAY_MS);

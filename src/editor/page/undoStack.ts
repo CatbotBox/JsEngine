@@ -1,6 +1,7 @@
 import type {Entity} from "../../engine/core";
+import {isSceneJsonObject} from "../../engine/scene/sceneDocument";
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
-import type {EditorFieldEdit, EditorRequest, EditorResultOf} from "../editorProtocol";
+import type {EditorFieldEdit, EditorFieldTypeDescription, EditorRequest, EditorResultOf} from "../editorProtocol";
 import {planRestore} from "./hierarchyDrop";
 import type {MovePlan, ReadonlySiblingLists, SiblingKey, SiblingLists} from "./hierarchyDrop";
 
@@ -76,26 +77,86 @@ export function handleOf(ref: EntityRef): Entity {
     return ref.handle;
 }
 
+export interface ListEntityShape {
+    readonly element: EntityValueShape;
+}
+
+export interface StructEntityShape {
+    readonly members: ReadonlyMap<string, EntityValueShape>;
+}
+
+export type EntityValueShape = boolean | ListEntityShape | StructEntityShape;
+
+export const HOLDS_NO_ENTITIES: EntityValueShape = false;
+export const IS_ENTITY: EntityValueShape = true;
+
+export type EntityValueShapes = ReadonlyMap<string, EntityValueShape>;
+
+export function entityValueShapeOf(type: EditorFieldTypeDescription): EntityValueShape {
+    switch (type.kind) {
+        case "entity":
+            return IS_ENTITY;
+        case "list": {
+            const element = entityValueShapeOf(type.element);
+            return element === HOLDS_NO_ENTITIES ? HOLDS_NO_ENTITIES : {element};
+        }
+        case "struct": {
+            const members = new Map<string, EntityValueShape>();
+            for (const field of type.fields) {
+                const shape = entityValueShapeOf(field);
+                if (shape !== HOLDS_NO_ENTITIES) members.set(field.key, shape);
+            }
+            return members.size === 0 ? HOLDS_NO_ENTITIES : {members};
+        }
+        default:
+            return HOLDS_NO_ENTITIES;
+    }
+}
+
 export type StoredValue =
     | {readonly kind: "json", readonly value: SceneJsonValue}
-    | {readonly kind: "entity", readonly ref: EntityRef | null};
+    | {readonly kind: "entity", readonly ref: EntityRef | null}
+    | {readonly kind: "list", readonly items: readonly StoredValue[]}
+    | {readonly kind: "struct", readonly value: SceneJsonObject, readonly members: StoredValues};
 
 export type StoredValues = ReadonlyMap<string, StoredValue>;
 
-export function storedValueOf(refs: EntityRefs, value: SceneJsonValue, entityValued: boolean): StoredValue {
-    if (entityValued && typeof value === "number") return {kind: "entity", ref: refs.refOf(value as Entity)};
-    if (entityValued && value === null) return {kind: "entity", ref: null};
+function storedEntityOf(refs: EntityRefs, value: SceneJsonValue): StoredValue {
+    if (typeof value === "number") return {kind: "entity", ref: refs.refOf(value as Entity)};
+    if (value === null) return {kind: "entity", ref: null};
     return {kind: "json", value};
 }
 
-export function jsonOfStoredValue(stored: StoredValue): SceneJsonValue {
-    if (stored.kind === "json") return stored.value;
-    return stored.ref === null ? null : handleOf(stored.ref);
+export function storedValueOf(refs: EntityRefs, value: SceneJsonValue, shape: EntityValueShape): StoredValue {
+    if (typeof shape === "boolean") return shape === IS_ENTITY ? storedEntityOf(refs, value) : {kind: "json", value};
+    if ("element" in shape) {
+        return Array.isArray(value) ? {kind: "list", items: value.map(item => storedValueOf(refs, item, shape.element))} : {kind: "json", value};
+    }
+    if (!isSceneJsonObject(value)) return {kind: "json", value};
+    const members = new Map<string, StoredValue>();
+    for (const [key, memberShape] of shape.members) {
+        const member = value[key];
+        if (member !== undefined) members.set(key, storedValueOf(refs, member, memberShape));
+    }
+    return {kind: "struct", value, members};
 }
 
-export function storedValuesOf(refs: EntityRefs, values: Readonly<Record<string, SceneJsonValue>>, entityValuedKeys: ReadonlySet<string>): StoredValues {
+export function jsonOfStoredValue(stored: StoredValue): SceneJsonValue {
+    switch (stored.kind) {
+        case "json":
+            return stored.value;
+        case "entity":
+            return stored.ref === null ? null : handleOf(stored.ref);
+        case "list":
+            return stored.items.map(jsonOfStoredValue);
+        case "struct":
+            return {...stored.value, ...jsonOfStoredValues(stored.members)};
+    }
+}
+
+export function storedValuesOf(refs: EntityRefs, values: Readonly<Record<string, SceneJsonValue>>, shapes: EntityValueShapes): StoredValues {
     const stored = new Map<string, StoredValue>();
-    for (const [key, value] of Object.entries(values)) stored.set(key, storedValueOf(refs, value, entityValuedKeys.has(key)));
+    for (const [key, value] of Object.entries(values)) stored.set(key, storedValueOf(refs, value, shapes.get(key) ?? HOLDS_NO_ENTITIES));
     return stored;
 }
 
@@ -124,7 +185,7 @@ export interface FieldChange {
     readonly key: string;
     readonly before: SceneJsonValue;
     readonly after: SceneJsonValue;
-    readonly entityValued: boolean;
+    readonly entityShape: EntityValueShape;
 }
 
 interface StoredFieldChange {
@@ -148,8 +209,8 @@ export class FieldsCommand implements UndoCommand {
             ref: refs.refOf(change.entity),
             typeName: change.typeName,
             key: change.key,
-            before: storedValueOf(refs, change.before, change.entityValued),
-            after: storedValueOf(refs, change.after, change.entityValued),
+            before: storedValueOf(refs, change.before, change.entityShape),
+            after: storedValueOf(refs, change.after, change.entityShape),
         })));
     }
 

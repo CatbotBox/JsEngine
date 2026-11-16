@@ -1,21 +1,27 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {Entity} from "../../engine/core";
 import {decodeFieldValue, encodeFieldValue} from "../../engine/scene";
-import type {FieldDecodeContext, FieldEncodeContext, PlainFieldSchema, SceneJsonValue} from "../../engine/scene";
+import type {FieldDecodeContext, FieldEncodeContext, FieldSchema, SceneJsonValue} from "../../engine/scene";
 import {
+    assetPathOf,
     assetText,
+    clampedWire,
+    clampToRange,
     entityLabel,
     entityOptionValue,
     eulerDegreesOfQuaternion,
     eulerDegreeText,
     float32Text,
+    inlineImageSize,
     isInlineAssetSummary,
+    jsonFieldText,
     numberOfWire,
     numberText,
     parseAssetPathText,
     parseEntityOptionValue,
     parseEulerDegreeTexts,
     parseIntegerText,
+    parseJsonFieldText,
     parseNumberText,
     parseRgbText,
     parseStringText,
@@ -23,6 +29,7 @@ import {
     parseTextLinesText,
     quaternionOfEulerDegrees,
     rgbText,
+    sliderRangeOf,
     stringText,
     textColorParts,
     textForTextColorMode,
@@ -39,8 +46,8 @@ const ANGLE_DIGITS = 3;
 const QUATERNION_DIGITS = 5;
 const NULLABLE = {nullable: true};
 const NOT_NULLABLE = {nullable: false};
-const NUMBER_FIELD: PlainFieldSchema = {key: "value", kind: "number"};
-const ROTATION_FIELD: PlainFieldSchema = {key: "xyzw", kind: "rotation"};
+const NUMBER_FIELD: FieldSchema = {key: "value", kind: "number"};
+const ROTATION_FIELD: FieldSchema = {key: "xyzw", kind: "rotation"};
 const CODEC_PATH = "test";
 const CODEC_NUMBERS = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5, -0, 0];
 
@@ -50,7 +57,7 @@ function ignore(): void {
 const CODEC_ENCODE: FieldEncodeContext = {sceneIdOf: () => undefined, reportDanglingEntity: ignore, reportUnsavedAsset: ignore};
 const CODEC_DECODE: FieldDecodeContext = {entityOf: () => undefined, reportDanglingEntity: ignore};
 
-function codecWire(field: PlainFieldSchema, value: unknown): SceneJsonValue {
+function codecWire(field: FieldSchema, value: unknown): SceneJsonValue {
     return encodeFieldValue(field, value, CODEC_ENCODE, CODEC_PATH);
 }
 
@@ -229,7 +236,52 @@ describe("fieldValueText strings, lines, entities and assets", () => {
         expect(assetText(inline)).toBe("(inline 4x2)");
         expect(assetText({path: "demo/3d/cube.obj"})).toBe("demo/3d/cube.obj");
         expect(assetText(null)).toBe("");
+        expect(assetPathOf({path: "assets/tuning.asset.json"})).toBe("assets/tuning.asset.json");
+        expect(assetPathOf(null)).toBeUndefined();
+        expect(assetPathOf(inline)).toBeUndefined();
         expect(parseAssetPathText("  demo/3d/cube.obj ")).toEqual({path: "demo/3d/cube.obj"});
         expect(parseAssetPathText("   ")).toBe(null);
+    });
+});
+
+describe("fieldValueText number options and inline images", () => {
+    test("values clamp into the option range; NaN stays, and Infinity stays only for an uncapped field", () => {
+        const range = {min: 0, max: 10};
+        expect([clampToRange(-3, range, false), clampToRange(4, range, false), clampToRange(12, range, false)]).toEqual([0, 4, 10]);
+        expect(clampToRange(Number.POSITIVE_INFINITY, range, false)).toBe(10);
+        expect(clampToRange(Number.POSITIVE_INFINITY, range, true)).toBe(Number.POSITIVE_INFINITY);
+        expect(Number.isNaN(clampToRange(Number.NaN, range, false))).toBe(true);
+        expect(clampToRange(-5, {max: 1}, false)).toBe(-5);
+        expect(clampToRange(7, undefined, false)).toBe(7);
+        expect(valueOf(clampedWire(parseNumberText("15"), range, false))).toBe(10);
+        expect(valueOf(clampedWire(parseNumberText("Infinity"), range, true))).toBe("Infinity");
+        expect(clampedWire(parseNumberText("x"), range, false).valid).toBe(false);
+    });
+
+    test("a slider needs the slider option and a finite, non-empty range", () => {
+        expect(sliderRangeOf({min: 0, max: 1, slider: true})).toEqual({min: 0, max: 1});
+        expect(sliderRangeOf({min: 0, max: 1})).toBeUndefined();
+        expect(sliderRangeOf({min: 0, slider: true})).toBeUndefined();
+        expect(sliderRangeOf({min: 1, max: 1, slider: true})).toBeUndefined();
+        expect(sliderRangeOf(undefined)).toBeUndefined();
+    });
+
+    test("inline images show their size, whether summarised or fully encoded inside a list", () => {
+        expect(inlineImageSize({inline: {width: 4, height: 2}})).toEqual({width: 4, height: 2});
+        expect(inlineImageSize({width: 3, height: 1, rgbaBase64: "AAAA"})).toEqual({width: 3, height: 1});
+        expect(inlineImageSize({path: "a.png"})).toBeUndefined();
+        expect(assetText({width: 3, height: 1, rgbaBase64: "AAAA"})).toBe("(inline 3x1)");
+    });
+});
+
+describe("fieldValueText JSON fallback", () => {
+    test("values show as indented JSON and parse back; invalid text names the problem", () => {
+        const value = {min: 0, max: [1, "Infinity"]};
+        expect(jsonFieldText(value)).toBe(JSON.stringify(value, null, 2));
+        expect(valueOf(parseJsonFieldText(jsonFieldText(value)))).toEqual(value);
+        expect(valueOf(parseJsonFieldText("null"))).toBe(null);
+        const parsed = parseJsonFieldText("{min: 1");
+        expect(parsed.valid).toBe(false);
+        expect(!parsed.valid && parsed.reason.startsWith("not valid JSON")).toBe(true);
     });
 });

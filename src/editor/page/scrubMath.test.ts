@@ -1,10 +1,12 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {
     arrowStepDirection,
+    baseStepFor,
     decimalsOfIncrement,
     NO_MODIFIERS,
     roundToIncrement,
     scrubbedValue,
+    scrubUnitsPerPixelForStep,
     steppedValue,
     wheelStepDirection,
 } from "./scrubMath";
@@ -46,6 +48,17 @@ describe("scrub maths", () => {
         expect(steppedValue(5, -1, SLOWER, "integer")).toBe(4);
         expect(steppedValue(5, 1, FASTER, "integer")).toBe(15);
         expect(steppedValue(0.1, 1, NO_MODIFIERS, "number")).toBe(0.2);
+    });
+
+    test("a field's step option sets the step and scales the scrub speed with it", () => {
+        expect(baseStepFor(undefined, "number")).toBe(0.1);
+        expect(baseStepFor(0, "integer")).toBe(1);
+        expect(baseStepFor(5, "integer")).toBe(5);
+        expect(steppedValue(10, 1, NO_MODIFIERS, "integer", baseStepFor(5, "integer"))).toBe(15);
+        expect(steppedValue(1, -1, FASTER, "number", baseStepFor(0.5, "number"))).toBe(-4);
+        expect(scrubUnitsPerPixelForStep(undefined, "number")).toBe(0.05);
+        expect(scrubUnitsPerPixelForStep(1, "number")).toBe(0.5);
+        expect(scrubbedValue(0, 10, NO_MODIFIERS, "number", scrubUnitsPerPixelForStep(1, "number"))).toBe(5);
     });
 
     test("wheel and arrow keys map to step directions", () => {

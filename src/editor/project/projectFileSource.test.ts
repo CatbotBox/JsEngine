@@ -137,6 +137,57 @@ describe("ProjectFileSource", () => {
         expect(source.readText("b.txt")).toBe("buzz");
     });
 
+    test("refetch drops the cached bytes and reads the file again, even before the new listing arrives", async () => {
+        const files = new MemoryProjectFiles({"data/tuning.asset.json": "old"});
+        const source = await connected(files);
+        await source.ensureLoaded(["data/tuning.asset.json"]);
+        files.put("data/tuning.asset.json", "new", 1);
+        await source.ensureLoaded(["data/tuning.asset.json"]);
+        expect(source.readText("data/tuning.asset.json")).toBe("old");
+        await source.refetch(["./data/tuning.asset.json"]);
+        expect(source.readText("data/tuning.asset.json")).toBe("new");
+        expect(files.reads).toEqual(["data/tuning.asset.json", "data/tuning.asset.json"]);
+    });
+
+    test("a refetch wins over a read that was already on its way", async () => {
+        const files = new MemoryProjectFiles({"a.txt": "stale"});
+        const source = await connected(files);
+        const read = files.read.bind(files);
+        let releaseStaleRead: () => void = () => undefined;
+        let firstRead = true;
+        files.read = async path => {
+            if (!firstRead) return read(path);
+            firstRead = false;
+            const bytes = await read(path);
+            await new Promise<void>(release => releaseStaleRead = release);
+            return bytes;
+        };
+        const stale = source.ensureLoaded(["a.txt"]);
+        await settle();
+        files.put("a.txt", "fresh");
+        await source.refetch(["a.txt"]);
+        releaseStaleRead();
+        await stale;
+        expect(source.readText("a.txt")).toBe("fresh");
+    });
+
+    test("refetching a file that is gone rejects and leaves it unloaded", async () => {
+        const files = new MemoryProjectFiles({"a.txt": "a"});
+        const source = await connected(files);
+        await source.ensureLoaded(["a.txt"]);
+        files.read = async () => {
+            throw new Error("deleted");
+        };
+        let failure: unknown;
+        try {
+            await source.refetch(["a.txt"]);
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure instanceof Error && failure.message === "Could not read project file a.txt: deleted").toBe(true);
+        expect(source.isLoaded("a.txt")).toBe(false);
+    });
+
     test("loadFetchingAsNeeded fetches each file the loader reads, including ones it swallowed, until it succeeds", async () => {
         const files = new MemoryProjectFiles({"model.obj": "obj", "model.obj.cache": "cache", "texture.png": "png"});
         const source = await connected(files);

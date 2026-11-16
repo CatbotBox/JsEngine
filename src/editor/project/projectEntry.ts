@@ -35,9 +35,9 @@ export interface ProjectHost {
 }
 
 export interface ProjectEntryModule {
-    registerProjectSchemas(registry: ComponentSchemaRegistry): void;
+    registerProjectSchemas?(registry: ComponentSchemaRegistry): void;
 
     setupProject(world: World, host: ProjectHost): void | Promise<void>;
 }
 
-export const PROJECT_ENTRY_EXPORTS: readonly (keyof ProjectEntryModule)[] = ["registerProjectSchemas", "setupProject"];
+export const PROJECT_ENTRY_EXPORTS: readonly (keyof ProjectEntryModule)[] = ["setupProject"];

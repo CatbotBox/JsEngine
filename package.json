@@ -71,7 +71,8 @@
     "logs:clear": "bun scripts/clearLogs.js",
     "scriptc:measure-coverage": "scriptc coverage scripts/scriptcCoverageEntry.ts",
     "texture:generate-checker": "bun scripts/generateCheckerTexture.ts",
-    "icon:generate": "bun scripts/generateAppIcon.ts"
+    "icon:generate": "bun scripts/generateAppIcon.ts",
+    "project:generate-schemas": "bun scripts/projectSchemas/generateProjectSchemas.ts"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",

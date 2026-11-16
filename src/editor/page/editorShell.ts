@@ -1,6 +1,7 @@
 import type {Entity} from "../../engine/core";
 import type {EditorView} from "../editorProtocol";
 import {ConsoleView} from "./consoleView";
+import {DataAssetsView, DIRTY_MARKER} from "./dataAssetsView";
 import {capturePointer, createButton, createElement, hasCommandModifier, isTextEntryElement, readStorage, writeStorage} from "./dom";
 import type {EditorNoticeLevel, EditorSession, EditorShell, EntityRemap} from "./editorSession";
 import {ToolbarView} from "./editorToolbar";
@@ -13,14 +14,15 @@ import type {AvailableArea, PanelSizeKey, PanelSizes} from "./panelSizes";
 import {ProjectView} from "./projectView";
 import {RotationEulerCache} from "./rotationEulerCache";
 import {SceneView} from "./sceneView";
+import {SettingsView} from "./settingsView";
 
 export const EDITOR_VIEWPORT_ID = "viewport";
 export const BOTTOM_TAB_STORAGE_KEY = "jsengine.editor.bottomTab";
 
-type BottomTab = "project" | "console";
+type BottomTab = "project" | "console" | "settings" | "assets";
 
-const BOTTOM_TABS: readonly BottomTab[] = ["project", "console"];
-const BOTTOM_TAB_LABELS: Readonly<Record<BottomTab, string>> = {project: "Project", console: "Console"};
+const BOTTOM_TABS: readonly BottomTab[] = ["project", "console", "settings", "assets"];
+const BOTTOM_TAB_LABELS: Readonly<Record<BottomTab, string>> = {project: "Project", console: "Console", settings: "Settings", assets: "Data Assets"};
 const VIEW_TAB_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene", game: "Game"};
 const VIEW_TABS: readonly EditorView[] = ["scene", "game"];
 const CSS_VARIABLES: Readonly<Record<PanelSizeKey, string>> = {
@@ -53,6 +55,8 @@ interface ShellLayout {
     readonly bottomTabs: HTMLElement;
     readonly projectPanel: HTMLElement;
     readonly consolePanel: HTMLElement;
+    readonly settingsPanel: HTMLElement;
+    readonly assetsPanel: HTMLElement;
     readonly splitters: ReadonlyMap<PanelSizeKey, HTMLElement>;
 }
 
@@ -61,6 +65,8 @@ interface MountedViews {
     readonly scene: SceneView;
     readonly hierarchy: HierarchyView;
     readonly project: ProjectView;
+    readonly settings: SettingsView;
+    readonly dataAssets: DataAssetsView;
     readonly rotations: RotationEulerCache;
 }
 
@@ -85,12 +91,14 @@ function buildLayout(body: HTMLElement): ShellLayout {
     stage.append(viewport, overlay);
     center.append(viewTabs, stage);
     const inspector = panel(document, "aside", "editor-inspector editor-panel", "Inspector");
-    const bottom = panel(document, "section", "editor-bottom", "Project and Console");
+    const bottom = panel(document, "section", "editor-bottom", "Project, Console, Settings and Data Assets");
     const bottomTabs = createElement(document, "div", "editor-tabs bottom-tabs");
     bottomTabs.setAttribute("role", "tablist");
     const projectPanel = createElement(document, "div", "bottom-panel project-panel");
     const consolePanel = createElement(document, "div", "bottom-panel console-panel");
-    bottom.append(bottomTabs, projectPanel, consolePanel);
+    const settingsPanel = createElement(document, "div", "bottom-panel settings-panel");
+    const assetsPanel = createElement(document, "div", "bottom-panel data-assets-panel");
+    bottom.append(bottomTabs, projectPanel, consolePanel, settingsPanel, assetsPanel);
     const splitters = new Map<PanelSizeKey, HTMLElement>();
     for (const key of ["hierarchyWidthPx", "inspectorWidthPx", "bottomHeightPx"] as const) {
         const splitter = createElement(document, "div", `splitter splitter-${key}`);
@@ -99,9 +107,9 @@ function buildLayout(body: HTMLElement): ShellLayout {
         splitters.set(key, splitter);
     }
     root.append(toolbar, hierarchy, splitters.get("hierarchyWidthPx")!, center, splitters.get("inspectorWidthPx")!, inspector, splitters.get("bottomHeightPx")!, bottom);
-    for (const element of [hierarchy, inspector, projectPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
+    for (const element of [hierarchy, inspector, projectPanel, settingsPanel, assetsPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
     body.append(root);
-    return {root, toolbar, hierarchy, center, viewTabs, stage, viewport, overlay, inspector, bottom, bottomTabs, projectPanel, consolePanel, splitters};
+    return {root, toolbar, hierarchy, center, viewTabs, stage, viewport, overlay, inspector, bottom, bottomTabs, projectPanel, consolePanel, settingsPanel, assetsPanel, splitters};
 }
 
 class PanelResizer {
@@ -216,7 +224,13 @@ class EditorShellImplementation implements EditorShell {
         const consoleView = new ConsoleView(this.layout.consolePanel, workspace);
         consoleView.onCountsChanged(() => this.showConsoleBadge(workspace));
         const scene = new SceneView(this.layout.stage, this.viewport, this.layout.overlay, workspace);
-        this.mounted = {workspace, scene, hierarchy, project, rotations};
+        const settings = new SettingsView(this.layout.settingsPanel, workspace, rotations);
+        const dataAssets = new DataAssetsView(this.layout.assetsPanel, workspace, rotations);
+        this.mounted = {workspace, scene, hierarchy, project, settings, dataAssets, rotations};
+        settings.setVisible(this.bottomTab === "settings");
+        dataAssets.setVisible(this.bottomTab === "assets");
+        dataAssets.onDirtyChanged(() => this.showDataAssetsTitle(dataAssets));
+        workspace.on("openDataAsset", () => this.showBottomTab("assets"));
         workspace.on("state", () => this.showViewTabs(workspace));
         workspace.on("entities", () => rotations.retainEntities(new Set(workspace.entities.map(summary => summary.entity))));
         this.installKeyboard();
@@ -233,11 +247,12 @@ class EditorShellImplementation implements EditorShell {
             await this.mount(session);
             return;
         }
-        const {workspace, scene, project, rotations} = mounted;
+        const {workspace, scene, project, dataAssets, rotations} = mounted;
         const view = workspace.view;
         rotations.retainEntities(new Set<Entity>());
         await workspace.replaceSession(session, remap);
         project.rebind();
+        dataAssets.rebind();
         scene.resendCamera();
         if (workspace.mode !== "play") await workspace.setView(view);
         workspace.emit("state");
@@ -283,6 +298,10 @@ class EditorShellImplementation implements EditorShell {
         }
         this.layout.projectPanel.hidden = tab !== "project";
         this.layout.consolePanel.hidden = tab !== "console";
+        this.layout.settingsPanel.hidden = tab !== "settings";
+        this.layout.assetsPanel.hidden = tab !== "assets";
+        this.mounted?.settings.setVisible(tab === "settings");
+        this.mounted?.dataAssets.setVisible(tab === "assets");
     }
 
     private showViewTabs(workspace: EditorWorkspace): void {
@@ -295,6 +314,11 @@ class EditorShellImplementation implements EditorShell {
             button.title = unavailable ? SCENE_PLAY_HINT : `Show the ${VIEW_TAB_LABELS[view]} view`;
         }
         this.layout.stage.dataset.view = workspace.view;
+    }
+
+    private showDataAssetsTitle(dataAssets: DataAssetsView): void {
+        const button = this.bottomTabButtons.get("assets");
+        if (button !== undefined) button.textContent = BOTTOM_TAB_LABELS.assets + (dataAssets.dirty ? DIRTY_MARKER : "");
     }
 
     private showConsoleBadge(workspace: EditorWorkspace): void {
@@ -323,7 +347,7 @@ class EditorShellImplementation implements EditorShell {
     private onKeyDown(event: KeyboardEvent): void {
         const mounted = this.mounted;
         if (mounted === undefined || event.defaultPrevented) return;
-        const {workspace, scene, hierarchy} = mounted;
+        const {workspace, scene, hierarchy, dataAssets} = mounted;
         const active = this.document.activeElement;
         if (active !== null && this.viewport.contains(active)) return;
         const command = hasCommandModifier(event);
@@ -331,7 +355,8 @@ class EditorShellImplementation implements EditorShell {
         const inText = isTextEntryElement(active);
         if (command && key === "s") {
             event.preventDefault();
-            void workspace.saveDocument();
+            if (dataAssets.hasFocus()) void dataAssets.save();
+            else void workspace.saveDocument();
             return;
         }
         if (command && (key === "z" || key === "y")) {

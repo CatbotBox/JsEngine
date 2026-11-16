@@ -130,7 +130,7 @@ export class ProjectWorkerSession {
         this.disposed = true;
         this.client.close();
         this.fileServing.dispose();
-        this.worker.terminate();
+        this.page.close();
         this.display.dispose();
     }
 }

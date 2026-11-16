@@ -1,8 +1,12 @@
 import {EntityCommandBufferSystem} from "../../engine/core";
-import type {Entity, World, WorldStoppedEvent} from "../../engine/core";
+import type {ResourceCtor} from "../../engine/core/resource";
+import type {Entity, Resource, World, WorldStoppedEvent} from "../../engine/core";
 import {
     applySceneInPlace,
+    DataAssets,
+    describeSchemaChange,
     deserializeInto,
+    encodeDataAssetFields,
     parentEntityOf,
     parseSceneDocument,
     sceneAssetPaths,
@@ -14,7 +18,9 @@ import {
 } from "../../engine/scene";
 import type {
     ComponentSchemaRegistry,
+    DataAssetSchemaChanges,
     SceneAssetLoader,
+    SceneAssetReference,
     SceneDocument,
     SceneJsonObject,
     SceneLoadResult,
@@ -39,14 +45,17 @@ import type {
     InstantiateEntitiesResult,
     LoadSceneRequest,
     LoadSceneResult,
+    ReloadDataAssetResult,
     SaveSceneResult,
+    SetFieldResult,
+    SetResourceFieldRequest,
 } from "../editorProtocol";
 import {GameplaySystemGate, GameplayTickCounterSystem} from "./gameplaySystemGate";
 import {describeSchemas, entitiesInCreationOrder, entityDetails, listEntities, parentOf, requireSceneEntity} from "./entityInspection";
 import {
     addComponentTo,
-    assetPathsOf,
-    assetPathsOfEdits,
+    assetReferencesOf,
+    assetReferencesOfEdits,
     assignField,
     assignFields,
     createEditorEntity,
@@ -61,6 +70,15 @@ import {EditorViews} from "./editorViews";
 import {PrefabLibrary} from "./prefabEditing";
 import {ConsoleForwarder} from "./consoleForwarding";
 import {exportWorldSnapshot, importedEditSnapshot} from "./editorSnapshots";
+import {
+    assignResourceField,
+    defaultResourceFields,
+    describeAssetTypes,
+    listSettings,
+    resourceDetails,
+    resourceFieldAssetReferences,
+    withoutDataAssetResources,
+} from "./settingsInspection";
 
 export interface EditorServiceScope {
     postMessage(message: EditorWorldMessage): void;
@@ -71,6 +89,7 @@ export interface EditorWorldServiceOptions {
     readonly preloadAssets?: ScenePreload;
     readonly tickIntervalMs?: number;
     readonly scenes?: SceneManager;
+    readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
 }
 
 const SCENE_TEXT_INDENT_SPACES = 2;
@@ -84,6 +103,10 @@ const OPENED_SCENE_PERSISTENT_ENTITIES = "destroy";
 
 export function editorSceneManager(world: World, registry: ComponentSchemaRegistry, preload?: ScenePreload): SceneManager {
     return new SceneManager(world, registry, {preload, unknownComponentTypes: SKIPPED_UNKNOWN_TYPES, schemaChanges: REPORTED_SCHEMA_CHANGES});
+}
+
+function warnDataAssetSchemaChanges(report: DataAssetSchemaChanges): void {
+    for (const change of report.changes) console.warn(`Data asset ${report.path}: ${describeSchemaChange(change)}`);
 }
 
 function errorText(error: unknown): string {
@@ -115,6 +138,7 @@ export class EditorWorldService {
     private readonly prefabs: PrefabLibrary;
     private readonly consoleForwarder: ConsoleForwarder;
     private readonly onWorldStopped = (event: WorldStoppedEvent) => this.worldStopped(event.error);
+    private readonly onDataAssetSchemaChanged = (report: DataAssetSchemaChanges) => warnDataAssetSchemaChanges(report);
 
     public constructor(
         private readonly scope: EditorServiceScope,
@@ -152,6 +176,7 @@ export class EditorWorldService {
         this.gate.suspend();
         this.world.onStopped.add(this.onWorldStopped);
         this.consoleForwarder.attach();
+        this.reportDataAssetSchemaChanges();
         this.views.apply();
         this.startTicking();
         this.scope.addEventListener("message", event => this.receive(event.data));
@@ -161,6 +186,7 @@ export class EditorWorldService {
         this.attached = false;
         this.stopTicking();
         this.world.onStopped.remove(this.onWorldStopped);
+        this.world.resources.tryGet(DataAssets)?.onSchemaChanged.remove(this.onDataAssetSchemaChanged);
         this.consoleForwarder.detach();
         this.views.dispose();
         this.world.pause();
@@ -214,12 +240,12 @@ export class EditorWorldService {
         });
     }
 
-    private async preload(paths: readonly string[]): Promise<void> {
-        if (paths.length > 0 && this.options.preloadAssets !== undefined) await this.options.preloadAssets(paths);
+    private async preload(references: readonly SceneAssetReference[]): Promise<void> {
+        if (references.length > 0) await this.scenes.preloadAssets(references);
     }
 
     private async preloadDocument(document: SceneDocument): Promise<void> {
-        await this.preload(sceneAssetPaths(document, this.registry).map(reference => reference.path));
+        await this.preload(sceneAssetPaths(document, this.registry));
     }
 
     private async perform(request: EditorRequest): Promise<EditorResult> {
@@ -232,14 +258,14 @@ export class EditorWorldService {
             case "getEntity":
                 return this.inGameView(() => entityDetails(world, registry, request.entity));
             case "setField":
-                await this.preload(assetPathsOf(registry, request.typeName, {[request.key]: request.value}));
+                await this.preload(assetReferencesOf(registry, request.typeName, {[request.key]: request.value}));
                 return this.edit([request.entity], () => ({value: assignField(world, registry, this.assets, request)}));
             case "setFields":
-                await this.preload(assetPathsOfEdits(registry, request.edits));
+                await this.preload(assetReferencesOfEdits(registry, request.edits));
                 return this.edit(request.edits.map(edit => edit.entity), () => ({values: assignFields(world, registry, this.assets, request.edits)}));
             case "addComponent": {
                 const values = request.values ?? NO_VALUES;
-                await this.preload(assetPathsOf(registry, request.typeName, values));
+                await this.preload(assetReferencesOf(registry, request.typeName, values));
                 return this.edit([request.entity], () => {
                     addComponentTo(world, registry, this.assets, request.entity, request.typeName, values);
                     return entityDetails(world, registry, request.entity);
@@ -327,7 +353,54 @@ export class EditorWorldService {
                 return this.inGameView(() => this.changeMode(() => this.setMode(request.mode)));
             case "step":
                 return this.inGameView(() => this.changeMode(() => this.step()));
+            case "describeAssetTypes":
+                return describeAssetTypes(registry);
+            case "listSettings":
+                return this.inGameView(() => listSettings(world, registry));
+            case "getResource":
+                return this.inGameView(() => resourceDetails(world, registry, request.typeName));
+            case "setResourceField":
+                return this.setResourceField(request);
+            case "reloadDataAsset":
+                return this.reloadDataAsset(request.path);
+            case "defaultResourceFields":
+                return {fields: defaultResourceFields(registry, request.typeName)};
         }
+    }
+
+    private reportDataAssetSchemaChanges(): void {
+        const dataAssets = this.world.resources.tryGet(DataAssets);
+        if (dataAssets === undefined) return;
+        for (const report of dataAssets.schemaChangeReports()) warnDataAssetSchemaChanges(report);
+        dataAssets.onSchemaChanged.add(this.onDataAssetSchemaChanged);
+    }
+
+    private async reloadDataAsset(path: string): Promise<ReloadDataAssetResult> {
+        const dataAssets = this.world.resources.tryGet(DataAssets);
+        if (dataAssets === undefined || !dataAssets.isLoaded(path)) return {reloaded: false};
+        await this.options.refetchFiles?.([path]);
+        const asset = dataAssets.reload(path);
+        if (asset === undefined) return {reloaded: false};
+        this.keepReloadedResourceInSnapshot(asset);
+        return {reloaded: true};
+    }
+
+    private keepReloadedResourceInSnapshot(asset: Resource): void {
+        const snapshot = this.snapshot;
+        const resources = snapshot?.document.resources;
+        const schema = this.registry.resourceByCtor(asset.constructor as ResourceCtor<Resource>);
+        if (snapshot === undefined || resources === undefined || schema === undefined || resources[schema.name] === undefined) return;
+        if (this.world.resources.tryGet(schema.ctor) !== asset) return;
+        const fields = encodeDataAssetFields(this.registry, asset);
+        this.snapshot = {...snapshot, document: {...snapshot.document, resources: {...resources, [schema.name]: fields}}};
+    }
+
+    private async setResourceField(request: SetResourceFieldRequest): Promise<SetFieldResult> {
+        if (this._mode === "edit") {
+            throw new Error(`${request.typeName} is read-only while editing: resources are live game state, so edit them while the game plays or is paused`);
+        }
+        await this.preload(resourceFieldAssetReferences(this.registry, request));
+        return this.inGameView(() => ({value: assignResourceField(this.world, this.registry, this.assets, request)}));
     }
 
     private async instantiateEntities(request: InstantiateEntitiesRequest): Promise<InstantiateEntitiesResult> {
@@ -353,7 +426,8 @@ export class EditorWorldService {
 
     private saveScene(): SaveSceneResult {
         const saved = serializeWorld(this.world, this.registry);
-        return {sceneText: documentText(withoutSceneMembership(saved.document)), report: saved.report};
+        const document = withoutDataAssetResources(this.world, this.registry, withoutSceneMembership(saved.document));
+        return {sceneText: documentText(document), report: saved.report};
     }
 
     private exportSnapshot(): ExportSnapshotResult {

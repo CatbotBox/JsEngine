@@ -1,8 +1,10 @@
 import type {Entity} from "../../engine/core";
+import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import {withoutSceneMembership} from "../../engine/scene";
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
 import type {
+    EditorAssetTypeDescription,
     EditorComponentDescription,
     EditorComponentDetails,
     EditorConsoleLevel,
@@ -12,12 +14,16 @@ import type {
     EditorFieldValue,
     EditorMode,
     EditorRequest,
+    EditorResourceDescription,
     EditorResultOf,
     EditorServiceState,
     EditorView,
     InstantiateEntitiesRequest,
+    SetFieldResult,
     SetFieldsResult,
 } from "../editorProtocol";
+import {dataAssetTypeOf, filesWithSuffixes} from "./assetChoices";
+import {dataAssetPathProblem, dataAssetText, isCreatableDataAssetType} from "./dataAssetDrafts";
 import {EditorClientClosedError} from "./editorClient";
 import type {EditorNoticeLevel, EditorSession, EntityRemap} from "./editorSession";
 import {EditorRefresh} from "./editorRefresh";
@@ -42,6 +48,7 @@ import {
     allProjectPaths,
     fileNameProblem,
     joinProjectPath,
+    normalizeProjectPath,
     PREFAB_EXTENSION,
     projectFileKind,
     SCENE_EXTENSION,
@@ -57,6 +64,8 @@ import {
     CompositeCommand,
     EnabledCommand,
     EntityRefs,
+    entityValueShapeOf,
+    HOLDS_NO_ENTITIES,
     ExistenceCommand,
     FieldsCommand,
     recordSubtree,
@@ -65,9 +74,9 @@ import {
     storedValuesOf,
     UndoStack,
 } from "./undoStack";
-import type {EditorRequester, FieldChange, RecordedSubtree, StoredValues, UndoCommand, UndoContext} from "./undoStack";
+import type {EditorRequester, EntityValueShape, FieldChange, RecordedSubtree, StoredValues, UndoCommand, UndoContext} from "./undoStack";
 
-export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile";
+export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile" | "entityPick" | "openDataAsset";
 
 export type DragPayload =
     | {readonly kind: "entities", readonly entities: readonly Entity[]}
@@ -102,6 +111,14 @@ const UNSAFE_FILE_NAME_CHARACTERS = /[\\/:*?"<>|\u0000-\u001f]/g;
 const SAFE_REPLACEMENT = "_";
 const NO_VALUES: SceneJsonObject = {};
 const UNSAVED_DOCUMENT_NAME = "Untitled";
+const ENTITY_PICK_HINT = "Click an entity in the Scene view to pick it (Esc cancels)";
+const ENTITY_PICK_SCENE_VIEW_HINT = "Switch to the Scene view and click an entity to pick it (Esc cancels)";
+const CANCEL_KEY = "Escape";
+const DATA_ASSETS_FOLDER = "assets";
+
+interface EntityPick {
+    finish(entity: Entity | undefined): void;
+}
 
 type SaveChoice = "save" | "discard";
 
@@ -133,6 +150,8 @@ export class EditorWorkspace implements UndoContext {
     public documentPath: string | null = null;
     public dirty = false;
     public schemas = new Map<string, EditorComponentDescription>();
+    public resourceSchemas = new Map<string, EditorResourceDescription>();
+    public assetTypes = new Map<string, EditorAssetTypeDescription>();
     public entities: readonly EditorEntitySummary[] = [];
     public selection: readonly Entity[] = [];
     public selectionDetails: SelectionDetails = {details: [], overrides: undefined, overridesRoot: undefined};
@@ -142,6 +161,7 @@ export class EditorWorkspace implements UndoContext {
     public status: WorkspaceStatus = {level: "info", text: ""};
     public revealedPath: string | undefined;
     public inspectedFile: ProjectEntry | undefined;
+    public openedDataAsset: string | undefined;
     public closed = false;
     private summaries = new Map<Entity, EditorEntitySummary>();
     private queue: Promise<void> = Promise.resolve();
@@ -150,6 +170,7 @@ export class EditorWorkspace implements UndoContext {
     private unsubscribeEvents: () => void = () => undefined;
     private lastError: {readonly text: string, readonly timeMs: number} | undefined;
     private schemasRequested = false;
+    private entityPick: EntityPick | undefined;
 
     public constructor(private currentSession: EditorSession, public readonly document: Document) {
         this.undo = new UndoStack(this);
@@ -185,6 +206,10 @@ export class EditorWorkspace implements UndoContext {
 
     public get primary(): Entity | undefined {
         return this.selection[this.selection.length - 1];
+    }
+
+    public get pickingEntity(): boolean {
+        return this.entityPick !== undefined;
     }
 
     public get documentName(): string {
@@ -271,6 +296,7 @@ export class EditorWorkspace implements UndoContext {
     }
 
     public async replaceSession(session: EditorSession, remap: EntityRemap): Promise<void> {
+        this.cancelEntityPick();
         this.unsubscribeEvents();
         this.currentSession = session;
         this.closed = false;
@@ -289,8 +315,10 @@ export class EditorWorkspace implements UndoContext {
 
     public async loadSchemas(): Promise<void> {
         try {
-            const described = await this.request({op: "describeSchemas"});
+            const [described, {assetTypes}] = await Promise.all([this.request({op: "describeSchemas"}), this.request({op: "describeAssetTypes"})]);
             this.schemas = new Map(described.components.map(schema => [schema.typeName, schema]));
+            this.resourceSchemas = new Map(described.resources.map(schema => [schema.typeName, schema]));
+            this.assetTypes = new Map(assetTypes.map(type => [type.name, type]));
             this.emit("schemas");
         } catch (error) {
             this.reportError(error);
@@ -348,7 +376,104 @@ export class EditorWorkspace implements UndoContext {
         if (state.worldStoppedError !== undefined) this.worldStoppedError = state.worldStoppedError;
         this.refresh.setMode(state.mode);
         if (modeChanged && state.mode === "edit") this.refresh.refreshAll();
+        if (state.mode === "play") this.cancelEntityPick();
         this.emit("state");
+    }
+
+    public pickEntity(): Promise<Entity | undefined> {
+        this.cancelEntityPick();
+        return new Promise(resolve => {
+            const onKey = (event: KeyboardEvent): void => {
+                if (event.key === CANCEL_KEY) this.cancelEntityPick();
+            };
+            this.document.addEventListener("keydown", onKey, true);
+            this.entityPick = {
+                finish: entity => {
+                    this.document.removeEventListener("keydown", onKey, true);
+                    this.entityPick = undefined;
+                    this.emit("entityPick");
+                    resolve(entity);
+                },
+            };
+            this.emit("entityPick");
+            this.notice("info", this.view === "scene" && this.mode !== "play" ? ENTITY_PICK_HINT : ENTITY_PICK_SCENE_VIEW_HINT);
+        });
+    }
+
+    public finishEntityPick(entity: Entity): void {
+        this.entityPick?.finish(entity);
+    }
+
+    public cancelEntityPick(): void {
+        this.entityPick?.finish(undefined);
+    }
+
+    public async assetChoices(assetType: string): Promise<string[]> {
+        const type = this.assetTypes.get(assetType);
+        if (type === undefined) return [];
+        const files = this.currentSession.files;
+        const paths = filesWithSuffixes(await files.list(), type.fileSuffixes);
+        if (!type.dataAsset) return paths;
+        const typed = await Promise.all(paths.map(async path => {
+            try {
+                return dataAssetTypeOf(await files.readText(path)) === assetType ? path : undefined;
+            } catch {
+                return undefined;
+            }
+        }));
+        return typed.filter((path): path is string => path !== undefined);
+    }
+
+    public openDataAsset(path: string): void {
+        this.openedDataAsset = normalizeProjectPath(path);
+        this.emit("openDataAsset");
+    }
+
+    public dataAssetTypeNames(): string[] {
+        return [...this.assetTypes.values()]
+            .filter(type => type.dataAsset && isCreatableDataAssetType(this.resourceSchemas.get(type.name)))
+            .map(type => type.name)
+            .sort((a, b) => a.localeCompare(b));
+    }
+
+    public async createDataAsset(typeName: string, path: string): Promise<boolean> {
+        const created = await this.run(async () => {
+            const {fields} = await this.request({op: "defaultResourceFields", typeName});
+            await this.currentSession.files.write(path, dataAssetText(typeName, fields));
+            this.reveal(path);
+            this.openDataAsset(path);
+            this.notice("info", `Created the ${typeName} data asset ${path}`);
+            return true;
+        });
+        return created === true;
+    }
+
+    public async askAndCreateDataAsset(typeName: string, folder: string = DATA_ASSETS_FOLDER): Promise<string | undefined> {
+        const existing = allProjectPaths(await this.currentSession.files.list());
+        const path = await askForText(this.document, {
+            title: `New ${typeName} data asset`,
+            label: "File path in the project",
+            initialValue: uniqueChildPath(existing, folder, typeName, DATA_ASSET_FILE_SUFFIX),
+            confirmText: "Create",
+            validate: value => dataAssetPathProblem(value, existing),
+        });
+        if (path === undefined) return undefined;
+        const normalized = normalizeProjectPath(path.trim());
+        return await this.createDataAsset(typeName, normalized) ? normalized : undefined;
+    }
+
+    public async reloadDataAssets(paths: readonly string[]): Promise<void> {
+        const dataAssetPaths = [...new Set(paths.map(normalizeProjectPath))].filter(path => projectFileKind(path) === "dataAsset");
+        for (const path of dataAssetPaths) {
+            await this.run(async () => {
+                const {reloaded} = await this.request({op: "reloadDataAsset", path});
+                if (reloaded) this.log("info", `Reloaded the data asset ${path}`);
+            });
+        }
+    }
+
+    public setResourceField(typeName: string, key: string, value: SceneJsonValue): Promise<SetFieldResult | undefined> {
+        return this.run(() => this.request({op: "setResourceField", typeName, key, value}));
     }
 
     public async setMode(mode: EditorMode): Promise<void> {
@@ -556,14 +681,14 @@ export class EditorWorkspace implements UndoContext {
         const clipboard = this.componentClipboard;
         if (clipboard === undefined || clipboard.typeName !== typeName) return;
         const changes: FieldChange[] = [];
-        const entityKeys = this.entityValuedKeys(typeName);
+        const shapes = this.entityValueShapes(typeName);
         for (const entity of entities) {
             const component = this.detailsOf(entity)?.components.find(candidate => candidate.typeName === typeName);
             if (component === undefined) continue;
             for (const [key, after] of Object.entries(clipboard.values)) {
                 const before = component.fields[key];
                 if (before === undefined) continue;
-                changes.push({entity, typeName, key, before: before as SceneJsonValue, after, entityValued: entityKeys.has(key)});
+                changes.push({entity, typeName, key, before: before as SceneJsonValue, after, entityShape: shapes.get(key) ?? HOLDS_NO_ENTITIES});
             }
         }
         if (changes.length > 0) await this.setFields(changes, `Paste ${typeName} values`);
@@ -710,12 +835,13 @@ export class EditorWorkspace implements UndoContext {
         return this.saveDocument();
     }
 
-    public entityValuedKeys(typeName: string): Set<string> {
+    public entityValueShapes(typeName: string): Map<string, EntityValueShape> {
         const schema = this.schemas.get(typeName);
-        return new Set((schema?.fields ?? []).filter(field => field.kind === "entity").map(field => field.key));
+        return new Map((schema?.fields ?? []).map(field => [field.key, entityValueShapeOf(field)]));
     }
 
     private afterLoad(path: string): void {
+        this.cancelEntityPick();
         this.undo.clear();
         this.worldStoppedError = null;
         this.select([]);
@@ -784,7 +910,7 @@ export class EditorWorkspace implements UndoContext {
                 if (sendable !== undefined) values[key] = sendable;
             }
         }
-        return storedValuesOf(this.refs, values, component === undefined ? new Set() : this.entityValuedKeys(component.typeName));
+        return storedValuesOf(this.refs, values, component === undefined ? new Map() : this.entityValueShapes(component.typeName));
     }
 
     private async freshLinks(): Promise<HierarchyLink[]> {
@@ -856,6 +982,7 @@ export class EditorWorkspace implements UndoContext {
     private sessionClosed(): void {
         if (this.closed) return;
         this.closed = true;
+        this.cancelEntityPick();
         this.refresh.stop();
         this.notice("warn", "The editor session ended");
         this.emit("state");

@@ -46,6 +46,8 @@ export interface WorldWorkerPageOptions {
 export interface WorldWorkerPage {
     readonly input: InputEventSink;
     exit(): void;
+
+    close(): void;
 }
 
 export const STOPPED_STATUS = "Stopped. Reload the page to restart.";
@@ -149,5 +151,6 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
     return {
         input,
         exit: () => post({type: "exit"}),
+        close,
     };
 }
