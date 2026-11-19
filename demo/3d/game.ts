@@ -1,6 +1,6 @@
 import {EntityCommandBufferSystem, FrameLoopSettings, NULL_ENTITY, Resource, System} from "../../src/engine/core";
 import type {Component, ComponentCtor, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
-import {Input, resolveInputAction, resolveInputActions} from "../../src/engine/input";
+import {Input, resolveInputActions} from "../../src/engine/input";
 import type {InputAction, InputEvent, ResolvedInputActions} from "../../src/engine/input";
 import {RenderPasses, SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../src/engine/rendering";
 import type {RenderPassKind} from "../../src/engine/rendering";
@@ -172,9 +172,7 @@ class Demo3dControlsSystem extends System {
     private _actions!: Demo3dActions;
     private _keyDownHandlers: readonly ActionHandler[] = [];
     private _keyPressHandlers: readonly ActionHandler[] = [];
-    private _commandsBeforeSupersample: readonly ActionHandler[] = [];
-    private _commandsAfterSupersample: readonly ActionHandler[] = [];
-    private readonly _supersampleActions = new Map<string, InputAction>();
+    private _commands: readonly ActionHandler[] = [];
     private readonly _eulerScratch: Vec3 = Vec.alloc3();
     private readonly _directionScratch: Vec3 = Vec.alloc3();
     private _scaleFactor: Vec3 = Vec.alloc3();
@@ -216,7 +214,7 @@ class Demo3dControlsSystem extends System {
             {action: actions.NextModel, run: () => this.selectNextModel()},
             {action: actions.ReloadModels, run: () => this.reloadModels()},
         ];
-        this._commandsBeforeSupersample = [
+        this._commands = [
             {action: actions.ToggleMeshPass, run: () => this.togglePass("meshes")},
             {action: actions.ToggleHud, run: () => this.togglePass("hudText")},
             {action: actions.LogSystemOrder, run: () => requireDebugWorld(this.world, DEMO_NAME).logSystemUpdateOrder()},
@@ -224,13 +222,10 @@ class Demo3dControlsSystem extends System {
             {action: actions.ToggleLod, run: () => this.changeMeshSettings(settings => settings.lod = !settings.lod)},
             {action: actions.LessDetail, run: () => this.changeLodBias(LESS_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
             {action: actions.MoreDetail, run: () => this.changeLodBias(MORE_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
-        ];
-        this._commandsAfterSupersample = [
             {action: actions.CycleRenderPacing, run: () => this.cycleRenderPacing()},
             {action: actions.ToggleLights, run: () => this.toggleLights()},
             {action: actions.ToggleLamp, run: () => this.toggleLamp()},
         ];
-        for (const preset of this.tuning().supersample) this.supersampleAction(preset.action);
     }
 
     onUpdate(): void {
@@ -251,11 +246,7 @@ class Demo3dControlsSystem extends System {
             if (event.repeat) continue;
             for (const handler of this._keyPressHandlers) if (input.isActionEvent(event, handler.action)) handler.run();
         }
-        for (const command of this._commandsBeforeSupersample) if (input.actionPressed(command.action)) command.run();
-        for (const preset of this.tuning().supersample) {
-            if (input.actionPressed(this.supersampleAction(preset.action))) this.setSupersample(preset.x, preset.y);
-        }
-        for (const command of this._commandsAfterSupersample) if (input.actionPressed(command.action)) command.run();
+        for (const command of this._commands) if (input.actionPressed(command.action)) command.run();
     }
 
     private tuning(): Demo3dTuning {
@@ -274,24 +265,8 @@ class Demo3dControlsSystem extends System {
         this.changeMeshSettings(settings => settings.lodBias += levels);
     }
 
-    private setSupersample(x: number, y: number): void {
-        this.changeMeshSettings(settings => {
-            settings.supersampleX = x;
-            settings.supersampleY = y;
-        });
-    }
-
     private grid(): ModelGrid | undefined {
         return this._grids.tryGetSingleton({grid: ModelGrid}, INCLUDING_DISABLED)?.grid;
-    }
-
-    private supersampleAction(name: string): InputAction {
-        let action = this._supersampleActions.get(name);
-        if (action === undefined) {
-            action = resolveInputAction(this.world, name);
-            this._supersampleActions.set(name, action);
-        }
-        return action;
     }
 
     private moveCamera(localDirection: ReadonlyVec3, amount: number): void {

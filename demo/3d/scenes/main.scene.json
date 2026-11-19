@@ -17,9 +17,7 @@
         "MeshRenderSettings": {
           "textures": true,
           "lod": true,
-          "lodBias": 0,
-          "supersampleX": null,
-          "supersampleY": null
+          "lodBias": 0
         },
         "CellRenderSettings": {
           "backgroundGlyph": " ",
@@ -33,6 +31,8 @@
         "MeshCellPassSettings": {
           "maxDepthFade": "Infinity",
           "colorQuantMask": 16579836,
+          "supersampleX": 2,
+          "supersampleY": 4,
           "backgroundColor": "#000000",
           "threadTriangleThreshold": 2048,
           "threadAreaThreshold": 50000,
@@ -45,12 +45,15 @@
         },
         "MeshPixelPassSettings": {
           "maxDepthFade": "Infinity",
+          "supersampleX": 2,
+          "supersampleY": 2,
           "threadTriangleThreshold": 2048,
           "threadAreaThreshold": 50000,
           "lodTrianglesPerPixel": 0.25
         },
         "GpuMeshPassSettings": {
           "textureFiltering": "nearest",
+          "sampleCount": "multisample4",
           "orthographicDepthRange": 1000,
           "evictUnusedMeshAfterFrames": 600,
           "lodTrianglesPerPixel": 0.25

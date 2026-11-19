@@ -15,6 +15,8 @@ import {MeshCellPassSettings} from "./3d/meshCellPassSettings";
 const FIXED_WORKERS = 3;
 const FIVE_BITS_PER_CHANNEL_MASK = 0xF8F8F8;
 const LOD_TRIANGLES_PER_CELL = 8;
+const SUPERSAMPLE_X = 4;
+const SUPERSAMPLE_Y = 1;
 
 describe("cells component schemas", () => {
     test("the cells settings round-trip at non-default values; workerCount is not saved and CellAspectRatio is implied", () => {
@@ -33,6 +35,8 @@ describe("cells component schemas", () => {
         sprites.halfBlockCells = false;
         const meshes = new MeshCellPassSettings();
         meshes.colorQuantMask = FIVE_BITS_PER_CHANNEL_MASK;
+        meshes.supersampleX = SUPERSAMPLE_X;
+        meshes.supersampleY = SUPERSAMPLE_Y;
         meshes.threadAreaThreshold = Number.POSITIVE_INFINITY;
         meshes.halfBlockCells = false;
         meshes.lodTrianglesPerCell = LOD_TRIANGLES_PER_CELL;
@@ -51,6 +55,7 @@ describe("cells component schemas", () => {
         const loaded = deserializeInto(target, registry, parseSceneDocument(JSON.stringify(saved.document)));
         const loadedMeshes = target.entityManager.getComponent<MeshCellPassSettings>(loaded.entities[0], MeshCellPassSettings)!;
         expect([loadedMeshes.colorQuantMask, loadedMeshes.halfBlockCells, loadedMeshes.lodTrianglesPerCell]).toEqual([FIVE_BITS_PER_CHANNEL_MASK, false, LOD_TRIANGLES_PER_CELL]);
+        expect([loadedMeshes.supersampleX, loadedMeshes.supersampleY]).toEqual([SUPERSAMPLE_X, SUPERSAMPLE_Y]);
         expect(loadedMeshes.workerCount).toBe("auto");
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
     });

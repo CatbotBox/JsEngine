@@ -103,7 +103,7 @@ export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry
     registry.register(componentSchema(FrameLoopSettings, "FrameLoopSettings").number("simulationTickRate").number("renderRate", UNCAPPED_RATE)
         .boolean("matchDisplay").number("cpuRenderRateLimit", UNCAPPED_RATE).integer("maxCatchUpTicks").category(CATEGORY.settings).build());
     registry.register(componentSchema(MeshRenderSettings, "MeshRenderSettings").boolean("textures").boolean("lod").number("lodBias")
-        .nullableInteger("supersampleX").nullableInteger("supersampleY").category(CATEGORY.settings).build());
+        .category(CATEGORY.settings).build());
     registry.registerResource(resourceSchema(ActiveScene, ACTIVE_SCENE_RESOURCE_NAME).integer("sceneId").nullableString("path").build());
     registry.registerResource(INPUT_MAP_SCHEMA);
 }

@@ -34,7 +34,7 @@ import {GpuMaterialCache} from "./gpuMaterialCache";
 import {GpuPipelineCache} from "./gpuPipelineCache";
 import {GpuShaderLibrary} from "./gpuShaderLibrary";
 import {GpuSurfaceShader, LIT_SURFACE_SHADER, NO_SURFACE_SHADER_PARAMS, sameSurfaceShader} from "./gpuSurfaceShader";
-import {GpuMeshPassSettings, sampleCountFor} from "./gpuMeshPassSettings";
+import {GpuMeshPassSettings, MULTISAMPLE_COUNT, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import type {GpuSampleCount} from "./gpuMeshPassSettings";
 import {
     FRAME_BIND_GROUP,
@@ -176,7 +176,7 @@ export class GpuMeshPassSystem extends System {
         const meshSettings = this._meshSettingsQuery.tryGetSingleton({settings: MeshRenderSettings})?.settings ?? this._defaultMeshSettings;
         this._settings = settings;
         this._meshSettings = meshSettings;
-        const sampleCount = sampleCountFor(meshSettings);
+        const sampleCount: GpuSampleCount = settings.sampleCount > SINGLE_SAMPLE_COUNT ? MULTISAMPLE_COUNT : SINGLE_SAMPLE_COUNT;
         const device = this._gpu.device;
         const widthPx = framebuffer.widthPx, heightPx = framebuffer.heightPx;
         this._frameNumber++;

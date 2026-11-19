@@ -9,6 +9,7 @@ import {requireModelPrefab} from "./modelCatalog";
 import {registerGeneratedSchemas} from "./schemas.generated";
 import {Demo3dTuning} from "./tuning";
 import {Demo3dCellsControlsSystem} from "./backend/cells/demo3dCellsControlsSystem";
+import {Demo3dPixelsControlsSystem} from "./backend/pixels/demo3dPixelsControlsSystem";
 import {DemoSurfaceShaderSystem} from "./backend/gpu/gpuSurfaceShaders";
 import {Demo3dGpuControlsSystem} from "./backend/gpu/demo3dGpuControlsSystem";
 
@@ -17,6 +18,7 @@ function ignoreProgress(): void {
 
 function createBackendSystems(world: World): void {
     world.ensureSystemExists(Demo3dCellsControlsSystem);
+    world.ensureSystemExists(Demo3dPixelsControlsSystem);
     world.ensureSystemExists(DemoSurfaceShaderSystem);
     world.ensureSystemExists(Demo3dGpuControlsSystem);
 }

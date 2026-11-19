@@ -16,6 +16,8 @@ const DEFAULT_LOD_TRIANGLES_PER_CELL = 32;
 export class MeshCellPassSettings extends Component {
     public maxDepthFade: number = Number.POSITIVE_INFINITY;
     public colorQuantMask: number = SIX_BITS_PER_CHANNEL_MASK;
+    public supersampleX: number = DEFAULT_SUPERSAMPLE_X;
+    public supersampleY: number = DEFAULT_SUPERSAMPLE_Y;
     public backgroundColor: number = BLACK_RGB;
     public workerCount: RasterWorkerCount = "auto";
     public threadTriangleThreshold: number = DEFAULT_THREAD_TRIANGLE_THRESHOLD;
@@ -28,13 +30,12 @@ export class MeshCellPassSettings extends Component {
     }
 
     public toRasterizerConfig(host: RasterWorkerHost, meshes: MeshRenderSettings): MeshRasterizerConfig {
-        const supersampleX = meshes.supersampleX ?? DEFAULT_SUPERSAMPLE_X;
         return {
             maxDepthFade: this.maxDepthFade,
             colorQuantMask: this.colorQuantMask,
-            supersample: supersampleX,
-            supersampleX,
-            supersampleY: meshes.supersampleY ?? DEFAULT_SUPERSAMPLE_Y,
+            supersample: this.supersampleX,
+            supersampleX: this.supersampleX,
+            supersampleY: this.supersampleY,
             workerCount: this.resolvedWorkerCount(host),
             threadTriangleThreshold: this.threadTriangleThreshold,
             threadAreaThreshold: this.threadAreaThreshold,

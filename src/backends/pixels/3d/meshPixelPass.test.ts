@@ -29,7 +29,6 @@ const QUAD_LOD_DRAWS = 1;
 const SETTLE_STEPS = 2;
 const FRAME_MS = 16;
 const EXPLICIT_SUPERSAMPLE = 4;
-const UNSET_SUPERSAMPLE = undefined;
 
 function quad(): Mesh {
     const builder = new MeshBuilder();
@@ -46,33 +45,30 @@ function quad(): Mesh {
 describe("MeshPixelPassSettings", () => {
     test("fitWorkerPool picks the smallest whole block that keeps the subsamples within the worker pool's buffers", () => {
         const settings = new MeshPixelPassSettings();
-        const meshes = new MeshRenderSettings();
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(640, 384, meshes)).toBe(1);
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes)).toBe(3);
-        const factor = settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(640, 384)).toBe(1);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080)).toBe(3);
+        const factor = settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080);
         expect(Math.ceil(1920 / factor) * Math.ceil(1080 / factor) * 4).toBeLessThan(RasterWorkerPool.MAX_CELLS + 1);
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(0, 0, meshes)).toBe(1);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(0, 0)).toBe(1);
     });
 
     test("an explicit block size is rounded down to whole pixels, at least one", () => {
         const settings = new MeshPixelPassSettings();
-        const meshes = new MeshRenderSettings();
         settings.framebufferPixelsPerRasterPixel = 2.9;
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes)).toBe(2);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080)).toBe(2);
         settings.framebufferPixelsPerRasterPixel = 0;
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes)).toBe(1);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080)).toBe(1);
     });
 
-    test("rasterizes without half blocks or colour quantization, 2x2 supersampled unless the mesh settings say otherwise", () => {
+    test("rasterizes without half blocks or colour quantization, 2x2 supersampled by default, with textures from the mesh settings", () => {
         const meshes = new MeshRenderSettings();
         const config = new MeshPixelPassSettings().toRasterizerConfig(new MemoryPlatform({hardwareConcurrency: 4}), meshes);
         expect([config.halfBlock, config.colorQuantMask, config.supersampleX, config.supersampleY, config.workerCount]).toEqual([false, 0xFFFFFF, 2, 2, 3]);
-        meshes.supersampleY = EXPLICIT_SUPERSAMPLE;
+        const settings = new MeshPixelPassSettings();
+        settings.supersampleY = EXPLICIT_SUPERSAMPLE;
         meshes.textures = false;
-        const explicit = new MeshPixelPassSettings().toRasterizerConfig(new MemoryPlatform(), meshes);
+        const explicit = settings.toRasterizerConfig(new MemoryPlatform(), meshes);
         expect([explicit.supersampleX, explicit.supersampleY, explicit.textures]).toEqual([2, EXPLICIT_SUPERSAMPLE, false]);
-        meshes.supersampleY = UNSET_SUPERSAMPLE;
-        expect(new MeshPixelPassSettings().toRasterizerConfig(new MemoryPlatform(), meshes).supersampleY).toBe(2);
     });
 });
 
