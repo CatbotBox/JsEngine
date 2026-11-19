@@ -32,7 +32,7 @@ locally with cross-origin isolation) and `demo:3d:window` (Electron window); the
 web and window scripts open the WebGPU build; `demo:3d:cells:web` / `demo:3d:cells:window` open the cells build.
 
 `?backend=gpu` (`demo:3d:web`, `demo:3d:window`) is an experimental WebGPU renderer for the 3D demo; it supports custom WGSL surface shaders, registered with `GpuShaderLibrary` and chosen per entity with `GpuSurfaceShader` (`o` cycles lit, toon and hologram in the demo).
-The project editor takes the same `?backend=gpu` (`editor:gpu:web`, `editor:3d:gpu:window`) and names its renderer next to the Scene/Game tabs; projects read `host.renderBackend` to install GPU passes.
+The project editor takes the same `?backend=gpu`, which its scripts (`editor:web`, `editor:window`, `editor:3d:window`, ...) open by default, falling back to pixels when WebGPU is unusable; `editor:pixels:web` / `editor:pixels:window` open it on pixels. It names its renderer next to the Scene/Game tabs; projects read `host.renderBackend` to install GPU passes.
 
 2D sprites and HUD elements render alongside 3D through the same screen buffer.
 
