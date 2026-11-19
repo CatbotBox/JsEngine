@@ -2,7 +2,7 @@ import {DATA_ASSET_FILE_SUFFIX, dataAssetDocumentText, newDataAssetDocument, par
 import {isSceneJsonObject, sceneJsonEquals} from "../../engine/scene/sceneDocument";
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
 import type {EditorFieldDescription, EditorFieldTypeDescription, EditorResourceDescription} from "../editorProtocol";
-import {projectRelativePath} from "../project/projectPaths";
+import {projectRelativePath} from "../../engine/project/projectPaths";
 
 export interface DataAssetFieldChanges {
     readonly addedKeys: readonly string[];

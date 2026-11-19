@@ -1,8 +1,8 @@
-import type {Resource, World} from "../../engine/core";
-import type {ComponentSchemaRegistry} from "../../engine/scene/componentSchemaRegistry";
-import {dataAssetsOf} from "../../engine/scene/dataAssets";
-import type {ResourceSchema} from "../../engine/scene/fieldSchema";
-import type {SceneActivation, SceneHandle, SceneLoadMode} from "../../engine/scene/sceneManager";
+import type {Resource, World} from "../core";
+import type {ComponentSchemaRegistry} from "../scene/componentSchemaRegistry";
+import {dataAssetsOf} from "../scene/dataAssets";
+import type {ResourceSchema} from "../scene/fieldSchema";
+import type {SceneActivation, SceneHandle, SceneLoadMode} from "../scene/sceneManager";
 import type {ProjectEntryModule, ProjectHost} from "./projectEntry";
 import {PROJECT_MANIFEST_FILE} from "./projectManifest";
 import type {ProjectManifest, ProjectResourceBinding} from "./projectManifest";

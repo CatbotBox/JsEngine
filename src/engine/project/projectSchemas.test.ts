@@ -1,7 +1,7 @@
-import {describe, expect, test} from "../../engine/testing/harness";
-import {Component, ComponentType} from "../../engine/core";
-import {componentSchema} from "../../engine/scene";
-import type {ComponentSchemaRegistry} from "../../engine/scene";
+import {describe, expect, test} from "../testing/harness";
+import {Component, ComponentType} from "../core";
+import {componentSchema} from "../scene";
+import type {ComponentSchemaRegistry} from "../scene";
 import {createProjectSchemaRegistry} from "./projectSchemas";
 
 const PERCENT_TYPE_NAME = "Percent";

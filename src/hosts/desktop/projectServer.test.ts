@@ -4,7 +4,7 @@ import type * as Os from "os";
 import type * as Path from "path";
 import {createProjectServer, describeBuildErrors, externalOpenCommand, splitCommandLine} from "./projectServer";
 import type {ProjectServer} from "./projectServer";
-import {PROJECT_MANIFEST_FILE, STARTER_ENTRY_FILE} from "../../editor/project/projectManifest";
+import {PROJECT_MANIFEST_FILE, STARTER_ENTRY_FILE} from "../../engine/project/projectManifest";
 import type {OpenProjectResult} from "../../editor/project/projectServerApi";
 
 const fs = require("fs") as typeof Fs;

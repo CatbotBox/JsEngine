@@ -1,10 +1,10 @@
-import type {World} from "../../engine/core";
-import {directoryFileSource} from "../../engine/platform/directoryFileSource";
-import {joinPath} from "../../engine/platform/paths";
-import type {FileSource} from "../../engine/platform/platform";
-import type {ComponentSchemaRegistry} from "../../engine/scene/componentSchemaRegistry";
-import {SceneManager} from "../../engine/scene/sceneManager";
-import type {SceneHandle, ScenePreload} from "../../engine/scene/sceneManager";
+import type {World} from "../core";
+import {directoryFileSource} from "../platform/directoryFileSource";
+import {joinPath} from "../platform/paths";
+import type {FileSource} from "../platform/platform";
+import type {ComponentSchemaRegistry} from "../scene/componentSchemaRegistry";
+import {SceneManager} from "../scene/sceneManager";
+import type {SceneHandle, ScenePreload} from "../scene/sceneManager";
 import type {ProjectAssetFiles, ProjectEntryModule, ProjectHost, ProjectRenderBackend} from "./projectEntry";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "./projectManifest";
 import type {ProjectManifest} from "./projectManifest";

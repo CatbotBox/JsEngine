@@ -1,6 +1,6 @@
 import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
 import type {ProjectEntry} from "../project/projectFileSystem";
-import {PROJECT_ENTRY_EXTENSIONS} from "../project/projectManifest";
+import {PROJECT_ENTRY_EXTENSIONS} from "../../engine/project/projectManifest";
 
 export type ProjectFileKind = "scene" | "prefab" | "dataAsset" | "mesh" | "image" | "code" | "other";
 

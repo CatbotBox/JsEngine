@@ -13,10 +13,11 @@ import {Sprite} from "../../src/engine/rendering/2d";
 import {LocalPosition} from "../../src/engine/translation";
 import {DataAssets, dataAssetPathOf, PrefabSpawner} from "../../src/engine/scene";
 import type {PrefabAsset} from "../../src/engine/scene";
+import {Random} from "../../src/engine/math/random";
 import {Bullet, Enemy, Lifetime, Ship, Spark, Velocity} from "./components";
 import {EnemyGrid} from "./enemyGrid";
 import {SwarmHudSystem} from "./hud";
-import {SeededRandom, SwarmPhase, SwarmState} from "./resources";
+import {SwarmPhase, SwarmState} from "./resources";
 import {MS_PER_SECOND, SwarmTuning} from "./tuning";
 import type {EnemySpawn, ShipTuning, SparkTuning, WaveTuning} from "./tuning";
 
@@ -148,7 +149,7 @@ function startNewGame(world: World, state: SwarmState): void {
 }
 
 function spawnSparks(buffer: EntityCommandBuffer, world: World, sparks: SparkTuning, x: number, y: number, count: number, reachUnits: number): void {
-    const random = world.resources.get(SeededRandom), spawner = world.resources.get(PrefabSpawner);
+    const random = world.resources.get(Random), spawner = world.resources.get(PrefabSpawner);
     const prefab = requirePrefab(sparks.prefab, "sparks.prefab");
     const tints = sparks.tints;
     for (let i = 0; i < count; i++) {
@@ -389,7 +390,7 @@ class WaveSystem extends System {
     }
 
     private spawnEnemy(state: SwarmState, waves: WaveTuning, buffer: EntityCommandBuffer): void {
-        const random = this.world.resources.get(SeededRandom), arena = this.world.resources.get(SwarmArena);
+        const random = this.world.resources.get(Random), arena = this.world.resources.get(SwarmArena);
         const wavesAfterFirst = state.wave - waves.firstWave;
         const kind = enemySpawnFor(waves.enemies, wavesAfterFirst, random.next());
         const halfWidth = arena.halfWidthUnits + waves.spawnMarginUnits;
@@ -667,7 +668,7 @@ function requireSwarmData(world: World): void {
 export function setupSwarm(world: World, host: SwarmHost): void {
     requireSwarmData(world);
     world.resources.insert(new SwarmHostResource(host));
-    world.resources.insert(new SeededRandom(host.seed));
+    world.resources.insert(new Random(host.seed));
     world.resources.insert(new EnemyGrid());
     world.resources.insert(new SwarmArena());
 

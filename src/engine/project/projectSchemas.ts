@@ -1,4 +1,4 @@
-import {ComponentSchemaRegistry, registerEngineComponentSchemas} from "../../engine/scene";
+import {ComponentSchemaRegistry, registerEngineComponentSchemas} from "../scene";
 import type {ProjectEntryModule} from "./projectEntry";
 
 export type SchemaRegistration = (registry: ComponentSchemaRegistry) => void;

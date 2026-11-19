@@ -4,9 +4,9 @@ import {World} from "../src/engine/core";
 import type {Component, ComponentCtor} from "../src/engine/core";
 import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
 import {deserializeInto, parseSceneDocument, serializeWorld} from "../src/engine/scene";
-import {createProjectSchemaRegistry} from "../src/editor/project/projectSchemas";
-import type {GeneratedProjectSchemas} from "../src/editor/project/projectSchemas";
-import type {ProjectEntryModule} from "../src/editor/project/projectEntry";
+import {createProjectSchemaRegistry} from "../src/engine/project/projectSchemas";
+import type {GeneratedProjectSchemas} from "../src/engine/project/projectSchemas";
+import type {ProjectEntryModule} from "../src/engine/project/projectEntry";
 import {checkGeneratedSchemas, GENERATED_FILE_NAME, writeGeneratedSchemas} from "../scripts/projectSchemas/generateProjectSchemas";
 
 const ROOT = resolve(__dirname, "..");

@@ -4,7 +4,7 @@ import {pathToFileURL} from "url";
 import {createProjectServer} from "../src/hosts/desktop";
 import type {ProjectServer} from "../src/hosts/desktop";
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../src/editor/project/editorExtensions";
-import {PROJECT_MANIFEST_FILE} from "../src/editor/project/projectManifest";
+import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
 import {isBuildSuccess, projectApiUrl} from "../src/editor/project/projectServerApi";
 import type {BuildProjectResult, OpenProjectResult} from "../src/editor/project/projectServerApi";
 import {registerEditorExtensionsOf} from "../src/editor/page/editorExtensionSession";

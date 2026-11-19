@@ -1,7 +1,7 @@
 import type {World} from "../../src/engine/core";
 import {PrefabSpawner} from "../../src/engine/scene";
 import type {ComponentSchemaRegistry, PrefabAsset} from "../../src/engine/scene";
-import type {ProjectHost, ProjectRenderBackend} from "../../src/editor/project/projectEntry";
+import type {ProjectHost, ProjectRenderBackend} from "../../src/engine/project/projectEntry";
 import {setupDemo3d} from "./game";
 import type {Demo3dModelFiles, Demo3dRenderControls} from "./game";
 import type {ModelLoadProgressListener} from "./modelCatalog";

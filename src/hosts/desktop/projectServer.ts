@@ -5,17 +5,12 @@ import type {FSWatcher} from "fs";
 import {copyFile, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile} from "fs/promises";
 import {homedir} from "os";
 import {delimiter, dirname, isAbsolute, join, relative, resolve, sep} from "path";
-import {
-    createProjectFiles,
-    GENERATED_SCHEMAS_FILE,
-    PROJECT_ENTRY_EXTENSIONS,
-    PROJECT_MANIFEST_FILE,
-    validateProjectManifest,
-} from "../../editor/project/projectManifest";
-import type {ProjectManifestValidation} from "../../editor/project/projectManifest";
-import {PROJECT_ENTRY_EXPORTS} from "../../editor/project/projectEntry";
+import {GENERATED_SCHEMAS_FILE, PROJECT_ENTRY_EXTENSIONS, PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
+import type {ProjectManifestValidation} from "../../engine/project/projectManifest";
+import {PROJECT_ENTRY_EXPORTS} from "../../engine/project/projectEntry";
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensions";
-import {projectFileExtension, projectRelativePath} from "../../editor/project/projectPaths";
+import {createProjectFiles} from "../../editor/project/projectTemplate";
+import {projectFileExtension, projectRelativePath} from "../../engine/project/projectPaths";
 import {
     isBuildSuccess,
     PROJECT_API_PREFIX,

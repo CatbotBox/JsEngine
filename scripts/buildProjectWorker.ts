@@ -1,7 +1,7 @@
 import {mkdirSync, rmSync, statSync, writeFileSync} from "fs";
 import {dirname, isAbsolute, join, relative, resolve} from "path";
 import type {BuildConfig, BuildOutput, BunPlugin} from "bun";
-import {ENGINE_IMPORT_PREFIX, GENERATED_SCHEMAS_FILE} from "../src/editor/project/projectManifest";
+import {ENGINE_IMPORT_PREFIX, GENERATED_SCHEMAS_FILE} from "../src/engine/project/projectManifest";
 import type {ProjectWorkerBuildReport, ProjectWorkerBuildError} from "../src/hosts/desktop/projectServer";
 import {writeGeneratedSchemas} from "./projectSchemas/generateProjectSchemas";
 

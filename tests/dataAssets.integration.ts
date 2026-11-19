@@ -16,17 +16,17 @@ import {
     SceneManager,
 } from "../src/engine/scene";
 import type {ComponentSchemaRegistry} from "../src/engine/scene";
-import type {ProjectAssetFiles, ProjectEntryModule, ProjectHost} from "../src/editor/project/projectEntry";
-import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../src/editor/project/projectManifest";
-import type {ProjectManifest, ProjectResourceBinding} from "../src/editor/project/projectManifest";
-import {createProjectSchemaRegistry} from "../src/editor/project/projectSchemas";
-import {startProject} from "../src/editor/project/projectStartup";
+import type {ProjectAssetFiles, ProjectEntryModule, ProjectHost} from "../src/engine/project/projectEntry";
+import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../src/engine/project/projectManifest";
+import type {ProjectManifest, ProjectResourceBinding} from "../src/engine/project/projectManifest";
+import {createProjectSchemaRegistry} from "../src/engine/project/projectSchemas";
+import {startProject} from "../src/engine/project/projectStartup";
 
 const ROOT = resolve(__dirname, "..");
 const THIS_FILE = resolve(__filename);
 const FIXTURE_PARENT = join(ROOT, "dist");
 const FIXTURE_PREFIX = "dataAssets-fixture-";
-const EDITOR_RUNTIME_FOLDERS: readonly string[] = ["src/editor/page/", "src/editor/world/", "src/editor/launch/"];
+const EDITOR_SOURCES = "src/editor/";
 const RELATIVE_IMPORT = /(?:from|import|require)\s*\(?\s*["'](\.{1,2}(?:\/[^"']*)?)["']/g;
 const RESOLVE_SUFFIXES: readonly string[] = ["", ".ts", ".js", "/index.ts"];
 const START_SCENE = "scenes/main.scene.json";
@@ -220,9 +220,9 @@ async function verifyCrashes(folder: string): Promise<void> {
 
 function verifyNoEditorRuntime(): void {
     const reached = importClosure(THIS_FILE);
-    expect(reached.includes("src/editor/project/projectStartup.ts") && reached.includes("src/engine/scene/dataAssets.ts"), "the import graph reaches startProject and DataAssets");
-    const editorRuntime = reached.filter(file => EDITOR_RUNTIME_FOLDERS.some(folder => file.startsWith(folder)));
-    expect(editorRuntime.length === 0, `no editor page, world or launch module is loaded (${editorRuntime.join(", ")})`);
+    expect(reached.includes("src/engine/project/projectStartup.ts") && reached.includes("src/engine/scene/dataAssets.ts"), "the import graph reaches startProject and DataAssets");
+    const editorModules = reached.filter(file => file.startsWith(EDITOR_SOURCES));
+    expect(editorModules.length === 0, `no editor module is loaded (${editorModules.join(", ")})`);
 }
 
 async function main(): Promise<void> {

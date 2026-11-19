@@ -1,5 +1,5 @@
 import {QUERY_OR_FRAGMENT} from "../src/hosts/desktop";
-import {PROJECT_MANIFEST_FILE, SCENE_FILE_SUFFIX} from "../src/editor/project/projectManifest";
+import {PROJECT_MANIFEST_FILE, SCENE_FILE_SUFFIX} from "../src/engine/project/projectManifest";
 import {DATA_ASSET_FILE_SUFFIX} from "../src/engine/scene/dataAssetDocument";
 import {PREFAB_FILE_SUFFIX} from "../src/engine/scene/fieldSchema";
 import {WGSL_FILE_SUFFIX} from "../src/engine/rendering/shaderSource";
