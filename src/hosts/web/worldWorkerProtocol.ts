@@ -4,16 +4,10 @@ import {isCellFrame} from "../../backends/cells/cellFrame";
 import type {CellFrame} from "../../backends/cells/cellFrame";
 import {isPixelFrame} from "../../backends/pixels/pixelFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
+import {isRenderBackendKind} from "../../engine/rendering/renderBackend";
+import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 
-export type RenderBackend = "cells" | "pixels" | "gpu";
-
-export const DEFAULT_RENDER_BACKEND: RenderBackend = "cells";
-
-const RENDER_BACKENDS: readonly RenderBackend[] = ["cells", "pixels", "gpu"];
-
-function isRenderBackend(value: string | undefined): value is RenderBackend {
-    return RENDER_BACKENDS.some(backend => backend === value);
-}
+export const DEFAULT_RENDER_BACKEND: RenderBackendKind = "cells";
 
 export interface CellSurfaceSize {
     readonly kind: "cells";
@@ -159,9 +153,9 @@ export function requestedRasterWorkersFromQuery(search: string): number | undefi
     return wholeNumberFromQuery(search, "threads", 0, Number.POSITIVE_INFINITY);
 }
 
-export function renderBackendFromQuery(search: string, defaultBackend: RenderBackend = DEFAULT_RENDER_BACKEND): RenderBackend {
+export function renderBackendFromQuery(search: string, defaultBackend: RenderBackendKind = DEFAULT_RENDER_BACKEND): RenderBackendKind {
     const value = new URLSearchParams(search).get("backend")?.trim();
-    return isRenderBackend(value) ? value : defaultBackend;
+    return isRenderBackendKind(value) ? value : defaultBackend;
 }
 
 export interface FixedTerminalSize {

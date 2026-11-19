@@ -1,9 +1,9 @@
-import {EntityCommandBufferSystem, NULL_ENTITY, Resource, System} from "../../src/engine/core";
+import {EntityCommandBufferSystem, NULL_ENTITY, System} from "../../src/engine/core";
 import type {Component, ComponentCtor, Entity, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
 import {getEntityCreationOrder} from "../../src/engine/core/ownership";
 import {Input, resolveInputActions} from "../../src/engine/input";
 import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
-import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderingSystemGroup} from "../../src/engine/rendering";
+import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderingSystemGroup, RenderPasses} from "../../src/engine/rendering";
 import {Sprite} from "../../src/engine/rendering/2d";
 import {LocalPosition, LocalToWorld} from "../../src/engine/translation";
 import {Vec} from "../../src/engine/math/types/vec";
@@ -16,16 +16,6 @@ import {requireDebugWorld} from "../_shared/debugWorld";
 import {formatHudText, HudLabel} from "../_shared/hud";
 import {Demo2dHud, FadeToColor, OriginalColor, PanCamera, PlayerTag, RandomTint} from "./components";
 import {Demo2dTuning} from "./tuning";
-
-export interface Demo2dRenderControls {
-    toggleSpritePass(): void;
-    toggleHalfBlockCells?(): void;
-}
-
-export interface Demo2dHost {
-    readonly render: Demo2dRenderControls;
-    quit(): void;
-}
 
 const DEMO_NAME = "The 2D demo";
 const TUNING_FILE = "assets/demo2d.asset.json";
@@ -52,7 +42,6 @@ const Demo2dAction = {
     SpawnPixels: "spawnPixels",
     ToggleRendering: "toggleRendering",
     ToggleSpritePass: "toggleSpritePass",
-    ToggleHalfBlockCells: "toggleHalfBlockCells",
     LogSystemOrder: "logSystemOrder",
     ToggleHud: "toggleHud",
     Quit: "quit",
@@ -63,12 +52,6 @@ type Demo2dActions = ResolvedInputActions<typeof Demo2dAction>;
 interface ActionHandler {
     readonly action: InputAction;
     readonly run: () => void;
-}
-
-class Demo2dHostResource extends Resource {
-    public constructor(public readonly host: Demo2dHost) {
-        super();
-    }
 }
 
 function commandBufferOf(world: World): EntityCommandBuffer {
@@ -180,8 +163,7 @@ class Demo2dControlsSystem extends System {
             {action: actions.MoveCameraRight, run: () => translate(this._cameras, this.tuning().cameraStepXUnits, NO_STEP)},
             {action: actions.SpawnPixels, run: () => this.spawnFadingPixels()},
             {action: actions.ToggleRendering, run: () => toggle(this.world.tryGetSystem(RenderingSystemGroup))},
-            {action: actions.ToggleSpritePass, run: () => this.host().render.toggleSpritePass()},
-            {action: actions.ToggleHalfBlockCells, run: () => this.host().render.toggleHalfBlockCells?.()},
+            {action: actions.ToggleSpritePass, run: () => this.world.resources.tryGet(RenderPasses)?.toggle("sprites")},
             {action: actions.LogSystemOrder, run: () => requireDebugWorld(this.world, DEMO_NAME).logSystemUpdateOrder()},
         ];
     }
@@ -191,8 +173,7 @@ class Demo2dControlsSystem extends System {
         for (const event of input.events) {
             if (event.type !== "keyDown") continue;
             if (input.isActionEvent(event, this._actions.Quit)) {
-                this.world.stop();
-                this.host().quit();
+                this.world.requestQuit();
                 return;
             }
             for (const handler of this._handlers) if (input.isActionEvent(event, handler.action)) handler.run();
@@ -201,10 +182,6 @@ class Demo2dControlsSystem extends System {
 
     private tuning(): Demo2dTuning {
         return this.world.resources.get(Demo2dTuning);
-    }
-
-    private host(): Demo2dHost {
-        return this.world.resources.get(Demo2dHostResource).host;
     }
 
     private spawnFadingPixels(): void {
@@ -315,9 +292,8 @@ function requireDemo2dData(world: World): void {
     spawner.templateOf(requirePixelPrefab(tuning));
 }
 
-export function setupDemo2d(world: World, host: Demo2dHost): void {
+export function setupDemo2d(world: World): void {
     requireDemo2dData(world);
-    world.resources.insert(new Demo2dHostResource(host));
     world.resources.insert(new Random(world.resources.get(Demo2dTuning).randomSeed));
     world.ensureSystemExists(RandomTintSystem);
     world.ensureSystemExists(Demo2dControlsSystem);

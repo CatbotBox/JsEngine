@@ -42,7 +42,6 @@ export type {
     PixelFrameMessage,
     PixelSurfaceSize,
     PresentedMessage,
-    RenderBackend,
     ResizeMessage,
     ScreenUnitMessage,
     StatusMessage,

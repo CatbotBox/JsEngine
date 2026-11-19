@@ -16,3 +16,6 @@ export {registerPixelsComponentSchemas} from "./pixelsComponentSchemas";
 export * as TwoD from "./2d";
 export * as ThreeD from "./3d";
 export * as Canvas from "./canvas";
+export {installPixelsBackend} from "./pixelsBackend";
+export {PIXELS_WORLD_TEXT_PASSES} from "./pixelsWorldTextPasses";
+export {PIXELS_HUD_TEXT_PASSES} from "./pixelsHudTextPasses";

@@ -1,10 +1,9 @@
-import {DebugWorld} from "../src/engine/core";
+import {App} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {Input} from "../src/engine/input";
 import {Ansi, AnsiCellPresenter, nodePlatform, TerminalInput} from "../src/hosts/terminal";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
-import {CellPresenterResource} from "../src/backends/cells";
 import {TerminalScreen} from "./support/terminalScreen";
 import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
 import {installCellRendering2d} from "../demo/2d/launch/cellRendering";
@@ -45,16 +44,15 @@ async function main(): Promise<void> {
     const platform = new MemoryPlatform({fileSource: nodePlatform().files});
     const gameTerminal = new MemoryTerminal(START);
     const terminal = new TerminalScreen(START.columns, START.rows);
-    const world = new DebugWorld({platform});
-    world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(gameTerminal)));
+    const world = new App({platform}).createDebugWorld();
+    const presenter = new AnsiCellPresenter(gameTerminal);
     const terminalInput = new TerminalInput({
         terminal: gameTerminal,
         platform,
         sink: world.resources.getOrCreate(Input),
         mouse: true,
     }).start();
-    let quits = 0;
-    await launchDemo2d(world, {renderBackend: "cells", installRendering: installCellRendering2d, quit: () => quits++});
+    await launchDemo2d(world, {installRendering: () => installCellRendering2d(world, presenter)});
 
     const tick = () => {
         const before = gameTerminal.length;
@@ -101,9 +99,9 @@ async function main(): Promise<void> {
     expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
     gameTerminal.feed(CTRL_C);
-    expect(quits === 0, "Ctrl+C waits for the next frame's input");
+    expect(platform.quitCount === 0, "Ctrl+C waits for the next frame's input");
     tick();
-    expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
+    expect(platform.quitCount === 1, "Ctrl+C stopped the world and quit the platform");
     expect(errors.length === 0, `no errors logged while quitting${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
     const altScreenExits = gameTerminal.text().split(Ansi.modes.altScreenExit).length - 1;
     expect(altScreenExits === 1, `stopping the world restored the presenter's screen once (${altScreenExits})`);

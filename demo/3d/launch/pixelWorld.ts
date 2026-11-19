@@ -1,6 +1,6 @@
-import {DebugWorld} from "../../../src/engine/core";
+import {App} from "../../../src/engine/core";
+import type {DebugWorld} from "../../../src/engine/core";
 import {Input} from "../../../src/engine/input";
-import {PixelPresenterResource} from "../../../src/backends/pixels";
 import type {PageConnection} from "../../../src/hosts/web/worldWorkerPlatform";
 import type {PreloadedFileSource} from "../../../src/hosts/web/preloadedFileSource";
 import {projectFilePreload} from "../../../src/hosts/web/projectFilePreload";
@@ -18,15 +18,12 @@ export async function createPixelWorld3d(page: PageConnection, files: PreloadedF
     const presenter = page.pixelPresenter();
     const manifest = await preloadDemo3dAssets(page, files);
 
-    const world = new DebugWorld({platform: page.platform});
-    world.resources.insert(new PixelPresenterResource(presenter));
+    const world = new App({platform: page.platform}).createDebugWorld();
     page.connectInput(world.resources.getOrCreate(Input));
     await launchDemo3d(world, {
-        renderBackend: "pixels",
         preload: projectFilePreload(files, DEMO_3D_PROJECT_DIRECTORY),
-        installRendering: installPixelRendering3d,
+        installRendering: () => installPixelRendering3d(world, presenter),
         modelFiles: manifestModelFiles(manifest, files),
-        quit: () => page.quit(),
     });
     return {world, manifest};
 }

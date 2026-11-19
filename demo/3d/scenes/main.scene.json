@@ -14,6 +14,13 @@
           "cpuRenderRateLimit": 60,
           "maxCatchUpTicks": 5
         },
+        "MeshRenderSettings": {
+          "textures": true,
+          "lod": true,
+          "lodBias": 0,
+          "supersampleX": null,
+          "supersampleY": null
+        },
         "CellRenderSettings": {
           "backgroundGlyph": " ",
           "backgroundGlyphColor": {
@@ -26,15 +33,10 @@
         "MeshCellPassSettings": {
           "maxDepthFade": "Infinity",
           "colorQuantMask": 16579836,
-          "supersampleX": 2,
-          "supersampleY": 4,
           "backgroundColor": "#000000",
           "threadTriangleThreshold": 2048,
           "threadAreaThreshold": 50000,
-          "textures": true,
           "halfBlockCells": true,
-          "lod": true,
-          "lodBias": 0,
           "lodTrianglesPerCell": 32
         },
         "PixelRenderSettings": {
@@ -43,23 +45,14 @@
         },
         "MeshPixelPassSettings": {
           "maxDepthFade": "Infinity",
-          "supersampleX": 2,
-          "supersampleY": 2,
           "threadTriangleThreshold": 2048,
           "threadAreaThreshold": 50000,
-          "textures": true,
-          "lod": true,
-          "lodBias": 0,
           "lodTrianglesPerPixel": 0.25
         },
         "GpuMeshPassSettings": {
-          "textures": true,
           "textureFiltering": "nearest",
-          "sampleCount": "multisample4",
           "orthographicDepthRange": 1000,
           "evictUnusedMeshAfterFrames": 600,
-          "lod": true,
-          "lodBias": 0,
           "lodTrianglesPerPixel": 0.25
         }
       }

@@ -8,6 +8,8 @@ import {Mesh, MeshBuilder} from "../../../engine/rendering/3d/mesh";
 import {Material} from "../../../engine/rendering/3d/material";
 import {RenderMesh} from "../../../engine/rendering/3d/renderMesh";
 import {FieldOfView} from "../../../engine/rendering/3d/fieldOfView";
+import {MeshRenderSettings} from "../../../engine/rendering/3d/meshRenderSettings";
+import {MeshRenderStats} from "../../../engine/rendering/3d/meshRenderStats";
 import {RasterWorkerPool} from "../../../engine/rendering/3d/software";
 import {LocalPosition, LocalToWorld} from "../../../engine/translation";
 import {MemoryPixelPresenter} from "../memoryPixelPresenter";
@@ -26,6 +28,8 @@ const QUAD_TRIANGLES = 2;
 const QUAD_LOD_DRAWS = 1;
 const SETTLE_STEPS = 2;
 const FRAME_MS = 16;
+const EXPLICIT_SUPERSAMPLE = 4;
+const UNSET_SUPERSAMPLE = undefined;
 
 function quad(): Mesh {
     const builder = new MeshBuilder();
@@ -42,24 +46,33 @@ function quad(): Mesh {
 describe("MeshPixelPassSettings", () => {
     test("fitWorkerPool picks the smallest whole block that keeps the subsamples within the worker pool's buffers", () => {
         const settings = new MeshPixelPassSettings();
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(640, 384)).toBe(1);
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080)).toBe(3);
-        const factor = settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080);
+        const meshes = new MeshRenderSettings();
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(640, 384, meshes)).toBe(1);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes)).toBe(3);
+        const factor = settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes);
         expect(Math.ceil(1920 / factor) * Math.ceil(1080 / factor) * 4).toBeLessThan(RasterWorkerPool.MAX_CELLS + 1);
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(0, 0)).toBe(1);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(0, 0, meshes)).toBe(1);
     });
 
     test("an explicit block size is rounded down to whole pixels, at least one", () => {
         const settings = new MeshPixelPassSettings();
+        const meshes = new MeshRenderSettings();
         settings.framebufferPixelsPerRasterPixel = 2.9;
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080)).toBe(2);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes)).toBe(2);
         settings.framebufferPixelsPerRasterPixel = 0;
-        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080)).toBe(1);
+        expect(settings.resolvedFramebufferPixelsPerRasterPixel(1920, 1080, meshes)).toBe(1);
     });
 
-    test("rasterizes without half blocks or colour quantization", () => {
-        const config = new MeshPixelPassSettings().toRasterizerConfig(new MemoryPlatform({hardwareConcurrency: 4}));
+    test("rasterizes without half blocks or colour quantization, 2x2 supersampled unless the mesh settings say otherwise", () => {
+        const meshes = new MeshRenderSettings();
+        const config = new MeshPixelPassSettings().toRasterizerConfig(new MemoryPlatform({hardwareConcurrency: 4}), meshes);
         expect([config.halfBlock, config.colorQuantMask, config.supersampleX, config.supersampleY, config.workerCount]).toEqual([false, 0xFFFFFF, 2, 2, 3]);
+        meshes.supersampleY = EXPLICIT_SUPERSAMPLE;
+        meshes.textures = false;
+        const explicit = new MeshPixelPassSettings().toRasterizerConfig(new MemoryPlatform(), meshes);
+        expect([explicit.supersampleX, explicit.supersampleY, explicit.textures]).toEqual([2, EXPLICIT_SUPERSAMPLE, false]);
+        meshes.supersampleY = UNSET_SUPERSAMPLE;
+        expect(new MeshPixelPassSettings().toRasterizerConfig(new MemoryPlatform(), meshes).supersampleY).toBe(2);
     });
 });
 
@@ -72,7 +85,8 @@ describe("MeshPixelPassSystem", () => {
         const em = world.entityManager;
         em.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new FieldOfView()]);
         em.createEntity("quad", [new RenderMesh(quad()), new LocalToWorld(), new LocalPosition(0, 0, QUAD_DISTANCE)]);
-        const pass = world.getOrCreateSystem(MeshPixelPassSystem);
+        world.getOrCreateSystem(MeshPixelPassSystem);
+        const stats = world.resources.get(MeshRenderStats);
 
         const centerRgb = () => {
             const frame = presenter.lastFrame!;
@@ -81,20 +95,21 @@ describe("MeshPixelPassSystem", () => {
         };
 
         root.update();
-        expect([pass.trianglesDrawn, centerRgb()]).toEqual([0, 0x000000]);
+        expect([stats.trianglesDrawn, centerRgb()]).toEqual([0, 0x000000]);
 
         em.createEntity("settings", [new MeshPixelPassSettings()]);
         root.update();
         root.update();
-        expect(pass.trianglesDrawn).toBe(2);
+        expect(stats.trianglesDrawn).toBe(2);
         expect(centerRgb()).toBe(QUAD_RGB);
-        expect(pass.rasterWorkers).toBe(0);
+        expect(stats.rasterWorkers).toBe(0);
     });
 });
 
 interface DrawingWorld {
     readonly world: World;
     readonly pass: MeshPixelPassSystem;
+    readonly stats: MeshRenderStats;
     readonly group: PixelRenderSystemGroup;
 }
 
@@ -107,37 +122,37 @@ function drawingWorld(): DrawingWorld {
     em.createEntity("settings", [new MeshPixelPassSettings()]);
     const pass = world.getOrCreateSystem(MeshPixelPassSystem);
     for (let step = 0; step < SETTLE_STEPS; step++) world.step(FRAME_MS);
-    return {world, pass, group: world.tryGetSystem(PixelRenderSystemGroup)!};
+    return {world, pass, stats: world.resources.get(MeshRenderStats), group: world.tryGetSystem(PixelRenderSystemGroup)!};
 }
 
-function lodLevelTotal(pass: MeshPixelPassSystem): number {
-    return Array.from(pass.lodLevelCounts).reduce((sum, count) => sum + count, 0);
+function lodLevelTotal(stats: MeshRenderStats): number {
+    return Array.from(stats.lodLevelCounts).reduce((sum, count) => sum + count, 0);
 }
 
-describe("MeshPixelPassSystem stats", () => {
+describe("MeshRenderStats from the pixels mesh pass", () => {
     test("a pass that stops running keeps its last stats until its group walks its passes again, then reads zero", () => {
-        const {world, pass} = drawingWorld();
-        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([QUAD_TRIANGLES, QUAD_LOD_DRAWS]);
+        const {world, pass, stats} = drawingWorld();
+        expect([stats.trianglesDrawn, lodLevelTotal(stats)]).toEqual([QUAD_TRIANGLES, QUAD_LOD_DRAWS]);
 
         pass.enabled = false;
-        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([QUAD_TRIANGLES, QUAD_LOD_DRAWS]);
+        expect([stats.trianglesDrawn, lodLevelTotal(stats)]).toEqual([QUAD_TRIANGLES, QUAD_LOD_DRAWS]);
         world.step(FRAME_MS);
-        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([0, 0]);
+        expect([stats.trianglesDrawn, lodLevelTotal(stats)]).toEqual([0, 0]);
 
         pass.enabled = true;
         world.step(FRAME_MS);
-        expect(pass.trianglesDrawn).toBe(QUAD_TRIANGLES);
+        expect(stats.trianglesDrawn).toBe(QUAD_TRIANGLES);
     });
 
     test("a second walk in the same frame without the pass makes the stats of the first walk read zero", () => {
-        const {world, pass, group} = drawingWorld();
+        const {world, pass, stats, group} = drawingWorld();
         const frame = world.time.frameCount;
         group.update();
-        expect(pass.trianglesDrawn).toBe(QUAD_TRIANGLES);
+        expect(stats.trianglesDrawn).toBe(QUAD_TRIANGLES);
 
         pass.enabled = false;
         group.update();
         expect(world.time.frameCount).toBe(frame);
-        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([0, 0]);
+        expect([stats.trianglesDrawn, lodLevelTotal(stats)]).toEqual([0, 0]);
     });
 });

@@ -17,13 +17,8 @@ export function registerPixelsComponentSchemas(registry: ComponentSchemaRegistry
         .build());
     registry.register(componentSchema(MeshPixelPassSettings, "MeshPixelPassSettings")
         .number("maxDepthFade")
-        .integer("supersampleX")
-        .integer("supersampleY")
         .number("threadTriangleThreshold")
         .number("threadAreaThreshold")
-        .boolean("textures")
-        .boolean("lod")
-        .number("lodBias")
         .number("lodTrianglesPerPixel")
         .category(ENGINE_COMPONENT_CATEGORIES.settings)
         .build());

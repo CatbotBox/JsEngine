@@ -6,14 +6,12 @@ import {RunningList} from "./runningList";
 const FIRST_INDEX = 0;
 const NO_SYSTEM_RAN_YET = false;
 
-function runsInSimulation(system: System): boolean {
-    return !(system instanceof PresentationSystemGroup) && system.enabled && system.requirementsMet;
-}
-
 export class RootSystemGroup extends SystemGroup {
     private readonly _runningAfterSlot: RunningList = new RunningList(this);
     private readonly _presentationGroups: PresentationSystemGroup[] = [];
     private _simulating = false;
+    private readonly runsInSimulation = (system: System): boolean =>
+        !(system instanceof PresentationSystemGroup) && system.enabled && system.requirementsMet && this.walksChild(system);
 
     override removeSystemInstance(systemInstance: System): void {
         if (systemInstance === this) return;
@@ -51,7 +49,7 @@ export class RootSystemGroup extends SystemGroup {
     }
 
     protected override runningListOf(system: System): RunningList | undefined {
-        if (system instanceof PresentationSystemGroup) return undefined;
+        if (system instanceof PresentationSystemGroup || !this.walksChild(system)) return undefined;
         return this.isBeforePresentationSlot(system) ? this.runningList : this._runningAfterSlot;
     }
 
@@ -64,8 +62,8 @@ export class RootSystemGroup extends SystemGroup {
         }
         const firstGroup = groups[FIRST_INDEX];
         const slot = firstGroup === undefined ? order.length : order.indexOf(firstGroup);
-        this.runningList.rebuild(order, FIRST_INDEX, slot, runsInSimulation);
-        this._runningAfterSlot.rebuild(order, slot + 1, order.length, runsInSimulation);
+        this.runningList.rebuild(order, FIRST_INDEX, slot, this.runsInSimulation);
+        this._runningAfterSlot.rebuild(order, slot + 1, order.length, this.runsInSimulation);
     }
 
     protected override joinedNow(system: System): void {
@@ -73,7 +71,7 @@ export class RootSystemGroup extends SystemGroup {
             this.rebuildRunning();
             return;
         }
-        if (runsInSimulation(system)) this.runningListOf(system)!.insert(system, this.order);
+        if (this.runsInSimulation(system)) this.runningListOf(system)!.insert(system, this.order);
     }
 
     private beginSimulation(): void {

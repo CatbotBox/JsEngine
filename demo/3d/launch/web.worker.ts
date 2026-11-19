@@ -1,6 +1,5 @@
-import {DebugWorld} from "../../../src/engine/core";
+import {App} from "../../../src/engine/core";
 import {Input} from "../../../src/engine/input";
-import {CellPresenterResource} from "../../../src/backends/cells";
 import {runWorldWorker} from "../../../src/hosts/web/worldWorker";
 import {projectFilePreload} from "../../../src/hosts/web/projectFilePreload";
 import {installCellRendering3d} from "./cellRendering";
@@ -11,15 +10,12 @@ runWorldWorker(async (page, files) => {
     const presenter = page.cellPresenter();
     const manifest = await preloadDemo3dAssets(page, files);
 
-    const world = new DebugWorld({platform: page.platform});
-    world.resources.insert(new CellPresenterResource(presenter));
+    const world = new App({platform: page.platform}).createDebugWorld();
     page.connectInput(world.resources.getOrCreate(Input));
     await launchDemo3d(world, {
-        renderBackend: "cells",
         preload: projectFilePreload(files, DEMO_3D_PROJECT_DIRECTORY),
-        installRendering: installCellRendering3d,
+        installRendering: () => installCellRendering3d(world, presenter),
         modelFiles: manifestModelFiles(manifest, files),
-        quit: () => page.quit(),
     });
     world.startLoop();
 });

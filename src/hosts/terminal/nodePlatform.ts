@@ -6,7 +6,10 @@ interface NodeProcess {
     readonly env: Readonly<Record<string, string | undefined>>;
     once(event: "exit" | "SIGTERM", listener: () => void): void;
     removeListener(event: "exit" | "SIGTERM", listener: () => void): void;
+    exit(code: number): void;
 }
+
+const SUCCESS_EXIT_CODE = 0;
 
 interface NodeFs {
     readFileSync(path: string): Uint8Array;
@@ -68,6 +71,7 @@ function createNodePlatform(): Platform {
         requestedRasterWorkers,
         now,
         onExit,
+        quit: quitProcess,
         frameScheduler: timerFrameScheduler(now),
     };
 }
@@ -164,6 +168,10 @@ function onExit(callback: () => void): () => void {
         host.removeListener("exit", callback);
         host.removeListener("SIGTERM", callback);
     };
+}
+
+function quitProcess(): void {
+    nodeProcess().exit(SUCCESS_EXIT_CODE);
 }
 
 export interface AppendStream {

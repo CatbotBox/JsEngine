@@ -148,7 +148,7 @@ function startFixture(folder: string): Started {
     const entry = projectEntry(observation);
     const registry = createProjectSchemaRegistry(entry);
     const world = new World({platform: terminalPlatform(folder)});
-    const host: ProjectHost = {files: FILES_ON_DISK, renderBackend: "pixels", scenes: new SceneManager(world, registry), quit: () => undefined};
+    const host: ProjectHost = {files: FILES_ON_DISK, scenes: new SceneManager(world, registry)};
     return {world, observation, start: startProject(world, entry, host, readManifest(folder), registry)};
 }
 

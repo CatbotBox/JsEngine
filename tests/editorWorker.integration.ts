@@ -34,6 +34,7 @@ const SAVED_SCENE_PATH = "scenes/saved.scene.json";
 const EDIT_FRAMES_AFTER_KEY = 10;
 const PLAYER_NAME = "cross1";
 const CAMERA_NAME = "cameraEntity";
+const SETTINGS_NAME = "settings";
 const PLAYER_EDITED_XYZ = [2, 1, 0];
 const PLAYER_MOVED_X = 3;
 const CAMERA_EDITED_XYZ = [0, 1, -12];
@@ -420,7 +421,9 @@ async function verify3d(project: BuiltProject): Promise<void> {
     const page = new EditorPage(project, "the 3D editor");
     try {
         await verifyStartsInEditMode(page, label);
-        await verifySchemas(page, label, ["RenderMesh", "DirectionalLight", "MeshPixelPassSettings"]);
+        await verifySchemas(page, label, ["RenderMesh", "DirectionalLight", "MeshPixelPassSettings", "MeshRenderSettings"]);
+        const settings = await page.entityNamed(SETTINGS_NAME);
+        expect(settings?.componentTypeNames.includes("MeshRenderSettings") === true, `${label}: the scene's ${SETTINGS_NAME} entity loaded its MeshRenderSettings`);
 
         const camera = await page.entityNamed(CAMERA_NAME);
         expect(camera !== undefined, `${label}: listEntities has ${CAMERA_NAME}`);

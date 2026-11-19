@@ -5,7 +5,7 @@ import type {FileSource} from "../platform/platform";
 import type {ComponentSchemaRegistry} from "../scene/componentSchemaRegistry";
 import {SceneManager} from "../scene/sceneManager";
 import type {SceneHandle, ScenePreload} from "../scene/sceneManager";
-import type {ProjectAssetFiles, ProjectEntryModule, ProjectHost, ProjectRenderBackend} from "./projectEntry";
+import type {ProjectAssetFiles, ProjectEntryModule, ProjectHost} from "./projectEntry";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "./projectManifest";
 import type {ProjectManifest} from "./projectManifest";
 import {createProjectSchemaRegistry} from "./projectSchemas";
@@ -15,11 +15,9 @@ import {startProject} from "./projectStartup";
 export interface ProjectLaunchOptions {
     readonly directory: string;
     readonly entry: ProjectEntryModule;
-    readonly renderBackend: ProjectRenderBackend;
     readonly schemas?: ProjectSchemaSources;
     readonly assetFiles?: ProjectAssetFiles;
     readonly preload?: ScenePreload;
-    quit(): void;
 }
 
 export interface LaunchedProject {
@@ -58,9 +56,7 @@ export async function launchProject(world: World, options: ProjectLaunchOptions)
     const scenes = new SceneManager(world, registry, {files, preload});
     const host: ProjectHost = {
         files: options.assetFiles ?? FILES_LOADED_UP_FRONT,
-        renderBackend: options.renderBackend,
         scenes,
-        quit: () => options.quit(),
     };
     const startScene = await startProject(world, options.entry, host, manifest, registry);
     return {manifest, registry, host, startScene};

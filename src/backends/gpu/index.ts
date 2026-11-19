@@ -36,3 +36,5 @@ export {GpuSurfaceShader, LIT_SURFACE_SHADER, NO_SURFACE_SHADER_PARAMS, SURFACE_
 export {assembleSurfaceShader, BASIC_LIT, LIT_SURFACE_WGSL, SURFACE_FUNCTION_SIGNATURE} from "./shaders/basicLitShader";
 export {OVERLAY} from "./shaders/overlayShader";
 export {registerGpuComponentSchemas} from "./gpuComponentSchemas";
+export {installGpuBackend} from "./gpuBackend";
+export {GPU_MESH_PASSES} from "./gpuMeshPasses";

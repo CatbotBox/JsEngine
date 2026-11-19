@@ -1,4 +1,5 @@
 import {System} from "../../../engine/core";
+import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {CellGrid} from "../cellGrid";
 import {HudElement} from "../../../engine/rendering/hudElement";
@@ -16,6 +17,8 @@ const PRIORITY_BEFORE_TEXT_HUD = 99;
 const HALF_ROWS_PER_CELL = 2;
 
 export class HudSpriteCellPassSystem extends System {
+    public static readonly renderPass: RenderPassKind = "hudSprites";
+
     private _settingsQuery = this.createEntityQuery([SpriteCellPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _hudObjectQuery = this.createEntityQuery([Sprite, HudElement]);

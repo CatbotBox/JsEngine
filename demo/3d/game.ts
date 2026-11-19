@@ -2,9 +2,10 @@ import {EntityCommandBufferSystem, FrameLoopSettings, NULL_ENTITY, Resource, Sys
 import type {Component, ComponentCtor, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
 import {Input, resolveInputAction, resolveInputActions} from "../../src/engine/input";
 import type {InputAction, InputEvent, ResolvedInputActions} from "../../src/engine/input";
-import {RenderingSystemGroup, SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../src/engine/rendering";
+import {RenderPasses, SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../src/engine/rendering";
+import type {RenderPassKind} from "../../src/engine/rendering";
 import {LocalPosition, LocalRotation} from "../../src/engine/translation";
-import {AmbientLight, DirectionalLight, FieldOfView, PointLight} from "../../src/engine/rendering/3d";
+import {AmbientLight, DirectionalLight, FieldOfView, MeshRenderSettings, MeshRenderStats, PointLight} from "../../src/engine/rendering/3d";
 import {Vec} from "../../src/engine/math/types/vec";
 import type {ReadonlyVec3, ReadonlyVec4, Vec3, Vec4} from "../../src/engine/math/types/vec";
 import {Quaternions} from "../../src/engine/math/quaternions";
@@ -20,29 +21,8 @@ import type {Demo3dHudTuning, RenderPacingPreset} from "./tuning";
 
 export type {Demo3dModelFiles} from "./modelCatalog";
 
-export interface Demo3dRenderStats {
-    readonly trianglesDrawn: number;
-    readonly lodLevelCounts: Int32Array;
-    readonly rasterWorkers: number;
-}
-
-export interface Demo3dRenderControls {
-    toggleMeshPass(): void;
-    toggleHud(): void;
-    toggleTextures(): void;
-    toggleTextureFiltering?(): void;
-    toggleHalfBlockCells?(): void;
-    toggleLod(): void;
-    changeLodBias(levels: number): void;
-    setSupersample(x: number, y: number): void;
-    cycleSurfaceShader?(): void;
-    stats(): Demo3dRenderStats | undefined;
-}
-
 export interface Demo3dHost {
-    readonly render: Demo3dRenderControls;
     readonly modelFiles?: Demo3dModelFiles;
-    quit(): void;
 }
 
 const DEMO_NAME = "The 3D demo";
@@ -101,9 +81,6 @@ const Demo3dAction = {
     ToggleHud: "toggleHud",
     LogSystemOrder: "logSystemOrder",
     ToggleTextures: "toggleTextures",
-    ToggleTextureFiltering: "toggleTextureFiltering",
-    CycleSurfaceShader: "cycleSurfaceShader",
-    ToggleHalfBlock: "toggleHalfBlock",
     ToggleLod: "toggleLod",
     LessDetail: "lessDetail",
     MoreDetail: "moreDetail",
@@ -128,7 +105,7 @@ class Demo3dSession extends Resource {
     public renderPacingIndex = FIRST_PRESET;
     public selectionPrimed = false;
 
-    public constructor(public readonly host: Demo3dHost, public readonly catalog: ModelCatalog, public readonly models: GridModels) {
+    public constructor(public readonly catalog: ModelCatalog, public readonly models: GridModels) {
         super();
     }
 }
@@ -191,6 +168,7 @@ class Demo3dControlsSystem extends System {
     private _pointLights = this.createEntityQuery([PointLight]);
     private _grids = this.createEntityQuery([ModelGrid]);
     private _frameLoops = this.createEntityQuery([FrameLoopSettings]);
+    private _meshSettings = this.createEntityQuery([MeshRenderSettings]);
     private _actions!: Demo3dActions;
     private _keyDownHandlers: readonly ActionHandler[] = [];
     private _keyPressHandlers: readonly ActionHandler[] = [];
@@ -239,16 +217,13 @@ class Demo3dControlsSystem extends System {
             {action: actions.ReloadModels, run: () => this.reloadModels()},
         ];
         this._commandsBeforeSupersample = [
-            {action: actions.ToggleMeshPass, run: () => this.render().toggleMeshPass()},
-            {action: actions.ToggleHud, run: () => this.render().toggleHud()},
+            {action: actions.ToggleMeshPass, run: () => this.togglePass("meshes")},
+            {action: actions.ToggleHud, run: () => this.togglePass("hudText")},
             {action: actions.LogSystemOrder, run: () => requireDebugWorld(this.world, DEMO_NAME).logSystemUpdateOrder()},
-            {action: actions.ToggleTextures, run: () => this.render().toggleTextures()},
-            {action: actions.ToggleTextureFiltering, run: () => this.render().toggleTextureFiltering?.()},
-            {action: actions.CycleSurfaceShader, run: () => this.render().cycleSurfaceShader?.()},
-            {action: actions.ToggleHalfBlock, run: () => this.render().toggleHalfBlockCells?.()},
-            {action: actions.ToggleLod, run: () => this.render().toggleLod()},
-            {action: actions.LessDetail, run: () => this.render().changeLodBias(LESS_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
-            {action: actions.MoreDetail, run: () => this.render().changeLodBias(MORE_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
+            {action: actions.ToggleTextures, run: () => this.changeMeshSettings(settings => settings.textures = !settings.textures)},
+            {action: actions.ToggleLod, run: () => this.changeMeshSettings(settings => settings.lod = !settings.lod)},
+            {action: actions.LessDetail, run: () => this.changeLodBias(LESS_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
+            {action: actions.MoreDetail, run: () => this.changeLodBias(MORE_DETAIL_SIGN * this.tuning().lodBiasStepLevels)},
         ];
         this._commandsAfterSupersample = [
             {action: actions.CycleRenderPacing, run: () => this.cycleRenderPacing()},
@@ -264,7 +239,7 @@ class Demo3dControlsSystem extends System {
         session.models.sync();
         this.primeSelection(session);
         if (input.actionPressed(this._actions.Quit)) {
-            this.quit(session);
+            this.world.requestQuit();
             return;
         }
         for (const event of input.events) {
@@ -278,7 +253,7 @@ class Demo3dControlsSystem extends System {
         }
         for (const command of this._commandsBeforeSupersample) if (input.actionPressed(command.action)) command.run();
         for (const preset of this.tuning().supersample) {
-            if (input.actionPressed(this.supersampleAction(preset.action))) this.render().setSupersample(preset.x, preset.y);
+            if (input.actionPressed(this.supersampleAction(preset.action))) this.setSupersample(preset.x, preset.y);
         }
         for (const command of this._commandsAfterSupersample) if (input.actionPressed(command.action)) command.run();
     }
@@ -287,8 +262,23 @@ class Demo3dControlsSystem extends System {
         return this.world.resources.get(Demo3dTuning);
     }
 
-    private render(): Demo3dRenderControls {
-        return sessionOf(this.world).host.render;
+    private togglePass(kind: RenderPassKind): void {
+        this.world.resources.tryGet(RenderPasses)?.toggle(kind);
+    }
+
+    private changeMeshSettings(change: (settings: MeshRenderSettings) => void): void {
+        this._meshSettings.stream({write: {settings: MeshRenderSettings}}, INCLUDING_DISABLED).consume(({settings}) => change(settings));
+    }
+
+    private changeLodBias(levels: number): void {
+        this.changeMeshSettings(settings => settings.lodBias += levels);
+    }
+
+    private setSupersample(x: number, y: number): void {
+        this.changeMeshSettings(settings => {
+            settings.supersampleX = x;
+            settings.supersampleY = y;
+        });
     }
 
     private grid(): ModelGrid | undefined {
@@ -302,13 +292,6 @@ class Demo3dControlsSystem extends System {
             this._supersampleActions.set(name, action);
         }
         return action;
-    }
-
-    private quit(session: Demo3dSession): void {
-        const renderer = this.world.tryGetSystem(RenderingSystemGroup);
-        if (renderer) renderer.enabled = false;
-        this.world.stop();
-        session.host.quit();
     }
 
     private moveCamera(localDirection: ReadonlyVec3, amount: number): void {
@@ -541,7 +524,7 @@ class Demo3dHudSystem extends System {
             ticks: this._ticksPerSecond.toFixed(tuning.hud.rateDecimals),
             pacing: this.pacingLabel(pacing, tuning.hud),
         }));
-        const stats = session.host.render.stats();
+        const stats = this.world.resources.tryGet(MeshRenderStats);
         const lodLevels = stats === undefined ? NO_TEXT : formatHudText(tuning.hud.lodLevelsFormat, {
             levels: Array.from(stats.lodLevelCounts.subarray(0, tuning.hud.lodLevelsShown)).join(tuning.hud.lodLevelSeparator),
         });
@@ -613,7 +596,7 @@ function requirePrefabSpawner(world: World): PrefabSpawner {
 
 export function setupDemo3d(world: World, host: Demo3dHost): void {
     const tuning = world.resources.get(Demo3dTuning);
-    const session = new Demo3dSession(host, new ModelCatalog(requirePrefabSpawner(world), host.modelFiles), new GridModels(world));
+    const session = new Demo3dSession(new ModelCatalog(requirePrefabSpawner(world), host.modelFiles), new GridModels(world));
     world.resources.insert(session);
     session.catalog.refresh(tuning.models);
     world.ensureSystemExists(Demo3dControlsSystem);

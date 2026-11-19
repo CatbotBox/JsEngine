@@ -4,6 +4,7 @@ import {SystemGroup} from "./systemGroup";
 import {World} from "./world";
 import type {WorldOptions} from "./world";
 import {RootSystemGroup} from "./rootSystemGroup";
+import {QuitSystemGroup} from "./quitSystemGroup";
 import {GcSystem} from "./gcSystem";
 import {InputSystem} from "../input/inputSystem";
 
@@ -56,6 +57,7 @@ export class DebugWorld extends World {
             } catch (err) {
                 const end = performance.now();
                 statTracker.add(end - start);
+                if (world.tryGetSystem(QuitSystemGroup)?.updating === true) throw err;
                 const message = "error while running system: " + systemClass.name + " Error: " + err;
                 world.stop(message);
                 console.error(message);

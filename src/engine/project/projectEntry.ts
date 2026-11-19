@@ -24,14 +24,9 @@ export interface ProjectAssetFiles {
     loadFetchingAsNeeded<T>(load: () => T, onProgress?: ProjectLoadProgressListener): Promise<T>;
 }
 
-export type ProjectRenderBackend = "cells" | "pixels" | "gpu";
-
 export interface ProjectHost {
     readonly files: ProjectAssetFiles;
-    readonly renderBackend: ProjectRenderBackend;
     readonly scenes: SceneManager;
-
-    quit(): void;
 }
 
 export interface ProjectEntryModule {

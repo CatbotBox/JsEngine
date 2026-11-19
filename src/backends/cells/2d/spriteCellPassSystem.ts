@@ -1,4 +1,5 @@
 import {System} from "../../../engine/core";
+import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {CellGrid} from "../cellGrid";
 import {HudElement} from "../../../engine/rendering/hudElement";
@@ -20,6 +21,8 @@ const NOTHING_DRAWN = 0;
 const HALF_ROWS_PER_CELL = 2;
 
 export class SpriteCellPassSystem extends System {
+    public static readonly renderPass: RenderPassKind = "sprites";
+
     private _settingsQuery = this.createEntityQuery([SpriteCellPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
     private _objectQuery = this.createEntityQuery([Sprite, WorldSpaceRenderBounds], [HudElement]);

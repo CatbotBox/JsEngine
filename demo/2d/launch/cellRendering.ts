@@ -1,25 +1,12 @@
-import {EntityQuery, System} from "../../../src/engine/core";
 import type {World} from "../../../src/engine/core";
-import {HudTextSpriteCellPassSystem} from "../../../src/backends/cells";
-import {HudSpriteCellPassSystem, SpriteCellPassSystem, SpriteCellPassSettings} from "../../../src/backends/cells/2d";
-import type {Demo2dRenderControls} from "../game";
+import {installCellsBackend} from "../../../src/backends/cells/cellsBackend";
+import type {CellPresenter} from "../../../src/backends/cells/cellPresenter";
+import {CELLS_HUD_TEXT_PASSES} from "../../../src/backends/cells/cellsHudTextPasses";
+import {CELLS_SPRITE_PASSES} from "../../../src/backends/cells/2d/cellsSpritePasses";
+import {CELLS_HUD_SPRITE_PASSES} from "../../../src/backends/cells/2d/cellsHudSpritePasses";
+import {Demo2dCellsControlsSystem} from "../backend/cells/demo2dCellsControlsSystem";
 
-const INCLUDING_DISABLED = {includeDisabled: true} as const;
-
-function toggle(system: System | undefined): void {
-    if (system) system.enabled = !system.enabled;
-}
-
-export function installCellRendering2d(world: World): Demo2dRenderControls {
-    world.ensureSystemExists(SpriteCellPassSystem);
-    world.ensureSystemExists(HudSpriteCellPassSystem);
-    world.ensureSystemExists(HudTextSpriteCellPassSystem);
-    const settings = new EntityQuery(world, [SpriteCellPassSettings]);
-
-    return {
-        toggleSpritePass: () => toggle(world.tryGetSystem(SpriteCellPassSystem)),
-        toggleHalfBlockCells: () => settings.stream({write: {settings: SpriteCellPassSettings}}, INCLUDING_DISABLED).consume(({settings}) => {
-            settings.halfBlockCells = !settings.halfBlockCells;
-        }),
-    };
+export function installCellRendering2d(world: World, presenter: CellPresenter): void {
+    installCellsBackend(world, presenter, [...CELLS_SPRITE_PASSES, ...CELLS_HUD_SPRITE_PASSES, ...CELLS_HUD_TEXT_PASSES]);
+    world.ensureSystemExists(Demo2dCellsControlsSystem);
 }

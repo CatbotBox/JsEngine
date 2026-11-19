@@ -1,10 +1,12 @@
-import {DebugWorld, EntityQuery} from "../src/engine/core";
+import {App, EntityQuery} from "../src/engine/core";
+import type {DebugWorld} from "../src/engine/core";
 import {MemoryPlatform} from "../src/engine/testing/memoryPlatform";
 import {Input, Key, NO_MODIFIERS} from "../src/engine/input";
 import type {Modifiers} from "../src/engine/input";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {
+    activeRenderBackend,
     ASCII_PIXEL_FONT,
     Camera,
     GREEN_SHIFT,
@@ -14,16 +16,16 @@ import {
     ScreenSize,
     TextColor,
 } from "../src/engine/rendering";
-import {isPixelFrame, MemoryPixelPresenter, PixelPresenterResource, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels";
+import {MeshRenderStats} from "../src/engine/rendering/3d";
+import {isPixelFrame, MemoryPixelPresenter, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
-import {MeshPixelPassSystem} from "../src/backends/pixels/3d";
 import {nodePlatform} from "../src/hosts/terminal";
 import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
-import type {Demo2dRenderControls} from "../demo/2d/game";
 import {launchDemo3d} from "../demo/3d/launch/demo3dLaunch";
-import type {Demo3dRenderControls} from "../demo/3d/game";
 import {installPixelRendering2d} from "../demo/2d/launch/pixelRendering";
 import {installPixelRendering3d} from "../demo/3d/launch/pixelRendering";
+import {Demo2dCellsControlsSystem} from "../demo/2d/backend/cells/demo2dCellsControlsSystem";
+import {Demo3dCellsControlsSystem} from "../demo/3d/backend/cells/demo3dCellsControlsSystem";
 
 const FRAME_MS = 1000 / 60;
 const START: PixelPresenterSize = {widthPx: 640, heightPx: 384};
@@ -108,25 +110,15 @@ function expectFrameShape(presenter: MemoryPixelPresenter, world: DebugWorld, si
     return frame;
 }
 
-function capturing<W, R>(install: (world: W) => R, captured: R[]): (world: W) => R {
-    return world => {
-        const render = install(world);
-        captured.push(render);
-        return render;
-    };
-}
-
 async function runDemo2d(): Promise<void> {
     log("--- 2D demo on pixels");
     const presenter = new MemoryPixelPresenter(START);
-    const world = new DebugWorld({platform: new MemoryPlatform({fileSource: nodePlatform().files})});
-    world.resources.insert(new PixelPresenterResource(presenter));
+    const platform = new MemoryPlatform({fileSource: nodePlatform().files});
+    const world = new App({platform}).createDebugWorld();
     const input = world.resources.getOrCreate(Input);
-    let quits = 0;
-    const installed: Demo2dRenderControls[] = [];
-    await launchDemo2d(world, {renderBackend: "pixels", installRendering: capturing(installPixelRendering2d, installed), quit: () => quits++});
-    const [render] = installed;
-    expect(render.toggleHalfBlockCells === undefined, "the pixel render controls have no half-block toggle");
+    await launchDemo2d(world, {installRendering: launched => installPixelRendering2d(launched, presenter)});
+    expect(activeRenderBackend(world) === "pixels", "the pixel installer marked the world as rendering through pixels");
+    expect(world.tryGetSystem(Demo2dCellsControlsSystem) === undefined, "the pixel world has no cells half-block control");
 
     const tick = () => {
         world.step(FRAME_MS);
@@ -167,7 +159,7 @@ async function runDemo2d(): Promise<void> {
 
     keyDown(input, Key.C, {...NO_MODIFIERS, ctrl: true});
     tick();
-    expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
+    expect(platform.quitCount === 1, "Ctrl+C stopped the world and quit the platform");
 }
 
 async function runDemo3d(): Promise<void> {
@@ -175,21 +167,18 @@ async function runDemo3d(): Promise<void> {
     const host = nodePlatform();
     const platform = new MemoryPlatform({fileSource: host.files, inflate: host.inflate});
     const presenter = new MemoryPixelPresenter(START);
-    const world = new DebugWorld({platform});
-    world.resources.insert(new PixelPresenterResource(presenter));
+    const world = new App({platform}).createDebugWorld();
     const input = world.resources.getOrCreate(Input);
-    let quits = 0;
-    const installed: Demo3dRenderControls[] = [];
-    await launchDemo3d(world, {renderBackend: "pixels", installRendering: capturing(installPixelRendering3d, installed), quit: () => quits++});
-    const [render] = installed;
-    expect(render.toggleHalfBlockCells === undefined, "the pixel render controls have no half-block toggle");
+    await launchDemo3d(world, {installRendering: launched => installPixelRendering3d(launched, presenter)});
+    expect(activeRenderBackend(world) === "pixels", "the pixel installer marked the world as rendering through pixels");
+    expect(world.tryGetSystem(Demo3dCellsControlsSystem) === undefined, "the pixel world has no cells half-block control");
 
-    const pass = world.tryGetSystem(MeshPixelPassSystem);
+    const stats = world.resources.tryGet(MeshRenderStats);
     let maxTriangles = 0;
     const tick = () => {
         world.step(FRAME_MS);
         platform.advance(FRAME_MS);
-        maxTriangles = Math.max(maxTriangles, pass?.trianglesDrawn ?? 0);
+        maxTriangles = Math.max(maxTriangles, stats?.trianglesDrawn ?? 0);
     };
     for (let frame = 0; frame < SETTLE_FRAMES; frame++) tick();
     keyDown(input, Key.N);
@@ -202,12 +191,12 @@ async function runDemo3d(): Promise<void> {
     expect(maxTriangles > 0, `the mesh pass drew triangles (up to ${maxTriangles} in one frame)`);
     expect(scenePixels > framePixels / MIN_SCENE_PIXEL_DIVISOR, `the scene painted pixels (${scenePixels}/${framePixels})`);
     expect(glyphMatches(frame, "c", 0, 0, HELP_CYAN_RGB, undefined), "the controls help starts with a cyan 8x16 c at the top-left");
-    expect(render.stats()?.rasterWorkers === 0, "the raster stayed single-threaded without platform workers");
+    expect(stats?.rasterWorkers === 0, "the raster stayed single-threaded without platform workers");
     expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
     keyDown(input, Key.C, {...NO_MODIFIERS, ctrl: true});
     tick();
-    expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
+    expect(platform.quitCount === 1, "Ctrl+C stopped the world and quit the platform");
 }
 
 async function main(): Promise<void> {

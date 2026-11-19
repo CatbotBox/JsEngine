@@ -2,17 +2,15 @@ import {createHash} from "crypto";
 import type {Hash} from "crypto";
 import {existsSync, readFileSync, writeFileSync} from "fs";
 import {join, relative, resolve} from "path";
-import {DebugWorld} from "../src/engine/core";
+import {App} from "../src/engine/core";
 import {Input} from "../src/engine/input";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
-import {CellPresenterResource} from "../src/backends/cells";
-import {PixelPresenterResource} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenter, PixelPresenterSize} from "../src/backends/pixels";
 import {AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {demoFrameHashFiles, startDemoForFrameHashes} from "./support/demoFrameHashLaunch";
-import type {HashedBackend, HashedDemo} from "./support/demoFrameHashLaunch";
+import type {HashedBackend, HashedDemo, HashedOutput} from "./support/demoFrameHashLaunch";
 import {DEMO_FRAME_HASH_SCRIPTS, ScriptedInput} from "./support/demoFrameHashScripts";
 
 const ROOT = resolve(__dirname, "..");
@@ -177,15 +175,18 @@ class TerminalOutputRecorder implements FrameRecorder {
     }
 }
 
-function attachPresenter(world: DebugWorld, backend: HashedBackend, segments: SegmentHashes): FrameRecorder {
+interface RecordedOutput {
+    readonly output: HashedOutput;
+    readonly recorder: FrameRecorder;
+}
+
+function recordedOutput(backend: HashedBackend, segments: SegmentHashes): RecordedOutput {
     if (backend === "cells") {
         const terminal = new MemoryTerminal(CELL_SIZE);
-        world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(terminal)));
-        return new TerminalOutputRecorder(segments, terminal);
+        return {output: {backend, presenter: new AnsiCellPresenter(terminal)}, recorder: new TerminalOutputRecorder(segments, terminal)};
     }
     const presenter = new HashingPixelPresenter(segments, PIXEL_SIZE);
-    world.resources.insert(new PixelPresenterResource(presenter));
-    return presenter;
+    return {output: {backend, presenter}, recorder: presenter};
 }
 
 async function runCase(hashCase: HashCase, runtime: DeterministicRuntime, errors: string[]): Promise<SegmentResult[]> {
@@ -193,13 +194,12 @@ async function runCase(hashCase: HashCase, runtime: DeterministicRuntime, errors
     runtime.install(RANDOM_SEED);
     const host = nodePlatform();
     const platform = new MemoryPlatform({fileSource: demoFrameHashFiles(hashCase.demo, host.files), inflate: host.inflate});
-    const world = new DebugWorld({platform});
+    const world = new App({platform}).createDebugWorld();
     const segments = new SegmentHashes();
-    const recorder = attachPresenter(world, hashCase.backend, segments);
+    const {output, recorder} = recordedOutput(hashCase.backend, segments);
     const keys = new ScriptedInput(world.resources.getOrCreate(Input));
-    let quits = 0;
     try {
-        await startDemoForFrameHashes({demo: hashCase.demo, backend: hashCase.backend, world, quit: () => quits++});
+        await startDemoForFrameHashes({demo: hashCase.demo, output, world});
         for (const phase of DEMO_FRAME_HASH_SCRIPTS[hashCase.demo]) {
             segments.begin(phase.segment);
             phase.atStart?.(keys);
@@ -215,7 +215,7 @@ async function runCase(hashCase: HashCase, runtime: DeterministicRuntime, errors
         world.stop();
         runtime.restore();
     }
-    if (quits > 0) errors.push(`${label}: the script made the demo quit (${quits})`);
+    if (platform.quitCount > 0) errors.push(`${label}: the script made the demo quit (${platform.quitCount})`);
     return segments.results(label);
 }
 

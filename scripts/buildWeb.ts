@@ -5,7 +5,8 @@ import {buildDemo3dManifest} from "../demo/3d/assets";
 import {DEMO_3D_PROJECT_DIRECTORY} from "../demo/3d/launch/demo3dLaunch";
 import type {Demo3dManifest, ManifestFile} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
-import type {RenderBackend} from "../src/hosts/web/worldWorkerProtocol";
+import {RENDER_BACKEND_KINDS} from "../src/engine/rendering/renderBackend";
+import type {RenderBackendKind} from "../src/engine/rendering/renderBackend";
 import {EDITOR_MESSAGE_TYPE} from "../src/editor/editorProtocol";
 import {DEV_RELOAD_DEFINE} from "../src/hosts/web/devReload";
 import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
@@ -24,7 +25,7 @@ type BundleRole = "game" | "editor";
 interface EntryPoint {
     readonly source: string;
     readonly output: string;
-    readonly backend?: RenderBackend;
+    readonly backend?: RenderBackendKind;
     readonly role?: BundleRole;
 }
 
@@ -51,19 +52,18 @@ const ENTRY_POINTS: readonly EntryPoint[] = [
 const DEFAULT_BUNDLE_ROLE: BundleRole = "game";
 const OUTPUT_EXTENSION_PLACEHOLDER = "[ext]";
 const BUNDLE_EXTENSION = ".js";
-const RENDER_BACKENDS: readonly RenderBackend[] = ["cells", "pixels", "gpu"];
 const BOOTSTRAP_BUNDLE = "bootstrap";
-const PRESENTER_MISSING_MESSAGES: Readonly<Record<RenderBackend, string>> = {
+const PRESENTER_MISSING_MESSAGES: Readonly<Record<RenderBackendKind, string>> = {
     cells: "This world has no CellPresenterResource",
     pixels: "This world has no PixelPresenterResource",
     gpu: "This world has no GpuDeviceResource",
 };
-const EMBEDDED_BACKENDS: Readonly<Record<RenderBackend, readonly RenderBackend[]>> = {
+const EMBEDDED_BACKENDS: Readonly<Record<RenderBackendKind, readonly RenderBackendKind[]>> = {
     cells: [],
     pixels: [],
     gpu: ["pixels"],
 };
-const NO_EMBEDDED_BACKENDS: readonly RenderBackend[] = [];
+const NO_EMBEDDED_BACKENDS: readonly RenderBackendKind[] = [];
 const STATIC_FILES: readonly [from: string, to: string][] =
     ["index.html", "2d.html", "3d.html", "swarm.html", "demo.css", "coi-serviceworker.js", "_headers"].map((name): [string, string] => [join(WEB, name), name]);
 const EDITOR_STATIC_FILES: readonly [from: string, to: string][] =
@@ -144,19 +144,19 @@ function bundlePath(entry: EntryPoint): string {
     return join(OUT, entry.output + BUNDLE_EXTENSION);
 }
 
-function embeddedBackendsOf(entry: EntryPoint): readonly RenderBackend[] {
+function embeddedBackendsOf(entry: EntryPoint): readonly RenderBackendKind[] {
     return entry.backend === undefined ? NO_EMBEDDED_BACKENDS : EMBEDDED_BACKENDS[entry.backend];
 }
 
 function otherBackendsIn(entry: EntryPoint, text: string): string[] {
     const embedded = embeddedBackendsOf(entry);
-    return RENDER_BACKENDS.filter(backend => backend !== entry.backend && !embedded.includes(backend) && text.includes(PRESENTER_MISSING_MESSAGES[backend]))
+    return RENDER_BACKEND_KINDS.filter(backend => backend !== entry.backend && !embedded.includes(backend) && text.includes(PRESENTER_MISSING_MESSAGES[backend]))
         .map(backend => `${siteRelative(bundlePath(entry))}: the ${backend} presenter is in a ${entry.backend ?? BOOTSTRAP_BUNDLE} bundle ("${PRESENTER_MISSING_MESSAGES[backend]}")`);
 }
 
 // The leak check matches presenter messages by text; fail if a backend's own bundles lack its message, i.e. the source message changed.
 function backendMarkersNotFound(textByEntry: ReadonlyMap<EntryPoint, string>): string[] {
-    return RENDER_BACKENDS
+    return RENDER_BACKEND_KINDS
         .filter(backend => ![...textByEntry].some(([entry, text]) => entry.backend === backend && text.includes(PRESENTER_MISSING_MESSAGES[backend])))
         .map(backend => `no ${backend} bundle contains "${PRESENTER_MISSING_MESSAGES[backend]}": the guard no longer matches the source message`);
 }

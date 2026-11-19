@@ -9,6 +9,8 @@ import {Material} from "../../engine/rendering/3d/material";
 import {RenderMesh} from "../../engine/rendering/3d/renderMesh";
 import {FaceCulling} from "../../engine/rendering/3d/faceCulling";
 import {FieldOfView} from "../../engine/rendering/3d/fieldOfView";
+import {MeshRenderSettings} from "../../engine/rendering/3d/meshRenderSettings";
+import {MeshRenderStats} from "../../engine/rendering/3d/meshRenderStats";
 import {LocalPosition, LocalToWorld} from "../../engine/translation";
 import {MemoryPixelPresenter} from "../pixels/memoryPixelPresenter";
 import {MeshPixelPassSettings} from "../pixels/3d/meshPixelPassSettings";
@@ -78,6 +80,7 @@ const MANY_FRAMES = 8;
 const CLOCK_ADVANCE_MS = 20;
 const MS_PER_SECOND = 1000;
 const HALF = 2;
+const ONE_SAMPLE_PER_AXIS = 1;
 
 function ignore(): void {
 }
@@ -171,28 +174,28 @@ function place(world: World, mesh: Mesh, placements: readonly Placement[]): void
     for (const {x, z} of placements) world.entityManager.createEntity("grid", [new RenderMesh(mesh), new LocalToWorld(), new LocalPosition(x, 0, z)]);
 }
 
-function softwareLodPass(mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings): MeshPixelPassSystem {
+function softwareLodStats(mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings): MeshRenderStats {
     const world = new World({platform: new MemoryPlatform()});
     world.resources.insert(new PixelPresenterResource(new MemoryPixelPresenter(SIZE)));
     const root = world.getOrCreateSystem(RootSystemGroup);
     world.entityManager.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new FieldOfView()]);
-    const settings = Object.assign(new MeshPixelPassSettings(), {framebufferPixelsPerRasterPixel: 1, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL, lod, lodBias});
-    world.entityManager.createEntity("settings", [settings]);
+    const settings = Object.assign(new MeshPixelPassSettings(), {framebufferPixelsPerRasterPixel: 1, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL});
+    world.entityManager.createEntity("settings", [settings, Object.assign(new MeshRenderSettings(), {lod, lodBias})]);
     place(world, mesh, placements);
-    const pass = world.getOrCreateSystem(MeshPixelPassSystem);
+    world.getOrCreateSystem(MeshPixelPassSystem);
     for (let i = 0; i < SETTLE_STEPS; i++) root.update();
-    return pass;
+    return world.resources.get(MeshRenderStats);
 }
 
-async function gpuLodPass(mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings): Promise<{pass: GpuMeshPassSystem, device: FakeGpuDevice}> {
+async function gpuLodPass(mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings): Promise<{stats: MeshRenderStats, device: FakeGpuDevice}> {
     const rig = gpuWorld();
-    const settings = Object.assign(new GpuMeshPassSettings(), {lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL, lod, lodBias});
-    rig.world.entityManager.createEntity("gpu settings", [settings]);
+    const settings = Object.assign(new GpuMeshPassSettings(), {lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL});
+    rig.world.entityManager.createEntity("gpu settings", [settings, Object.assign(new MeshRenderSettings(), {lod, lodBias})]);
     place(rig.world, mesh, placements);
-    const pass = rig.world.getOrCreateSystem(GpuMeshPassSystem);
+    rig.world.getOrCreateSystem(GpuMeshPassSystem);
     await step(rig, SETTLE_STEPS);
     expect(rig.errors).toEqual([]);
-    return {pass, device: rig.device};
+    return {stats: rig.world.resources.get(MeshRenderStats), device: rig.device};
 }
 
 function samplerFilterOfLastMaterialBinding(device: FakeGpuDevice): GPUFilterMode | undefined {
@@ -273,13 +276,14 @@ describe("GpuMeshPassSystem", () => {
     test("draws every instance of a mesh in one instanced call and counts its triangles", async () => {
         const rig = gpuWorld();
         const {world, device, errors} = rig;
-        const pass = world.getOrCreateSystem(GpuMeshPassSystem);
+        world.getOrCreateSystem(GpuMeshPassSystem);
         addQuads(world, quad(), QUADS);
         await step(rig, SETTLE_STEPS);
         expect(errors).toEqual([]);
-        expect(pass.trianglesDrawn).toBe(QUADS * QUAD_TRIANGLES);
-        expect(pass.lodLevelCounts[0]).toBe(QUADS);
-        expect(pass.rasterWorkers).toBe(0);
+        const stats = world.resources.get(MeshRenderStats);
+        expect(stats.trianglesDrawn).toBe(QUADS * QUAD_TRIANGLES);
+        expect(stats.lodLevelCounts[0]).toBe(QUADS);
+        expect(stats.rasterWorkers).toBe(0);
         const scene = lastScenePass(device)!;
         expect(scene.callsOf("drawIndexed").map(call => call.args)).toEqual([[QUAD_TRIANGLES * 3, QUADS, 0, 0, 0]]);
         const instanceWrites = device.queue.bufferWrites.filter(write => write.buffer.descriptor.label === "instances");
@@ -301,7 +305,7 @@ describe("GpuMeshPassSystem", () => {
         expect(cullModes).toEqual(["back", "none"]);
     });
 
-    test("defaults without settings: 4x multisampling over the pixel background; settings switch sampling and textures", async () => {
+    test("defaults without settings: 4x multisampling over the pixel background; 1x1 mesh supersampling switches to one sample, and textures off", async () => {
         const rig = gpuWorld();
         const {world, device} = rig;
         world.entityManager.createEntity("render settings", [Object.assign(new PixelRenderSettings(), {backgroundColor: BACKGROUND})]);
@@ -314,10 +318,8 @@ describe("GpuMeshPassSystem", () => {
         expect(colorOf(lastScenePass(device)!).clearValue).toEqual(clearColorOf(BACKGROUND));
         expect(sampleCountOf(lastScenePass(device)!)).toBe(MULTISAMPLE_COUNT);
 
-        const settings = new GpuMeshPassSettings();
-        settings.sampleCount = SINGLE_SAMPLE_COUNT;
-        settings.textures = false;
-        world.entityManager.createEntity("gpu settings", [settings]);
+        const meshSettings = Object.assign(new MeshRenderSettings(), {supersampleX: ONE_SAMPLE_PER_AXIS, supersampleY: ONE_SAMPLE_PER_AXIS, textures: false});
+        world.entityManager.createEntity("mesh settings", [meshSettings]);
         await step(rig, SETTLE_STEPS);
         expect(sampleCountOf(lastScenePass(device)!)).toBe(SINGLE_SAMPLE_COUNT);
         const materialWrites = device.queue.bufferWrites.filter(write => write.buffer.descriptor.label === "material textured");
@@ -327,9 +329,9 @@ describe("GpuMeshPassSystem", () => {
     test("without meshes there is no scene pass, but the frame is still presented", async () => {
         const rig = gpuWorld();
         const {world, device} = rig;
-        const pass = world.getOrCreateSystem(GpuMeshPassSystem);
+        world.getOrCreateSystem(GpuMeshPassSystem);
         await step(rig, SETTLE_STEPS);
-        expect([lastScenePass(device), pass.trianglesDrawn]).toEqual([undefined, 0]);
+        expect([lastScenePass(device), world.resources.get(MeshRenderStats).trianglesDrawn]).toEqual([undefined, 0]);
         expect(device.queue.submissions.length).toBeGreaterThan(0);
     });
 
@@ -346,11 +348,11 @@ describe("GpuMeshPassSystem", () => {
 
     test("selects the same LOD levels and draws the same triangles as the software pass, culling what is off screen or behind", async () => {
         const mesh = meshWithLods();
-        const software = softwareLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, LOD_ON);
-        const {pass, device} = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, LOD_ON);
+        const software = softwareLodStats(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, LOD_ON);
+        const {stats, device} = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, LOD_ON);
         expect(Array.from(software.lodLevelCounts.subarray(0, LOD_GRID_CELLS.length))).toEqual([1, 1, 1, 1]);
-        expect(Array.from(pass.lodLevelCounts)).toEqual(Array.from(software.lodLevelCounts));
-        expect(pass.trianglesDrawn).toBe(software.trianglesDrawn);
+        expect(Array.from(stats.lodLevelCounts)).toEqual(Array.from(software.lodLevelCounts));
+        expect(stats.trianglesDrawn).toBe(software.trianglesDrawn);
         const drawnIndexCounts = lastScenePass(device)!.callsOf("drawIndexed").map(call => call.args[0]);
         expect(drawnIndexCounts).toEqual(mesh.lods.map(level => level.triangleCount * TRIANGLE_CORNERS));
     });
@@ -358,27 +360,27 @@ describe("GpuMeshPassSystem", () => {
     test("the bias and the lod toggle select levels as the software pass does", async () => {
         const mesh = meshWithLods();
         for (const settings of [{lod: true, lodBias: ONE_LEVEL_COARSER}, {lod: false, lodBias: 0}]) {
-            const software = softwareLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, settings);
-            const {pass} = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, settings);
-            expect(Array.from(pass.lodLevelCounts)).toEqual(Array.from(software.lodLevelCounts));
-            expect(pass.trianglesDrawn).toBe(software.trianglesDrawn);
+            const software = softwareLodStats(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, settings);
+            const {stats} = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, settings);
+            expect(Array.from(stats.lodLevelCounts)).toEqual(Array.from(software.lodLevelCounts));
+            expect(stats.trianglesDrawn).toBe(software.trianglesDrawn);
         }
-        const {pass: lodOff} = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, {lod: false, lodBias: 0});
+        const {stats: lodOff} = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, {lod: false, lodBias: 0});
         expect(Array.from(lodOff.lodLevelCounts.subarray(0, LOD_GRID_CELLS.length))).toEqual([4, 0, 0, 0]);
     });
 
     test("instances of one mesh at different levels are separate batches with their own instance ranges", async () => {
         const mesh = meshWithLods();
         const nearAndFar: Placement[] = [{x: 0, z: 1.5}, {x: 0.5, z: 12}, {x: -0.5, z: 1.6}, {x: 0, z: 13}];
-        const {pass, device} = await gpuLodPass(mesh, nearAndFar, LOD_ON);
-        expect(Array.from(pass.lodLevelCounts.subarray(0, LOD_GRID_CELLS.length))).toEqual([2, 0, 0, 2]);
+        const {stats, device} = await gpuLodPass(mesh, nearAndFar, LOD_ON);
+        expect(Array.from(stats.lodLevelCounts.subarray(0, LOD_GRID_CELLS.length))).toEqual([2, 0, 0, 2]);
         const draws = lastScenePass(device)!.callsOf("drawIndexed").map(call => [call.args[0], call.args[1], call.args[4]]);
         expect(draws).toEqual([[mesh.lods[0].triangleCount * TRIANGLE_CORNERS, 2, 0], [mesh.lods[3].triangleCount * TRIANGLE_CORNERS, 2, 2]]);
     });
 
-    test("LOD and filtering defaults match the pixels mesh pass: LOD on, no bias, the same triangle budget, nearest texels", () => {
+    test("LOD and filtering defaults match the pixels mesh pass: the same triangle budget, nearest texels", () => {
         const gpu = new GpuMeshPassSettings(), pixels = new MeshPixelPassSettings();
-        expect([gpu.lod, gpu.lodBias, gpu.lodTrianglesPerPixel]).toEqual([pixels.lod, pixels.lodBias, pixels.lodTrianglesPerPixel]);
+        expect(gpu.lodTrianglesPerPixel).toBe(pixels.lodTrianglesPerPixel);
         expect(gpu.textureFiltering).toBe(NEAREST_TEXTURE_FILTERING);
     });
 

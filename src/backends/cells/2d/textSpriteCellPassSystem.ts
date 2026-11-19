@@ -1,4 +1,5 @@
 import {System} from "../../../engine/core";
+import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {CellGrid} from "../cellGrid";
 import {HudElement} from "../../../engine/rendering/hudElement";
@@ -15,6 +16,7 @@ import {MAT4_FLOATS_SHIFT, MAT4_TRANSLATION_Z} from "../../../engine/math/mat4La
 const CAMERA_DEPTH_EXTENT = 1000;
 
 export class TextSpriteCellPassSystem extends System {
+    public static readonly renderPass: RenderPassKind = "worldText";
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
     private _objectQuery = this.createEntityQuery([TextSprite, WorldSpaceRenderBounds], [HudElement])

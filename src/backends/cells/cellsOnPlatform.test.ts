@@ -8,6 +8,7 @@ import {Camera} from "../../engine/rendering/camera";
 import {ScreenSize} from "../../engine/rendering/screenSize";
 import {TextColor} from "../../engine/rendering/textColor";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
+import {MeshRenderSettings} from "../../engine/rendering/3d/meshRenderSettings";
 import {CellCameraSizingSystem} from "./cellCameraSizingSystem";
 import {CellRenderSystemGroup} from "./cellRenderSystemGroup";
 import {CellPresenterResource} from "./cellPresenterResource";
@@ -322,7 +323,7 @@ describe("MeshCellPassSettings worker count", () => {
     const resolve = (platform: MemoryPlatform, workerCount: number | "auto" = "auto") => {
         const settings = new MeshCellPassSettings();
         settings.workerCount = workerCount;
-        return settings.toRasterizerConfig(platform).workerCount;
+        return settings.toRasterizerConfig(platform, new MeshRenderSettings()).workerCount;
     };
 
     test("auto leaves one core to the main thread, up to 7 workers", () => {

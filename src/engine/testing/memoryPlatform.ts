@@ -169,6 +169,7 @@ export class MemoryPlatform implements Platform {
     private readonly _requestedRasterWorkers: number | undefined;
     private readonly exitCallbacks = new Set<() => void>();
     private _now: number;
+    private _quitCount = 0;
 
     public constructor(options: MemoryPlatformOptions = {}) {
         this.files = options.fileSource ?? new MemoryFileSource(options.files ?? {});
@@ -212,4 +213,13 @@ export class MemoryPlatform implements Platform {
         this.exitCallbacks.clear();
         for (const callback of callbacks) callback();
     }
+
+    public get quitCount(): number {
+        return this._quitCount;
+    }
+
+    public readonly quit = (): void => {
+        this._quitCount++;
+        this.exit();
+    };
 }

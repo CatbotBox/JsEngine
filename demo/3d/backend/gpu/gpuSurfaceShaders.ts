@@ -1,9 +1,10 @@
-import {EntityCommandBufferSystem, System} from "../../../src/engine/core";
-import type {ShaderSource} from "../../../src/engine/rendering";
-import {RenderMesh} from "../../../src/engine/rendering/3d";
-import {GpuShaderLibrary, GpuSurfaceShader} from "../../../src/backends/gpu";
-import {Demo3dTuning} from "../tuning";
-import type {SurfaceShaderChoice} from "../tuning";
+import {EntityCommandBufferSystem, System} from "../../../../src/engine/core";
+import type {ShaderSource} from "../../../../src/engine/rendering";
+import {RenderMesh} from "../../../../src/engine/rendering/3d";
+import {GpuRenderBackend} from "../../../../src/engine/rendering/renderBackend";
+import {GpuShaderLibrary, GpuSurfaceShader} from "../../../../src/backends/gpu";
+import {Demo3dTuning} from "../../tuning";
+import type {SurfaceShaderChoice} from "../../tuning";
 
 const FIRST_CHOICE = 0;
 const NEXT_CHOICE_STEP = 1;
@@ -29,6 +30,7 @@ export class DemoSurfaceShaderSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(GpuRenderBackend);
         this.requireAnyForUpdate(this._unassigned);
         this.requireAnyForUpdate(this._assigned);
     }

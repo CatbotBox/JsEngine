@@ -6,6 +6,7 @@ export interface Platform {
     readonly requestedRasterWorkers?: () => number | undefined;
     readonly now: () => number;
     readonly onExit: (callback: () => void) => () => void;
+    readonly quit: () => void;
     readonly frameScheduler?: FrameScheduler;
 }
 

@@ -4,10 +4,6 @@ import {RunningList} from "./runningList";
 const FIRST_INDEX = 0;
 const NO_SYSTEM_RAN_YET = false;
 
-function runsInWalk(system: System): boolean {
-    return system.enabled && system.requirementsMet;
-}
-
 export abstract class SystemGroup extends System {
     public get systems(): System[] {
         return this._systems;
@@ -26,8 +22,18 @@ export abstract class SystemGroup extends System {
         return this._order;
     }
 
+    private readonly runsInWalk = (system: System): boolean => system.enabled && system.requirementsMet && this.walksChild(system);
+
     protected blocksPresentation(): boolean {
         return false;
+    }
+
+    protected updatedByParent(): boolean {
+        return true;
+    }
+
+    protected walksChild(system: System): boolean {
+        return !(system instanceof SystemGroup) || system.updatedByParent();
     }
 
     public override update(): void {
@@ -86,7 +92,7 @@ export abstract class SystemGroup extends System {
     }
 
     protected joinedNow(system: System): void {
-        if (runsInWalk(system)) this._running.insert(system, this._order);
+        if (this.runsInWalk(system)) this._running.insert(system, this._order);
     }
 
     protected applyOrderChanges(): void {
@@ -99,11 +105,11 @@ export abstract class SystemGroup extends System {
     }
 
     protected runningListOf(system: System): RunningList | undefined {
-        return this._running;
+        return this.walksChild(system) ? this._running : undefined;
     }
 
     protected rebuildRunning(): void {
-        this._running.rebuild(this._order, FIRST_INDEX, this._order.length, runsInWalk);
+        this._running.rebuild(this._order, FIRST_INDEX, this._order.length, this.runsInWalk);
     }
 
     public addSystem(system: SystemCtor<System>): void {

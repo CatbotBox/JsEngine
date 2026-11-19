@@ -4,6 +4,7 @@ import {Input, resolveInputActions} from "../../src/engine/input";
 import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
 import {
     Camera,
+    RenderPasses,
     SCREEN_UNIT_HEIGHT_PER_WIDTH,
     ScreenSize,
     SPRITE_PIXELS_PER_SCREEN_UNIT_X,
@@ -21,14 +22,8 @@ import {SwarmPhase, SwarmState} from "./resources";
 import {MS_PER_SECOND, SwarmTuning} from "./tuning";
 import type {EnemySpawn, ShipTuning, SparkTuning, WaveTuning} from "./tuning";
 
-export interface SwarmRenderControls {
-    toggleHud(): void;
-}
-
 export interface SwarmHost {
-    readonly render: SwarmRenderControls;
     readonly seed?: number;
-    quit(): void;
 }
 
 const Action = {
@@ -78,12 +73,6 @@ const NO_EXTENT = 0;
 const TUNING_FILE = "assets/swarm.tuning.asset.json";
 const STATE_FILE = "assets/swarm.state.asset.json";
 const ENEMY_PREFAB_FIELD = "waves.enemies[].prefab";
-
-class SwarmHostResource extends Resource {
-    public constructor(public readonly host: SwarmHost) {
-        super();
-    }
-}
 
 class SwarmArena extends Resource {
     public halfWidthUnits = 0;
@@ -222,13 +211,11 @@ class SwarmControlSystem extends System {
     onUpdate(): void {
         const input = this.world.resources.get(Input);
         const state = this.world.resources.get(SwarmState);
-        const host = this.world.resources.get(SwarmHostResource).host;
         if (input.actionPressed(this._actions.Quit)) {
-            this.world.stop();
-            host.quit();
+            this.world.requestQuit();
             return;
         }
-        if (input.actionPressed(this._actions.ToggleHud)) host.render.toggleHud();
+        if (input.actionPressed(this._actions.ToggleHud)) this.world.resources.tryGet(RenderPasses)?.toggle("hudText");
         // Starting lasts one frame: the ECB destroyed the old entities at the end of the frame that queued it, so reset only now.
         if (state.phase === SwarmPhase.Starting) {
             startNewGame(this.world, state);
@@ -667,7 +654,6 @@ function requireSwarmData(world: World): void {
 
 export function setupSwarm(world: World, host: SwarmHost): void {
     requireSwarmData(world);
-    world.resources.insert(new SwarmHostResource(host));
     world.resources.insert(new Random(host.seed));
     world.resources.insert(new EnemyGrid());
     world.resources.insert(new SwarmArena());

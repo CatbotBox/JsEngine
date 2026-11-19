@@ -1,6 +1,7 @@
 import {Component} from "../../../engine/core";
 import {clampSupersample, RasterWorkerPool} from "../../../engine/rendering/3d/software";
 import type {MeshRasterizerConfig} from "../../../engine/rendering/3d/software";
+import type {MeshRenderSettings} from "../../../engine/rendering/3d/meshRenderSettings";
 import {resolveRasterWorkerCount} from "../../../engine/rendering/3d/software/rasterWorkerCount";
 import type {RasterWorkerCount, RasterWorkerHost} from "../../../engine/rendering/3d/software/rasterWorkerCount";
 import {PACKED_RGB_MASK} from "../../../engine/rendering/packedRgb";
@@ -20,16 +21,19 @@ function wholeFramebufferPixelsPerRasterPixel(requested: number): number {
         : MIN_FRAMEBUFFER_PIXELS_PER_RASTER_PIXEL;
 }
 
+function supersampleXOf(meshes: MeshRenderSettings): number {
+    return meshes.supersampleX ?? DEFAULT_SUPERSAMPLE;
+}
+
+function supersampleYOf(meshes: MeshRenderSettings): number {
+    return meshes.supersampleY ?? DEFAULT_SUPERSAMPLE;
+}
+
 export class MeshPixelPassSettings extends Component {
     public maxDepthFade: number = Number.POSITIVE_INFINITY;
-    public supersampleX: number = DEFAULT_SUPERSAMPLE;
-    public supersampleY: number = DEFAULT_SUPERSAMPLE;
     public workerCount: RasterWorkerCount = "auto";
     public threadTriangleThreshold: number = DEFAULT_THREAD_TRIANGLE_THRESHOLD;
     public threadAreaThreshold: number = DEFAULT_THREAD_AREA_THRESHOLD_RASTER_PIXELS;
-    public textures: boolean = true;
-    public lod: boolean = true;
-    public lodBias: number = 0;
     public lodTrianglesPerPixel: number = DEFAULT_LOD_TRIANGLES_PER_PIXEL;
     public framebufferPixelsPerRasterPixel: FramebufferPixelsPerRasterPixel = "fitWorkerPool";
 
@@ -37,9 +41,9 @@ export class MeshPixelPassSettings extends Component {
         return resolveRasterWorkerCount(this.workerCount, host);
     }
 
-    public resolvedFramebufferPixelsPerRasterPixel(framebufferWidthPx: number, framebufferHeightPx: number): number {
+    public resolvedFramebufferPixelsPerRasterPixel(framebufferWidthPx: number, framebufferHeightPx: number, meshes: MeshRenderSettings): number {
         if (this.framebufferPixelsPerRasterPixel !== "fitWorkerPool") return wholeFramebufferPixelsPerRasterPixel(this.framebufferPixelsPerRasterPixel);
-        const subsamplesPerRasterPixel = clampSupersample(this.supersampleX) * clampSupersample(this.supersampleY);
+        const subsamplesPerRasterPixel = clampSupersample(supersampleXOf(meshes)) * clampSupersample(supersampleYOf(meshes));
         let framebufferPixelsPerRasterPixel = MIN_FRAMEBUFFER_PIXELS_PER_RASTER_PIXEL;
         while (Math.ceil(framebufferWidthPx / framebufferPixelsPerRasterPixel) * Math.ceil(framebufferHeightPx / framebufferPixelsPerRasterPixel)
             * subsamplesPerRasterPixel > RasterWorkerPool.MAX_CELLS) {
@@ -48,17 +52,18 @@ export class MeshPixelPassSettings extends Component {
         return framebufferPixelsPerRasterPixel;
     }
 
-    public toRasterizerConfig(host: RasterWorkerHost): MeshRasterizerConfig {
+    public toRasterizerConfig(host: RasterWorkerHost, meshes: MeshRenderSettings): MeshRasterizerConfig {
+        const supersampleX = supersampleXOf(meshes);
         return {
             maxDepthFade: this.maxDepthFade,
             colorQuantMask: PACKED_RGB_MASK,
-            supersample: this.supersampleX,
-            supersampleX: this.supersampleX,
-            supersampleY: this.supersampleY,
+            supersample: supersampleX,
+            supersampleX,
+            supersampleY: supersampleYOf(meshes),
             workerCount: this.resolvedWorkerCount(host),
             threadTriangleThreshold: this.threadTriangleThreshold,
             threadAreaThreshold: this.threadAreaThreshold,
-            textures: this.textures,
+            textures: meshes.textures,
             halfBlock: NO_HALF_BLOCK,
         };
     }

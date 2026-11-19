@@ -575,6 +575,13 @@ describe("PageConnection (the world worker's platform)", () => {
         expect(scope.posted.slice(3)).toEqual([{type: "error", message: "boom"}, {type: "error", message: "plain"}]);
     });
 
+    test("the platform's quit posts quit to the page", async () => {
+        const scope = new FakeScope();
+        const {platform} = await openConnection(scope);
+        platform.quit();
+        expect(scope.posted).toEqual([{type: "quit"}]);
+    });
+
     test("the presenter is backlogged while two frames wait for the page to present them", async () => {
         const scope = new FakeScope();
         const presenter = (await openConnection(scope)).cellPresenter();

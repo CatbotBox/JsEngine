@@ -1,12 +1,12 @@
-import {DebugWorld, EntityQuery} from "../src/engine/core";
+import {App, EntityQuery} from "../src/engine/core";
+import type {DebugWorld} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {Input, Key, NO_MODIFIERS} from "../src/engine/input";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {GREEN_SHIFT, RED_SHIFT, SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../src/engine/rendering";
 import {LocalPosition} from "../src/engine/translation";
-import {CellPresenterResource} from "../src/backends/cells";
-import {MemoryPixelPresenter, PixelPresenterResource, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels";
+import {MemoryPixelPresenter, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {TerminalScreen} from "./support/terminalScreen";
@@ -217,10 +217,10 @@ async function runOnCells(): Promise<void> {
     log("--- Swarm on cells");
     const terminal = new MemoryTerminal(TERMINAL_SIZE);
     const screen = new TerminalScreen(TERMINAL_SIZE.columns, TERMINAL_SIZE.rows);
-    const world = new DebugWorld({platform: projectPlatform()});
-    world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(terminal)));
-    let quits = 0;
-    await launchSwarm(world, {renderBackend: "cells", installRendering: installCellRenderingSwarm, seed: SEED, quit: () => quits++});
+    const platform = projectPlatform();
+    const world = new App({platform}).createDebugWorld();
+    const presenter = new AnsiCellPresenter(terminal);
+    await launchSwarm(world, {installRendering: () => installCellRenderingSwarm(world, presenter), seed: SEED});
     const driver = new SwarmDriver(world, () => {
         screen.write(terminal.text());
         terminal.clear();
@@ -317,7 +317,7 @@ async function runOnCells(): Promise<void> {
     driver.hold(NO_KEYS);
     driver.tap(Key.Escape);
     driver.step();
-    expect(quits === 1, "Esc stops the world and asks the host to quit");
+    expect(platform.quitCount === 1, "Esc stops the world and quits the platform");
 }
 
 function rgbAt(frame: PixelFrame, index: number): number {
@@ -334,10 +334,9 @@ function pixelsMatching(frame: PixelFrame, firstRow: number, lastRow: number, ma
 async function runOnPixels(): Promise<void> {
     log("--- Swarm on pixels");
     const presenter = new MemoryPixelPresenter(PIXEL_SIZE);
-    const world = new DebugWorld({platform: projectPlatform()});
-    world.resources.insert(new PixelPresenterResource(presenter));
-    let quits = 0;
-    await launchSwarm(world, {renderBackend: "pixels", installRendering: installPixelRenderingSwarm, seed: SEED, quit: () => quits++});
+    const platform = projectPlatform();
+    const world = new App({platform}).createDebugWorld();
+    await launchSwarm(world, {installRendering: () => installPixelRenderingSwarm(world, presenter), seed: SEED});
     const driver = new SwarmDriver(world, () => presenter.frames.splice(0, presenter.frames.length - KEEP_LAST_FRAME));
     const isPainted = (rgb: number) => rgb !== BACKGROUND_RGB;
     const swarmerRgb = swarmerColorOf(world);
@@ -357,7 +356,7 @@ async function runOnPixels(): Promise<void> {
 
     driver.tap(Key.Escape);
     driver.step();
-    expect(quits === 1, "Esc quits on pixels too");
+    expect(platform.quitCount === 1, "Esc quits on pixels too");
 }
 
 async function main(): Promise<void> {

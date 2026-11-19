@@ -1,17 +1,9 @@
-import {System, World} from "../../../src/engine/core";
-import {HudTextSpritePixelPassSystem} from "../../../src/backends/pixels";
-import {SpritePixelPassSystem} from "../../../src/backends/pixels/2d";
-import type {SwarmRenderControls} from "../game";
+import type {World} from "../../../src/engine/core";
+import {installPixelsBackend} from "../../../src/backends/pixels/pixelsBackend";
+import type {PixelPresenter} from "../../../src/backends/pixels/pixelPresenter";
+import {PIXELS_HUD_TEXT_PASSES} from "../../../src/backends/pixels/pixelsHudTextPasses";
+import {PIXELS_SPRITE_PASSES} from "../../../src/backends/pixels/2d/pixelsSpritePasses";
 
-function toggle(system: System | undefined): void {
-    if (system) system.enabled = !system.enabled;
-}
-
-export function installPixelRenderingSwarm(world: World): SwarmRenderControls {
-    world.ensureSystemExists(SpritePixelPassSystem);
-    world.ensureSystemExists(HudTextSpritePixelPassSystem);
-
-    return {
-        toggleHud: () => toggle(world.tryGetSystem(HudTextSpritePixelPassSystem)),
-    };
+export function installPixelRenderingSwarm(world: World, presenter: PixelPresenter): void {
+    installPixelsBackend(world, presenter, [...PIXELS_SPRITE_PASSES, ...PIXELS_HUD_TEXT_PASSES]);
 }

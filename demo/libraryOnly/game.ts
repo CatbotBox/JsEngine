@@ -1,4 +1,4 @@
-import {Component, Resource, System} from "../../src/engine/core";
+import {Component, System} from "../../src/engine/core";
 import type {World} from "../../src/engine/core";
 import {Input, Key} from "../../src/engine/input";
 import {directoryFileSource} from "../../src/engine/platform/directoryFileSource";
@@ -12,19 +12,12 @@ const QUIT_KEYS: readonly Key[] = [Key.Escape, Key.Q];
 
 export interface LibraryOnlyHost {
     readonly directory: string;
-    quit(): void;
 }
 
 export class Drift extends Component {
     public static readonly schema = componentSchema(Drift, "Drift").number("unitsPerSecondX").number("unitsPerSecondY").build();
     public unitsPerSecondX = 0;
     public unitsPerSecondY = 0;
-}
-
-class LibraryOnlyHostResource extends Resource {
-    public constructor(public readonly host: LibraryOnlyHost) {
-        super();
-    }
 }
 
 class DriftSystem extends System {
@@ -46,7 +39,7 @@ class DriftSystem extends System {
 class QuitOnKeySystem extends System {
     public onUpdate(): void {
         const input = this.world.resources.get(Input);
-        if (QUIT_KEYS.some(key => input.keyPressed(key))) this.world.resources.get(LibraryOnlyHostResource).host.quit();
+        if (QUIT_KEYS.some(key => input.keyPressed(key))) this.world.requestQuit();
     }
 }
 
@@ -58,7 +51,6 @@ export function createLibraryOnlyRegistry(): ComponentSchemaRegistry {
 }
 
 export async function startLibraryOnlyGame(world: World, host: LibraryOnlyHost): Promise<void> {
-    world.resources.insert(new LibraryOnlyHostResource(host));
     world.resources.getOrCreate(Input);
     const scenes = new SceneManager(world, createLibraryOnlyRegistry(), {files: directoryFileSource(world.platform.files, host.directory)});
     await scenes.load(LIBRARY_ONLY_START_SCENE);

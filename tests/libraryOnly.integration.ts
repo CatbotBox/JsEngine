@@ -1,13 +1,13 @@
 import {existsSync, readdirSync} from "fs";
 import {join, resolve} from "path";
-import {DebugWorld, EntityQuery} from "../src/engine/core";
+import {App, EntityQuery} from "../src/engine/core";
 import {Input} from "../src/engine/input";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {LocalPosition} from "../src/engine/translation";
-import {CellPresenterResource} from "../src/backends/cells";
-import {TextSpriteCellPassSystem} from "../src/backends/cells/2d";
+import {installCellsBackend} from "../src/backends/cells";
+import {CELLS_WORLD_TEXT_PASSES} from "../src/backends/cells/2d";
 import {Ansi, AnsiCellPresenter, nodePlatform, TerminalInput} from "../src/hosts/terminal";
 import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
 import {Drift, startLibraryOnlyGame} from "../demo/libraryOnly/game";
@@ -59,12 +59,10 @@ async function main(): Promise<void> {
 
     const platform = new MemoryPlatform({fileSource: nodePlatform().files});
     const terminal = new MemoryTerminal(TERMINAL_SIZE);
-    const world = new DebugWorld({platform});
-    world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(terminal)));
-    world.ensureSystemExists(TextSpriteCellPassSystem);
+    const world = new App({platform}).createDebugWorld();
+    installCellsBackend(world, new AnsiCellPresenter(terminal), CELLS_WORLD_TEXT_PASSES);
     const terminalInput = new TerminalInput({terminal, platform, sink: world.resources.getOrCreate(Input), mouse: false}).start();
-    let quits = 0;
-    await startLibraryOnlyGame(world, {directory: EXAMPLE_DIRECTORY, quit: () => quits++});
+    await startLibraryOnlyGame(world, {directory: EXAMPLE_DIRECTORY});
 
     for (let frame = 0; frame < FRAMES; frame++) world.step(FRAME_MS);
 
@@ -76,10 +74,10 @@ async function main(): Promise<void> {
 
     terminal.feed(QUIT_KEY);
     world.step(FRAME_MS);
-    expect(quits === 1, "Q asked the host to quit");
+    expect(platform.quitCount === 1, "Q quit the platform");
+    expect(world.systemCount === 0, "the quit stopped the world");
 
     terminalInput.stop();
-    world.stop();
     consoleOverride.removeConsoleEventListener(errorRecorder);
 
     if (failures > 0) {
