@@ -71,7 +71,7 @@ export class MeshPixelPassSystem extends System {
         const framebuffer = this.world.resources.tryGet(PixelFramebuffer);
         if (!framebuffer) return;
 
-        const framebufferPixelsPerRasterPixel = settings.resolvedFramebufferPixelsPerRasterPixel(framebuffer.widthPx, framebuffer.heightPx, meshSettings);
+        const framebufferPixelsPerRasterPixel = settings.resolvedFramebufferPixelsPerRasterPixel(framebuffer.widthPx, framebuffer.heightPx);
         this._resolveTarget.begin(framebuffer, framebufferPixelsPerRasterPixel);
         this._drawer.draw({
             target: this._resolveTarget,

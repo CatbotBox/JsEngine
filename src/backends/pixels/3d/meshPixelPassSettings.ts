@@ -21,16 +21,10 @@ function wholeFramebufferPixelsPerRasterPixel(requested: number): number {
         : MIN_FRAMEBUFFER_PIXELS_PER_RASTER_PIXEL;
 }
 
-function supersampleXOf(meshes: MeshRenderSettings): number {
-    return meshes.supersampleX ?? DEFAULT_SUPERSAMPLE;
-}
-
-function supersampleYOf(meshes: MeshRenderSettings): number {
-    return meshes.supersampleY ?? DEFAULT_SUPERSAMPLE;
-}
-
 export class MeshPixelPassSettings extends Component {
     public maxDepthFade: number = Number.POSITIVE_INFINITY;
+    public supersampleX: number = DEFAULT_SUPERSAMPLE;
+    public supersampleY: number = DEFAULT_SUPERSAMPLE;
     public workerCount: RasterWorkerCount = "auto";
     public threadTriangleThreshold: number = DEFAULT_THREAD_TRIANGLE_THRESHOLD;
     public threadAreaThreshold: number = DEFAULT_THREAD_AREA_THRESHOLD_RASTER_PIXELS;
@@ -41,9 +35,9 @@ export class MeshPixelPassSettings extends Component {
         return resolveRasterWorkerCount(this.workerCount, host);
     }
 
-    public resolvedFramebufferPixelsPerRasterPixel(framebufferWidthPx: number, framebufferHeightPx: number, meshes: MeshRenderSettings): number {
+    public resolvedFramebufferPixelsPerRasterPixel(framebufferWidthPx: number, framebufferHeightPx: number): number {
         if (this.framebufferPixelsPerRasterPixel !== "fitWorkerPool") return wholeFramebufferPixelsPerRasterPixel(this.framebufferPixelsPerRasterPixel);
-        const subsamplesPerRasterPixel = clampSupersample(supersampleXOf(meshes)) * clampSupersample(supersampleYOf(meshes));
+        const subsamplesPerRasterPixel = clampSupersample(this.supersampleX) * clampSupersample(this.supersampleY);
         let framebufferPixelsPerRasterPixel = MIN_FRAMEBUFFER_PIXELS_PER_RASTER_PIXEL;
         while (Math.ceil(framebufferWidthPx / framebufferPixelsPerRasterPixel) * Math.ceil(framebufferHeightPx / framebufferPixelsPerRasterPixel)
             * subsamplesPerRasterPixel > RasterWorkerPool.MAX_CELLS) {
@@ -53,13 +47,12 @@ export class MeshPixelPassSettings extends Component {
     }
 
     public toRasterizerConfig(host: RasterWorkerHost, meshes: MeshRenderSettings): MeshRasterizerConfig {
-        const supersampleX = supersampleXOf(meshes);
         return {
             maxDepthFade: this.maxDepthFade,
             colorQuantMask: PACKED_RGB_MASK,
-            supersample: supersampleX,
-            supersampleX,
-            supersampleY: supersampleYOf(meshes),
+            supersample: this.supersampleX,
+            supersampleX: this.supersampleX,
+            supersampleY: this.supersampleY,
             workerCount: this.resolvedWorkerCount(host),
             threadTriangleThreshold: this.threadTriangleThreshold,
             threadAreaThreshold: this.threadAreaThreshold,

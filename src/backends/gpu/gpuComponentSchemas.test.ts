@@ -7,7 +7,7 @@ import {deserializeInto, serializeWorld} from "../../engine/scene/sceneSerializa
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import {registerPixelsComponentSchemas} from "../pixels/pixelsComponentSchemas";
 import {registerGpuComponentSchemas} from "./gpuComponentSchemas";
-import {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING} from "./gpuMeshPassSettings";
+import {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import {GpuSurfaceShader, LIT_SURFACE_SHADER} from "./gpuSurfaceShader";
 
 const DEPTH_RANGE = 250;
@@ -32,6 +32,7 @@ describe("gpu component schemas", () => {
         registerGpuComponentSchemas(registry);
 
         const settings = new GpuMeshPassSettings();
+        settings.sampleCount = SINGLE_SAMPLE_COUNT;
         settings.orthographicDepthRange = DEPTH_RANGE;
         settings.evictUnusedMeshAfterFrames = EVICT_AFTER_FRAMES;
         settings.textureFiltering = LINEAR_TEXTURE_FILTERING;
@@ -40,13 +41,13 @@ describe("gpu component schemas", () => {
         source.entityManager.createEntity("settings", [settings]);
         const saved = serializeWorld(source, registry);
         expect(saved.document.entities[0].components.GpuMeshPassSettings).toEqual({
-            textureFiltering: "linear", orthographicDepthRange: DEPTH_RANGE, evictUnusedMeshAfterFrames: EVICT_AFTER_FRAMES, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL,
+            textureFiltering: "linear", sampleCount: "single", orthographicDepthRange: DEPTH_RANGE, evictUnusedMeshAfterFrames: EVICT_AFTER_FRAMES, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL,
         });
 
         const target = new World({platform: new MemoryPlatform()});
         const loaded = deserializeInto(target, registry, parseSceneDocument(JSON.stringify(saved.document)));
         const loadedSettings = target.entityManager.getComponent<GpuMeshPassSettings>(loaded.entities[0], GpuMeshPassSettings)!;
-        expect([loadedSettings.textureFiltering, loadedSettings.orthographicDepthRange, loadedSettings.lodTrianglesPerPixel]).toEqual([LINEAR_TEXTURE_FILTERING, DEPTH_RANGE, LOD_TRIANGLES_PER_PIXEL]);
+        expect([loadedSettings.textureFiltering, loadedSettings.sampleCount, loadedSettings.orthographicDepthRange, loadedSettings.lodTrianglesPerPixel]).toEqual([LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT, DEPTH_RANGE, LOD_TRIANGLES_PER_PIXEL]);
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
     });
 

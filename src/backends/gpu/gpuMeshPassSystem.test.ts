@@ -80,7 +80,6 @@ const MANY_FRAMES = 8;
 const CLOCK_ADVANCE_MS = 20;
 const MS_PER_SECOND = 1000;
 const HALF = 2;
-const ONE_SAMPLE_PER_AXIS = 1;
 
 function ignore(): void {
 }
@@ -305,7 +304,7 @@ describe("GpuMeshPassSystem", () => {
         expect(cullModes).toEqual(["back", "none"]);
     });
 
-    test("defaults without settings: 4x multisampling over the pixel background; 1x1 mesh supersampling switches to one sample, and textures off", async () => {
+    test("defaults without settings: 4x multisampling over the pixel background; a single sample count switches to one sample, and textures off", async () => {
         const rig = gpuWorld();
         const {world, device} = rig;
         world.entityManager.createEntity("render settings", [Object.assign(new PixelRenderSettings(), {backgroundColor: BACKGROUND})]);
@@ -318,8 +317,8 @@ describe("GpuMeshPassSystem", () => {
         expect(colorOf(lastScenePass(device)!).clearValue).toEqual(clearColorOf(BACKGROUND));
         expect(sampleCountOf(lastScenePass(device)!)).toBe(MULTISAMPLE_COUNT);
 
-        const meshSettings = Object.assign(new MeshRenderSettings(), {supersampleX: ONE_SAMPLE_PER_AXIS, supersampleY: ONE_SAMPLE_PER_AXIS, textures: false});
-        world.entityManager.createEntity("mesh settings", [meshSettings]);
+        world.entityManager.createEntity("gpu settings", [Object.assign(new GpuMeshPassSettings(), {sampleCount: SINGLE_SAMPLE_COUNT})]);
+        world.entityManager.createEntity("mesh settings", [Object.assign(new MeshRenderSettings(), {textures: false})]);
         await step(rig, SETTLE_STEPS);
         expect(sampleCountOf(lastScenePass(device)!)).toBe(SINGLE_SAMPLE_COUNT);
         const materialWrites = device.queue.bufferWrites.filter(write => write.buffer.descriptor.label === "material textured");

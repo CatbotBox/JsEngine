@@ -60,7 +60,7 @@ const DISABLED = false;
 const PREFAB_PATH = "prefabs/hud.prefab.json";
 const SCENE_INSTANCE_ID = 3;
 const CATCH_UP_TICKS = 3;
-const MESH_SUPERSAMPLE_Y = 2;
+const MESH_LOD_BIAS = 2;
 const SCENE_INSTANCE_PATH = "scenes/lights.scene.json";
 const EMPTY_LOAD_REPORT = {skippedComponentTypes: [], skippedResourceTypes: [], danglingEntityRefs: [], droppedComponents: [], changedSchemas: []};
 
@@ -143,7 +143,7 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     frameLoop.renderRate = UNCAPPED_RENDER_RATE;
     frameLoop.maxCatchUpTicks = CATCH_UP_TICKS;
     const meshSettings = new MeshRenderSettings();
-    meshSettings.supersampleY = MESH_SUPERSAMPLE_Y;
+    meshSettings.lodBias = MESH_LOD_BIAS;
     em.createEntity("ambient", [new AmbientLight(0x101010, 0.3), new SceneInstance(SCENE_INSTANCE_ID, SCENE_INSTANCE_PATH), frameLoop, meshSettings]);
 
     const asleep = em.createEntity("asleep", [new LocalPosition(7, 7, 7)]);
