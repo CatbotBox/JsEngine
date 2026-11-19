@@ -11,13 +11,13 @@ import type {SceneLights} from "../lighting/sceneLights";
 import {VertexLighting} from "../lighting/vertexLighting";
 import {selectLodLevel} from "../meshLod";
 import {ScreenProjectedBounds} from "../screenProjectedBounds";
+import {TRACKED_LOD_LEVELS} from "../meshRenderStats";
 import {MAT4_FLOATS} from "../../../math/mat4Layout";
 import type {WorkerFactory} from "../../../platform";
 import {MeshRasterizer} from "./meshRasterizer";
 import type {MeshRasterizerConfig} from "./meshRasterizer";
 import type {RasterTarget} from "./rasterTarget";
 
-const TRACKED_LOD_LEVELS = 8;
 const MAT3_FLOATS = 9;
 
 export type StreamableQuery = Pick<EntityQuery, "stream">;

@@ -5,6 +5,7 @@ import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {GREEN_SHIFT, RED_SHIFT} from "../src/engine/rendering";
 import {RenderMesh} from "../src/engine/rendering/3d/renderMesh";
+import {MeshRenderStats} from "../src/engine/rendering/3d/meshRenderStats";
 import {
     ComponentSchemaRegistry,
     deserializeInto,
@@ -14,17 +15,17 @@ import {
     serializeWorld,
 } from "../src/engine/scene";
 import type {SceneDocument, SerializedScene} from "../src/engine/scene";
-import {CellPresenterResource, HudTextSpriteCellPassSystem, registerCellsComponentSchemas} from "../src/backends/cells";
-import {HudSpriteCellPassSystem, SpriteCellPassSystem} from "../src/backends/cells/2d";
+import {CELLS_HUD_TEXT_PASSES, installCellsBackend, registerCellsComponentSchemas} from "../src/backends/cells";
+import {CELLS_HUD_SPRITE_PASSES, CELLS_SPRITE_PASSES} from "../src/backends/cells/2d";
 import {
-    HudTextSpritePixelPassSystem,
+    installPixelsBackend,
     MemoryPixelPresenter,
-    PixelPresenterResource,
+    PIXELS_HUD_TEXT_PASSES,
     RGBA_BYTES_PER_PIXEL,
     registerPixelsComponentSchemas,
 } from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
-import {MeshPixelPassSystem} from "../src/backends/pixels/3d";
+import {PIXELS_MESH_PASSES} from "../src/backends/pixels/3d";
 import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {TerminalScreen} from "./support/terminalScreen";
 import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
@@ -97,8 +98,8 @@ async function runDemo2dOnCells(): Promise<void> {
     const platform = new MemoryPlatform({fileSource: nodePlatform().files});
 
     const playing = new DebugWorld({platform});
-    playing.resources.insert(new CellPresenterResource(new AnsiCellPresenter(new MemoryTerminal(CELLS))));
-    await launchDemo2d(playing, {renderBackend: "cells", installRendering: installCellRendering2d, quit: () => undefined});
+    const playingPresenter = new AnsiCellPresenter(new MemoryTerminal(CELLS));
+    await launchDemo2d(playing, {installRendering: () => installCellRendering2d(playing, playingPresenter)});
     stepFrames(playing, SETTLE_FRAMES);
     keyDown(playing, Key.Space);
     stepFrames(playing, SPAWN_SETTLE_FRAMES);
@@ -112,10 +113,7 @@ async function runDemo2dOnCells(): Promise<void> {
     const output = new MemoryTerminal(CELLS);
     const screen = new TerminalScreen(CELLS.columns, CELLS.rows);
     const loaded = new DebugWorld({platform});
-    loaded.resources.insert(new CellPresenterResource(new AnsiCellPresenter(output)));
-    loaded.ensureSystemExists(SpriteCellPassSystem);
-    loaded.ensureSystemExists(HudSpriteCellPassSystem);
-    loaded.ensureSystemExists(HudTextSpriteCellPassSystem);
+    installCellsBackend(loaded, new AnsiCellPresenter(output), [...CELLS_SPRITE_PASSES, ...CELLS_HUD_SPRITE_PASSES, ...CELLS_HUD_TEXT_PASSES]);
     const result = deserializeInto(loaded, registry, parseSceneDocument(JSON.stringify(saved.document)), {assets: platformSceneAssetLoader(platform)});
     expect(result.report.droppedComponents.length === 0 && result.report.danglingEntityRefs.length === 0, "loading reported nothing dropped or dangling");
     expect(sameDocument(serializeWorld(loaded, registry).document, saved.document), "the loaded world serializes to the same document");
@@ -144,8 +142,8 @@ async function runDemo3dOnPixels(): Promise<void> {
     const platform = new MemoryPlatform({fileSource: host.files, inflate: host.inflate});
 
     const playing = new DebugWorld({platform});
-    playing.resources.insert(new PixelPresenterResource(new MemoryPixelPresenter(PIXELS)));
-    await launchDemo3d(playing, {renderBackend: "pixels", installRendering: installPixelRendering3d, quit: () => undefined});
+    const playingPresenter = new MemoryPixelPresenter(PIXELS);
+    await launchDemo3d(playing, {installRendering: () => installPixelRendering3d(playing, playingPresenter)});
     stepFrames(playing, SETTLE_FRAMES);
     keyDown(playing, Key.Space);
     stepFrames(playing, SPAWN_SETTLE_FRAMES);
@@ -163,9 +161,7 @@ async function runDemo3dOnPixels(): Promise<void> {
 
     const presenter = new MemoryPixelPresenter(PIXELS);
     const loaded = new DebugWorld({platform});
-    loaded.resources.insert(new PixelPresenterResource(presenter));
-    loaded.ensureSystemExists(MeshPixelPassSystem);
-    loaded.ensureSystemExists(HudTextSpritePixelPassSystem);
+    installPixelsBackend(loaded, presenter, [...PIXELS_MESH_PASSES, ...PIXELS_HUD_TEXT_PASSES]);
     const projectAssets = platformSceneAssetLoader({files: directoryFileSource(platform.files, DEMO_3D_PROJECT_DIRECTORY), inflate: platform.inflate});
     const result = deserializeInto(loaded, registry, parseSceneDocument(JSON.stringify(saved.document)), {assets: projectAssets});
     expect(result.report.droppedComponents.length === 0 && result.report.danglingEntityRefs.length === 0, "loading reported nothing dropped or dangling");
@@ -173,11 +169,11 @@ async function runDemo3dOnPixels(): Promise<void> {
     const loadedMeshes = result.entities.filter(entity => loaded.entityManager.hasComponent(entity, RenderMesh));
     expect(loadedMeshes.length === 2, "both meshes were loaded");
 
-    const pass = loaded.tryGetSystem(MeshPixelPassSystem);
+    const stats = loaded.resources.tryGet(MeshRenderStats);
     let maxTriangles = 0;
     stepFrames(loaded, SETTLE_FRAMES, () => {
         platform.advance(FRAME_MS);
-        maxTriangles = Math.max(maxTriangles, pass?.trianglesDrawn ?? 0);
+        maxTriangles = Math.max(maxTriangles, stats?.trianglesDrawn ?? 0);
     });
     const frame = presenter.lastFrame;
     expect(frame !== undefined, "the loaded world presented a pixel frame");

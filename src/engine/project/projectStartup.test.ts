@@ -63,7 +63,7 @@ function launch(): Launch {
             steps.push(`preload ${paths.join(",")}`);
         },
     });
-    const host: ProjectHost = {files: NO_ASSET_FILES, renderBackend: "pixels", scenes, quit: () => undefined};
+    const host: ProjectHost = {files: NO_ASSET_FILES, scenes};
     const entry: ProjectEntryModule = {
         setupProject: setupWorld => {
             const tuning = setupWorld.resources.tryGet(Tuning);

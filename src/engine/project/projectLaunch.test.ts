@@ -50,22 +50,17 @@ describe("launchProject", () => {
     test("loads the manifest and its resources from the project folder through the preload, then runs the setup", async () => {
         const world = worldWith({[`${DIRECTORY}/${PROJECT_MANIFEST_FILE}`]: MANIFEST_TEXT, [`${DIRECTORY}/${INPUT_PATH}`]: INPUT_TEXT});
         const observed: Observed = {steps: []};
-        let quits = 0;
         const launched = await launchProject(world, {
             directory: DIRECTORY,
             entry: recordingEntry(observed),
-            renderBackend: "cells",
             preload: async paths => {
                 observed.steps.push(`preload ${paths.join(",")}`);
             },
-            quit: () => quits++,
         });
         expect(observed.steps).toEqual([`preload ${PROJECT_MANIFEST_FILE}`, `preload ${INPUT_PATH}`, "setup resolved jump"]);
         expect(launched.manifest.name).toBe("Demo");
         expect(launched.startScene).toBeUndefined();
-        expect(observed.host?.renderBackend).toBe("cells");
-        observed.host?.quit();
-        expect(quits).toBe(1);
+        expect(observed.host).toBe(launched.host);
 
         const input = world.resources.get(Input);
         const {jump} = resolveInputActions(world, JUMP_ACTIONS);
@@ -76,7 +71,7 @@ describe("launchProject", () => {
 
     test("a missing manifest or a missing resource file stops the launch, naming the path", async () => {
         const entry = recordingEntry({steps: []});
-        const launchIn = (world: World) => launchProject(world, {directory: DIRECTORY, entry, renderBackend: "pixels", quit: () => undefined});
+        const launchIn = (world: World) => launchProject(world, {directory: DIRECTORY, entry});
         expect(await failureOf(launchIn(worldWith({})))).toBe(`${DIRECTORY}/${PROJECT_MANIFEST_FILE} does not exist: launch the project from the folder that holds its manifest`);
         expect(await failureOf(launchIn(worldWith({[`${DIRECTORY}/${PROJECT_MANIFEST_FILE}`]: MANIFEST_TEXT}))))
             .toBe(`${PROJECT_MANIFEST_FILE} resources[0]: could not load the InputMap data asset "${INPUT_PATH}": Data asset "${INPUT_PATH}" does not exist`);

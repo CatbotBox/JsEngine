@@ -1,6 +1,6 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
-import {DebugWorld, EntityQuery} from "../src/engine/core";
+import {App, EntityQuery} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {PreloadedFileSource, projectFilePreload} from "../src/hosts/web";
 import type {FileSource, FileStat} from "../src/engine/platform";
@@ -8,13 +8,11 @@ import type {FetchedFile} from "../src/hosts/web";
 import {Input} from "../src/engine/input";
 import {Ansi, AnsiCellPresenter, TerminalInput} from "../src/hosts/terminal";
 import {Camera} from "../src/engine/rendering";
-import {FieldOfView} from "../src/engine/rendering/3d";
+import {FieldOfView, MeshRenderStats} from "../src/engine/rendering/3d";
 import {LocalRotation} from "../src/engine/translation";
 import {Vec} from "../src/engine/math/types/vec";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
-import {CellPresenterResource} from "../src/backends/cells";
-import {MeshCellPassSystem} from "../src/backends/cells/3d";
 import {inflate, meshCachePathFor} from "../src/engine/rendering/3d";
 import {normalizePath} from "../src/engine/platform";
 import {TerminalScreen} from "./support/terminalScreen";
@@ -127,8 +125,8 @@ async function main(): Promise<void> {
 
     const terminal = new TerminalScreen(SIZE.columns, SIZE.rows);
     const gameTerminal = new MemoryTerminal(SIZE);
-    const world = new DebugWorld({platform});
-    world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(gameTerminal)));
+    const world = new App({platform}).createDebugWorld();
+    const presenter = new AnsiCellPresenter(gameTerminal);
     const terminalInput = new TerminalInput({
         terminal: gameTerminal,
         platform,
@@ -136,20 +134,17 @@ async function main(): Promise<void> {
         mouse: true,
         hideCursor: true,
     }).start();
-    let quits = 0;
     const loadStart = performance.now();
     await launchDemo3d(world, {
-        renderBackend: "cells",
         preload: projectFilePreload(preloaded, DEMO_3D_PROJECT_DIRECTORY),
-        installRendering: installCellRendering3d,
-        quit: () => quits++,
+        installRendering: () => installCellRendering3d(world, presenter),
     });
     log(`models loaded in ${(performance.now() - loadStart).toFixed(0)} ms`);
 
     expect(gameTerminal.started && gameTerminal.text().includes("\x1b[?1003h\x1b[?1006h\x1b[?25l"), "the launch wiring started terminal input with the mouse on and the cursor hidden");
     expect(platform.workers === undefined, "the platform offers no workers, as in the browser");
 
-    const pass = world.tryGetSystem(MeshCellPassSystem);
+    const stats = world.resources.tryGet(MeshRenderStats);
     let framesWritten = 0;
     let maxTriangles = 0;
     let maxSceneCells = 0;
@@ -168,7 +163,7 @@ async function main(): Promise<void> {
         const written = gameTerminal.text().slice(before);
         terminal.write(written);
         if (written.length > 0) framesWritten++;
-        maxTriangles = Math.max(maxTriangles, pass?.trianglesDrawn ?? 0);
+        maxTriangles = Math.max(maxTriangles, stats?.trianglesDrawn ?? 0);
         maxSceneCells = Math.max(maxSceneCells, terminal.truecolorCells());
     }
 
@@ -204,9 +199,9 @@ async function main(): Promise<void> {
     expect(Math.abs(afterLook.degrees - beforeLook.degrees / FOV_WHEEL_STEP) < FOV_TOLERANCE_DEG, `the wheel zoomed in one step (${beforeLook.degrees.toFixed(2)} -> ${afterLook.degrees.toFixed(2)} degrees)`);
 
     gameTerminal.feed(CTRL_C);
-    expect(quits === 0, "Ctrl+C waits for the next frame's input");
+    expect(platform.quitCount === 0, "Ctrl+C waits for the next frame's input");
     world.step(FRAME_MS);
-    expect(quits === 1, "Ctrl+C stopped the world and asked the host to quit");
+    expect(platform.quitCount === 1, "Ctrl+C stopped the world and quit the platform");
     expect(errors.length === 0, `no errors logged while quitting${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
     const altScreenExits = gameTerminal.text().split(Ansi.modes.altScreenExit).length - 1;
     expect(altScreenExits === 1, `stopping the world restored the presenter's screen once (${altScreenExits})`);

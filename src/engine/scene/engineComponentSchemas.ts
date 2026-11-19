@@ -17,6 +17,7 @@ import {TextSprite} from "../rendering/textSprite";
 import {Sprite} from "../rendering/2d/sprite";
 import {SpritePattern, SpritePatternColor} from "../rendering/2d/spritePattern";
 import {FieldOfView} from "../rendering/3d/fieldOfView";
+import {MeshRenderSettings} from "../rendering/3d/meshRenderSettings";
 import {RenderMesh} from "../rendering/3d/renderMesh";
 import {FaceCulling} from "../rendering/3d/faceCulling";
 import {AmbientLight} from "../rendering/3d/lighting/ambientLight";
@@ -101,6 +102,8 @@ export function registerEngineComponentSchemas(registry: ComponentSchemaRegistry
     registry.register(componentSchema(ScreenSize, "ScreenSize").implied().category(CATEGORY.camera).build());
     registry.register(componentSchema(FrameLoopSettings, "FrameLoopSettings").number("simulationTickRate").number("renderRate", UNCAPPED_RATE)
         .boolean("matchDisplay").number("cpuRenderRateLimit", UNCAPPED_RATE).integer("maxCatchUpTicks").category(CATEGORY.settings).build());
+    registry.register(componentSchema(MeshRenderSettings, "MeshRenderSettings").boolean("textures").boolean("lod").number("lodBias")
+        .nullableInteger("supersampleX").nullableInteger("supersampleY").category(CATEGORY.settings).build());
     registry.registerResource(resourceSchema(ActiveScene, ACTIVE_SCENE_RESOURCE_NAME).integer("sceneId").nullableString("path").build());
     registry.registerResource(INPUT_MAP_SCHEMA);
 }

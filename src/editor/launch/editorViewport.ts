@@ -5,7 +5,8 @@ import {pixelCanvasDisplayFromQuery, pixelCanvasDisplayOptionsFromQuery} from ".
 import type {PixelCanvasDisplay} from "../../hosts/web/pixelCanvasDisplay";
 import {chooseRenderBackend} from "../../hosts/web/renderBackendBootstrap";
 import type {GpuWorldDisplay, PixelWorldDisplay} from "../../hosts/web/worldWorkerPage";
-import type {PixelSurfaceSize, RenderBackend} from "../../hosts/web/worldWorkerProtocol";
+import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
+import type {PixelSurfaceSize} from "../../hosts/web/worldWorkerProtocol";
 
 export type EditorRenderBackend = "pixels" | "gpu";
 
@@ -25,7 +26,7 @@ export interface EditorRenderBackendChoice {
     readonly fallbackReason?: string;
 }
 
-export function chooseEditorRenderBackend(requested: RenderBackend, webGpuUsable: boolean): EditorRenderBackendChoice {
+export function chooseEditorRenderBackend(requested: RenderBackendKind, webGpuUsable: boolean): EditorRenderBackendChoice {
     if (requested !== GPU_BACKEND) return {backend: EDITOR_DEFAULT_RENDER_BACKEND};
     const choice = chooseRenderBackend(requested, {gpuScript: EDITOR_HAS_GPU_BACKEND, webGpuUsable});
     if (choice.backend === GPU_BACKEND) return {backend: GPU_BACKEND};

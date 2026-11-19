@@ -23,6 +23,7 @@ const RELATIVE_IMPORT = /(?:from|import|require)\s*\(?\s*["'](\.{1,2}(?:\/[^"']*
 const RESOLVE_SUFFIXES = ["", ".ts", ".js", "/index.ts"];
 
 const BACKENDS = ["backends/cells", "backends/pixels", "backends/gpu"];
+const DEMO_BACKENDS = ["demo backend cells", "demo backend pixels", "demo backend gpu"];
 
 const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     "engine": ["engine"],
@@ -36,7 +37,10 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     "editor": ["engine", ...BACKENDS, "editor project", "editor"],
     "editor launch": ["engine", ...BACKENDS, "hosts/web", "editor project", "editor", "editor launch"],
     "demo": ["engine", "demo"],
-    "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "demo", "demo launch"],
+    "demo backend cells": ["engine", "backends/cells", "demo", "demo backend cells"],
+    "demo backend pixels": ["engine", "backends/pixels", "demo", "demo backend pixels"],
+    "demo backend gpu": ["engine", "backends/pixels", "backends/gpu", "demo", "demo backend gpu"],
+    "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "demo", ...DEMO_BACKENDS, "demo launch"],
 };
 
 const UNSCHEDULED = "unscheduled";
@@ -45,6 +49,7 @@ const WRONG_DIRECTION_ALLOWLIST_REMOVED_IN_STEP: Readonly<Record<string, number 
 const WRONG_DIRECTION_ALLOWLIST = Object.keys(WRONG_DIRECTION_ALLOWLIST_REMOVED_IN_STEP);
 const DEMO_LAUNCH_ENTRIES: readonly string[] = ["index.ts", "project.ts"];
 const DEMO_LAUNCH_FOLDER = "launch";
+const DEMO_BACKEND_FOLDER = "backend";
 const EDITOR_LAUNCH_FOLDER = "launch";
 const EDITOR_PROJECT_FOLDER = "project";
 const EDITOR_SOURCES = "src/editor/";
@@ -71,11 +76,12 @@ function linesMatching(files: readonly string[], pattern: RegExp): string[] {
 }
 
 function layerOf(file: string): string | undefined {
-    const [top, second, third] = fromRoot(file).split("/");
+    const [top, second, third, fourth] = fromRoot(file).split("/");
     if (top === "src" && (second === "hosts" || second === "backends")) return `${second}/${third}`;
     if (top === "src" && second === "editor" && third === EDITOR_LAUNCH_FOLDER) return "editor launch";
     if (top === "src" && second === "editor" && third === EDITOR_PROJECT_FOLDER) return "editor project";
     if (top === "src") return second;
+    if (top === "demo" && third === DEMO_BACKEND_FOLDER) return `demo backend ${fourth}`;
     if (top === "demo") return DEMO_LAUNCH_ENTRIES.includes(third) || third === DEMO_LAUNCH_FOLDER ? "demo launch" : "demo";
     return undefined;
 }
@@ -148,12 +154,16 @@ describe("source rules", () => {
         expect(found.filter(entry => !WRONG_DIRECTION_ALLOWLIST.includes(entry))).toEqual([]);
     });
 
-    test("the cells and pixels backends are separate layers, gpu builds on pixels only, and every source folder has one", () => {
+    test("the cells and pixels backends are separate layers, gpu builds on pixels only, demo backend folders follow them, and every source folder has one", () => {
         expect(ALLOWED_LAYERS["backends/cells"].includes("backends/pixels")).toBe(false);
         expect(ALLOWED_LAYERS["backends/pixels"].includes("backends/cells")).toBe(false);
         expect(ALLOWED_LAYERS["backends/cells"].includes("backends/gpu")).toBe(false);
         expect(ALLOWED_LAYERS["backends/pixels"].includes("backends/gpu")).toBe(false);
         expect(ALLOWED_LAYERS["backends/gpu"].includes("backends/cells")).toBe(false);
+        expect(ALLOWED_LAYERS["demo backend cells"].some(layer => layer === "backends/pixels" || layer === "backends/gpu")).toBe(false);
+        expect(ALLOWED_LAYERS["demo backend pixels"].some(layer => layer === "backends/cells" || layer === "backends/gpu")).toBe(false);
+        expect(ALLOWED_LAYERS["demo backend gpu"].includes("backends/cells")).toBe(false);
+        expect(DEMO_BACKENDS.some(layer => ALLOWED_LAYERS["demo"].includes(layer))).toBe(false);
         const layers = new Set([...typeScriptFilesUnder(SRC), ...typeScriptFilesUnder(DEMO)].map(file => layerOf(file)!));
         expect([...layers].filter(layer => ALLOWED_LAYERS[layer] === undefined)).toEqual([]);
     });

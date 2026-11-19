@@ -12,6 +12,9 @@ import {MeshPixelPassSettings} from "./3d/meshPixelPassSettings";
 
 const FIXED_WORKERS = 2;
 const FIXED_FRAMEBUFFER_PIXELS_PER_RASTER_PIXEL = 3;
+const MAX_DEPTH_FADE = 30;
+const THREAD_TRIANGLE_THRESHOLD = 512;
+const LOD_TRIANGLES_PER_PIXEL = 0.5;
 
 describe("pixels component schemas", () => {
     test("the pixels settings round-trip at non-default values; workerCount and framebufferPixelsPerRasterPixel are not saved", () => {
@@ -25,9 +28,9 @@ describe("pixels component schemas", () => {
         const sprites = new SpritePixelPassSettings();
         sprites.maxDepthFade = 20;
         const meshes = new MeshPixelPassSettings();
-        meshes.supersampleX = 3;
-        meshes.textures = false;
-        meshes.lodTrianglesPerPixel = 0.5;
+        meshes.maxDepthFade = MAX_DEPTH_FADE;
+        meshes.threadTriangleThreshold = THREAD_TRIANGLE_THRESHOLD;
+        meshes.lodTrianglesPerPixel = LOD_TRIANGLES_PER_PIXEL;
         meshes.workerCount = FIXED_WORKERS;
         meshes.framebufferPixelsPerRasterPixel = FIXED_FRAMEBUFFER_PIXELS_PER_RASTER_PIXEL;
 
@@ -43,8 +46,7 @@ describe("pixels component schemas", () => {
         const target = new World({platform: new MemoryPlatform()});
         const loaded = deserializeInto(target, registry, parseSceneDocument(JSON.stringify(saved.document)));
         const loadedMeshes = target.entityManager.getComponent<MeshPixelPassSettings>(loaded.entities[0], MeshPixelPassSettings)!;
-        expect(loadedMeshes.supersampleX).toBe(3);
-        expect(loadedMeshes.textures).toBe(false);
+        expect([loadedMeshes.maxDepthFade, loadedMeshes.threadTriangleThreshold, loadedMeshes.lodTrianglesPerPixel]).toEqual([MAX_DEPTH_FADE, THREAD_TRIANGLE_THRESHOLD, LOD_TRIANGLES_PER_PIXEL]);
         expect(loadedMeshes.framebufferPixelsPerRasterPixel).toBe("fitWorkerPool");
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
     });

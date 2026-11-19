@@ -1,7 +1,8 @@
 import type {CellFrame} from "../../backends/cells/cellFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
-import type {CellSurfaceSize, PageToWorldMessage, PixelSurfaceSize, RenderBackend} from "./worldWorkerProtocol";
+import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
+import type {CellSurfaceSize, PageToWorldMessage, PixelSurfaceSize} from "./worldWorkerProtocol";
 import {isWorldToPageMessage} from "./worldWorkerProtocol";
 
 interface WorldDisplaySurface {
@@ -52,13 +53,13 @@ export interface WorldWorkerPage {
 
 export const STOPPED_STATUS = "Stopped. Reload the page to restart.";
 
-const GPU_BACKEND: RenderBackend = "gpu";
+const GPU_BACKEND: RenderBackendKind = "gpu";
 
 export function startingStatus(name: string): string {
     return `Starting ${name}...`;
 }
 
-export function surfaceMismatchMessage(name: string, sent: RenderBackend, shown: RenderBackend): string {
+export function surfaceMismatchMessage(name: string, sent: RenderBackendKind, shown: RenderBackendKind): string {
     return `${name} sent ${sent} frames, but this page shows ${shown}`;
 }
 
@@ -66,7 +67,7 @@ function isGpuDisplay(display: WorldDisplay): display is GpuWorldDisplay {
     return "transferCanvas" in display;
 }
 
-export function displayBackendOf(display: WorldDisplay): RenderBackend {
+export function displayBackendOf(display: WorldDisplay): RenderBackendKind {
     return isGpuDisplay(display) ? GPU_BACKEND : display.surfaceSize().kind;
 }
 
@@ -99,7 +100,7 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
         const returnedBuffer = frame.rgba.buffer as ArrayBuffer;
         post({type: "presented", returnedBuffer}, [returnedBuffer]);
     };
-    const failOnMismatch = (sent: RenderBackend): void => {
+    const failOnMismatch = (sent: RenderBackendKind): void => {
         close();
         display.showError(surfaceMismatchMessage(options.name, sent, displayBackendOf(display)));
     };

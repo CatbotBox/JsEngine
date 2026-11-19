@@ -1,23 +1,24 @@
 import type {World} from "../../src/engine/core";
 import {PrefabSpawner} from "../../src/engine/scene";
 import type {ComponentSchemaRegistry, PrefabAsset} from "../../src/engine/scene";
-import type {ProjectHost, ProjectRenderBackend} from "../../src/engine/project/projectEntry";
+import type {ProjectHost} from "../../src/engine/project/projectEntry";
 import {setupDemo3d} from "./game";
-import type {Demo3dModelFiles, Demo3dRenderControls} from "./game";
+import type {Demo3dModelFiles} from "./game";
 import type {ModelLoadProgressListener} from "./modelCatalog";
 import {requireModelPrefab} from "./modelCatalog";
 import {registerGeneratedSchemas} from "./schemas.generated";
 import {Demo3dTuning} from "./tuning";
-import {installPixelRendering3d} from "./launch/pixelRendering";
-import {installGpuRendering3d} from "./launch/gpuRendering";
-
-const GPU_BACKEND: ProjectRenderBackend = "gpu";
+import {Demo3dCellsControlsSystem} from "./backend/cells/demo3dCellsControlsSystem";
+import {DemoSurfaceShaderSystem} from "./backend/gpu/gpuSurfaceShaders";
+import {Demo3dGpuControlsSystem} from "./backend/gpu/demo3dGpuControlsSystem";
 
 function ignoreProgress(): void {
 }
 
-function installRendering(world: World, host: ProjectHost): Demo3dRenderControls {
-    return host.renderBackend === GPU_BACKEND ? installGpuRendering3d(world) : installPixelRendering3d(world);
+function createBackendSystems(world: World): void {
+    world.ensureSystemExists(Demo3dCellsControlsSystem);
+    world.ensureSystemExists(DemoSurfaceShaderSystem);
+    world.ensureSystemExists(Demo3dGpuControlsSystem);
 }
 
 function projectModelFiles(world: World, host: ProjectHost): Demo3dModelFiles {
@@ -42,9 +43,6 @@ export async function setupProject(world: World, host: ProjectHost): Promise<voi
     for (const [index, entry] of models.entries()) {
         if (!entry.loadOnDemand) await modelFiles.fetch(requireModelPrefab(entry, index), ignoreProgress);
     }
-    setupDemo3d(world, {
-        render: installRendering(world, host),
-        modelFiles,
-        quit: () => host.quit(),
-    });
+    createBackendSystems(world);
+    setupDemo3d(world, {modelFiles});
 }

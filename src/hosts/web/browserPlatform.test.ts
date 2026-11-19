@@ -54,4 +54,17 @@ describe("browserPlatform", () => {
             expect(listeners.get("pagehide")!.size + listeners.get("beforeunload")!.size).toBe(0);
         });
     });
+
+    test("quit closes the page", () => {
+        const host = globalThis as {close?: unknown};
+        const saved = host.close;
+        let closes = 0;
+        host.close = () => closes++;
+        try {
+            browserPlatform(new MemoryFileSource()).quit();
+        } finally {
+            host.close = saved;
+        }
+        expect(closes).toBe(1);
+    });
 });

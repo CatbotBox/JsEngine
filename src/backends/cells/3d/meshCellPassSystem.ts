@@ -1,4 +1,5 @@
 ﻿import {System} from "../../../engine/core";
+import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {CellGrid} from "../cellGrid";
 import {LocalToWorld} from "../../../engine/translation";
@@ -7,6 +8,8 @@ import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {RenderMesh} from "../../../engine/rendering/3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
 import {FieldOfView} from "../../../engine/rendering/3d/fieldOfView";
+import {MeshRenderSettings} from "../../../engine/rendering/3d/meshRenderSettings";
+import {MeshRenderStats} from "../../../engine/rendering/3d/meshRenderStats";
 import {CellAspectRatio} from "../cellAspectRatio";
 import {MeshSceneDrawer} from "../../../engine/rendering/3d/software/meshSceneDrawer";
 import {CellResolveTarget} from "./cellResolveTarget";
@@ -15,40 +18,18 @@ import {RenderMeshBoundsSystem} from "../../../engine/rendering/3d/renderMeshBou
 import {SceneLights} from "../../../engine/rendering/3d/lighting/sceneLights";
 import {SceneLightsGatherSystem} from "../../../engine/rendering/3d/lighting/sceneLightsGatherSystem";
 
-const NO_WALKS = 0;
-
 export class MeshCellPassSystem extends System {
+    public static readonly renderPass: RenderPassKind = "meshes";
+
     private _settingsQuery = this.createEntityQuery([MeshCellPassSettings]);
+    private _meshSettingsQuery = this.createEntityQuery([MeshRenderSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld, FieldOfView, CellAspectRatio]);
     private _alwaysRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
 
+    private readonly _defaultMeshSettings = new MeshRenderSettings();
     private _drawer!: MeshSceneDrawer;
     private _resolveTarget = new CellResolveTarget();
-
-    private _statsWalk = NO_WALKS;
-
-    public get trianglesDrawn(): number {
-        this.dropStaleStats();
-        return this._drawer?.trianglesDrawn ?? 0;
-    }
-
-    public get lodLevelCounts(): Int32Array {
-        this.dropStaleStats();
-        return this._drawer.lodLevelCounts;
-    }
-
-    public get rasterWorkers(): number {
-        return this._drawer?.rasterWorkers ?? 0;
-    }
-
-    private dropStaleStats(): void {
-        if (this._statsWalk !== this.groupWalkCount()) this._drawer?.resetStats();
-    }
-
-    private groupWalkCount(): number {
-        return this.world.tryGetSystem(CellRenderSystemGroup)?.walkCount ?? NO_WALKS;
-    }
 
     override systemGroup() {
         return CellRenderSystemGroup;
@@ -63,6 +44,7 @@ export class MeshCellPassSystem extends System {
             meshesWithoutBounds: this._alwaysRenderQuery,
             meshesWithBounds: this._selectiveRenderQuery,
         }, this.world.platform.workers);
+        this.world.resources.getOrCreate(MeshRenderStats);
         this.requireAllForUpdate(this._settingsQuery);
         this.requireAllForUpdate(this._cameraQuery);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
@@ -73,8 +55,13 @@ export class MeshCellPassSystem extends System {
 
     onUpdate() {
         this._drawer.resetStats();
-        this._statsWalk = this.groupWalkCount();
+        this.draw();
+        this.world.resources.getOrCreate(MeshRenderStats).record(this.world.tryGetSystem(CellRenderSystemGroup), this._drawer);
+    }
+
+    private draw(): void {
         const settings = this._settingsQuery.getSingleton({settings: MeshCellPassSettings}).settings;
+        const meshSettings = this._meshSettingsQuery.tryGetSingleton({settings: MeshRenderSettings})?.settings ?? this._defaultMeshSettings;
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,
             screenSize: ScreenSize,
@@ -94,10 +81,10 @@ export class MeshCellPassSystem extends System {
             rasterPixelHeightPerWidth: cameraEntity.cellAspectRatio.value,
             cameraMatrix: cameraEntity.localToWorld.matrix,
             fieldOfViewRadians: cameraEntity.fov.radians,
-            rasterizerConfig: settings.toRasterizerConfig(this.world.platform),
-            lod: settings.lod,
+            rasterizerConfig: settings.toRasterizerConfig(this.world.platform, meshSettings),
+            lod: meshSettings.lod,
             lodTrianglesPerRasterPixel: settings.lodTrianglesPerCell,
-            lodBias: settings.lodBias,
+            lodBias: meshSettings.lodBias,
             sceneLights: this.world.resources.tryGet(SceneLights),
         });
     }

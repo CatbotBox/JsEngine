@@ -1,16 +1,16 @@
 import {renderBackendFromQuery} from "./worldWorkerProtocol";
-import type {RenderBackend} from "./worldWorkerProtocol";
+import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 
 const MODULE_SCRIPT_TYPE = "module";
-const GPU_BACKEND = "gpu" satisfies RenderBackend;
-const GPU_FALLBACK_BACKEND = "pixels" satisfies RenderBackend;
+const GPU_BACKEND = "gpu" satisfies RenderBackendKind;
+const GPU_FALLBACK_BACKEND = "pixels" satisfies RenderBackendKind;
 const NO_GPU_SCRIPT_REASON = "this page has no WebGPU backend";
 const WEBGPU_UNUSABLE_REASON = "WebGPU is not usable in this browser (no navigator.gpu, no adapter, or no OffscreenCanvas transfer)";
 
 export type RenderBackendScripts = Readonly<Record<"cells" | "pixels", string>> & {readonly gpu?: string};
 
 export interface RenderBackendScriptOptions {
-    readonly defaultBackend?: RenderBackend;
+    readonly defaultBackend?: RenderBackendKind;
 }
 
 export interface GpuAvailability {
@@ -19,7 +19,7 @@ export interface GpuAvailability {
 }
 
 export interface RenderBackendChoice {
-    readonly backend: RenderBackend;
+    readonly backend: RenderBackendKind;
     readonly fallbackReason?: string;
 }
 
@@ -31,7 +31,7 @@ export interface OffscreenTransferCanvas {
     readonly transferControlToOffscreen?: unknown;
 }
 
-export function chooseRenderBackend(requested: RenderBackend, {gpuScript, webGpuUsable}: GpuAvailability): RenderBackendChoice {
+export function chooseRenderBackend(requested: RenderBackendKind, {gpuScript, webGpuUsable}: GpuAvailability): RenderBackendChoice {
     if (requested !== GPU_BACKEND) return {backend: requested};
     if (!gpuScript) return {backend: GPU_FALLBACK_BACKEND, fallbackReason: NO_GPU_SCRIPT_REASON};
     if (!webGpuUsable) return {backend: GPU_FALLBACK_BACKEND, fallbackReason: WEBGPU_UNUSABLE_REASON};
@@ -53,7 +53,7 @@ export function gpuFallbackWarning(reason: string): string {
     return `?backend=${GPU_BACKEND} is experimental and unavailable here: ${reason}; using ?backend=${GPU_FALLBACK_BACKEND}`;
 }
 
-function scriptOf(scripts: RenderBackendScripts, backend: RenderBackend): string {
+function scriptOf(scripts: RenderBackendScripts, backend: RenderBackendKind): string {
     if (backend === GPU_BACKEND) return scripts.gpu ?? scripts[GPU_FALLBACK_BACKEND];
     return scripts[backend];
 }

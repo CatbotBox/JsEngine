@@ -1,12 +1,22 @@
-import {DebugWorld} from "../../engine/core";
+import {App} from "../../engine/core";
+import type {DebugWorld} from "../../engine/core";
 import {Input} from "../../engine/input";
 import type {Platform} from "../../engine/platform/platform";
 import {Mesh} from "../../engine/rendering/3d/mesh";
+import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
+import type {RenderPassCtor} from "../../engine/rendering/renderPasses";
 import type {ComponentSchemaRegistry} from "../../engine/scene";
 import {registerCellsComponentSchemas} from "../../backends/cells/cellsComponentSchemas";
 import {registerPixelsComponentSchemas} from "../../backends/pixels/pixelsComponentSchemas";
-import {PixelPresenterResource} from "../../backends/pixels/pixelPresenterResource";
+import {installPixelsBackend} from "../../backends/pixels/pixelsBackend";
+import {PIXELS_HUD_TEXT_PASSES} from "../../backends/pixels/pixelsHudTextPasses";
+import {PIXELS_WORLD_TEXT_PASSES} from "../../backends/pixels/pixelsWorldTextPasses";
+import {PIXELS_HUD_SPRITE_PASSES} from "../../backends/pixels/2d/pixelsHudSpritePasses";
+import {PIXELS_SPRITE_PASSES} from "../../backends/pixels/2d/pixelsSpritePasses";
+import {PIXELS_MESH_PASSES} from "../../backends/pixels/3d/pixelsMeshPasses";
 import {registerGpuComponentSchemas} from "../../backends/gpu/gpuComponentSchemas";
+import {installGpuBackend} from "../../backends/gpu/gpuBackend";
+import {GPU_MESH_PASSES} from "../../backends/gpu/gpuMeshPasses";
 import {PageConnection} from "../../hosts/web/worldWorkerPlatform";
 import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
 import {gpuCanvasPresenter, requestGpuDevice} from "../../hosts/web/gpuWorldDevice";
@@ -26,7 +36,6 @@ import type {
     ProjectHost,
     ProjectLoadProgress,
     ProjectLoadProgressListener,
-    ProjectRenderBackend,
 } from "../../engine/project/projectEntry";
 
 type ProjectEditorWorkerScope = WorldWorkerScope & EditorServiceScope & ProjectFilesChannel;
@@ -34,9 +43,16 @@ type ProjectEditorWorkerScope = WorldWorkerScope & EditorServiceScope & ProjectF
 const MESH_EXTENSION = ".obj";
 const BYTES_PER_MB = 1024 * 1024;
 const MB_DECIMALS = 1;
-const GPU_BACKEND: ProjectRenderBackend = "gpu";
-const PIXELS_BACKEND: ProjectRenderBackend = "pixels";
+const GPU_BACKEND: RenderBackendKind = "gpu";
 const BACKEND_SCHEMAS: readonly SchemaRegistration[] = [registerCellsComponentSchemas, registerPixelsComponentSchemas, registerGpuComponentSchemas];
+const PIXELS_2D_AND_HUD_PASSES: readonly RenderPassCtor[] = [
+    ...PIXELS_SPRITE_PASSES,
+    ...PIXELS_WORLD_TEXT_PASSES,
+    ...PIXELS_HUD_SPRITE_PASSES,
+    ...PIXELS_HUD_TEXT_PASSES,
+];
+const PIXELS_STANDARD_PASSES: readonly RenderPassCtor[] = [...PIXELS_MESH_PASSES, ...PIXELS_2D_AND_HUD_PASSES];
+const GPU_STANDARD_PASSES: readonly RenderPassCtor[] = [...GPU_MESH_PASSES, ...PIXELS_2D_AND_HUD_PASSES];
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -105,15 +121,13 @@ export async function preloadProjectAssets(files: ProjectFileSource, platform: P
     }
 }
 
-async function insertPresenter(world: DebugWorld, page: PageConnection): Promise<ProjectRenderBackend> {
+async function installRenderBackend(world: DebugWorld, page: PageConnection): Promise<void> {
     if (page.renderBackend() !== GPU_BACKEND) {
-        world.resources.insert(new PixelPresenterResource(page.pixelPresenter()));
-        return PIXELS_BACKEND;
+        installPixelsBackend(world, page.pixelPresenter(), PIXELS_STANDARD_PASSES);
+        return;
     }
     const gpu = await requestGpuDevice(page);
-    world.resources.insert(gpu);
-    world.resources.insert(new PixelPresenterResource(gpuCanvasPresenter(page, gpu)));
-    return GPU_BACKEND;
+    installGpuBackend(world, gpu, gpuCanvasPresenter(page, gpu), GPU_STANDARD_PASSES);
 }
 
 async function startProjectWorld(
@@ -124,15 +138,15 @@ async function startProjectWorld(
     generated: GeneratedProjectSchemas | undefined,
 ): Promise<void> {
     const registry = projectComponentSchemas(entry, generated);
-    const world = new DebugWorld({platform: page.platform});
-    const renderBackend = await insertPresenter(world, page);
+    const world = new App({platform: page.platform}).createDebugWorld();
+    await installRenderBackend(world, page);
     await files.whenListed();
     const manifest = await readProjectManifest(files);
     page.connectInput(world.resources.getOrCreate(Input));
     const assetFiles = new SetupStatusAssetFiles(files, page);
     const preloadAssets = (paths: readonly string[]) => preloadProjectAssets(files, world.platform, paths);
     const scenes = editorSceneManager(world, registry, preloadAssets);
-    const host: ProjectHost = {files: assetFiles, renderBackend, scenes, quit: () => page.quit()};
+    const host: ProjectHost = {files: assetFiles, scenes};
     await startProject(world, entry, host, manifest, registry);
     assetFiles.stopReporting();
     attachEditorWorldService(scope, world, registry, {preloadAssets, scenes, refetchFiles: paths => files.refetch(paths)});

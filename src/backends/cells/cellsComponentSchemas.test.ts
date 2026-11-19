@@ -13,6 +13,8 @@ import {SpriteCellPassSettings} from "./2d/spriteCellPassSettings";
 import {MeshCellPassSettings} from "./3d/meshCellPassSettings";
 
 const FIXED_WORKERS = 3;
+const FIVE_BITS_PER_CHANNEL_MASK = 0xF8F8F8;
+const LOD_TRIANGLES_PER_CELL = 8;
 
 describe("cells component schemas", () => {
     test("the cells settings round-trip at non-default values; workerCount is not saved and CellAspectRatio is implied", () => {
@@ -30,11 +32,10 @@ describe("cells component schemas", () => {
         sprites.backgroundColor = 0x102030;
         sprites.halfBlockCells = false;
         const meshes = new MeshCellPassSettings();
-        meshes.supersampleX = 4;
-        meshes.supersampleY = 1;
+        meshes.colorQuantMask = FIVE_BITS_PER_CHANNEL_MASK;
         meshes.threadAreaThreshold = Number.POSITIVE_INFINITY;
-        meshes.lod = false;
-        meshes.lodBias = -1;
+        meshes.halfBlockCells = false;
+        meshes.lodTrianglesPerCell = LOD_TRIANGLES_PER_CELL;
         meshes.workerCount = FIXED_WORKERS;
 
         const source = new World({platform: new MemoryPlatform()});
@@ -49,7 +50,7 @@ describe("cells component schemas", () => {
         const target = new World({platform: new MemoryPlatform()});
         const loaded = deserializeInto(target, registry, parseSceneDocument(JSON.stringify(saved.document)));
         const loadedMeshes = target.entityManager.getComponent<MeshCellPassSettings>(loaded.entities[0], MeshCellPassSettings)!;
-        expect(loadedMeshes.supersampleX).toBe(4);
+        expect([loadedMeshes.colorQuantMask, loadedMeshes.halfBlockCells, loadedMeshes.lodTrianglesPerCell]).toEqual([FIVE_BITS_PER_CHANNEL_MASK, false, LOD_TRIANGLES_PER_CELL]);
         expect(loadedMeshes.workerCount).toBe("auto");
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
     });

@@ -18,6 +18,19 @@ export {SCREEN_UNIT_HEIGHT_PER_WIDTH, SPRITE_PIXELS_PER_SCREEN_UNIT_X, SPRITE_PI
 export {TextSpriteBoundsSystem} from './textSpriteBoundsSystem'
 export {ShaderSource, WGSL_FILE_SUFFIX} from './shaderSource'
 export {
+    CellsRenderBackend,
+    GpuRenderBackend,
+    PixelsRenderBackend,
+    RENDER_BACKEND_KINDS,
+    RENDER_BACKEND_MARKERS,
+    activeRenderBackend,
+    insertRenderBackendMarker,
+    isRenderBackendKind,
+} from './renderBackend'
+export type {RenderBackendKind} from './renderBackend'
+export {RenderPasses, createRenderPasses} from './renderPasses'
+export type {RenderPassCtor, RenderPassKind} from './renderPasses'
+export {
     ASCII_PIXEL_FONT,
     ASCII_PIXEL_FONT_HEIGHT_PX,
     ASCII_PIXEL_FONT_WIDTH_PX,

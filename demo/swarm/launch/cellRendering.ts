@@ -1,17 +1,9 @@
-import {System, World} from "../../../src/engine/core";
-import {HudTextSpriteCellPassSystem} from "../../../src/backends/cells";
-import {SpriteCellPassSystem} from "../../../src/backends/cells/2d";
-import type {SwarmRenderControls} from "../game";
+import type {World} from "../../../src/engine/core";
+import {installCellsBackend} from "../../../src/backends/cells/cellsBackend";
+import type {CellPresenter} from "../../../src/backends/cells/cellPresenter";
+import {CELLS_HUD_TEXT_PASSES} from "../../../src/backends/cells/cellsHudTextPasses";
+import {CELLS_SPRITE_PASSES} from "../../../src/backends/cells/2d/cellsSpritePasses";
 
-function toggle(system: System | undefined): void {
-    if (system) system.enabled = !system.enabled;
-}
-
-export function installCellRenderingSwarm(world: World): SwarmRenderControls {
-    world.ensureSystemExists(SpriteCellPassSystem);
-    world.ensureSystemExists(HudTextSpriteCellPassSystem);
-
-    return {
-        toggleHud: () => toggle(world.tryGetSystem(HudTextSpriteCellPassSystem)),
-    };
+export function installCellRenderingSwarm(world: World, presenter: CellPresenter): void {
+    installCellsBackend(world, presenter, [...CELLS_SPRITE_PASSES, ...CELLS_HUD_TEXT_PASSES]);
 }

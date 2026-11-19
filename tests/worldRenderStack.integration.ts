@@ -3,9 +3,9 @@ import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatfo
 import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {Camera, HudElement, RenderBounds, TextColor, TextSprite, ScreenAnchor, WHITE_RGB} from "../src/engine/rendering";
 import {LocalPosition, LocalRotation, LocalScale, LocalToWorld} from "../src/engine/translation";
-import {CellPresenterResource, HudTextSpriteCellPassSystem} from "../src/backends/cells";
-import {TextSpriteCellPassSystem} from "../src/backends/cells/2d/textSpriteCellPassSystem";
-import {MeshCellPassSystem} from "../src/backends/cells/3d/meshCellPassSystem";
+import {CELLS_HUD_TEXT_PASSES, installCellsBackend} from "../src/backends/cells";
+import {CELLS_WORLD_TEXT_PASSES} from "../src/backends/cells/2d/cellsWorldTextPasses";
+import {CELLS_MESH_PASSES} from "../src/backends/cells/3d/cellsMeshPasses";
 import {MeshCellPassSettings} from "../src/backends/cells/3d/meshCellPassSettings";
 import {CellRenderSettings} from "../src/backends/cells/cellRenderSettings";
 import {RenderMesh} from "../src/engine/rendering/3d/renderMesh";
@@ -37,7 +37,6 @@ function expect(condition: boolean, label: string) {
 }
 
 const world = new DebugWorld({platform});
-world.resources.insert(new CellPresenterResource(new AnsiCellPresenter(output)));
 const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
 
 buffer.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new RenderBounds(), new LocalRotation(), new FieldOfView()]);
@@ -66,9 +65,7 @@ offscreenImage.image = ["OFFSCREENMARK"];
 offscreenImage.transparentChar = undefined;
 buffer.createEntity("offscreen-sprite", [offscreenImage, new LocalToWorld(), new LocalPosition(5000, 5000, 0)]);
 
-world.ensureSystemExists(MeshCellPassSystem);
-world.ensureSystemExists(TextSpriteCellPassSystem);
-world.ensureSystemExists(HudTextSpriteCellPassSystem);
+installCellsBackend(world, new AnsiCellPresenter(output), [...CELLS_MESH_PASSES, ...CELLS_WORLD_TEXT_PASSES, ...CELLS_HUD_TEXT_PASSES]);
 
 const tick = () => world.step();
 const tickTimes = (count: number) => {

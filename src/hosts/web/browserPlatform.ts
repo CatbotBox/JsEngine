@@ -7,6 +7,7 @@ interface BrowserHost extends MaybeAnimationFrameHost {
     readonly navigator?: {readonly hardwareConcurrency?: number};
     addEventListener?(type: string, listener: () => void): void;
     removeEventListener?(type: string, listener: () => void): void;
+    close?(): void;
 }
 
 const EXIT_EVENTS = ["pagehide", "beforeunload"] as const;
@@ -20,6 +21,7 @@ export function browserPlatform(files: FileSource): Platform {
         hardwareConcurrency: () => host.navigator?.hardwareConcurrency ?? 1,
         now,
         onExit: callback => onPageExit(host, callback),
+        quit: () => host.close?.(),
         frameScheduler: displayFrameScheduler(host, now),
     };
 }

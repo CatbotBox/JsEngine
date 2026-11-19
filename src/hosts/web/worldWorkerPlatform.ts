@@ -6,7 +6,8 @@ import type {PixelPresenter} from "../../backends/pixels/pixelPresenter";
 import {pixelFrameBuffers} from "../../backends/pixels/pixelFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import type {InputEventSink} from "../../engine/input";
-import type {CellSurfaceSize, InitMessage, PageToWorldMessage, PixelSurfaceSize, RenderBackend, SurfaceSize, WorldToPageMessage} from "./worldWorkerProtocol";
+import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
+import type {CellSurfaceSize, InitMessage, PageToWorldMessage, PixelSurfaceSize, SurfaceSize, WorldToPageMessage} from "./worldWorkerProtocol";
 import {isPageToWorldMessage} from "./worldWorkerProtocol";
 import {browserWorkersIfIsolated} from "./browserWorkers";
 import type {BrowserWorkerHost} from "./browserWorkers";
@@ -24,10 +25,10 @@ export interface WorldWorkerScope extends BrowserWorkerHost, MaybeAnimationFrame
 
 const MAX_FRAMES_IN_FLIGHT = 2;
 
-const GPU_BACKEND: RenderBackend = "gpu";
+const GPU_BACKEND: RenderBackendKind = "gpu";
 const NO_SCREEN_UNIT = 0;
 
-function surfaceMismatch(surface: SurfaceSize, wanted: RenderBackend): Error {
+function surfaceMismatch(surface: SurfaceSize, wanted: RenderBackendKind): Error {
     return new Error(`The page shows a ${surface.kind} surface, so this world cannot present ${wanted}: `
         + `a ${wanted} world needs the page opened with ?backend=${wanted}`);
 }
@@ -73,6 +74,7 @@ export class PageConnection {
                     this.exitCallbacks.delete(entry);
                 };
             },
+            quit: () => this.quit(),
         };
     }
 
@@ -118,7 +120,7 @@ export class PageConnection {
         };
     }
 
-    public renderBackend(): RenderBackend {
+    public renderBackend(): RenderBackendKind {
         return this.canvas === undefined ? this.surface.kind : GPU_BACKEND;
     }
 

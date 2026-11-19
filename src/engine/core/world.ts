@@ -19,11 +19,13 @@ import type {LoopTiming} from "./frameLoopSettings";
 import {FrameRunner} from "./frameRunner";
 import {timerFrameScheduler} from "../platform/timerFrameScheduler";
 import {Event} from "../util/event";
+import type {App} from "./app";
 
 const NO_TICK_PROGRESS = 0;
 
 export interface WorldOptions {
     readonly platform: Platform;
+    readonly app?: App;
 }
 
 export interface WorldStoppedEvent {
@@ -32,6 +34,7 @@ export interface WorldStoppedEvent {
 
 export class World extends WorldSource {
     public readonly platform: Platform;
+    public readonly app: App | undefined;
     public readonly changeStamps: ChangeStampCounter = new ChangeStampCounter();
     public readonly onStopped: Event<WorldStoppedEvent> = new Event();
     private _archetypes: EntityArchetypeMap = new EntityArchetypeMap(this.changeStamps);
@@ -68,9 +71,11 @@ export class World extends WorldSource {
         super(undefined!);
         this.world = this;
         this.platform = options.platform;
+        this.app = options.app;
         this._rootSystemGroup = this.createSystem(RootSystemGroup)
         this.ensureSystemExists(GcSystem)
         this.ensureSystemExists(InputSystem)
+        options.app?.addWorld(this);
     }
 
     public ensureSystemExists<T extends System>(constructor: SystemCtor<T>): void {
@@ -138,6 +143,15 @@ export class World extends WorldSource {
         this.onStopped.invoke({error});
     }
 
+    public requestQuit(): void {
+        const app = this.app;
+        if (app === undefined) {
+            throw new Error("World.requestQuit: this world has no App to quit; create it with App.createWorld or App.createDebugWorld, "
+                + "or call world.stop() and end the process yourself");
+        }
+        app.requestQuit();
+    }
+
     public get loopTiming(): LoopTiming {
         const settings = this._frameLoopSettingsQuery.tryGetSingleton({settings: FrameLoopSettings})?.settings ?? this._defaultFrameLoopSettings;
         return this._loopTimingResolver.resolve(settings, this.renderers.framesRenderedOnCpu);
@@ -153,6 +167,7 @@ export class World extends WorldSource {
         time.tickCount++;
         time.frameCount++;
         this._rootSystemGroup.update();
+        this.finishFrame();
     }
 
     public stepSimulation(deltaTimeMs: number = this.loopTiming.tickDeltaMs): void {
@@ -190,6 +205,10 @@ export class World extends WorldSource {
         }
     }
 
+    private finishFrame(): void {
+        if (this.app?.quitPending === true) this.app.quitAfterFrame();
+    }
+
     private createFrameRunner(): FrameRunner {
         const platform = this.platform;
         const now = (): number => platform.now();
@@ -200,6 +219,7 @@ export class World extends WorldSource {
             loopTiming: () => this.loopTiming,
             simulate: tickDeltaMs => this.simulateTick(tickDeltaMs),
             present: (frameDeltaMs, tickAlpha) => this.presentFrame(frameDeltaMs, tickAlpha),
+            finishFrame: () => this.finishFrame(),
         });
     }
 

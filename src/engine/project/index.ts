@@ -5,7 +5,6 @@ export type {
     ProjectHost,
     ProjectLoadProgress,
     ProjectLoadProgressListener,
-    ProjectRenderBackend,
 } from "./projectEntry";
 export {PROJECT_ENTRY_EXPORTS} from "./projectEntry";
 export type {LaunchedProject, ProjectLaunchOptions} from "./projectLaunch";

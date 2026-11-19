@@ -1,4 +1,5 @@
 import {System} from "../../../engine/core";
+import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {HudElement} from "../../../engine/rendering/hudElement";
 import {LocalToWorld} from "../../../engine/translation";
@@ -20,6 +21,8 @@ const NOTHING_DRAWN = 0;
 const CENTER_FRACTION = 0.5;
 
 export class SpritePixelPassSystem extends System {
+    public static readonly renderPass: RenderPassKind = "sprites";
+
     private _settingsQuery = this.createEntityQuery([SpritePixelPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
     private _objectQuery = this.createEntityQuery([Sprite, WorldSpaceRenderBounds], [HudElement]);

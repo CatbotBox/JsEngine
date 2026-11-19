@@ -1,4 +1,6 @@
 import type {DebugWorld} from "../../src/engine/core";
+import type {CellPresenter} from "../../src/backends/cells";
+import type {PixelPresenter} from "../../src/backends/pixels";
 import {joinPath, normalizePath} from "../../src/engine/platform";
 import type {FileSource, FileStat} from "../../src/engine/platform";
 import {launchSwarm} from "../../demo/swarm/launch/swarmLaunch";
@@ -15,11 +17,14 @@ import {installPixelRendering3d} from "../../demo/3d/launch/pixelRendering";
 export type HashedDemo = "swarm" | "2d" | "3d";
 export type HashedBackend = "cells" | "pixels";
 
+export type HashedOutput =
+    | {readonly backend: "cells", readonly presenter: CellPresenter}
+    | {readonly backend: "pixels", readonly presenter: PixelPresenter};
+
 export interface DemoFrameHashLaunch {
     readonly demo: HashedDemo;
-    readonly backend: HashedBackend;
+    readonly output: HashedOutput;
     readonly world: DebugWorld;
-    quit(): void;
 }
 
 export const SWARM_FRAME_HASH_SEED = 20261116;
@@ -77,27 +82,24 @@ export function demoFrameHashFiles(demo: HashedDemo, files: FileSource): FileSou
 }
 
 async function startSwarm(launch: DemoFrameHashLaunch): Promise<void> {
+    const output = launch.output;
     await launchSwarm(launch.world, {
-        renderBackend: launch.backend,
-        installRendering: launch.backend === "cells" ? installCellRenderingSwarm : installPixelRenderingSwarm,
+        installRendering: world => output.backend === "cells" ? installCellRenderingSwarm(world, output.presenter) : installPixelRenderingSwarm(world, output.presenter),
         seed: SWARM_FRAME_HASH_SEED,
-        quit: () => launch.quit(),
     });
 }
 
 async function startDemo2d(launch: DemoFrameHashLaunch): Promise<void> {
+    const output = launch.output;
     await launchDemo2d(launch.world, {
-        renderBackend: launch.backend,
-        installRendering: launch.backend === "cells" ? installCellRendering2d : installPixelRendering2d,
-        quit: () => launch.quit(),
+        installRendering: world => output.backend === "cells" ? installCellRendering2d(world, output.presenter) : installPixelRendering2d(world, output.presenter),
     });
 }
 
 async function startDemo3d(launch: DemoFrameHashLaunch): Promise<void> {
+    const output = launch.output;
     await launchDemo3d(launch.world, {
-        renderBackend: launch.backend,
-        installRendering: launch.backend === "cells" ? installCellRendering3d : installPixelRendering3d,
-        quit: () => launch.quit(),
+        installRendering: world => output.backend === "cells" ? installCellRendering3d(world, output.presenter) : installPixelRendering3d(world, output.presenter),
     });
 }
 

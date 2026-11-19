@@ -15,6 +15,7 @@ export interface FrameRunnerHost {
     loopTiming(): LoopTiming;
     simulate(tickDeltaMs: number): void;
     present(frameDeltaMs: number, tickAlpha: number): void;
+    finishFrame(): void;
 }
 
 export class FrameRunner {
@@ -62,6 +63,7 @@ export class FrameRunner {
             this.stop();
             throw error;
         }
+        this.host.finishFrame();
     };
 
     private runFrame(frameTimeMs: number): void {

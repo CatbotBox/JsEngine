@@ -124,6 +124,18 @@ describe("MemoryPlatform", () => {
         expect(cancelled).toBe(0);
     });
 
+    test("quit counts each call and runs the exit callbacks the way exit does", () => {
+        const platform = new MemoryPlatform();
+        const {quit} = platform;
+        let exits = 0;
+        platform.onExit(() => exits++);
+        expect(platform.quitCount).toBe(0);
+        quit();
+        quit();
+        expect(platform.quitCount).toBe(2);
+        expect(exits).toBe(1);
+    });
+
     test("now, inflate and hardwareConcurrency work detached from the platform", () => {
         const platform = new MemoryPlatform({now: 5, hardwareConcurrency: 4, inflate: bytes => bytes.slice().reverse()});
         const {now, inflate, hardwareConcurrency} = platform;

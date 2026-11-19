@@ -1,4 +1,5 @@
 import {System} from "../../../engine/core";
+import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {HudElement} from "../../../engine/rendering/hudElement";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
@@ -16,6 +17,8 @@ const PRIORITY_BEFORE_TEXT_HUD = 99;
 const HUD_DEPTH = Number.NEGATIVE_INFINITY;
 
 export class HudSpritePixelPassSystem extends System {
+    public static readonly renderPass: RenderPassKind = "hudSprites";
+
     private _settingsQuery = this.createEntityQuery([SpritePixelPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _hudObjectQuery = this.createEntityQuery([Sprite, HudElement]);

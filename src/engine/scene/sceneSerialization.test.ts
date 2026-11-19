@@ -23,6 +23,7 @@ import {Sprite} from "../rendering/2d/sprite";
 import {SpriteImage} from "../rendering/2d/spriteImage";
 import {SpritePattern, SpritePatternColor} from "../rendering/2d/spritePattern";
 import {FieldOfView} from "../rendering/3d/fieldOfView";
+import {MeshRenderSettings} from "../rendering/3d/meshRenderSettings";
 import {RenderMesh} from "../rendering/3d/renderMesh";
 import {FaceCulling} from "../rendering/3d/faceCulling";
 import {Mesh} from "../rendering/3d/mesh";
@@ -59,6 +60,7 @@ const DISABLED = false;
 const PREFAB_PATH = "prefabs/hud.prefab.json";
 const SCENE_INSTANCE_ID = 3;
 const CATCH_UP_TICKS = 3;
+const MESH_SUPERSAMPLE_Y = 2;
 const SCENE_INSTANCE_PATH = "scenes/lights.scene.json";
 const EMPTY_LOAD_REPORT = {skippedComponentTypes: [], skippedResourceTypes: [], danglingEntityRefs: [], droppedComponents: [], changedSchemas: []};
 
@@ -140,7 +142,9 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     const frameLoop = new FrameLoopSettings();
     frameLoop.renderRate = UNCAPPED_RENDER_RATE;
     frameLoop.maxCatchUpTicks = CATCH_UP_TICKS;
-    em.createEntity("ambient", [new AmbientLight(0x101010, 0.3), new SceneInstance(SCENE_INSTANCE_ID, SCENE_INSTANCE_PATH), frameLoop]);
+    const meshSettings = new MeshRenderSettings();
+    meshSettings.supersampleY = MESH_SUPERSAMPLE_Y;
+    em.createEntity("ambient", [new AmbientLight(0x101010, 0.3), new SceneInstance(SCENE_INSTANCE_ID, SCENE_INSTANCE_PATH), frameLoop, meshSettings]);
 
     const asleep = em.createEntity("asleep", [new LocalPosition(7, 7, 7)]);
     em.setEnabledState(asleep, DISABLED);

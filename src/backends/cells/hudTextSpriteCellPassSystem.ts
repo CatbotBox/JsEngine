@@ -1,4 +1,5 @@
 ﻿import {System} from "../../engine/core";
+import type {RenderPassKind} from "../../engine/rendering/renderPasses";
 import {Camera} from "../../engine/rendering/camera";
 import {CellGrid} from "./cellGrid";
 import {HudElement} from "../../engine/rendering/hudElement";
@@ -13,6 +14,7 @@ const DEFAULT_OFFSET = new RenderBoundsOffset();
 const PRIORITY_AFTER_CAMERA_SIZING = 100;
 
 export class HudTextSpriteCellPassSystem extends System {
+    public static readonly renderPass: RenderPassKind = "hudText";
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _hudObjectQuery = this.createEntityQuery([TextSprite, HudElement])
