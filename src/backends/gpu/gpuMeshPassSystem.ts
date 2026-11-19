@@ -54,6 +54,8 @@ const NO_ROW_LEVEL_OFFSET = 0;
 const INITIAL_ROW_LEVEL_CAPACITY = 64;
 const ROW_LEVEL_GROWTH_FACTOR = 2;
 const NO_RASTER_WORKERS = 0;
+const NOT_DRAWN_FRAME = -1;
+const NOTHING_DRAWN = 0;
 const NO_BASE_VERTEX = 0;
 const INDEX_FORMAT: GPUIndexFormat = "uint32";
 const MS_PER_SECOND = 1000;
@@ -66,8 +68,9 @@ type RunVisitor = (
 ) => void;
 
 export class GpuMeshPassSystem extends System {
-    public trianglesDrawn = 0;
-    public readonly lodLevelCounts = new Int32Array(TRACKED_LOD_LEVELS);
+    private _trianglesDrawn = NOTHING_DRAWN;
+    private readonly _lodLevelCounts = new Int32Array(TRACKED_LOD_LEVELS);
+    private _statsFrame = NOT_DRAWN_FRAME;
 
     private _settingsQuery = this.createEntityQuery([GpuMeshPassSettings]);
     private _renderSettingsQuery = this.createEntityQuery([PixelRenderSettings]);
@@ -100,8 +103,27 @@ export class GpuMeshPassSystem extends System {
     private _meshes!: GpuMeshCache;
     private _pipelines!: GpuPipelineCache;
 
+    public get trianglesDrawn(): number {
+        this.dropStaleStats();
+        return this._trianglesDrawn;
+    }
+
+    public get lodLevelCounts(): Int32Array {
+        this.dropStaleStats();
+        return this._lodLevelCounts;
+    }
+
     public get rasterWorkers(): number {
         return NO_RASTER_WORKERS;
+    }
+
+    private resetStats(): void {
+        this._trianglesDrawn = NOTHING_DRAWN;
+        this._lodLevelCounts.fill(NOTHING_DRAWN);
+    }
+
+    private dropStaleStats(): void {
+        if (this._statsFrame !== this.world.tryGetSystem(PixelRenderSystemGroup)?.drawnFrame) this.resetStats();
     }
 
     override systemGroup() {
@@ -146,13 +168,9 @@ export class GpuMeshPassSystem extends System {
         this.world.renderers.remove("gpu");
     }
 
-    override update(): void {
-        this.trianglesDrawn = 0;
-        this.lodLevelCounts.fill(0);
-        super.update();
-    }
-
     onUpdate() {
+        this.resetStats();
+        this._statsFrame = this.world.time.frameCount;
         const framebuffer = this.world.resources.tryGet(PixelFramebuffer);
         if (framebuffer === undefined || framebuffer.widthPx === 0 || framebuffer.heightPx === 0) return;
         if (!this.readSingleCamera()) return;
@@ -244,8 +262,8 @@ export class GpuMeshPassSystem extends System {
     private readonly countRun: RunVisitor = (mesh, level, culling, _color, surfaceShader, _params, _matrices, startRow, endRow) => {
         const instances = endRow - startRow;
         this._batcher.count(mesh, culling, surfaceShader, instances);
-        this.trianglesDrawn += mesh.triangleCount * instances;
-        if (level < this.lodLevelCounts.length) this.lodLevelCounts[level] += instances;
+        this._trianglesDrawn += mesh.triangleCount * instances;
+        if (level < this._lodLevelCounts.length) this._lodLevelCounts[level] += instances;
     };
 
     private readonly fillRun: RunVisitor = (mesh, _level, culling, color, surfaceShader, params, matrices, startRow, endRow) => {

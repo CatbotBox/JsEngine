@@ -15,6 +15,8 @@ import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y,
 import {MAT4_FLOATS_SHIFT, MAT4_TRANSLATION_Z} from "../../../engine/math/mat4Layout";
 
 const CAMERA_DEPTH_EXTENT = 1000;
+const NOT_DRAWN_FRAME = -1;
+const NOTHING_DRAWN = 0;
 const HALF_ROWS_PER_CELL = 2;
 
 export class SpriteCellPassSystem extends System {
@@ -28,7 +30,17 @@ export class SpriteCellPassSystem extends System {
 
     private _rasterizer = new SpriteCellRasterizer();
 
-    public spritesDrawn = 0;
+    private _spritesDrawn = NOTHING_DRAWN;
+    private _statsFrame = NOT_DRAWN_FRAME;
+
+    public get spritesDrawn(): number {
+        this.dropStaleStats();
+        return this._spritesDrawn;
+    }
+
+    private dropStaleStats(): void {
+        if (this._statsFrame !== this.world.tryGetSystem(CellRenderSystemGroup)?.drawnFrame) this._spritesDrawn = NOTHING_DRAWN;
+    }
 
     override systemGroup() {
         return CellRenderSystemGroup;
@@ -46,12 +58,9 @@ export class SpriteCellPassSystem extends System {
         this.world.ensureSystemExists(SpriteBoundsSystem);
     }
 
-    override update(): void {
-        this.spritesDrawn = 0;
-        super.update();
-    }
-
     onUpdate() {
+        this._spritesDrawn = NOTHING_DRAWN;
+        this._statsFrame = this.world.time.frameCount;
         const dualScreenBuffer = this.world.resources.tryGet(CellGrid);
         if (!dualScreenBuffer) return;
 
@@ -99,7 +108,7 @@ export class SpriteCellPassSystem extends System {
                 const image = sprite.image;
                 if (image === undefined) continue;
 
-                this.spritesDrawn++;
+                this._spritesDrawn++;
                 rasterizer.blitSprite(
                     image,
                     Math.floor(xMin - camXMin),

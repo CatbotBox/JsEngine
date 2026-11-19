@@ -9,11 +9,14 @@ import {EntityManager} from "./entityManager";
 import {EntityQuery} from "./entityQuery";
 import {EntityArchetype} from "./entityArchetype";
 import {Unchanged} from "./entityQueryStream";
-import {BLOCK_SIZE} from "./entityArchetype";
+import {BLOCK_SIZE, NO_SOURCE_COLUMN} from "./entityArchetype";
+import type {OccupancyWatcher} from "./entityArchetype";
+import type {ComponentCtor} from "./component";
 import {ComponentType} from "./componentType";
 import {getOwner} from "./ownership";
 import {EntityCommandBufferSystem} from "./entityCommandBufferSystem";
 import {Resource} from "./resource";
+import type {ResourceListener} from "./resourceManager";
 import {System} from "./system";
 import type {SystemCtor} from "./system";
 import {SystemGroup} from "./systemGroup";
@@ -716,6 +719,17 @@ class Greeting extends Resource {
     }
 }
 
+class Farewell extends Resource {
+}
+
+class PresenceRecorder implements ResourceListener {
+    public readonly changes: boolean[] = [];
+
+    public onPresenceChanged(present: boolean): void {
+        this.changes.push(present);
+    }
+}
+
 describe("ResourceManager", () => {
     test("insert stores a constructed resource under its class and replaces an earlier one", () => {
         expect(world.resources.tryGet(Greeting)).toBeUndefined();
@@ -725,6 +739,47 @@ describe("ResourceManager", () => {
         const bye = new Greeting("bye");
         world.resources.insert(bye);
         expect(world.resources.get(Greeting)).toBe(bye);
+    });
+
+    test("remove drops a resource, and removing an absent type does nothing", () => {
+        const resources = world.resources;
+        resources.remove(Greeting);
+        resources.insert(new Greeting("hello"));
+        resources.remove(Greeting);
+        expect(resources.tryGet(Greeting)).toBeUndefined();
+        expect(() => resources.get(Greeting)).toThrow(/Greeting/);
+    });
+
+    test("listeners hear only their own type's inserts and removes, not replacements", () => {
+        const resources = world.resources;
+        const greetings = new PresenceRecorder();
+        const others = new PresenceRecorder();
+        resources.addListener(Greeting, greetings);
+        resources.addListener(Farewell, others);
+
+        resources.insert(new Greeting("hello"));
+        resources.insert(new Greeting("again"));
+        resources.remove(Greeting);
+        resources.remove(Greeting);
+        resources.getOrCreate(Farewell);
+        resources.getOrCreate(Farewell);
+        resources.insert(new Farewell());
+
+        expect(greetings.changes).toEqual([true, false]);
+        expect(others.changes).toEqual([true]);
+    });
+
+    test("a type nobody watches holds no listener list, and removing the last listener drops it", () => {
+        const resources = world.resources;
+        const recorder = new PresenceRecorder();
+        expect(resources.listenerCount(Greeting)).toBe(0);
+        resources.addListener(Greeting, recorder);
+        resources.addListener(Greeting, recorder);
+        expect(resources.listenerCount(Greeting)).toBe(2);
+        resources.removeListener(Greeting, recorder);
+        expect(resources.listenerCount(Greeting)).toBe(0);
+        resources.insert(new Greeting("unheard"));
+        expect(recorder.changes).toEqual([]);
     });
 });
 
@@ -868,5 +923,399 @@ describe("SystemGroup lifecycle", () => {
 
         group.enabled = true;
         expect(enables).toEqual(["enabled"]);
+    });
+});
+
+const STEP_MS = 16;
+const LATER_PRIORITY = 1;
+
+class Watched extends Component {
+}
+
+function archetypeProbe(askedTypes: ComponentType[]): EntityArchetype {
+    const columnIndexOf = (token: ComponentType) => {
+        askedTypes.push(token);
+        return NO_SOURCE_COLUMN;
+    };
+    return {columnIndexOf} as unknown as EntityArchetype;
+}
+
+describe("EntityQuery disposal", () => {
+    test("the archetype map's listener counts return to their start after systems owning bound queries come and go", () => {
+        const archetypes = world.archetypes;
+        const createListenersAtStart = archetypes.onCreateArchetype.listenerCount;
+        const pruneListenersAtStart = archetypes.onPruneArchetype.listenerCount;
+        const ownerCtor = class extends System {
+            private readonly positions = this.createEntityQuery([Position]);
+
+            protected override onCreate(): void {
+                this.positions.hasEntity();
+                this.requireAnyForUpdate([Velocity]);
+                this.requireAllForUpdate(this.createEntityQuery([Tag]));
+            }
+
+            onUpdate() {
+            }
+        };
+        const ownedQueryCount = 3;
+
+        em.createEntity("v", [new Velocity()]);
+        world.createSystem(ownerCtor);
+        world.step(STEP_MS);
+        expect(archetypes.onCreateArchetype.listenerCount).toBe(createListenersAtStart + ownedQueryCount);
+        expect(archetypes.onPruneArchetype.listenerCount).toBe(pruneListenersAtStart + ownedQueryCount);
+
+        world.removeSystem(ownerCtor);
+        expect(archetypes.onCreateArchetype.listenerCount).toBe(createListenersAtStart);
+        expect(archetypes.onPruneArchetype.listenerCount).toBe(pruneListenersAtStart);
+    });
+
+    test("a destroyed system's query ignores archetypes created afterwards", () => {
+        const watchedType = ComponentType.of(Watched);
+        const ownerCtor = class extends System {
+            private readonly watched = this.createEntityQuery([Watched]);
+
+            protected override onCreate(): void {
+                this.watched.hasEntity();
+            }
+
+            onUpdate() {
+            }
+        };
+        const askedTypes: ComponentType[] = [];
+        world.createSystem(ownerCtor);
+        world.archetypes.onCreateArchetype.invoke(archetypeProbe(askedTypes));
+        expect(askedTypes.includes(watchedType)).toBe(true);
+
+        askedTypes.length = 0;
+        world.removeSystem(ownerCtor);
+        world.archetypes.onCreateArchetype.invoke(archetypeProbe(askedTypes));
+        world.archetypes.getOrCreate([Watched, Position]);
+        expect(askedTypes.includes(watchedType)).toBe(false);
+    });
+
+    test("using a disposed query throws an error naming its included and excluded types; dispose is idempotent", () => {
+        em.createEntity("p", [new Position()]);
+        const listenersAtStart = world.archetypes.onCreateArchetype.listenerCount;
+        const bound = new EntityQuery(world, [Position, Velocity], [Tag]);
+        bound.hasEntity();
+        const unbound = new EntityQuery(world, [Velocity], [Position]);
+
+        bound.dispose();
+        bound.dispose();
+        unbound.dispose();
+
+        expect(world.archetypes.onCreateArchetype.listenerCount).toBe(listenersAtStart);
+        expect(() => bound.hasEntity()).toThrow(/include \[Position, Velocity\], exclude \[Tag\]/);
+        expect(() => bound.stream({read: {p: Position}}).count()).toThrow(/Position, Velocity/);
+        expect(() => [...bound]).toThrow(/Position, Velocity/);
+        expect(() => unbound.enabledEntityCount()).toThrow(/include \[Velocity\], exclude \[Position\]/);
+    });
+});
+
+describe("World.stop during an update", () => {
+    test("a root-group system that stops the world lets world.step finish without running later systems", () => {
+        let laterUpdates = 0;
+        const stopperCtor = class extends System {
+            onUpdate() {
+                this.world.stop();
+            }
+        };
+        const laterCtor = class extends System {
+            private readonly positions = this.createEntityQuery([Position]);
+
+            override priority(): number {
+                return LATER_PRIORITY;
+            }
+
+            protected override onCreate(): void {
+                this.requireAnyForUpdate(this.positions);
+            }
+
+            onUpdate() {
+                laterUpdates++;
+                this.positions.hasEntity();
+            }
+        };
+        world.createSystem(stopperCtor);
+        world.createSystem(laterCtor);
+        em.createEntity("p", [new Position()]);
+
+        world.step(STEP_MS);
+
+        expect(laterUpdates).toBe(0);
+        expect(world.systemCount).toBe(0);
+    });
+
+    test("a group reading its own query after a child stopped the world finishes the step, then disposes the query", () => {
+        const createListenersAtStart = world.archetypes.onCreateArchetype.listenerCount;
+        let positionsAfterChildren: number | undefined;
+        let siblingUpdates = 0;
+        const groupCtor = class extends SystemGroup {
+            public readonly positions = this.createEntityQuery([Position]);
+
+            override onUpdate(): void {
+                super.onUpdate();
+                positionsAfterChildren = this.positions.enabledEntityCount();
+            }
+        };
+        const stopperCtor = class extends System {
+            override systemGroup() {
+                return groupCtor;
+            }
+
+            onUpdate() {
+                this.world.stop();
+            }
+        };
+        const siblingCtor = class extends System {
+            override systemGroup() {
+                return groupCtor;
+            }
+
+            override priority(): number {
+                return LATER_PRIORITY;
+            }
+
+            protected override onCreate(): void {
+                this.requireAllForUpdate([Position]);
+            }
+
+            onUpdate() {
+                siblingUpdates++;
+            }
+        };
+        world.createSystem(stopperCtor);
+        world.createSystem(siblingCtor);
+        const group = world.tryGetSystem(groupCtor)!;
+        em.createEntity("p", [new Position()]);
+
+        world.step(STEP_MS);
+
+        expect(positionsAfterChildren).toBe(1);
+        expect(siblingUpdates).toBe(0);
+        expect(() => group.positions.hasEntity()).toThrow(/Position/);
+        expect(world.archetypes.onCreateArchetype.listenerCount).toBe(createListenersAtStart);
+    });
+});
+
+const MANY_ENTITIES = 10_000;
+
+class OccupancyRecorder implements OccupancyWatcher {
+    public readonly changes: boolean[] = [];
+
+    public onOccupancyChanged(occupied: boolean): void {
+        this.changes.push(occupied);
+    }
+}
+
+class TrackedAgainstWalk {
+    public readonly tracked: EntityQuery<readonly ComponentCtor<Component>[], readonly ComponentCtor<Component>[]>;
+    public readonly walked: EntityQuery<readonly ComponentCtor<Component>[], readonly ComponentCtor<Component>[]>;
+
+    public constructor(include: readonly ComponentCtor<Component>[], exclude: readonly ComponentCtor<Component>[] = []) {
+        this.tracked = new EntityQuery(world, include, exclude);
+        this.tracked.track();
+        this.walked = new EntityQuery(world, include, exclude);
+    }
+
+    public expectHasEntity(expected: boolean): void {
+        expect(this.walked.hasEntity()).toBe(expected);
+        expect(this.tracked.hasEntity()).toBe(expected);
+    }
+}
+
+describe("EntityQuery tracking", () => {
+    test("a tracked query agrees with a walk across component adds and removes into archetypes made after tracking", () => {
+        const positions = new TrackedAgainstWalk([Position], [Tag]);
+        positions.expectHasEntity(false);
+        const e = em.createEntity("e");
+        positions.expectHasEntity(false);
+
+        em.addComponent(e, new Position());
+        positions.expectHasEntity(true);
+        em.addComponent(e, new Velocity());
+        positions.expectHasEntity(true);
+        em.addComponent(e, new Tag());
+        positions.expectHasEntity(false);
+        em.removeComponent(e, Tag);
+        positions.expectHasEntity(true);
+        em.removeComponent(e, Position);
+        positions.expectHasEntity(false);
+        expect(world.archetypes.getOrCreate([Position, Velocity]).occupancyWatcherCount).toBe(1);
+    });
+
+    test("a tracked query agrees with a walk across enabling and disabling single entities and whole archetypes", () => {
+        const positions = new TrackedAgainstWalk([Position]);
+        const a = em.createEntity("a", [new Position()]);
+        const b = em.createEntity("b", [new Position(), new Velocity()]);
+        positions.expectHasEntity(true);
+
+        em.setEnabledState(a, DISABLED);
+        positions.expectHasEntity(true);
+        em.setEnabledState(b, DISABLED);
+        positions.expectHasEntity(false);
+        em.setEnabledState(b, ENABLED);
+        positions.expectHasEntity(true);
+        em.setEnabledStateForQuery(positions.walked as never, DISABLED);
+        positions.expectHasEntity(false);
+        em.setEnabledStateForQuery(positions.walked as never, ENABLED);
+        positions.expectHasEntity(true);
+    });
+
+    test("a tracked query agrees with a walk when the last entity is destroyed and when its archetypes are emptied at once", () => {
+        const positions = new TrackedAgainstWalk([Position]);
+        const a = em.createEntity("a", [new Position()]);
+        const b = em.createEntity("b", [new Position()]);
+        em.destroyEntity(a);
+        positions.expectHasEntity(true);
+        em.destroyEntity(b);
+        positions.expectHasEntity(false);
+
+        em.createEntity("c", [new Position()]);
+        em.createEntity("d", [new Position(), new Velocity()]);
+        em.setEnabledState(em.createEntity("e", [new Position()]), DISABLED);
+        positions.expectHasEntity(true);
+        em.destroyQuery(positions.walked as never);
+        positions.expectHasEntity(false);
+    });
+
+    test("a tracked query agrees with a walk across command buffer playback and batch creation", () => {
+        const positions = new TrackedAgainstWalk([Position], [Tag]);
+        const cbSystem = world.getOrCreateSystem(EntityCommandBufferSystem);
+        const cb = cbSystem.getEntityCommandBuffer();
+        const recorded = cb.createEntity("recorded", [new Position(), new Velocity()]);
+        positions.expectHasEntity(false);
+        cbSystem.update();
+        positions.expectHasEntity(true);
+
+        cb.addComponent(recorded, new Tag());
+        cbSystem.update();
+        positions.expectHasEntity(false);
+
+        const disabledOnArrival = cb.createEntity("disabledOnArrival", [new Position()]);
+        cb.setEnabledState(disabledOnArrival, DISABLED);
+        cbSystem.update();
+        positions.expectHasEntity(false);
+
+        const batched = em.createEntity("batched", [new Position(), new Velocity()]);
+        positions.expectHasEntity(true);
+        em.addComponents(batched, [new Tag(), new Watched()]);
+        positions.expectHasEntity(false);
+
+        cb.removeComponent(batched, Tag);
+        cbSystem.update();
+        positions.expectHasEntity(true);
+        cb.destroyEntity(batched);
+        cbSystem.update();
+        positions.expectHasEntity(false);
+    });
+
+    test("pruning an empty matching archetype drops its watcher and keeps the count right", () => {
+        const positions = new TrackedAgainstWalk([Position]);
+        const kept = em.createEntity("kept", [new Position()]);
+        const leaving = em.createEntity("leaving", [new Position(), new Velocity()]);
+        const emptied = getOwner(world, leaving)!;
+        em.destroyEntity(leaving);
+        expect(emptied.occupancyWatcherCount).toBe(1);
+
+        expect(world.archetypes.prune()).toBeGreaterThan(0);
+        expect(emptied.occupancyWatcherCount).toBe(0);
+        positions.expectHasEntity(true);
+        em.destroyEntity(kept);
+        positions.expectHasEntity(false);
+
+        em.createEntity("again", [new Position(), new Velocity()]);
+        positions.expectHasEntity(true);
+    });
+
+    test("calling track twice registers one watcher per archetype", () => {
+        const e = em.createEntity("e", [new Position()]);
+        const query = new EntityQuery(world, [Position]);
+        query.track();
+        query.track();
+
+        expect(getOwner(world, e)!.occupancyWatcherCount).toBe(1);
+        em.destroyEntity(e);
+        expect(query.hasEntity()).toBe(false);
+    });
+
+    test("dispose removes the query's archetype watchers and drops its own watchers", () => {
+        const e = em.createEntity("e", [new Position()]);
+        const archetype = getOwner(world, e)!;
+        const query = new EntityQuery(world, [Position]);
+        const recorder = new OccupancyRecorder();
+        query.addOccupancyWatcher(recorder);
+        expect(archetype.occupancyWatcherCount).toBe(1);
+
+        query.dispose();
+        em.setEnabledState(e, DISABLED);
+
+        expect(archetype.occupancyWatcherCount).toBe(0);
+        expect(recorder.changes).toEqual([]);
+        expect(() => query.hasEntity()).toThrow(/Position/);
+    });
+
+    test("query and archetype watchers hear exactly the zero crossings while many entities move one by one", () => {
+        const query = new EntityQuery(world, [Position], [Tag]);
+        const queryRecorder = new OccupancyRecorder();
+        query.addOccupancyWatcher(queryRecorder);
+        const entities = Array.from({length: MANY_ENTITIES}, (_, i) => em.createEntity(undefined, [new Position(i)]));
+        const plain = getOwner(world, entities[0])!;
+        const plainRecorder = new OccupancyRecorder();
+        plain.addOccupancyWatcher(plainRecorder);
+        expect(queryRecorder.changes).toEqual([true]);
+
+        for (const e of entities) em.addComponent(e, new Velocity());
+        for (const e of entities) em.removeComponent(e, Velocity);
+        expect(queryRecorder.changes).toEqual([true]);
+        expect(plainRecorder.changes).toEqual([false, true]);
+
+        for (const e of entities) em.addComponent(e, new Tag());
+        for (const e of entities) em.removeComponent(e, Tag);
+        expect(queryRecorder.changes).toEqual([true, false, true]);
+
+        for (const e of entities) em.setEnabledState(e, DISABLED);
+        em.setEnabledStateForQuery(query as never, ENABLED);
+        expect(queryRecorder.changes).toEqual([true, false, true, false, true]);
+        expect(plainRecorder.changes).toEqual([false, true, false, true, false, true]);
+
+        query.removeOccupancyWatcher(queryRecorder);
+        for (const e of entities) em.destroyEntity(e);
+        expect(queryRecorder.changes).toEqual([true, false, true, false, true]);
+        expect(query.hasEntity()).toBe(false);
+    });
+
+    test("a system's requirement queries are tracked from onCreate and gate its update", () => {
+        let updates = 0;
+        const requirerCtor = class extends System {
+            private readonly positions = this.createEntityQuery([Position]);
+
+            protected override onCreate(): void {
+                this.requireAnyForUpdate(this.positions);
+                this.requireAllForUpdate([Velocity]);
+            }
+
+            onUpdate() {
+                updates++;
+            }
+        };
+        world.createSystem(requirerCtor);
+        const both = world.archetypes.getOrCreate([Position, Velocity]);
+        expect(both.occupancyWatcherCount).toBe(2);
+
+        world.step(STEP_MS);
+        const e = em.createEntity("e", [new Position()]);
+        world.step(STEP_MS);
+        expect(updates).toBe(0);
+        em.addComponent(e, new Velocity());
+        world.step(STEP_MS);
+        expect(updates).toBe(1);
+        em.setEnabledState(e, DISABLED);
+        world.step(STEP_MS);
+        expect(updates).toBe(1);
+
+        world.removeSystem(requirerCtor);
+        expect(both.occupancyWatcherCount).toBe(0);
     });
 });

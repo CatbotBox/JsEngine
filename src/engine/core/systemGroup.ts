@@ -1,4 +1,12 @@
 ﻿import {System, SystemCtor} from "./system";
+import {RunningList} from "./runningList";
+
+const FIRST_INDEX = 0;
+const NO_SYSTEM_RAN_YET = false;
+
+function runsInWalk(system: System): boolean {
+    return system.enabled && system.requirementsMet;
+}
 
 export abstract class SystemGroup extends System {
     public get systems(): System[] {
@@ -6,6 +14,11 @@ export abstract class SystemGroup extends System {
     }
 
     private _systems: System[] = [];
+    private readonly _running: RunningList = new RunningList(this);
+
+    protected get runningList(): RunningList {
+        return this._running;
+    }
 
     protected blocksPresentation(): boolean {
         return false;
@@ -26,12 +39,7 @@ export abstract class SystemGroup extends System {
     }
 
     public onUpdate(): void {
-        const systems = this._systems;
-        const barriers = this.world.presentationBarriers;
-        for (let index = 0; index < systems.length; index++) {
-            if (index !== 0) barriers.atSystemBoundary();
-            systems[index].update();
-        }
+        this._running.walk(this.world.presentationBarriers, NO_SYSTEM_RAN_YET);
     }
 
     public override destroy(): void {
@@ -53,6 +61,26 @@ export abstract class SystemGroup extends System {
         }
     }
 
+    public setRunning(system: System, running: boolean): void {
+        const list = this.runningListOf(system);
+        if (list === undefined) return;
+        if (running) list.insert(system, this._systems);
+        else list.remove(system);
+    }
+
+    protected runningListOf(system: System): RunningList | undefined {
+        return this._running;
+    }
+
+    protected rebuildRunning(): void {
+        this._running.rebuild(this._systems, FIRST_INDEX, this._systems.length, runsInWalk);
+    }
+
+    protected forgetRunning(system: System, predecessor: System | undefined): void {
+        this._running.remove(system);
+        this._running.replaceLastWalked(system, predecessor);
+    }
+
     public addSystem(system: SystemCtor<System>): void {
         const systemInstance = this.world.createSystem(system);
         this.addSystemInstance(systemInstance);
@@ -61,6 +89,7 @@ export abstract class SystemGroup extends System {
     public addSystemInstance(systemInstance: System): void {
         this._systems.push(systemInstance);
         this._systems.sort((a, b) => a.priority() - b.priority());
+        this.rebuildRunning();
     }
 
     public removeSystem(system: SystemCtor<System>): void {
@@ -72,7 +101,9 @@ export abstract class SystemGroup extends System {
     public removeSystemInstance(systemInstance: System): void {
         const index = this._systems.findIndex((t) => t === systemInstance);
         if (index == -1) throw new Error("Can't remove system instance because it does not exist in System Group");
+        const predecessor = index === FIRST_INDEX ? undefined : this._systems[index - 1];
         this._systems.splice(index, 1);
+        this.forgetRunning(systemInstance, predecessor);
 
         systemInstance.destroy();
     }

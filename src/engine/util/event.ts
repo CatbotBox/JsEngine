@@ -3,6 +3,10 @@
 export class Event<T> {
   private _listeners: EventListener<T>[] = [];
 
+  public get listenerCount(): number {
+    return this._listeners.length;
+  }
+
   public invoke(value: T) {
     [...this._listeners].forEach(l => l(value));
   }

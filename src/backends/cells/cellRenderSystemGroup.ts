@@ -13,6 +13,7 @@ import type {CellPresenter, CellRepaint} from "./cellPresenter";
 const PRIORITY_AFTER_CAMERA_SIZING = 100;
 const ERROR_TEXT_COLUMN = 0;
 const ERROR_TEXT_DEPTH = Number.NEGATIVE_INFINITY;
+const NOT_DRAWN_FRAME = -1;
 
 interface MutableBackgroundStyle {
     glyph: number;
@@ -27,6 +28,11 @@ export class CellRenderSystemGroup extends SystemGroup {
 
     private _repaint: CellRepaint = "full";
     private _backgroundStyle: MutableBackgroundStyle = {...CellRenderSettings.DEFAULT_BACKGROUND_STYLE};
+    private _drawnFrame = NOT_DRAWN_FRAME;
+
+    public get drawnFrame(): number {
+        return this._drawnFrame;
+    }
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -57,6 +63,7 @@ export class CellRenderSystemGroup extends SystemGroup {
 
         const cameraError = this.beginCameraFrame(screenBuffer, backgroundStyle);
         if (cameraError === undefined) {
+            this._drawnFrame = this.world.time.frameCount;
             super.onUpdate();
             presenter.present(screenBuffer.toCellFrame(), this._repaint);
         } else {

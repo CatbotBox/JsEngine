@@ -15,6 +15,8 @@ import {PixelResolveTarget} from "./pixelResolveTarget";
 
 const SQUARE_PIXEL_HEIGHT_PER_WIDTH = 1;
 
+const NOT_DRAWN_FRAME = -1;
+
 export class MeshPixelPassSystem extends System {
     private _settingsQuery = this.createEntityQuery([MeshPixelPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, LocalToWorld, FieldOfView]);
@@ -24,16 +26,24 @@ export class MeshPixelPassSystem extends System {
     private _drawer!: MeshSceneDrawer;
     private _resolveTarget = new PixelResolveTarget();
 
+    private _statsFrame = NOT_DRAWN_FRAME;
+
     public get trianglesDrawn(): number {
+        this.dropStaleStats();
         return this._drawer?.trianglesDrawn ?? 0;
     }
 
     public get lodLevelCounts(): Int32Array {
+        this.dropStaleStats();
         return this._drawer.lodLevelCounts;
     }
 
     public get rasterWorkers(): number {
         return this._drawer?.rasterWorkers ?? 0;
+    }
+
+    private dropStaleStats(): void {
+        if (this._statsFrame !== this.world.tryGetSystem(PixelRenderSystemGroup)?.drawnFrame) this._drawer?.resetStats();
     }
 
     override systemGroup() {
@@ -57,12 +67,9 @@ export class MeshPixelPassSystem extends System {
         this.world.ensureSystemExists(SceneLightsGatherSystem);
     }
 
-    override update(): void {
-        this._drawer.resetStats();
-        super.update();
-    }
-
     onUpdate() {
+        this._drawer.resetStats();
+        this._statsFrame = this.world.time.frameCount;
         const settings = this._settingsQuery.getSingleton({settings: MeshPixelPassSettings}).settings;
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,

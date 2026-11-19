@@ -240,6 +240,10 @@ export interface ArchetypeEdge<CT extends ComponentType<any> = ComponentType<any
     readonly columnMap: Int32Array;
 }
 
+export interface OccupancyWatcher {
+    onOccupancyChanged(occupied: boolean): void;
+}
+
 export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>> {
     public readonly addEdges: Map<CT, ArchetypeEdge<CT>> = new Map();
     public readonly removeEdges: Map<CT, ArchetypeEdge<CT>> = new Map();
@@ -249,6 +253,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     public readonly sortedTypeIds: Int32Array;
     private _entities: Entity[] = [];
     private _enabledCount: number = 0;
+    private _occupancyWatchers: readonly OccupancyWatcher[] = [];
 
     private _lastStructuralChangeStamp: number = 0;
 
@@ -256,6 +261,31 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
 
     public get enabledEntityCount(): number {
         return this._enabledCount;
+    }
+
+    private setEnabledCount(count: number): void {
+        const wasOccupied = this._enabledCount !== 0;
+        this._enabledCount = count;
+        if (this._occupancyWatchers.length === 0) return;
+        const isOccupied = count !== 0;
+        if (wasOccupied !== isOccupied) this.notifyOccupancyWatchers(isOccupied);
+    }
+
+    private notifyOccupancyWatchers(occupied: boolean): void {
+        const watchers = this._occupancyWatchers;
+        for (let i = 0; i < watchers.length; i++) watchers[i].onOccupancyChanged(occupied);
+    }
+
+    public get occupancyWatcherCount(): number {
+        return this._occupancyWatchers.length;
+    }
+
+    public addOccupancyWatcher(watcher: OccupancyWatcher): void {
+        this._occupancyWatchers = [...this._occupancyWatchers, watcher];
+    }
+
+    public removeOccupancyWatcher(watcher: OccupancyWatcher): void {
+        this._occupancyWatchers = this._occupancyWatchers.filter(existing => existing !== watcher);
     }
 
     public get entityCountIncludingDisabled(): number {
@@ -400,7 +430,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
         const stamp = this.changeStamps.current;
         for (let i = 0; i < this._entities.length; i++) setEntityRow(this._entities[i], -1);
         this._entities.length = 0;
-        this._enabledCount = 0;
+        this.setEnabledCount(0);
         this._componentData.forEach((component) => component.removeAll(stamp));
         this._lastStructuralChangeStamp = stamp;
     }
@@ -419,7 +449,8 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
     private vacateRow(row: number) {
         const last = this._entities.length - 1;
         if (row < this._enabledCount) {
-            const lastEnabled = --this._enabledCount;
+            const lastEnabled = this._enabledCount - 1;
+            this.setEnabledCount(lastEnabled);
             this.moveRowWithin(lastEnabled, row);
             this.moveRowWithin(last, lastEnabled);
         } else {
@@ -459,8 +490,7 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
 
     setEnabledStateForAll(enabled: boolean) {
         const stamp = this.changeStamps.current;
-        if (enabled) this._enabledCount = this._entities.length;
-        else this._enabledCount = 0;
+        this.setEnabledCount(enabled ? this._entities.length : 0);
         this._lastStructuralChangeStamp = stamp;
         if (enabled) {
             this._lastEntityAddedStamp = stamp;
@@ -481,12 +511,12 @@ export class EntityArchetype<CT extends ComponentType<any> = ComponentType<any>>
             if (index < this._enabledCount) return false;
             boundary = this._enabledCount;
             this.swapDataAtIndices(index, boundary);
-            this._enabledCount++;
+            this.setEnabledCount(boundary + 1);
         } else {
             if (index >= this._enabledCount) return false;
             boundary = this._enabledCount - 1;
             this.swapDataAtIndices(index, boundary);
-            this._enabledCount--;
+            this.setEnabledCount(boundary);
         }
         this._lastStructuralChangeStamp = stamp;
         this.markAllColumnsAt(index, stamp);
