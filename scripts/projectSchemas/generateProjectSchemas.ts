@@ -1,7 +1,7 @@
 import {existsSync, readdirSync, readFileSync, writeFileSync} from "fs";
 import {isAbsolute, join, relative, resolve} from "path";
 import * as ts from "typescript";
-import {GENERATED_SCHEMAS_FILE} from "../../src/editor/project/projectManifest";
+import {GENERATED_SCHEMAS_FILE} from "../../src/engine/project/projectManifest";
 import {ENGINE_ASSET_TYPES} from "../../src/engine/scene/assetTypes";
 
 export const GENERATED_FILE_NAME = GENERATED_SCHEMAS_FILE;

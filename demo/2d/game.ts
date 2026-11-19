@@ -7,7 +7,7 @@ import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, Rendering
 import {Sprite} from "../../src/engine/rendering/2d";
 import {LocalPosition, LocalToWorld} from "../../src/engine/translation";
 import {Vec} from "../../src/engine/math/types/vec";
-import {randomSourceFor} from "../../src/engine/math/randomSource";
+import {Random} from "../../src/engine/math/random";
 import type {RandomSource} from "../../src/engine/math/randomSource";
 import {AverageStat} from "../../src/engine/datatypes";
 import {PrefabSpawner} from "../../src/engine/scene";
@@ -71,31 +71,14 @@ class Demo2dHostResource extends Resource {
     }
 }
 
-class Demo2dRandom extends Resource {
-    private seed: number | undefined;
-    private source: RandomSource;
-
-    public constructor(seed: number | undefined) {
-        super();
-        this.seed = seed;
-        this.source = randomSourceFor(seed);
-    }
-
-    public sourceFor(seed: number | undefined): RandomSource {
-        if (seed !== this.seed) {
-            this.seed = seed;
-            this.source = randomSourceFor(seed);
-        }
-        return this.source;
-    }
-}
-
 function commandBufferOf(world: World): EntityCommandBuffer {
     return world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
 }
 
-function randomSourceOf(world: World): RandomSource {
-    return world.resources.get(Demo2dRandom).sourceFor(world.resources.get(Demo2dTuning).randomSeed);
+function randomOf(world: World): Random {
+    const random = world.resources.get(Random);
+    random.reseedIfChanged(world.resources.get(Demo2dTuning).randomSeed);
+    return random;
 }
 
 function requirePixelPrefab(tuning: Demo2dTuning): PrefabAsset {
@@ -161,7 +144,7 @@ class RandomTintSystem extends System {
         this._tinted.stream({read: {tint: RandomTint}}, ENTITIES_INCLUDING_DISABLED).consume(({entity}) => {
             tinted.push(entity);
         });
-        const random = randomSourceOf(this.world);
+        const random = randomOf(this.world);
         const buffer = commandBufferOf(this.world);
         const tints = new Map<Entity, number>();
         for (const entity of tinted.sort(byCreationOrder)) tints.set(entity, randomRgb(random));
@@ -226,7 +209,7 @@ class Demo2dControlsSystem extends System {
 
     private spawnFadingPixels(): void {
         const tuning = this.tuning();
-        const random = randomSourceOf(this.world);
+        const random = randomOf(this.world);
         const spawner = this.world.resources.get(PrefabSpawner);
         const prefab = requirePixelPrefab(tuning);
         const buffer = commandBufferOf(this.world);
@@ -335,7 +318,7 @@ function requireDemo2dData(world: World): void {
 export function setupDemo2d(world: World, host: Demo2dHost): void {
     requireDemo2dData(world);
     world.resources.insert(new Demo2dHostResource(host));
-    world.resources.insert(new Demo2dRandom(world.resources.get(Demo2dTuning).randomSeed));
+    world.resources.insert(new Random(world.resources.get(Demo2dTuning).randomSeed));
     world.ensureSystemExists(RandomTintSystem);
     world.ensureSystemExists(Demo2dControlsSystem);
     world.ensureSystemExists(Demo2dHudSystem);

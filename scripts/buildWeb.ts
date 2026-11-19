@@ -8,7 +8,7 @@ import {nodePlatform} from "../src/hosts/terminal";
 import type {RenderBackend} from "../src/hosts/web/worldWorkerProtocol";
 import {EDITOR_MESSAGE_TYPE} from "../src/editor/editorProtocol";
 import {DEV_RELOAD_DEFINE} from "../src/hosts/web/devReload";
-import {PROJECT_MANIFEST_FILE} from "../src/editor/project/projectManifest";
+import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
 import {isWebProjectDataFile} from "./webDistFiles";
 
 const ROOT = resolve(__dirname, "..");

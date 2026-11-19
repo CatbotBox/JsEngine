@@ -1,8 +1,8 @@
-import {describe, expect, test} from "../../engine/testing/harness";
-import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
-import {World} from "../../engine/core";
-import {Input, InputMap, Key, NO_MODIFIERS, resolveInputActions} from "../../engine/input";
-import {DATA_ASSET_FORMAT, DATA_ASSET_VERSION} from "../../engine/scene";
+import {describe, expect, test} from "../testing/harness";
+import {MemoryPlatform} from "../testing/memoryPlatform";
+import {World} from "../core";
+import {Input, InputMap, Key, NO_MODIFIERS, resolveInputActions} from "../input";
+import {DATA_ASSET_FORMAT, DATA_ASSET_VERSION} from "../scene";
 import type {ProjectEntryModule, ProjectHost} from "./projectEntry";
 import {launchProject} from "./projectLaunch";
 import {PROJECT_MANIFEST_FILE} from "./projectManifest";

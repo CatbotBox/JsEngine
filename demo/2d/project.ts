@@ -1,6 +1,6 @@
 import type {World} from "../../src/engine/core";
 import type {ComponentSchemaRegistry} from "../../src/engine/scene";
-import type {ProjectHost} from "../../src/editor/project/projectEntry";
+import type {ProjectHost} from "../../src/engine/project/projectEntry";
 import {setupDemo2d} from "./game";
 import {registerGeneratedSchemas} from "./schemas.generated";
 import {installPixelRendering2d} from "./launch/pixelRendering";

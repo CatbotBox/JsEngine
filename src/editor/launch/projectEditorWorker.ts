@@ -13,11 +13,11 @@ import {gpuCanvasPresenter, requestGpuDevice} from "../../hosts/web/gpuWorldDevi
 import {attachEditorWorldService, editorSceneManager} from "../world/editorWorldService";
 import type {EditorServiceScope} from "../world/editorWorldService";
 import {ProjectFileSource} from "../project/projectFileSource";
-import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../project/projectManifest";
-import type {ProjectManifest} from "../project/projectManifest";
-import {createProjectSchemaRegistry} from "../project/projectSchemas";
-import type {GeneratedProjectSchemas, SchemaRegistration} from "../project/projectSchemas";
-import {startProject} from "../project/projectStartup";
+import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
+import type {ProjectManifest} from "../../engine/project/projectManifest";
+import {createProjectSchemaRegistry} from "../../engine/project/projectSchemas";
+import type {GeneratedProjectSchemas, SchemaRegistration} from "../../engine/project/projectSchemas";
+import {startProject} from "../../engine/project/projectStartup";
 import type {ProjectFilesChannel} from "../project/projectFileSource";
 import type {
     ProjectAssetFile,
@@ -27,7 +27,7 @@ import type {
     ProjectLoadProgress,
     ProjectLoadProgressListener,
     ProjectRenderBackend,
-} from "../project/projectEntry";
+} from "../../engine/project/projectEntry";
 
 type ProjectEditorWorkerScope = WorldWorkerScope & EditorServiceScope & ProjectFilesChannel;
 

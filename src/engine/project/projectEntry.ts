@@ -1,6 +1,6 @@
-import type {World} from "../../engine/core";
-import type {ComponentSchemaRegistry} from "../../engine/scene/componentSchemaRegistry";
-import type {SceneManager} from "../../engine/scene/sceneManager";
+import type {World} from "../core";
+import type {ComponentSchemaRegistry} from "../scene/componentSchemaRegistry";
+import type {SceneManager} from "../scene/sceneManager";
 
 export interface ProjectAssetFile {
     readonly path: string;

@@ -2,7 +2,7 @@
 import type {ComponentSchemaRegistry} from "../../src/engine/scene";
 import {Bullet, Enemy, Lifetime, Ship, Spark, SwarmHud, Velocity} from "./components";
 import {EnemyGrid} from "./enemyGrid";
-import {SeededRandom, SwarmState} from "./resources";
+import {SwarmState} from "./resources";
 import {ArenaTuning, BombTuning, ControlHint, EnemySpawn, GameOverBanner, HudTuning, ShipTuning, SparkTuning, SwarmTuning, TitleBanner, WaveBanner, WaveCurve, WaveTuning, WeaponTuning} from "./tuning";
 
 export function registerGeneratedSchemas(registry: ComponentSchemaRegistry): void {
@@ -38,7 +38,6 @@ export function registerGeneratedSchemas(registry: ComponentSchemaRegistry): voi
         {key: "count", kind: "number"},
         {key: "maxRadiusUnits", kind: "number"},
     ]);
-    registry.registerGeneratedResource(SeededRandom, "SeededRandom", []);
     registry.registerGeneratedResource(SwarmState, "SwarmState", [
         {key: "phase", kind: "enum", typeName: "SwarmPhase", members: [{name: "Title", value: "title"}, {name: "Starting", value: "starting"}, {name: "Playing", value: "playing"}, {name: "GameOver", value: "gameOver"}]},
         {key: "score", kind: "integer"},

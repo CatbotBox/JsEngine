@@ -36,7 +36,7 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     "editor": ["engine", ...BACKENDS, "editor project", "editor"],
     "editor launch": ["engine", ...BACKENDS, "hosts/web", "editor project", "editor", "editor launch"],
     "demo": ["engine", "demo"],
-    "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "editor project", "editor", "demo", "demo launch"],
+    "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "demo", "demo launch"],
 };
 
 const UNSCHEDULED = "unscheduled";
@@ -48,10 +48,10 @@ const DEMO_LAUNCH_FOLDER = "launch";
 const EDITOR_LAUNCH_FOLDER = "launch";
 const EDITOR_PROJECT_FOLDER = "project";
 const EDITOR_SOURCES = "src/editor/";
-const EDITOR_PROJECT_SOURCES = "src/editor/project/";
 const WEB_GAME_ENTRY_NAMES = ["2d", "3d", "swarm", "2d-cells", "2d-pixels", "3d-cells", "3d-pixels", "3d-gpu", "swarm-cells", "swarm-pixels"];
 const DEMO_GAME_ENTRY_PATHS = [["launch", "web.worker.ts"], ["launch", "pixelWeb.worker.ts"], ["launch", "gpuWeb.worker.ts"], ["index.ts"]];
 const ENGINE_WORLD_SOURCE = "src/engine/core/world.ts";
+const ENGINE_PROJECT_LAUNCH_SOURCE = "src/engine/project/projectLaunch.ts";
 
 function typeScriptFilesUnder(directory: string): string[] {
     return fs.readdirSync(directory, {withFileTypes: true}).flatMap(entry => {
@@ -158,14 +158,14 @@ describe("source rules", () => {
         expect([...layers].filter(layer => ALLOWED_LAYERS[layer] === undefined)).toEqual([]);
     });
 
-    test("no game entry reaches src/editor outside its engine-only project layer through its relative imports", () => {
+    test("no game entry reaches src/editor through its relative imports", () => {
         const entries = gameEntries();
         expect(entries.filter(file => !fs.existsSync(file)).map(fromRoot)).toEqual([]);
         expect(entries.length).toBeGreaterThan(WEB_GAME_ENTRY_NAMES.length);
         const reached = relativeImportClosure(entries).map(fromRoot);
         expect(reached.includes(ENGINE_WORLD_SOURCE)).toBe(true);
-        expect(reached.includes(EDITOR_PROJECT_SOURCES + "projectLaunch.ts")).toBe(true);
-        expect(reached.filter(file => file.startsWith(EDITOR_SOURCES) && !file.startsWith(EDITOR_PROJECT_SOURCES))).toEqual([]);
+        expect(reached.includes(ENGINE_PROJECT_LAUNCH_SOURCE)).toBe(true);
+        expect(reached.filter(file => file.startsWith(EDITOR_SOURCES))).toEqual([]);
     });
 
     test("every allowlist entry is still a wrong-direction import, so the list only shrinks", () => {

@@ -32,6 +32,8 @@
     "demo:swarm:bun": "bun demo/swarm/index.ts",
     "demo:swarm:node": "node -r ts-node/register/transpile-only demo/swarm/index.ts",
     "demo:swarm:watch": "bun --watch demo/swarm/index.ts",
+    "demo:library-only:bun": "bun demo/libraryOnly/index.ts",
+    "demo:library-only:node": "node -r ts-node/register/transpile-only demo/libraryOnly/index.ts",
     "demo:2d:web": "bun scripts/serveWeb.ts 2d",
     "demo:3d:web": "bun scripts/serveWeb.ts 3d",
     "demo:3d:gpu:web": "bun scripts/serveWeb.ts 3d-gpu",

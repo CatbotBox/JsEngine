@@ -1,5 +1,5 @@
 import type {ProjectEntry, ProjectFileChange, ProjectFileSystem} from "./projectFileSystem";
-import {requireProjectRelativePath} from "./projectPaths";
+import {requireProjectRelativePath} from "../../engine/project/projectPaths";
 import {isFilesChangedEvent, PROJECT_EVENT_FILES_CHANGED, PROJECT_OPEN_EXTERNALLY_ROUTE, projectApiUrl, projectFileRoute} from "./projectServerApi";
 import type {MakeDirectoryRequest, OpenExternallyRequest, ProjectApiError, RenameRequest} from "./projectServerApi";
 

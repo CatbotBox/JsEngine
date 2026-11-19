@@ -1,0 +1,56 @@
+{
+  "format": "jsengine-scene",
+  "version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "name": "camera",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "Camera": {
+          "nearPlaneDistance": 0.1,
+          "farPlaneDistance": 100
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 2,
+      "name": "drifter",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            -10,
+            0,
+            0
+          ]
+        },
+        "TextSprite": {
+          "image": [
+            "<o>"
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 2
+          },
+          "background": "default"
+        },
+        "Drift": {
+          "unitsPerSecondX": 6,
+          "unitsPerSecondY": 0
+        },
+        "LocalToWorld": {},
+        "RenderBounds": {}
+      }
+    }
+  ]
+}

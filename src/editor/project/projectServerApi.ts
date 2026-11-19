@@ -1,4 +1,4 @@
-import type {ProjectManifestValidation} from "./projectManifest";
+import type {ProjectManifestValidation} from "../../engine/project/projectManifest";
 
 export const PROJECT_API_PREFIX = "/__project/";
 export const PROJECT_EVENT_FILES_CHANGED = "files-changed";

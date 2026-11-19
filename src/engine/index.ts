@@ -4,3 +4,4 @@ export * as Translation from "./translation";
 export * as Datatypes from "./datatypes";
 export * as Debugging from "./debugging";
 export * as Scene from "./scene";
+export * as Project from "./project";

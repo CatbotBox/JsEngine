@@ -4,8 +4,8 @@ import {renderBackendFromQuery} from "../../hosts/web/worldWorkerProtocol";
 import {createEditorShell} from "../page/editorShell";
 import {DirectoryHandleProjectFileSystem} from "../project/directoryHandleProjectFileSystem";
 import type {DirectoryHandleLike} from "../project/directoryHandleProjectFileSystem";
-import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../project/projectManifest";
-import type {ProjectManifest} from "../project/projectManifest";
+import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
+import type {ProjectManifest} from "../../engine/project/projectManifest";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {
     isBuildFailedEvent,

@@ -1,5 +1,5 @@
 import type {ProjectEntry, ProjectFileChange, ProjectFileSystem} from "./projectFileSystem";
-import {joinProjectPath, projectPathSegments} from "./projectPaths";
+import {joinProjectPath, projectPathSegments} from "../../engine/project/projectPaths";
 
 export interface FileLike {
     readonly size: number;

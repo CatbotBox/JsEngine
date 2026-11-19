@@ -1,7 +1,7 @@
-import {describe, expect, test} from "../../engine/testing/harness";
-import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
-import {EntityCommandBufferSystem, Resource, World} from "../../engine/core";
-import {LocalPosition} from "../../engine/translation/localPosition";
+import {describe, expect, test} from "../testing/harness";
+import {MemoryPlatform} from "../testing/memoryPlatform";
+import {EntityCommandBufferSystem, Resource, World} from "../core";
+import {LocalPosition} from "../translation/localPosition";
 import {
     ComponentSchemaRegistry,
     DATA_ASSET_FORMAT,
@@ -12,7 +12,7 @@ import {
     SCENE_DOCUMENT_VERSION,
     sceneEntitiesInCreationOrder,
     SceneManager,
-} from "../../engine/scene";
+} from "../scene";
 import type {ProjectAssetFiles, ProjectEntryModule, ProjectHost} from "./projectEntry";
 import type {ProjectManifest} from "./projectManifest";
 import {startProject} from "./projectStartup";

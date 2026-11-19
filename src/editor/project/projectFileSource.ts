@@ -1,6 +1,6 @@
 import type {FileSource, FileStat} from "../../engine/platform/platform";
 import {normalizePath} from "../../engine/platform/paths";
-import type {ProjectAssetFile, ProjectAssetFiles, ProjectLoadProgressListener} from "./projectEntry";
+import type {ProjectAssetFile, ProjectAssetFiles, ProjectLoadProgressListener} from "../../engine/project/projectEntry";
 import {isProjectFilesPageMessage, PROJECT_FILES_MESSAGE_TYPE} from "./projectFilesProtocol";
 import type {ProjectFilesPageMessage, ProjectFilesWorldMessage, ProjectListedFile} from "./projectFilesProtocol";
 
