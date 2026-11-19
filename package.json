@@ -63,6 +63,8 @@
     "bench:frame-time:node": "node -r ts-node/register/transpile-only bench/boundsCascade.bench.ts",
     "bench:structural-changes:bun": "bun bench/structural.bench.ts",
     "bench:structural-changes:node": "node --expose-gc -r ts-node/register/transpile-only bench/structural.bench.ts",
+    "bench:idle-systems:bun": "bun bench/idleSystems.bench.ts",
+    "bench:idle-systems:node": "node --expose-gc -r ts-node/register/transpile-only bench/idleSystems.bench.ts",
     "web:build-prod": "bun scripts/buildWeb.ts --prod",
     "web:serve-dev": "bun scripts/serveWeb.ts",
     "web:serve-prod": "bun scripts/serveWeb.ts --prod",

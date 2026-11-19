@@ -9,7 +9,15 @@ import {InputSystem} from "../input/inputSystem";
 
 const PERF_STAT_WINDOW_FRAMES = 60;
 const PARTIAL_WINDOW_AVERAGE = false;
-const ROOT_GROUP_RUNNING = true;
+const RUNNING_MARK = "";
+const DISABLED_MARK = "⏸";
+const IDLE_MARK = "idle";
+
+function runStateMark(system: System, parentMark: string): string {
+    if (parentMark === DISABLED_MARK || !system.enabled) return DISABLED_MARK;
+    if (parentMark === IDLE_MARK || !system.requirementsMet) return IDLE_MARK;
+    return RUNNING_MARK;
+}
 
 export class DebugWorld extends World {
 
@@ -74,22 +82,22 @@ export class DebugWorld extends World {
             ` | archetypes: ${occupied} occupied / ${archetypes} total` +
             ` | tick budget: ${this.loopTiming.tickDeltaMs.toFixed(2)}ms`
         );
-        this.logGroupTree(this._rootSystemGroup, ROOT_GROUP_RUNNING);
+        this.logGroupTree(this._rootSystemGroup, RUNNING_MARK);
     }
 
-    private logGroupTree(systemGroup: SystemGroup, parentRunning: boolean) {
+    private logGroupTree(systemGroup: SystemGroup, parentMark: string) {
         if (!this._systemPerfStat) this._systemPerfStat = new Map<System, AverageStat>();
         const timing = this._systemPerfStat.get(systemGroup)?.getAvg(PARTIAL_WINDOW_AVERAGE);
         const timingString = timing === undefined ? "[-]" : `[${timing.toFixed(2)}ms]`;
-        const isRunning = parentRunning && systemGroup.enabled;
-        console.group("SystemGroup", systemGroup.constructor.name, isRunning ? "" : "⏸", timingString);
+        const groupMark = runStateMark(systemGroup, parentMark);
+        console.group("SystemGroup", systemGroup.constructor.name, groupMark, timingString);
         for (const system of systemGroup.systems) {
             if (system instanceof SystemGroup) {
-                this.logGroupTree(system, isRunning)
+                this.logGroupTree(system, groupMark)
             } else {
                 const timing = this._systemPerfStat.get(system)?.getAvg(PARTIAL_WINDOW_AVERAGE);
                 const timingString = timing === undefined ? "[-]" : `[${timing.toFixed(2)}ms]`;
-                console.log("System", system.constructor.name, isRunning && system.enabled ? "" : "⏸", timingString);
+                console.log("System", system.constructor.name, runStateMark(system, groupMark), timingString);
             }
         }
         console.groupEnd();

@@ -1,5 +1,5 @@
 ﻿import {type Component, type ComponentCtor} from "./component";
-import {EntityArchetype} from "./entityArchetype";
+import {EntityArchetype, NO_SOURCE_COLUMN, type OccupancyWatcher} from "./entityArchetype";
 import {World} from "./world";
 import {Entity} from "./entity";
 import {EntityStreamOptions} from "./entityStreamOptions";
@@ -19,16 +19,8 @@ import {WorldSource} from "./worldSource";
 
 type TokenOrCtor = AnyCT | ComponentCtor<Component>;
 
-function hasAll<CT extends AnyCT>(arch: EntityArchetype<CT>, required: readonly CT[]): boolean {
-    const have = new Set(arch.componentTypes as readonly CT[]);
-    for (const t of required) if (!have.has(t)) return false;
-    return true;
-}
-
-function hasNone<CT extends AnyCT>(arch: EntityArchetype<CT>, excluded: readonly CT[]): boolean {
-    const have = new Set(arch.componentTypes as readonly CT[]);
-    for (const t of excluded) if (have.has(t)) return false;
-    return true;
+function typeNames(tokens: readonly AnyCT[]): string {
+    return tokens.map(token => token.ctor.name).join(", ");
 }
 
 const AMBIGUOUS = Symbol("ambiguous singleton");
@@ -50,9 +42,17 @@ export class EntityQuery<
         cachedArchetypes: []
     }
 
+    private _tracked: boolean = false;
+    private _occupiedArchetypes: number = 0;
+    private _occupancyWatchers: readonly OccupancyWatcher[] = [];
+    private readonly _archetypeWatcher: OccupancyWatcher = {
+        onOccupancyChanged: occupied => this.countArchetypeOccupancyChange(occupied),
+    };
+
     constructor(private _source: WorldSource, include: IncSpec, exclude?: ExcSpec) {
         this._include = toTokens(include) as TokensOfList<IncSpec>;
         this._exclude = toTokens(exclude ?? []) as TokensOfList<ExcSpec>;
+        _source.adoptQuery(this as unknown as EntityQuery);
     }
 
     private bindToWorld() {
@@ -79,19 +79,82 @@ export class EntityQuery<
         return this.getCachedArchetypes().values();
     }
 
+    public track(): void {
+        if (this._tracked) return;
+        const archetypes = this.getCachedArchetypes();
+        let occupied = 0;
+        for (let i = 0; i < archetypes.length; i++) {
+            const arch = archetypes[i];
+            arch.addOccupancyWatcher(this._archetypeWatcher);
+            if (arch.enabledEntityCount > 0) occupied++;
+        }
+        this._occupiedArchetypes = occupied;
+        this._tracked = true;
+    }
+
+    public addOccupancyWatcher(watcher: OccupancyWatcher): void {
+        this.track();
+        this._occupancyWatchers = [...this._occupancyWatchers, watcher];
+    }
+
+    public removeOccupancyWatcher(watcher: OccupancyWatcher): void {
+        this._occupancyWatchers = this._occupancyWatchers.filter(existing => existing !== watcher);
+    }
+
+    private countArchetypeOccupancyChange(occupied: boolean): void {
+        const wasOccupied = this._occupiedArchetypes > 0;
+        if (occupied) this._occupiedArchetypes++;
+        else this._occupiedArchetypes--;
+        const isOccupied = this._occupiedArchetypes > 0;
+        if (wasOccupied !== isOccupied) this.notifyOccupancyWatchers(isOccupied);
+    }
+
+    private notifyOccupancyWatchers(occupied: boolean): void {
+        const watchers = this._occupancyWatchers;
+        for (let i = 0; i < watchers.length; i++) watchers[i].onOccupancyChanged(occupied);
+    }
+
+    public dispose(): void {
+        const world = this._lazyLoaded.world;
+        if (world !== undefined) {
+            world.archetypes.onCreateArchetype.remove(this.onArchetypeCreated);
+            world.archetypes.onPruneArchetype.remove(this.onArchetypePruned);
+        }
+        if (this._tracked) {
+            const cached = this._lazyLoaded.cachedArchetypes;
+            for (let i = 0; i < cached.length; i++) cached[i].removeOccupancyWatcher(this._archetypeWatcher);
+            this._tracked = false;
+            this._occupiedArchetypes = 0;
+        }
+        this._occupancyWatchers = [];
+        this._lazyLoaded.world = undefined!;
+        this._lazyLoaded.cachedArchetypes = [];
+        this.getWorld = this.getCachedArchetypes = this.throwDisposed;
+    }
+
+    private throwDisposed(): never {
+        throw new Error(`EntityQuery used after dispose(): include [${typeNames(this._include)}], exclude [${typeNames(this._exclude)}]`);
+    }
+
     private onArchetypeCreated = (arch: EntityArchetype<AnyCT>) => {
-        if (this.matches(arch)) this.getCachedArchetypes().push(arch);
+        if (!this.matches(arch)) return;
+        this._lazyLoaded.cachedArchetypes.push(arch);
+        if (this._tracked) arch.addOccupancyWatcher(this._archetypeWatcher);
     };
 
     private onArchetypePruned = (arch: EntityArchetype<AnyCT>) => {
-        const arr = this.getCachedArchetypes();
-        const index = arr.indexOf(arch);
-        if (index !== -1) arr.splice(index, 1);
+        const cached = this._lazyLoaded.cachedArchetypes;
+        const index = cached.indexOf(arch);
+        if (index === -1) return;
+        cached.splice(index, 1);
+        if (this._tracked) arch.removeOccupancyWatcher(this._archetypeWatcher);
     };
 
     private matches(arch: EntityArchetype<AnyCT>): boolean {
-        return hasAll(arch, this._include as readonly AnyCT[]) &&
-            hasNone(arch, this._exclude as readonly AnyCT[]);
+        const include = this._include, exclude = this._exclude;
+        for (let i = 0; i < include.length; i++) if (arch.columnIndexOf(include[i]) === NO_SOURCE_COLUMN) return false;
+        for (let i = 0; i < exclude.length; i++) if (arch.columnIndexOf(exclude[i]) !== NO_SOURCE_COLUMN) return false;
+        return true;
     }
 
     private refreshCache(): void {
@@ -147,6 +210,7 @@ export class EntityQuery<
     }
 
     public hasEntity(): boolean {
+        if (this._tracked) return this._occupiedArchetypes > 0;
         for (const arch of this.archetypes) {
             if (arch.enabledEntityCount > 0) return true;
         }

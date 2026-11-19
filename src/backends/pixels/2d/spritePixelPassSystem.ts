@@ -15,6 +15,8 @@ import {SpritePixelPassSettings} from "./spritePixelPassSettings";
 import {SpritePixelRasterizer, spriteHeightPx, spriteWidthPx} from "./spritePixelRasterizer";
 
 const CAMERA_DEPTH_EXTENT = 1000;
+const NOT_DRAWN_FRAME = -1;
+const NOTHING_DRAWN = 0;
 const CENTER_FRACTION = 0.5;
 
 export class SpritePixelPassSystem extends System {
@@ -28,7 +30,17 @@ export class SpritePixelPassSystem extends System {
 
     private _rasterizer = new SpritePixelRasterizer();
 
-    public spritesDrawn = 0;
+    private _spritesDrawn = NOTHING_DRAWN;
+    private _statsFrame = NOT_DRAWN_FRAME;
+
+    public get spritesDrawn(): number {
+        this.dropStaleStats();
+        return this._spritesDrawn;
+    }
+
+    private dropStaleStats(): void {
+        if (this._statsFrame !== this.world.tryGetSystem(PixelRenderSystemGroup)?.drawnFrame) this._spritesDrawn = NOTHING_DRAWN;
+    }
 
     override systemGroup() {
         return PixelRenderSystemGroup;
@@ -46,12 +58,9 @@ export class SpritePixelPassSystem extends System {
         this.world.ensureSystemExists(SpriteBoundsSystem);
     }
 
-    override update(): void {
-        this.spritesDrawn = 0;
-        super.update();
-    }
-
     onUpdate() {
+        this._spritesDrawn = NOTHING_DRAWN;
+        this._statsFrame = this.world.time.frameCount;
         const framebuffer = this.world.resources.tryGet(PixelFramebuffer);
         if (!framebuffer) return;
 
@@ -98,7 +107,7 @@ export class SpritePixelPassSystem extends System {
                 const image = sprite.image;
                 if (image === undefined) continue;
 
-                this.spritesDrawn++;
+                this._spritesDrawn++;
                 rasterizer.blitSprite(
                     image,
                     Math.floor((xMin - camXMin) * unitWidthPx),

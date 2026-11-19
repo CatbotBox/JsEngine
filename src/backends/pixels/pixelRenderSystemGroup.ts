@@ -12,12 +12,18 @@ import {PixelTextRasterizer} from "./pixelTextRasterizer";
 const PRIORITY_AFTER_CAMERA_SIZING = 100;
 const ERROR_TEXT_LEFT_PX = 0;
 const ERROR_TEXT_DEPTH = Number.NEGATIVE_INFINITY;
+const NOT_DRAWN_FRAME = -1;
 
 export class PixelRenderSystemGroup extends SystemGroup {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _settingsQuery = this.createEntityQuery([PixelRenderSettings]);
     private _errorText = new PixelTextRasterizer();
+    private _drawnFrame = NOT_DRAWN_FRAME;
+
+    public get drawnFrame(): number {
+        return this._drawnFrame;
+    }
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -45,8 +51,12 @@ export class PixelRenderSystemGroup extends SystemGroup {
         framebuffer.beginFrame(presenter.size(), backgroundColorOf(settings), pixelsPerScreenUnitXOf(settings), backgroundAlpha);
 
         const cameraError = this.cameraError();
-        if (cameraError === undefined) super.onUpdate();
-        else this.drawCameraError(framebuffer, cameraError);
+        if (cameraError === undefined) {
+            this._drawnFrame = this.world.time.frameCount;
+            super.onUpdate();
+        } else {
+            this.drawCameraError(framebuffer, cameraError);
+        }
         presenter.present(framebuffer.toPixelFrame());
     }
 

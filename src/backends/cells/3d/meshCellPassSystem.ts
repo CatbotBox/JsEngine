@@ -15,6 +15,8 @@ import {RenderMeshBoundsSystem} from "../../../engine/rendering/3d/renderMeshBou
 import {SceneLights} from "../../../engine/rendering/3d/lighting/sceneLights";
 import {SceneLightsGatherSystem} from "../../../engine/rendering/3d/lighting/sceneLightsGatherSystem";
 
+const NOT_DRAWN_FRAME = -1;
+
 export class MeshCellPassSystem extends System {
     private _settingsQuery = this.createEntityQuery([MeshCellPassSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld, FieldOfView, CellAspectRatio]);
@@ -24,16 +26,24 @@ export class MeshCellPassSystem extends System {
     private _drawer!: MeshSceneDrawer;
     private _resolveTarget = new CellResolveTarget();
 
+    private _statsFrame = NOT_DRAWN_FRAME;
+
     public get trianglesDrawn(): number {
+        this.dropStaleStats();
         return this._drawer?.trianglesDrawn ?? 0;
     }
 
     public get lodLevelCounts(): Int32Array {
+        this.dropStaleStats();
         return this._drawer.lodLevelCounts;
     }
 
     public get rasterWorkers(): number {
         return this._drawer?.rasterWorkers ?? 0;
+    }
+
+    private dropStaleStats(): void {
+        if (this._statsFrame !== this.world.tryGetSystem(CellRenderSystemGroup)?.drawnFrame) this._drawer?.resetStats();
     }
 
     override systemGroup() {
@@ -57,12 +67,9 @@ export class MeshCellPassSystem extends System {
         this.world.ensureSystemExists(SceneLightsGatherSystem);
     }
 
-    override update(): void {
-        this._drawer.resetStats();
-        super.update();
-    }
-
     onUpdate() {
+        this._drawer.resetStats();
+        this._statsFrame = this.world.time.frameCount;
         const settings = this._settingsQuery.getSingleton({settings: MeshCellPassSettings}).settings;
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,
