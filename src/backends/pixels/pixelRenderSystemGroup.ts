@@ -12,17 +12,17 @@ import {PixelTextRasterizer} from "./pixelTextRasterizer";
 const PRIORITY_AFTER_CAMERA_SIZING = 100;
 const ERROR_TEXT_LEFT_PX = 0;
 const ERROR_TEXT_DEPTH = Number.NEGATIVE_INFINITY;
-const NOT_DRAWN_FRAME = -1;
+const NO_WALKS = 0;
 
 export class PixelRenderSystemGroup extends SystemGroup {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _settingsQuery = this.createEntityQuery([PixelRenderSettings]);
     private _errorText = new PixelTextRasterizer();
-    private _drawnFrame = NOT_DRAWN_FRAME;
+    private _walkCount = NO_WALKS;
 
-    public get drawnFrame(): number {
-        return this._drawnFrame;
+    public get walkCount(): number {
+        return this._walkCount;
     }
 
     override systemGroup() {
@@ -52,7 +52,7 @@ export class PixelRenderSystemGroup extends SystemGroup {
 
         const cameraError = this.cameraError();
         if (cameraError === undefined) {
-            this._drawnFrame = this.world.time.frameCount;
+            this._walkCount++;
             super.onUpdate();
         } else {
             this.drawCameraError(framebuffer, cameraError);

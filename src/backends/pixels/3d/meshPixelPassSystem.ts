@@ -15,7 +15,7 @@ import {PixelResolveTarget} from "./pixelResolveTarget";
 
 const SQUARE_PIXEL_HEIGHT_PER_WIDTH = 1;
 
-const NOT_DRAWN_FRAME = -1;
+const NO_WALKS = 0;
 
 export class MeshPixelPassSystem extends System {
     private _settingsQuery = this.createEntityQuery([MeshPixelPassSettings]);
@@ -26,7 +26,7 @@ export class MeshPixelPassSystem extends System {
     private _drawer!: MeshSceneDrawer;
     private _resolveTarget = new PixelResolveTarget();
 
-    private _statsFrame = NOT_DRAWN_FRAME;
+    private _statsWalk = NO_WALKS;
 
     public get trianglesDrawn(): number {
         this.dropStaleStats();
@@ -43,7 +43,11 @@ export class MeshPixelPassSystem extends System {
     }
 
     private dropStaleStats(): void {
-        if (this._statsFrame !== this.world.tryGetSystem(PixelRenderSystemGroup)?.drawnFrame) this._drawer?.resetStats();
+        if (this._statsWalk !== this.groupWalkCount()) this._drawer?.resetStats();
+    }
+
+    private groupWalkCount(): number {
+        return this.world.tryGetSystem(PixelRenderSystemGroup)?.walkCount ?? NO_WALKS;
     }
 
     override systemGroup() {
@@ -69,7 +73,7 @@ export class MeshPixelPassSystem extends System {
 
     onUpdate() {
         this._drawer.resetStats();
-        this._statsFrame = this.world.time.frameCount;
+        this._statsWalk = this.groupWalkCount();
         const settings = this._settingsQuery.getSingleton({settings: MeshPixelPassSettings}).settings;
         const cameraEntity = this._cameraQuery.getSingleton({
             camera: Camera,

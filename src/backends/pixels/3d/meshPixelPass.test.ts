@@ -15,12 +15,17 @@ import {PixelPresenterResource} from "../pixelPresenterResource";
 import {RGBA_BYTES_PER_PIXEL} from "../pixelFrame";
 import {MeshPixelPassSettings} from "./meshPixelPassSettings";
 import {MeshPixelPassSystem} from "./meshPixelPassSystem";
+import {PixelRenderSystemGroup} from "../pixelRenderSystemGroup";
 
 const QUAD_RGB = 0x336699;
 const QUAD_HALF_SIZE = 1;
 const QUAD_DISTANCE = 4;
 const SIZE = {widthPx: 64, heightPx: 48};
 const RED_SHIFT = 16, GREEN_SHIFT = 8;
+const QUAD_TRIANGLES = 2;
+const QUAD_LOD_DRAWS = 1;
+const SETTLE_STEPS = 2;
+const FRAME_MS = 16;
 
 function quad(): Mesh {
     const builder = new MeshBuilder();
@@ -84,5 +89,55 @@ describe("MeshPixelPassSystem", () => {
         expect(pass.trianglesDrawn).toBe(2);
         expect(centerRgb()).toBe(QUAD_RGB);
         expect(pass.rasterWorkers).toBe(0);
+    });
+});
+
+interface DrawingWorld {
+    readonly world: World;
+    readonly pass: MeshPixelPassSystem;
+    readonly group: PixelRenderSystemGroup;
+}
+
+function drawingWorld(): DrawingWorld {
+    const world = new World({platform: new MemoryPlatform()});
+    world.resources.insert(new PixelPresenterResource(new MemoryPixelPresenter(SIZE)));
+    const em = world.entityManager;
+    em.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new FieldOfView()]);
+    em.createEntity("quad", [new RenderMesh(quad()), new LocalToWorld(), new LocalPosition(0, 0, QUAD_DISTANCE)]);
+    em.createEntity("settings", [new MeshPixelPassSettings()]);
+    const pass = world.getOrCreateSystem(MeshPixelPassSystem);
+    for (let step = 0; step < SETTLE_STEPS; step++) world.step(FRAME_MS);
+    return {world, pass, group: world.tryGetSystem(PixelRenderSystemGroup)!};
+}
+
+function lodLevelTotal(pass: MeshPixelPassSystem): number {
+    return Array.from(pass.lodLevelCounts).reduce((sum, count) => sum + count, 0);
+}
+
+describe("MeshPixelPassSystem stats", () => {
+    test("a pass that stops running keeps its last stats until its group walks its passes again, then reads zero", () => {
+        const {world, pass} = drawingWorld();
+        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([QUAD_TRIANGLES, QUAD_LOD_DRAWS]);
+
+        pass.enabled = false;
+        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([QUAD_TRIANGLES, QUAD_LOD_DRAWS]);
+        world.step(FRAME_MS);
+        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([0, 0]);
+
+        pass.enabled = true;
+        world.step(FRAME_MS);
+        expect(pass.trianglesDrawn).toBe(QUAD_TRIANGLES);
+    });
+
+    test("a second walk in the same frame without the pass makes the stats of the first walk read zero", () => {
+        const {world, pass, group} = drawingWorld();
+        const frame = world.time.frameCount;
+        group.update();
+        expect(pass.trianglesDrawn).toBe(QUAD_TRIANGLES);
+
+        pass.enabled = false;
+        group.update();
+        expect(world.time.frameCount).toBe(frame);
+        expect([pass.trianglesDrawn, lodLevelTotal(pass)]).toEqual([0, 0]);
     });
 });

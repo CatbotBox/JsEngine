@@ -55,6 +55,14 @@ export class EntityQuery<
         _source.adoptQuery(this as unknown as EntityQuery);
     }
 
+    public get source(): WorldSource {
+        return this._source;
+    }
+
+    public describeTypes(): string {
+        return `include [${typeNames(this._include)}], exclude [${typeNames(this._exclude)}]`;
+    }
+
     private bindToWorld() {
         if (!this._source.world) throw new Error("World not set")
         this._lazyLoaded.world = this._source.world;
@@ -133,7 +141,7 @@ export class EntityQuery<
     }
 
     private throwDisposed(): never {
-        throw new Error(`EntityQuery used after dispose(): include [${typeNames(this._include)}], exclude [${typeNames(this._exclude)}]`);
+        throw new Error(`EntityQuery used after dispose(): ${this.describeTypes()}`);
     }
 
     private onArchetypeCreated = (arch: EntityArchetype<AnyCT>) => {
