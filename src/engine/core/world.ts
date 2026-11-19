@@ -97,6 +97,12 @@ export class World extends WorldSource {
         return systemInstance;
     }
 
+    public createSystemNow<T extends System>(systemClass: SystemCtor<T>): T {
+        const system = this.createSystem(systemClass);
+        system.joinGroupNow();
+        return system;
+    }
+
     public removeSystem<T extends System>(systemClass: SystemCtor<T>): void {
         const system = this.tryGetSystem(systemClass);
         if (!system) return

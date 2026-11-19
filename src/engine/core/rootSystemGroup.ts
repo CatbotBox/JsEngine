@@ -13,6 +13,7 @@ function runsInSimulation(system: System): boolean {
 export class RootSystemGroup extends SystemGroup {
     private readonly _runningAfterSlot: RunningList = new RunningList(this);
     private readonly _presentationGroups: PresentationSystemGroup[] = [];
+    private _simulating = false;
 
     override removeSystemInstance(systemInstance: System): void {
         if (systemInstance === this) return;
@@ -21,20 +22,67 @@ export class RootSystemGroup extends SystemGroup {
 
     public override onUpdate(): void {
         const barriers = this.world.presentationBarriers;
-        const ranBeforeSlot = this.runningList.walk(barriers, NO_SYSTEM_RAN_YET);
-        this.updatePresentation();
-        this._runningAfterSlot.walk(barriers, ranBeforeSlot);
+        this.beginSimulation();
+        try {
+            const ranBeforeSlot = this.runningList.walk(barriers, NO_SYSTEM_RAN_YET);
+            this.presentGroups();
+            this._runningAfterSlot.walk(barriers, ranBeforeSlot);
+        } finally {
+            this._simulating = false;
+        }
     }
 
     public updateSimulation(): void {
         if (!this.enabled) return;
         const barriers = this.world.presentationBarriers;
-        const ranAfterSlot = this._runningAfterSlot.walk(barriers, NO_SYSTEM_RAN_YET);
-        this.runningList.walk(barriers, ranAfterSlot);
+        this.beginSimulation();
+        try {
+            const ranAfterSlot = this._runningAfterSlot.walk(barriers, NO_SYSTEM_RAN_YET);
+            this.runningList.walk(barriers, ranAfterSlot);
+        } finally {
+            this._simulating = false;
+        }
     }
 
     public updatePresentation(): void {
         if (!this.enabled) return;
+        if (!this._simulating) this.applyOrderChanges();
+        this.presentGroups();
+    }
+
+    protected override runningListOf(system: System): RunningList | undefined {
+        if (system instanceof PresentationSystemGroup) return undefined;
+        return this.isBeforePresentationSlot(system) ? this.runningList : this._runningAfterSlot;
+    }
+
+    protected override rebuildRunning(): void {
+        const order = this.order;
+        const groups = this._presentationGroups;
+        groups.length = 0;
+        for (const system of order) {
+            if (system instanceof PresentationSystemGroup) groups.push(system);
+        }
+        const firstGroup = groups[FIRST_INDEX];
+        const slot = firstGroup === undefined ? order.length : order.indexOf(firstGroup);
+        this.runningList.rebuild(order, FIRST_INDEX, slot, runsInSimulation);
+        this._runningAfterSlot.rebuild(order, slot + 1, order.length, runsInSimulation);
+    }
+
+    protected override joinedNow(system: System): void {
+        if (system instanceof PresentationSystemGroup) {
+            this.rebuildRunning();
+            return;
+        }
+        if (runsInSimulation(system)) this.runningListOf(system)!.insert(system, this.order);
+    }
+
+    private beginSimulation(): void {
+        if (this._simulating) throw new Error(`${this.constructor.name} was updated again while it was updating its systems`);
+        this.applyOrderChanges();
+        this._simulating = true;
+    }
+
+    private presentGroups(): void {
         const groups = this._presentationGroups;
         const barriers = this.world.presentationBarriers;
         barriers.enter();
@@ -45,36 +93,11 @@ export class RootSystemGroup extends SystemGroup {
         }
     }
 
-    protected override runningListOf(system: System): RunningList | undefined {
-        if (system instanceof PresentationSystemGroup) return undefined;
-        return this.isBeforePresentationSlot(system) ? this.runningList : this._runningAfterSlot;
-    }
-
-    protected override rebuildRunning(): void {
-        const systems = this.systems;
-        const groups = this._presentationGroups;
-        groups.length = 0;
-        for (const system of systems) {
-            if (system instanceof PresentationSystemGroup) groups.push(system);
-        }
-        const firstGroup = groups[FIRST_INDEX];
-        const slot = firstGroup === undefined ? systems.length : systems.indexOf(firstGroup);
-        this.runningList.rebuild(systems, FIRST_INDEX, slot, runsInSimulation);
-        this._runningAfterSlot.rebuild(systems, slot + 1, systems.length, runsInSimulation);
-    }
-
-    protected override forgetRunning(system: System, predecessor: System | undefined): void {
-        super.forgetRunning(system, predecessor);
-        this._runningAfterSlot.remove(system);
-        this._runningAfterSlot.replaceLastWalked(system, predecessor);
-        if (system instanceof PresentationSystemGroup) this.rebuildRunning();
-    }
-
     private isBeforePresentationSlot(system: System): boolean {
         const slot = this._presentationGroups[FIRST_INDEX];
-        const systems = this.systems;
-        for (let index = FIRST_INDEX; index < systems.length; index++) {
-            const other = systems[index];
+        const order = this.order;
+        for (let index = FIRST_INDEX; index < order.length; index++) {
+            const other = order[index];
             if (other === system) return true;
             if (other === slot) return false;
         }

@@ -54,7 +54,7 @@ const NO_ROW_LEVEL_OFFSET = 0;
 const INITIAL_ROW_LEVEL_CAPACITY = 64;
 const ROW_LEVEL_GROWTH_FACTOR = 2;
 const NO_RASTER_WORKERS = 0;
-const NOT_DRAWN_FRAME = -1;
+const NO_WALKS = 0;
 const NOTHING_DRAWN = 0;
 const NO_BASE_VERTEX = 0;
 const INDEX_FORMAT: GPUIndexFormat = "uint32";
@@ -70,7 +70,7 @@ type RunVisitor = (
 export class GpuMeshPassSystem extends System {
     private _trianglesDrawn = NOTHING_DRAWN;
     private readonly _lodLevelCounts = new Int32Array(TRACKED_LOD_LEVELS);
-    private _statsFrame = NOT_DRAWN_FRAME;
+    private _statsWalk = NO_WALKS;
 
     private _settingsQuery = this.createEntityQuery([GpuMeshPassSettings]);
     private _renderSettingsQuery = this.createEntityQuery([PixelRenderSettings]);
@@ -123,7 +123,11 @@ export class GpuMeshPassSystem extends System {
     }
 
     private dropStaleStats(): void {
-        if (this._statsFrame !== this.world.tryGetSystem(PixelRenderSystemGroup)?.drawnFrame) this.resetStats();
+        if (this._statsWalk !== this.groupWalkCount()) this.resetStats();
+    }
+
+    private groupWalkCount(): number {
+        return this.world.tryGetSystem(PixelRenderSystemGroup)?.walkCount ?? NO_WALKS;
     }
 
     override systemGroup() {
@@ -170,7 +174,7 @@ export class GpuMeshPassSystem extends System {
 
     onUpdate() {
         this.resetStats();
-        this._statsFrame = this.world.time.frameCount;
+        this._statsWalk = this.groupWalkCount();
         const framebuffer = this.world.resources.tryGet(PixelFramebuffer);
         if (framebuffer === undefined || framebuffer.widthPx === 0 || framebuffer.heightPx === 0) return;
         if (!this.readSingleCamera()) return;

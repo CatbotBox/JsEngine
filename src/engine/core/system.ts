@@ -138,6 +138,8 @@ export abstract class System extends WorldSource {
             const inc = toTokens(input) as TokensOfList<IncSpec>;
             const exc = toTokens(input2 ?? []) as TokensOfList<ExcSpec>;
             query = new EntityQuery(this, inc, exc) as unknown as EntityQuery;
+        } else {
+            this.requireOwnQuery(query, "requireAnyForUpdate");
         }
         query.addOccupancyWatcher(this._anyWatcher);
         (this._requiredAnyForUpdate ??= []).push(query);
@@ -159,11 +161,18 @@ export abstract class System extends WorldSource {
             const inc = toTokens(input) as TokensOfList<IncSpec>;
             const exc = toTokens(input2 ?? []) as TokensOfList<ExcSpec>;
             query = new EntityQuery(this, inc, exc) as unknown as EntityQuery;
+        } else {
+            this.requireOwnQuery(query, "requireAllForUpdate");
         }
         query.addOccupancyWatcher(this._allWatcher);
         (this._requiredAllForUpdate ??= []).push(query);
         if (query.hasEntity()) this._satisfiedAll++;
         this.refreshShouldRun();
+    }
+
+    private requireOwnQuery(query: EntityQuery, requirement: string): void {
+        if (query.source === this) return;
+        throw new Error(`${this.constructor.name}.${requirement}: the query (${query.describeTypes()}) was created by ${query.source.constructor.name}, not by this system; pass its component types to ${requirement} instead`);
     }
 
     protected requireResourceForUpdate<T extends Resource>(ctor: ResourceCtor<T>): void {
@@ -182,6 +191,12 @@ export abstract class System extends WorldSource {
         this._isCreated = true;
         this.onCreate();
         if (this.isEnabledInHierarchy()) this.onEnable();
+    }
+
+    public joinGroupNow(): void {
+        const updateGroup = this.resolveUpdateGroup(EXISTING_GROUP_ONLY);
+        if (updateGroup === undefined || (updateGroup as System) === this) return;
+        updateGroup.joinNow(this);
     }
 
     protected onCreate(): void {

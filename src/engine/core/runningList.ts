@@ -19,6 +19,10 @@ export class RunningList {
         return this._systems;
     }
 
+    public get walking(): boolean {
+        return this._walking;
+    }
+
     public insert(system: System, order: readonly System[]): void {
         const running = this._systems;
         let index = FIRST_INDEX;
@@ -37,10 +41,6 @@ export class RunningList {
         if (index === NOT_FOUND) return;
         this._systems.splice(index, 1);
         if (index < this._cursor) this._cursor--;
-    }
-
-    public replaceLastWalked(system: System, predecessor: System | undefined): void {
-        if (this._lastWalked === system) this._lastWalked = predecessor;
     }
 
     public rebuild(order: readonly System[], from: number, to: number, runsInWalk: RunsInWalk): void {

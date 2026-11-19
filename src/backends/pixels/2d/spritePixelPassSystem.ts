@@ -15,7 +15,7 @@ import {SpritePixelPassSettings} from "./spritePixelPassSettings";
 import {SpritePixelRasterizer, spriteHeightPx, spriteWidthPx} from "./spritePixelRasterizer";
 
 const CAMERA_DEPTH_EXTENT = 1000;
-const NOT_DRAWN_FRAME = -1;
+const NO_WALKS = 0;
 const NOTHING_DRAWN = 0;
 const CENTER_FRACTION = 0.5;
 
@@ -31,7 +31,7 @@ export class SpritePixelPassSystem extends System {
     private _rasterizer = new SpritePixelRasterizer();
 
     private _spritesDrawn = NOTHING_DRAWN;
-    private _statsFrame = NOT_DRAWN_FRAME;
+    private _statsWalk = NO_WALKS;
 
     public get spritesDrawn(): number {
         this.dropStaleStats();
@@ -39,7 +39,11 @@ export class SpritePixelPassSystem extends System {
     }
 
     private dropStaleStats(): void {
-        if (this._statsFrame !== this.world.tryGetSystem(PixelRenderSystemGroup)?.drawnFrame) this._spritesDrawn = NOTHING_DRAWN;
+        if (this._statsWalk !== this.groupWalkCount()) this._spritesDrawn = NOTHING_DRAWN;
+    }
+
+    private groupWalkCount(): number {
+        return this.world.tryGetSystem(PixelRenderSystemGroup)?.walkCount ?? NO_WALKS;
     }
 
     override systemGroup() {
@@ -60,7 +64,7 @@ export class SpritePixelPassSystem extends System {
 
     onUpdate() {
         this._spritesDrawn = NOTHING_DRAWN;
-        this._statsFrame = this.world.time.frameCount;
+        this._statsWalk = this.groupWalkCount();
         const framebuffer = this.world.resources.tryGet(PixelFramebuffer);
         if (!framebuffer) return;
 

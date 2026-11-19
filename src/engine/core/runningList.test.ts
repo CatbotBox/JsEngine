@@ -26,6 +26,7 @@ const MIDDLE_PRIORITY = 5;
 const BEFORE_MIDDLE_PRIORITY = 1;
 const AFTER_MIDDLE_PRIORITY = 9;
 const PRESENTATION_PRIORITY = 1000;
+const BETWEEN_PRESENTATION_AND_AFTER_PRIORITY = 1500;
 const AFTER_PRESENTATION_PRIORITY = 2000;
 const LAST_PRIORITY = Number.POSITIVE_INFINITY;
 const FRAME_MS = 16;
@@ -213,13 +214,14 @@ describe("running list: enabled and requirements", () => {
     });
 
     test("the same query required twice counts twice", () => {
-        const positions = new EntityQuery(world, [Position]);
         const twice = world.createSystem(class extends System {
+            private readonly positions = this.createEntityQuery([Position]);
+
             protected override onCreate(): void {
-                this.requireAllForUpdate(positions);
-                this.requireAllForUpdate(positions);
-                this.requireAnyForUpdate(positions);
-                this.requireAnyForUpdate(positions);
+                this.requireAllForUpdate(this.positions);
+                this.requireAllForUpdate(this.positions);
+                this.requireAnyForUpdate(this.positions);
+                this.requireAnyForUpdate(this.positions);
             }
 
             onUpdate(): void {
@@ -251,26 +253,30 @@ describe("running list: enabled and requirements", () => {
         expect(stepLog()).toEqual(["late"]);
     });
 
-    test("a destroyed system stops listening to a requirement query it does not own", () => {
-        const positions = new EntityQuery(world, [Position]);
-        const ctor = class extends System {
+    test("requiring a query created by another source throws and asks for the component types", () => {
+        const worldQuery = new EntityQuery(world, [Position], [Velocity]);
+        const other = world.createSystem(class extends System {
+            public readonly markers = this.createEntityQuery([Marker]);
+
+            onUpdate(): void {
+            }
+        });
+        expect(() => world.createSystem(class extends System {
             protected override onCreate(): void {
-                this.requireAllForUpdate(positions);
+                this.requireAllForUpdate(worldQuery);
             }
 
             onUpdate(): void {
             }
-        };
-        const e = em.createEntity("e", [new Position()]);
-        const system = world.createSystem(ctor);
-        world.removeSystem(ctor);
-        em.destroyEntity(e);
-        expect(system.requirementsMet).toBe(true);
-        expect(positions.hasEntity()).toBe(false);
-        em.createEntity("again", [new Position(), new Velocity()]);
-        expect(system.requirementsMet).toBe(true);
-        expect(world.rootSystemGroup!.systems.includes(system)).toBe(false);
-        expect(positions.hasEntity()).toBe(true);
+        })).toThrow(/requireAllForUpdate: the query \(include \[Position\], exclude \[Velocity\]\) was created by World, not by this system; pass its component types to requireAllForUpdate instead/);
+        expect(() => world.createSystem(class extends System {
+            protected override onCreate(): void {
+                this.requireAnyForUpdate(other.markers);
+            }
+
+            onUpdate(): void {
+            }
+        })).toThrow(/requireAnyForUpdate: the query \(include \[Marker\], exclude \[\]\) was created by .*, not by this system/);
     });
 });
 
@@ -536,7 +542,7 @@ describe("running list: changes during a walk", () => {
         expect(stepLog()).toEqual(["previous", "removed", "woken"]);
     });
 
-    test("a system that removes itself and creates its replacement runs nothing twice and lets the replacement run", () => {
+    function replacingWorld(create: (current: World, replacement: SystemCtor<System>) => void): void {
         let selfCtor: SystemCtor<System> | undefined;
         const replacement = probe(log, "replacement", {priority: SECOND});
         world.createSystem(probe(log, "previous", {priority: FIRST}));
@@ -544,11 +550,21 @@ describe("running list: changes during a walk", () => {
             priority: SECOND,
             run: current => {
                 current.removeSystem(selfCtor!);
-                current.ensureSystemExists(replacement);
+                create(current, replacement);
             },
         });
         world.createSystem(selfCtor);
         world.createSystem(probe(log, "next", {priority: THIRD}));
+    }
+
+    test("a system that removes itself and creates its replacement lets the replacement join from the next pass", () => {
+        replacingWorld((current, replacement) => current.ensureSystemExists(replacement));
+        expect(stepLog()).toEqual(["previous", "replaced", "next"]);
+        expect(stepLog()).toEqual(["previous", "replacement", "next"]);
+    });
+
+    test("a replacement created with createSystemNow runs in the same pass, after the system it replaces", () => {
+        replacingWorld((current, replacement) => current.createSystemNow(replacement));
         expect(stepLog()).toEqual(["previous", "replaced", "replacement", "next"]);
         expect(stepLog()).toEqual(["previous", "replacement", "next"]);
     });
@@ -562,18 +578,34 @@ describe("running list: changes during a walk", () => {
         expect(stepLog()).toEqual(["remover", "next"]);
     });
 
-    test("a system created during an update runs in that pass when it sorts after the current one, otherwise from the next", () => {
-        const before = probe(log, "created before", {priority: BEFORE_MIDDLE_PRIORITY});
-        const tie = probe(log, "created tie", {priority: MIDDLE_PRIORITY});
-        const after = probe(log, "created after", {priority: AFTER_MIDDLE_PRIORITY});
+    function creatingWorld(create: (current: World, created: SystemCtor<System>) => void): System[] {
+        const createdCtors = [
+            probe(log, "created before", {priority: BEFORE_MIDDLE_PRIORITY}),
+            probe(log, "created tie", {priority: MIDDLE_PRIORITY}),
+            probe(log, "created after", {priority: AFTER_MIDDLE_PRIORITY}),
+        ];
+        const created: System[] = [];
         world.createSystem(probe(log, "creator", {
             priority: MIDDLE_PRIORITY,
             run: current => {
-                current.ensureSystemExists(before);
-                current.ensureSystemExists(tie);
-                current.ensureSystemExists(after);
+                if (created.length > 0) return;
+                for (const ctor of createdCtors) create(current, ctor);
+                for (const ctor of createdCtors) created.push(current.tryGetSystem(ctor)!);
             },
         }));
+        return created;
+    }
+
+    test("a system created during its group's update is set up at once but joins the update list on the next pass", () => {
+        const created = creatingWorld((current, ctor) => current.ensureSystemExists(ctor));
+        expect(stepLog()).toEqual(["creator"]);
+        expect(created.length).toBe(3);
+        expect(created.every(system => world.rootSystemGroup!.systems.includes(system))).toBe(true);
+        expect(stepLog()).toEqual(["created before", "creator", "created tie", "created after"]);
+    });
+
+    test("a system created with createSystemNow during an update runs in that pass when it sorts after the current one, otherwise from the next", () => {
+        creatingWorld((current, ctor) => current.createSystemNow(ctor));
         expect(stepLog()).toEqual(["creator", "created tie", "created after"]);
         expect(stepLog()).toEqual(["created before", "creator", "created tie", "created after"]);
     });
@@ -615,6 +647,52 @@ describe("running list: root presentation slot", () => {
         slotWorld(undefined);
         expect(stepLog()).toEqual(["before", "after"]);
         expect(simulationLog()).toEqual(["before", "after"]);
+    });
+
+    test("a presentation group created during a root walk leaves this pass's split alone and joins on the next root update", () => {
+        const Presentation = probePresentationGroup(log, "presentation");
+        const presented = probe(log, "presented", {group: () => Presentation});
+        world.createSystem(probe(log, "creator", {priority: FIRST, run: current => current.ensureSystemExists(presented)}));
+        world.createSystem(probe(log, "middle", {priority: BETWEEN_PRESENTATION_AND_AFTER_PRIORITY}));
+        world.createSystem(probe(log, "after", {priority: AFTER_PRESENTATION_PRIORITY}));
+
+        expect(simulationLog()).toEqual(["creator", "middle", "after"]);
+        expect(world.tryGetSystem(Presentation)).toBeDefined();
+        expect(simulationLog()).toEqual(["middle", "after", "creator"]);
+        expect(stepLog()).toEqual(["creator", "presentation", "presented", "middle", "after"]);
+    });
+
+    test("a presentation group created with createSystemNow during a root walk is presented in that step without repeating earlier systems", () => {
+        const Presentation = probePresentationGroup(log, "presentation");
+        const presented = probe(log, "presented", {group: () => Presentation});
+        world.createSystem(probe(log, "creator", {
+            priority: FIRST,
+            run: current => {
+                if (current.hasSystem(Presentation)) return;
+                current.createSystemNow(Presentation);
+                current.createSystemNow(presented);
+            },
+        }));
+        world.createSystem(probe(log, "middle", {priority: BETWEEN_PRESENTATION_AND_AFTER_PRIORITY}));
+
+        expect(stepLog()).toEqual(["creator", "presentation", "presented", "middle"]);
+        expect(stepLog()).toEqual(["creator", "presentation", "presented", "middle"]);
+    });
+
+    test("a presentation group destroyed during a root walk leaves this pass's split alone and leaves on the next root update", () => {
+        const Presentation = slotWorld({})!;
+        world.createSystem(probe(log, "middle", {priority: BETWEEN_PRESENTATION_AND_AFTER_PRIORITY}));
+        world.createSystem(probe(log, "destroyer", {
+            priority: SECOND,
+            run: current => {
+                if (current.hasSystem(Presentation)) current.removeSystem(Presentation);
+            },
+        }));
+
+        expect(simulationLog()).toEqual(["middle", "after", "before", "destroyer"]);
+        expect(world.hasSystem(Presentation)).toBe(false);
+        expect(simulationLog()).toEqual(["before", "destroyer", "middle", "after"]);
+        expect(stepLog()).toEqual(["before", "destroyer", "middle", "after"]);
     });
 
     test("systems made runnable after the slot during a simulation tick run in it; ones before it run in the same tick after it", () => {
