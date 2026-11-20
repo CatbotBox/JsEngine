@@ -1,3 +1,5 @@
+import type {World} from "../../src/engine/core";
+import {AssetFiles} from "../../src/engine/project/assetFiles";
 import {PARENT_COMPONENT_NAME} from "../../src/engine/scene";
 import type {PrefabAsset, PrefabSpawner, PrefabTemplate} from "../../src/engine/scene";
 import type {ModelEntry} from "./tuning";
@@ -20,6 +22,19 @@ export interface ModelDownload {
 
 export type ModelLoadedListener = (model: CatalogModel, queuedSpawns: number) => void;
 
+export function assetModelFiles(world: World, spawner: PrefabSpawner): Demo3dModelFiles | undefined {
+    const files = world.resources.tryGet(AssetFiles)?.files;
+    if (files === undefined) return undefined;
+    const loaded = new Set<string>();
+    return {
+        ready: prefab => loaded.has(prefab.sourcePath),
+        fetch: async (prefab, onProgress) => {
+            await files.loadFetchingAsNeeded(() => spawner.templateOf(prefab), progress => onProgress(progress.loadedBytes, progress.totalBytes));
+            loaded.add(prefab.sourcePath);
+        },
+    };
+}
+
 export function prefabRootName(prefab: PrefabAsset): string {
     const root = prefab.document.entities.find(record => record.components[PARENT_COMPONENT_NAME] === undefined);
     return root?.name ?? prefab.sourcePath;
@@ -33,7 +48,7 @@ export function requireModelPrefab(entry: ModelEntry, index: number): PrefabAsse
 export class CatalogModel {
     public template: PrefabTemplate | undefined = undefined;
 
-    public constructor(public readonly prefab: PrefabAsset, public readonly name: string) {
+    public constructor(public readonly prefab: PrefabAsset, public readonly name: string, public readonly loadOnDemand: boolean) {
     }
 }
 
@@ -55,7 +70,7 @@ export class ModelCatalog {
     public refresh(entries: readonly ModelEntry[]): void {
         this._models = entries.map((entry, index) => {
             const prefab = requireModelPrefab(entry, index);
-            const model = new CatalogModel(prefab, prefabRootName(prefab));
+            const model = new CatalogModel(prefab, prefabRootName(prefab), entry.loadOnDemand);
             if (this.isReady(prefab)) model.template = this.spawner.templateOf(prefab);
             return model;
         });
@@ -63,6 +78,10 @@ export class ModelCatalog {
 
     public modelFrom(prefabPath: string): CatalogModel | undefined {
         return this._models.find(model => model.prefab.sourcePath === prefabPath);
+    }
+
+    public downloadModelsLoadedUpFront(onLoaded: ModelLoadedListener): void {
+        for (const model of this._models) if (!model.loadOnDemand) this.downloadUnlessLoaded(model, onLoaded);
     }
 
     public downloadUnlessLoaded(model: CatalogModel, onLoaded: ModelLoadedListener): ModelDownload | undefined {

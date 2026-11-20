@@ -3,6 +3,7 @@
   "version": 1,
   "type": "SwarmTuning",
   "fields": {
+    "randomSeed": null,
     "maxSimulationStepMs": 100,
     "arena": {
       "fallbackWidthUnits": 80,

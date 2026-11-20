@@ -17,14 +17,9 @@ import type {PrefabAsset} from "../../src/engine/scene";
 import {Random} from "../../src/engine/math/random";
 import {Bullet, Enemy, Lifetime, Ship, Spark, Velocity} from "./components";
 import {EnemyGrid} from "./enemyGrid";
-import {SwarmHudSystem} from "./hud";
 import {SwarmPhase, SwarmState} from "./resources";
-import {MS_PER_SECOND, SwarmTuning} from "./tuning";
+import {MS_PER_SECOND, SWARM_TUNING_FILE, SwarmTuning} from "./tuning";
 import type {EnemySpawn, ShipTuning, SparkTuning, WaveTuning} from "./tuning";
-
-export interface SwarmHost {
-    readonly seed?: number;
-}
 
 const Action = {
     MoveUp: "moveUp",
@@ -44,18 +39,18 @@ const Action = {
 
 type SwarmActions = ResolvedInputActions<typeof Action>;
 
-const ARENA_PRIORITY = -120;
-const CONTROL_PRIORITY = -110;
-const SHIP_PRIORITY = -90;
-const WEAPON_PRIORITY = -85;
-const WAVE_PRIORITY = -80;
-const SEEK_PRIORITY = -70;
-const MOTION_PRIORITY = -60;
-const LIFETIME_PRIORITY = -55;
+const ARENA_PRIORITY = -130;
+const CONTROL_PRIORITY = -120;
+const SHIP_PRIORITY = -110;
+const WEAPON_PRIORITY = -100;
+const WAVE_PRIORITY = -90;
+const SEEK_PRIORITY = -80;
+const MOTION_PRIORITY = -70;
+const LIFETIME_PRIORITY = -60;
 const BROADPHASE_PRIORITY = -50;
-const BULLET_HIT_PRIORITY = -45;
-const BOMB_PRIORITY = -44;
-const SHIP_CONTACT_PRIORITY = -43;
+const BULLET_HIT_PRIORITY = -40;
+const BOMB_PRIORITY = -30;
+const SHIP_CONTACT_PRIORITY = -20;
 
 const HALF = 0.5;
 const UNSCALED = 1;
@@ -70,7 +65,6 @@ const HIDDEN_OPACITY = 0;
 const BLINK_PHASES = 2;
 const DEFEATED_HIT_POINTS = 0;
 const NO_EXTENT = 0;
-const TUNING_FILE = "assets/swarm.tuning.asset.json";
 const STATE_FILE = "assets/swarm.state.asset.json";
 const ENEMY_PREFAB_FIELD = "waves.enemies[].prefab";
 
@@ -81,6 +75,12 @@ class SwarmArena extends Resource {
 
 function fullExtentOf(halfExtent: number): number {
     return halfExtent / HALF;
+}
+
+function randomOf(world: World): Random {
+    const random = world.resources.getOrCreate(Random);
+    random.reseedIfChanged(world.resources.get(SwarmTuning).randomSeed);
+    return random;
 }
 
 function simulationStepMs(world: World): number {
@@ -100,7 +100,7 @@ function swarmActionsOf(world: World): SwarmActions {
 }
 
 function requirePrefab(prefab: PrefabAsset | undefined, field: string): PrefabAsset {
-    if (prefab === undefined) throw new Error(`SwarmTuning.${field} names no prefab: set it in ${TUNING_FILE}`);
+    if (prefab === undefined) throw new Error(`SwarmTuning.${field} names no prefab: set it in ${SWARM_TUNING_FILE}`);
     return prefab;
 }
 
@@ -115,6 +115,7 @@ function maxEnemyRadiusUnits(world: World, grid: EnemyGrid): number {
 }
 
 function enemySpawnFor(enemies: readonly EnemySpawn[], wavesAfterFirst: number, roll: number): EnemySpawn {
+    if (enemies.length === 0) throw new Error(`SwarmTuning.waves.enemies is empty: list at least one enemy prefab in ${SWARM_TUNING_FILE}`);
     let cumulativeShare = 0;
     for (const enemy of enemies) {
         cumulativeShare += enemy.spawnShare.valueAt(wavesAfterFirst);
@@ -138,7 +139,7 @@ function startNewGame(world: World, state: SwarmState): void {
 }
 
 function spawnSparks(buffer: EntityCommandBuffer, world: World, sparks: SparkTuning, x: number, y: number, count: number, reachUnits: number): void {
-    const random = world.resources.get(Random), spawner = world.resources.get(PrefabSpawner);
+    const random = randomOf(world), spawner = world.resources.get(PrefabSpawner);
     const prefab = requirePrefab(sparks.prefab, "sparks.prefab");
     const tints = sparks.tints;
     for (let i = 0; i < count; i++) {
@@ -176,11 +177,16 @@ function withinReach(grid: EnemyGrid, index: number, x: number, y: number, reach
     return dx * dx + dy * dy <= reach * reach;
 }
 
-class SwarmArenaSystem extends System {
+export class SwarmArenaSystem extends System {
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
 
     override priority(): number {
         return ARENA_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this.world.resources.getOrCreate(SwarmArena);
+        this.requireResourceForUpdate(SwarmTuning);
     }
 
     onUpdate(): void {
@@ -194,7 +200,7 @@ class SwarmArenaSystem extends System {
     }
 }
 
-class SwarmControlSystem extends System {
+export class SwarmControlSystem extends System {
     private _enemies = this.createEntityQuery([Enemy]);
     private _bullets = this.createEntityQuery([Bullet]);
     private _sparks = this.createEntityQuery([Spark]);
@@ -205,6 +211,8 @@ class SwarmControlSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
         this._actions = swarmActionsOf(this.world);
     }
 
@@ -235,7 +243,7 @@ class SwarmControlSystem extends System {
     }
 }
 
-class ShipSystem extends System {
+export class ShipSystem extends System {
     private _ship = this.createEntityQuery([Ship, LocalPosition, Sprite]);
     private _actions!: SwarmActions;
 
@@ -244,6 +252,9 @@ class ShipSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
+        this.requireResourceForUpdate(SwarmArena);
         this.requireAnyForUpdate(this._ship);
         this._actions = swarmActionsOf(this.world);
     }
@@ -289,7 +300,7 @@ class ShipSystem extends System {
     }
 }
 
-class ShipWeaponSystem extends System {
+export class ShipWeaponSystem extends System {
     private _actions!: SwarmActions;
 
     override priority(): number {
@@ -297,6 +308,8 @@ class ShipWeaponSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
         this._actions = swarmActionsOf(this.world);
     }
 
@@ -327,11 +340,17 @@ class ShipWeaponSystem extends System {
     }
 }
 
-class WaveSystem extends System {
+export class WaveSystem extends System {
     private _enemies = this.createEntityQuery([Enemy]);
 
     override priority(): number {
         return WAVE_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
+        this.requireResourceForUpdate(SwarmArena);
     }
 
     onUpdate(): void {
@@ -377,7 +396,7 @@ class WaveSystem extends System {
     }
 
     private spawnEnemy(state: SwarmState, waves: WaveTuning, buffer: EntityCommandBuffer): void {
-        const random = this.world.resources.get(Random), arena = this.world.resources.get(SwarmArena);
+        const random = randomOf(this.world), arena = this.world.resources.get(SwarmArena);
         const wavesAfterFirst = state.wave - waves.firstWave;
         const kind = enemySpawnFor(waves.enemies, wavesAfterFirst, random.next());
         const halfWidth = arena.halfWidthUnits + waves.spawnMarginUnits;
@@ -413,7 +432,7 @@ class WaveSystem extends System {
     }
 }
 
-class EnemySeekSystem extends System {
+export class EnemySeekSystem extends System {
     private _enemies = this.createEntityQuery([Enemy, LocalPosition]);
 
     override priority(): number {
@@ -421,6 +440,8 @@ class EnemySeekSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
         this.requireAnyForUpdate(this._enemies);
     }
 
@@ -448,7 +469,7 @@ class EnemySeekSystem extends System {
     }
 }
 
-class MotionSystem extends System {
+export class MotionSystem extends System {
     private _moving = this.createEntityQuery([Velocity, LocalPosition]);
 
     override priority(): number {
@@ -456,6 +477,7 @@ class MotionSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmTuning);
         this.requireAnyForUpdate(this._moving);
     }
 
@@ -473,7 +495,7 @@ class MotionSystem extends System {
     }
 }
 
-class LifetimeSystem extends System {
+export class LifetimeSystem extends System {
     private _lifetimes = this.createEntityQuery([Lifetime]);
     private _fading = this.createEntityQuery([Spark, Lifetime, Sprite]);
 
@@ -482,6 +504,7 @@ class LifetimeSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmTuning);
         this.requireAnyForUpdate(this._lifetimes);
     }
 
@@ -499,11 +522,17 @@ class LifetimeSystem extends System {
 }
 
 // Never gated: a frame with no enemies must still reset the grid, or consumers would see last frame's enemies.
-class EnemyBroadphaseSystem extends System {
+export class EnemyBroadphaseSystem extends System {
     private _enemies = this.createEntityQuery([Enemy, LocalPosition, Sprite]);
 
     override priority(): number {
         return BROADPHASE_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this.world.resources.getOrCreate(EnemyGrid);
+        this.requireResourceForUpdate(SwarmArena);
+        this.requireResourceForUpdate(SwarmTuning);
     }
 
     onUpdate(): void {
@@ -524,7 +553,7 @@ class EnemyBroadphaseSystem extends System {
     }
 }
 
-class BulletHitSystem extends System {
+export class BulletHitSystem extends System {
     private _bullets = this.createEntityQuery([Bullet, LocalPosition]);
 
     override priority(): number {
@@ -532,6 +561,9 @@ class BulletHitSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
+        this.requireResourceForUpdate(EnemyGrid);
         this.requireAnyForUpdate(this._bullets);
     }
 
@@ -569,7 +601,7 @@ class BulletHitSystem extends System {
     }
 }
 
-class BombSystem extends System {
+export class BombSystem extends System {
     private _actions!: SwarmActions;
 
     override priority(): number {
@@ -577,6 +609,9 @@ class BombSystem extends System {
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
+        this.requireResourceForUpdate(EnemyGrid);
         this._actions = swarmActionsOf(this.world);
     }
 
@@ -602,9 +637,15 @@ class BombSystem extends System {
     }
 }
 
-class ShipContactSystem extends System {
+export class ShipContactSystem extends System {
     override priority(): number {
         return SHIP_CONTACT_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
+        this.requireResourceForUpdate(EnemyGrid);
     }
 
     onUpdate(): void {
@@ -638,37 +679,3 @@ class ShipContactSystem extends System {
     }
 }
 
-function requireSwarmData(world: World): void {
-    const tuning = world.resources.get(SwarmTuning);
-    const state = world.resources.get(SwarmState);
-    if (dataAssetPathOf(state) === undefined) {
-        throw new Error(`SwarmState must be loaded from ${STATE_FILE} through "resources" in jsengine.project.json, so a new game can reload its starting values`);
-    }
-    const spawner = world.resources.tryGet(PrefabSpawner);
-    if (spawner === undefined) throw new Error("Swarm spawns prefabs through a PrefabSpawner: launch it with launchProject or startProject, whose SceneManager creates one");
-    if (tuning.waves.enemies.length === 0) throw new Error(`SwarmTuning.waves.enemies is empty: list at least one enemy prefab in ${TUNING_FILE}`);
-    spawner.templateOf(requirePrefab(tuning.weapon.bullet, "weapon.bullet"));
-    spawner.templateOf(requirePrefab(tuning.sparks.prefab, "sparks.prefab"));
-    tuning.waves.enemies.forEach((enemy, index) => spawner.templateOf(requirePrefab(enemy.prefab, `waves.enemies[${index}].prefab`)));
-}
-
-export function setupSwarm(world: World, host: SwarmHost): void {
-    requireSwarmData(world);
-    world.resources.insert(new Random(host.seed));
-    world.resources.insert(new EnemyGrid());
-    world.resources.insert(new SwarmArena());
-
-    world.ensureSystemExists(SwarmArenaSystem);
-    world.ensureSystemExists(SwarmControlSystem);
-    world.ensureSystemExists(ShipSystem);
-    world.ensureSystemExists(ShipWeaponSystem);
-    world.ensureSystemExists(WaveSystem);
-    world.ensureSystemExists(EnemySeekSystem);
-    world.ensureSystemExists(MotionSystem);
-    world.ensureSystemExists(LifetimeSystem);
-    world.ensureSystemExists(EnemyBroadphaseSystem);
-    world.ensureSystemExists(BulletHitSystem);
-    world.ensureSystemExists(BombSystem);
-    world.ensureSystemExists(ShipContactSystem);
-    world.ensureSystemExists(SwarmHudSystem);
-}

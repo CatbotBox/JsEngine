@@ -38,3 +38,4 @@ export {OVERLAY} from "./shaders/overlayShader";
 export {registerGpuComponentSchemas} from "./gpuComponentSchemas";
 export {installGpuBackend} from "./gpuBackend";
 export {GPU_MESH_PASSES} from "./gpuMeshPasses";
+export {GPU_STANDARD_PASSES} from "./gpuStandardPasses";

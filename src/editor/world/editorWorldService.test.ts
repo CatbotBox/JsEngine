@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, test} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
-import {Component, NULL_ENTITY, World} from "../../engine/core";
+import {Component, NULL_ENTITY, System, SystemGroup, World} from "../../engine/core";
 import type {Entity} from "../../engine/core";
 import {Children} from "../../engine/translation/children";
 import {LocalPosition} from "../../engine/translation/localPosition";
@@ -36,6 +36,29 @@ const GREEN_RGB = 0x00FF00;
 const DISABLED = false;
 
 class UnregisteredTag extends Component {
+}
+
+class UnlistedRootSystem extends System {
+    public runs = 0;
+
+    public onUpdate(): void {
+        this.runs++;
+    }
+}
+
+class ListedGameplayGroup extends SystemGroup {
+}
+
+class NestedGameplaySystem extends System {
+    public runs = 0;
+
+    protected override systemGroup() {
+        return ListedGameplayGroup;
+    }
+
+    public onUpdate(): void {
+        this.runs++;
+    }
 }
 
 afterEach(disposeEditorWorlds);
@@ -335,6 +358,27 @@ describe("EditorWorldService modes", () => {
         await ask(harnessed, {op: "setMode", mode: "edit"});
         service.detach();
         expect([counter.enabled, switchedOff.enabled]).toEqual([true, false]);
+    });
+
+    test("only the listed gameplay systems are suspended while editing: an unlisted root system keeps running, a listed group holds its children", async () => {
+        const harnessed = editorWorld(world => {
+            world.getOrCreateSystem(UnlistedRootSystem);
+            world.getOrCreateSystem(NestedGameplaySystem);
+        }, {gameplaySystems: [ListedGameplayGroup]});
+        const unlisted = harnessed.world.tryGetSystem(UnlistedRootSystem)!;
+        const nested = harnessed.world.tryGetSystem(NestedGameplaySystem)!;
+        const group = harnessed.world.tryGetSystem(ListedGameplayGroup)!;
+        expect(await framesPass(harnessed)).toBe(true);
+        expect(unlisted.runs).toBeGreaterThan(0);
+        expect([group.enabled, nested.enabled, nested.runs]).toEqual([false, true, 0]);
+
+        await ask(harnessed, {op: "setMode", mode: "play"});
+        expect(await waitUntil(() => nested.runs >= PLAY_RUNS)).toBe(true);
+        await ask(harnessed, {op: "setMode", mode: "edit"});
+        expect(group.enabled).toBe(false);
+        const runsWhenEditing = nested.runs;
+        expect(await framesPass(harnessed)).toBe(true);
+        expect(nested.runs).toBe(runsWhenEditing);
     });
 
     test("stop restores the play snapshot in place: field values, created and destroyed entities", async () => {

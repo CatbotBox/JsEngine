@@ -1,8 +1,9 @@
 import {Component, System} from "../../src/engine/core";
 import type {World} from "../../src/engine/core";
 import {Input, Key} from "../../src/engine/input";
-import {directoryFileSource} from "../../src/engine/platform/directoryFileSource";
-import {ComponentSchemaRegistry, componentSchema, registerEngineComponentSchemas, SceneManager} from "../../src/engine/scene";
+import {startGame} from "../../src/engine/project/startGame";
+import {componentSchema} from "../../src/engine/scene";
+import type {SceneActivation, SchemaEntry} from "../../src/engine/scene";
 import {LocalPosition} from "../../src/engine/translation";
 
 export const LIBRARY_ONLY_START_SCENE = "scenes/main.scene.json";
@@ -43,17 +44,17 @@ class QuitOnKeySystem extends System {
     }
 }
 
-export function createLibraryOnlyRegistry(): ComponentSchemaRegistry {
-    const registry = new ComponentSchemaRegistry();
-    registerEngineComponentSchemas(registry);
-    registry.registerComponentClass(Drift);
-    return registry;
-}
+const LIBRARY_ONLY_SCHEMAS: readonly SchemaEntry[] = [{kind: "componentClass", ctor: Drift}];
+const LIBRARY_ONLY_SYSTEMS = [DriftSystem, QuitOnKeySystem];
+const START_SCENE_ACTIVATION: SceneActivation = "immediate";
 
 export async function startLibraryOnlyGame(world: World, host: LibraryOnlyHost): Promise<void> {
     world.resources.getOrCreate(Input);
-    const scenes = new SceneManager(world, createLibraryOnlyRegistry(), {files: directoryFileSource(world.platform.files, host.directory)});
-    await scenes.load(LIBRARY_ONLY_START_SCENE);
-    world.ensureSystemExists(DriftSystem);
-    world.ensureSystemExists(QuitOnKeySystem);
+    await startGame(world, {
+        directory: host.directory,
+        schemas: LIBRARY_ONLY_SCHEMAS,
+        systems: LIBRARY_ONLY_SYSTEMS,
+        startScene: LIBRARY_ONLY_START_SCENE,
+        startSceneActivation: START_SCENE_ACTIVATION,
+    });
 }

@@ -9,7 +9,7 @@ import {SwarmPhase, SwarmState} from "./resources";
 import {MS_PER_SECOND, SwarmTuning} from "./tuning";
 import type {ControlHint, HudTuning, TitleBanner, WaveBanner} from "./tuning";
 
-const HUD_PRIORITY = -5;
+const HUD_PRIORITY = -10;
 const HALF = 0.5;
 const UNSHOWN = -1;
 const REFRESH_ON_FIRST_FRAME_MS = Number.POSITIVE_INFINITY;
@@ -109,6 +109,11 @@ export class SwarmHudSystem extends System {
 
     override priority(): number {
         return HUD_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this.requireResourceForUpdate(SwarmState);
+        this.requireResourceForUpdate(SwarmTuning);
     }
 
     onUpdate(): void {

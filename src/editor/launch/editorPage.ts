@@ -42,9 +42,9 @@ const PATH_SEPARATORS = /[\\/]+/;
 const SERVER_MODE_NOTE = "Pick any folder: a JsEngine project has a jsengine.project.json naming its entry module. Its code is built for the editor on open and rebuilt when it changes.";
 const SERVER_WITHOUT_BUILD_NOTE = "This host cannot build project code";
 const BROWSER_MODE_NOTE = "No dev server: projects open through the browser's folder access, and only projects whose code is already bundled can run.";
-const NOT_BUNDLED = "This project's code is not bundled. Open it with the dev server (bun run editor:web) or the desktop editor (bun run editor:window) to build it.";
-const CREATE_NEEDS_SERVER = "Creating a project needs the dev server (bun run editor:web) or the desktop editor (bun run editor:window).";
-const NO_FOLDER_ACCESS = "This browser cannot open folders (it has no File System Access API). Use a Chromium-based browser, the dev server (bun run editor:web) or the desktop editor (bun run editor:window).";
+const NOT_BUNDLED = "This project's code is not bundled. Open it with the dev server (jsengine edit) or the desktop editor (jsengine edit --target window) to build it.";
+const CREATE_NEEDS_SERVER = "Creating a project needs the dev server (jsengine edit) or the desktop editor (jsengine edit --target window).";
+const NO_FOLDER_ACCESS = "This browser cannot open folders (it has no File System Access API). Use a Chromium-based browser, the dev server (jsengine edit) or the desktop editor (jsengine edit --target window).";
 const BUILD_WARNINGS_TITLE = "The game code built with warnings:";
 const PROJECT_QUERY_NEEDS_SERVER ="?project= opens a folder on the dev server or in the desktop editor, and neither is answering here.";
 

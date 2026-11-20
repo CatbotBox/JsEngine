@@ -1,6 +1,5 @@
 {
   "name": "Swarm",
-  "entry": "project.ts",
   "startScene": "scenes/main.scene.json",
   "resources": [
     {

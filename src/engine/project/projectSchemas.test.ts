@@ -1,6 +1,6 @@
 import {describe, expect, test} from "../testing/harness";
 import {Component, ComponentType} from "../core";
-import {componentSchema} from "../scene";
+import {componentSchema, fieldAlias} from "../scene";
 import type {ComponentSchemaRegistry} from "../scene";
 import {createProjectSchemaRegistry} from "./projectSchemas";
 
@@ -21,36 +21,29 @@ function registeredNames(registry: ComponentSchemaRegistry): string[] {
 }
 
 describe("createProjectSchemaRegistry", () => {
-    test("registers engine, then backends, then the project, then generated schemas", () => {
+    test("registers engine, then backends, then the schema entries", () => {
         const order: string[] = [];
         const registry = createProjectSchemaRegistry({
-            registerProjectSchemas: projectRegistry => {
-                order.push(`project after ${registeredNames(projectRegistry).includes("Backend") ? "backend" : "nothing"}`);
-                projectRegistry.registerFieldAlias(PERCENT_TYPE_NAME, {options: PERCENT_OPTIONS});
-                projectRegistry.registerComponentClass(Hand);
-            },
-        }, {
             backendSchemas: [backendRegistry => {
                 order.push(`backend after ${backendRegistry.byName("LocalPosition") === undefined ? "nothing" : "engine"}`);
                 backendRegistry.register(componentSchema(Foot, "Backend").build());
             }],
-            generated: {
-                registerGeneratedSchemas: generatedRegistry => {
-                    order.push("generated");
-                    generatedRegistry.registerGeneratedComponent(Hand, "Hand", [{key: "grip", kind: "number"}]);
-                },
-            },
+            schemas: [
+                {kind: "componentClass", ctor: Hand},
+                {kind: "fieldAlias", typeName: PERCENT_TYPE_NAME, alias: fieldAlias(PERCENT_OPTIONS)},
+            ],
         });
-        expect(order).toEqual(["backend after engine", "project after backend", "generated"]);
+        expect(order).toEqual(["backend after engine"]);
+        expect(registeredNames(registry).indexOf("Backend") < registeredNames(registry).indexOf("Hand")).toBe(true);
         expect(registry.byType(ComponentType.of(Hand))!.fields).toEqual([{key: "grip", kind: "number", typeName: PERCENT_TYPE_NAME, options: PERCENT_OPTIONS}]);
     });
 
-    test("registerProjectSchemas is optional; generated schemas alone register the project's classes", () => {
-        const registry = createProjectSchemaRegistry({}, {
-            generated: {registerGeneratedSchemas: generated => generated.registerGeneratedComponent(Foot, "Foot", [{key: "step", kind: "number"}])},
+    test("schema entries alone register the project's classes", () => {
+        const registry = createProjectSchemaRegistry({
+            schemas: [{kind: "component", ctor: Foot, name: "Foot", fields: [{key: "step", kind: "number"}]}],
         });
         expect(registry.byName("Foot")!.create()).toBeInstanceOf(Foot);
         expect(registry.byName("LocalPosition")).toBeDefined();
-        expect(createProjectSchemaRegistry({}).byName("Foot")).toBeUndefined();
+        expect(createProjectSchemaRegistry().byName("Foot")).toBeUndefined();
     });
 });

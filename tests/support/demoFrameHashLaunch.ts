@@ -3,16 +3,10 @@ import type {CellPresenter} from "../../src/backends/cells";
 import type {PixelPresenter} from "../../src/backends/pixels";
 import {joinPath, normalizePath} from "../../src/engine/platform";
 import type {FileSource, FileStat} from "../../src/engine/platform";
-import {launchSwarm} from "../../demo/swarm/launch/swarmLaunch";
-import {installCellRenderingSwarm} from "../../demo/swarm/launch/cellRendering";
-import {installPixelRenderingSwarm} from "../../demo/swarm/launch/pixelRendering";
-import {launchDemo2d} from "../../demo/2d/launch/demo2dLaunch";
-import {installCellRendering2d} from "../../demo/2d/launch/cellRendering";
-import {installPixelRendering2d} from "../../demo/2d/launch/pixelRendering";
-import {DEMO_3D_PROJECT_DIRECTORY, launchDemo3d} from "../../demo/3d/launch/demo3dLaunch";
+import {SWARM_TUNING_FILE} from "../../demo/swarm/tuning";
 import {DEMO_3D_TUNING_FILE} from "../../demo/3d/modelCatalog";
-import {installCellRendering3d} from "../../demo/3d/launch/cellRendering";
-import {installPixelRendering3d} from "../../demo/3d/launch/pixelRendering";
+import {DEMO_2D_PROJECT, DEMO_3D_PROJECT, startCellsDemo, startPixelsDemo, SWARM_PROJECT} from "./demoProjects";
+import type {DemoProject} from "./demoProjects";
 
 export type HashedDemo = "swarm" | "2d" | "3d";
 export type HashedBackend = "cells" | "pixels";
@@ -34,38 +28,53 @@ interface ModelEntryJson {
     readonly prefab?: {readonly path?: unknown} | null;
 }
 
-interface TuningDocumentJson {
+interface Demo3dTuningDocumentJson {
     readonly fields: {models: ModelEntryJson[]};
 }
 
-const TUNING_SITE_PATH = normalizePath(joinPath(DEMO_3D_PROJECT_DIRECTORY, DEMO_3D_TUNING_FILE));
+interface SwarmTuningDocumentJson {
+    readonly fields: {randomSeed: number | null};
+}
 
-function frameHashTuningText(text: string): string {
-    const document = JSON.parse(text) as TuningDocumentJson;
+type TextOverlay = (text: string) => string;
+
+const DEMO_3D_TUNING_SITE_PATH = normalizePath(joinPath(DEMO_3D_PROJECT.directory, DEMO_3D_TUNING_FILE));
+const SWARM_TUNING_SITE_PATH = normalizePath(joinPath(SWARM_PROJECT.directory, SWARM_TUNING_FILE));
+const HASHED_PROJECTS: Readonly<Record<HashedDemo, DemoProject>> = {swarm: SWARM_PROJECT, "2d": DEMO_2D_PROJECT, "3d": DEMO_3D_PROJECT};
+
+function frameHashDemo3dTuningText(text: string): string {
+    const document = JSON.parse(text) as Demo3dTuningDocumentJson;
     const models = document.fields.models;
     document.fields.models = DEMO_3D_FRAME_HASH_MODEL_PREFABS.map(path => {
         const entry = models.find(model => model.prefab?.path === path);
-        if (entry === undefined) throw new Error(`${TUNING_SITE_PATH} lists no ${path}, which the 3D frame hash script spawns`);
+        if (entry === undefined) throw new Error(`${DEMO_3D_TUNING_SITE_PATH} lists no ${path}, which the 3D frame hash script spawns`);
         return entry;
     });
     return JSON.stringify(document);
 }
 
-class Demo3dFrameHashFiles implements FileSource {
+function seededSwarmTuningText(text: string, seed: number): string {
+    const document = JSON.parse(text) as SwarmTuningDocumentJson;
+    document.fields.randomSeed = seed;
+    return JSON.stringify(document);
+}
+
+class OverlaidFileSource implements FileSource {
     public write?: (path: string, bytes: Uint8Array) => void;
 
-    public constructor(private readonly files: FileSource) {
+    public constructor(private readonly files: FileSource, private readonly overlays: ReadonlyMap<string, TextOverlay>) {
         const write = files.write;
         if (write !== undefined) this.write = (path, bytes) => write.call(files, path, bytes);
     }
 
     public readText(path: string): string {
         const text = this.files.readText(path);
-        return normalizePath(path) === TUNING_SITE_PATH ? frameHashTuningText(text) : text;
+        const overlay = this.overlays.get(normalizePath(path));
+        return overlay === undefined ? text : overlay(text);
     }
 
     public readBytes(path: string): Uint8Array {
-        return normalizePath(path) === TUNING_SITE_PATH ? new TextEncoder().encode(this.readText(path)) : this.files.readBytes(path);
+        return this.overlays.has(normalizePath(path)) ? new TextEncoder().encode(this.readText(path)) : this.files.readBytes(path);
     }
 
     public exists(path: string): boolean {
@@ -77,42 +86,24 @@ class Demo3dFrameHashFiles implements FileSource {
     }
 }
 
+export function seededSwarmFiles(files: FileSource, seed: number): FileSource {
+    return new OverlaidFileSource(files, new Map([[SWARM_TUNING_SITE_PATH, text => seededSwarmTuningText(text, seed)]]));
+}
+
 export function demoFrameHashFiles(demo: HashedDemo, files: FileSource): FileSource {
-    return demo === "3d" ? new Demo3dFrameHashFiles(files) : files;
-}
-
-async function startSwarm(launch: DemoFrameHashLaunch): Promise<void> {
-    const output = launch.output;
-    await launchSwarm(launch.world, {
-        installRendering: world => output.backend === "cells" ? installCellRenderingSwarm(world, output.presenter) : installPixelRenderingSwarm(world, output.presenter),
-        seed: SWARM_FRAME_HASH_SEED,
-    });
-}
-
-async function startDemo2d(launch: DemoFrameHashLaunch): Promise<void> {
-    const output = launch.output;
-    await launchDemo2d(launch.world, {
-        installRendering: world => output.backend === "cells" ? installCellRendering2d(world, output.presenter) : installPixelRendering2d(world, output.presenter),
-    });
-}
-
-async function startDemo3d(launch: DemoFrameHashLaunch): Promise<void> {
-    const output = launch.output;
-    await launchDemo3d(launch.world, {
-        installRendering: world => output.backend === "cells" ? installCellRendering3d(world, output.presenter) : installPixelRendering3d(world, output.presenter),
-    });
+    switch (demo) {
+        case "swarm":
+            return seededSwarmFiles(files, SWARM_FRAME_HASH_SEED);
+        case "2d":
+            return files;
+        case "3d":
+            return new OverlaidFileSource(files, new Map([[DEMO_3D_TUNING_SITE_PATH, frameHashDemo3dTuningText]]));
+    }
 }
 
 export async function startDemoForFrameHashes(launch: DemoFrameHashLaunch): Promise<void> {
-    switch (launch.demo) {
-        case "swarm":
-            await startSwarm(launch);
-            return;
-        case "2d":
-            await startDemo2d(launch);
-            return;
-        case "3d":
-            await startDemo3d(launch);
-            return;
-    }
+    const project = HASHED_PROJECTS[launch.demo];
+    const output = launch.output;
+    if (output.backend === "cells") await startCellsDemo(launch.world, output.presenter, project);
+    else await startPixelsDemo(launch.world, output.presenter, project);
 }

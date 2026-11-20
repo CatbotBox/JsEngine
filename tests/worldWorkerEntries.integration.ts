@@ -9,11 +9,14 @@ import {Key, NO_MODIFIERS} from "../src/engine/input";
 import type {Modifiers} from "../src/engine/input";
 import {cellFrameLines, rgbCellCount} from "./support/cellFrameText";
 import {pixelFrameShowsText, pixelRgbAt} from "./support/pixelFrameText";
-import {buildDemo3dManifest} from "../demo/3d/assets";
-import {DEMO_3D_PROJECT_DIRECTORY} from "../demo/3d/launch/demo3dLaunch";
-import type {Demo3dManifest} from "../demo/3d/assets";
 import {nodePlatform} from "../src/hosts/terminal";
 import {BLACK_RGB} from "../src/engine/rendering";
+import type {RenderBackendKind} from "../src/engine/rendering/renderBackend";
+import {projectAssetManifestPath} from "../src/hosts/web/webProjectAssets";
+import type {AssetManifestFile, ProjectAssetManifest} from "../src/hosts/web/webProjectAssets";
+import {buildProjectAssetManifest, projectAssetRegistry} from "../src/toolchain/build/projectAssets";
+import {projectSlug, webBundleFile, webWorkerBundle, webWorkerMainFile} from "../src/toolchain/projectLayout";
+import {DEMO_3D_TUNING_FILE} from "../demo/3d/modelCatalog";
 
 const ROOT = resolve(__dirname, "..");
 const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
@@ -65,23 +68,26 @@ interface ManifestFiles {
     readonly resources?: readonly {readonly path: string}[];
 }
 
-const WORKER_SOURCES: Readonly<Record<string, string>> = {
-    "world2d": join(ROOT, "demo", "2d", "launch", "web.worker.ts"),
-    "world3d": join(ROOT, "demo", "3d", "launch", "web.worker.ts"),
-    "world2d-pixels": join(ROOT, "demo", "2d", "launch", "pixelWeb.worker.ts"),
-    "world3d-pixels": join(ROOT, "demo", "3d", "launch", "pixelWeb.worker.ts"),
-    "world3d-gpu": join(ROOT, "demo", "3d", "launch", "gpuWeb.worker.ts"),
-    "worldswarm": join(ROOT, "demo", "swarm", "launch", "web.worker.ts"),
-    "worldswarm-pixels": join(ROOT, "demo", "swarm", "launch", "pixelWeb.worker.ts"),
-};
-
-function workerEntry(name: string): string {
-    return DIST === undefined ? WORKER_SOURCES[name] : join(DIST, `${name}.worker.js`);
+interface TuningModelJson {
+    readonly prefab?: {readonly path?: string} | null;
 }
 
-function demo3dManifest(): Demo3dManifest {
-    if (DIST === undefined) return buildDemo3dManifest(ROOT, DEMO_3D_PROJECT_DIRECTORY, nodePlatform());
-    return JSON.parse(readFileSync(join(DIST, "3d-manifest.json"), "utf8")) as Demo3dManifest;
+interface Demo3dTuningJson {
+    readonly fields: {readonly models: readonly TuningModelJson[]};
+}
+
+function workerEntry(directory: string, backend: RenderBackendKind): string {
+    if (DIST === undefined) return join(ROOT, directory, webWorkerMainFile(backend));
+    return join(DIST, webBundleFile(webWorkerBundle(projectSlug(directory), backend)));
+}
+
+async function demo3dManifest(): Promise<ProjectAssetManifest> {
+    if (DIST === undefined) return buildProjectAssetManifest(ROOT, DEMO_3D_DIRECTORY, nodePlatform(), await projectAssetRegistry(join(ROOT, DEMO_3D_DIRECTORY)));
+    return JSON.parse(readFileSync(join(DIST, projectAssetManifestPath(DEMO_3D_DIRECTORY)), "utf8")) as ProjectAssetManifest;
+}
+
+function demo3dTuningModels(): readonly TuningModelJson[] {
+    return (projectFileJson(DEMO_3D_DIRECTORY, DEMO_3D_TUNING_FILE) as Demo3dTuningJson).fields.models;
 }
 
 function log(message: string) {
@@ -325,14 +331,14 @@ function projectFileUrls(directory: string): string[] {
     const resourcePaths = (manifest.resources ?? []).map(resource => resource.path);
     const scenePaths = manifest.startScene === undefined ? [] : [manifest.startScene];
     const referencedPaths = [...resourcePaths, ...scenePaths].flatMap(path => referencedDataPathsIn(projectFileJson(directory, path)));
-    return [...new Set([PROJECT_MANIFEST_FILE, ...resourcePaths, ...scenePaths, ...referencedPaths])].map(path => encodeURI(`${directory}/${path}`));
+    return [...new Set([...resourcePaths, ...scenePaths, ...referencedPaths])].map(path => encodeURI(`${directory}/${path}`));
 }
 
 function expectProjectFilesFetched(page: Page, label: string, directory: string): void {
     const wanted = projectFileUrls(directory);
     const missing = wanted.filter(url => !page.fetched.includes(url));
     expect(wanted.length > 1 && missing.length === 0,
-        `${label}: the worker loaded its manifest, resources, start scene, prefabs and shaders from files (${wanted.join(", ")}${missing.length > 0 ? "; missing " + missing.join(", ") : ""})`);
+        `${label}: the worker loaded its resources, start scene, prefabs and shaders from files (${wanted.join(", ")}${missing.length > 0 ? "; missing " + missing.join(", ") : ""})`);
 }
 
 function expectShadersFetched(page: Page, label: string, directory: string): void {
@@ -382,13 +388,15 @@ function firstLoadMegabytes(page: Page): number | undefined {
     return totals.length === 0 ? undefined : Number(totals[totals.length - 1][1]);
 }
 
-async function verifyLazyModel(page: Page, label: string, manifest: Demo3dManifest): Promise<void> {
+async function verifyLazyModel(page: Page, label: string, manifest: ProjectAssetManifest): Promise<void> {
     const byPath = new Map(manifest.files.map(file => [file.path, file]));
-    const index = manifest.models.findIndex(model => model.files.some(path => byPath.get(path)?.lazy === true));
-    expect(index >= 0, `${label}: the manifest has a lazy model`);
+    const model = manifest.prefabs.find(prefab => prefab.files.some(path => byPath.get(path)?.lazy === true));
+    expect(model !== undefined, `${label}: the asset manifest leaves a model out of the first load`);
+    if (model === undefined) return;
+    const index = demo3dTuningModels().findIndex(entry => entry.prefab?.path === model.path);
+    expect(index >= 0, `${label}: the tuning asset lists ${model.path}`);
     if (index < 0) return;
-    const model = manifest.models[index];
-    const lazyFiles = model.files.map(path => byPath.get(path)!).filter(file => file.lazy === true);
+    const lazyFiles: AssetManifestFile[] = model.files.map(path => byPath.get(path)!).filter(file => file.lazy === true);
     const lazyBytes = lazyFiles.reduce((sum, file) => sum + (file.gzipParts?.reduce((total, part) => total + part, 0) ?? file.size), 0);
     const lazyUrls = lazyFiles.map(file => encodeURI(file.path));
     const lazyFetches = () => page.fetched.filter(url => lazyUrls.some(prefix => url.startsWith(prefix)));
@@ -421,7 +429,7 @@ interface Demo3dRun {
     readonly resize?: () => void;
 }
 
-async function verify3d(run: Demo3dRun, manifest: Demo3dManifest): Promise<void> {
+async function verify3d(run: Demo3dRun, manifest: ProjectAssetManifest): Promise<void> {
     const {label, display, isolated} = run;
     const page = new Page(run.entry, "the 3D demo", display, isolated, isolated ? RASTER_WORKERS : undefined);
     try {
@@ -462,24 +470,24 @@ async function main(): Promise<void> {
         return;
     }
     if (DIST !== undefined) log(`running the built site in ${DIST}`);
-    const manifest = demo3dManifest();
+    const manifest = await demo3dManifest();
 
     const cells2d = new CellFrameDisplay(START.columns, START.rows);
-    await verify2d("2D", workerEntry("world2d"), cells2d, () => cells2d.resize(RESIZED.columns, RESIZED.rows));
+    await verify2d("2D", workerEntry(DEMO_2D_DIRECTORY, "cells"), cells2d, () => cells2d.resize(RESIZED.columns, RESIZED.rows));
     const pixels2d = new PixelFrameDisplay(PIXEL_START);
-    await verify2d("2D pixels", workerEntry("world2d-pixels"), pixels2d, () => pixels2d.resize(PIXEL_RESIZED));
+    await verify2d("2D pixels", workerEntry(DEMO_2D_DIRECTORY, "pixels"), pixels2d, () => pixels2d.resize(PIXEL_RESIZED));
 
     const cellsSwarm = new CellFrameDisplay(START.columns, START.rows);
-    await verifySwarm("Swarm", workerEntry("worldswarm"), cellsSwarm, () => cellsSwarm.resize(RESIZED.columns, RESIZED.rows));
+    await verifySwarm("Swarm", workerEntry(SWARM_DIRECTORY, "cells"), cellsSwarm, () => cellsSwarm.resize(RESIZED.columns, RESIZED.rows));
     const pixelsSwarm = new PixelFrameDisplay(PIXEL_START);
-    await verifySwarm("Swarm pixels", workerEntry("worldswarm-pixels"), pixelsSwarm, () => pixelsSwarm.resize(PIXEL_RESIZED));
+    await verifySwarm("Swarm pixels", workerEntry(SWARM_DIRECTORY, "pixels"), pixelsSwarm, () => pixelsSwarm.resize(PIXEL_RESIZED));
 
-    await verify3d({label: "3D isolated", entry: workerEntry("world3d"), display: new CellFrameDisplay(START.columns, START.rows), isolated: ISOLATED}, manifest);
-    await verify3d({label: "3D not isolated", entry: workerEntry("world3d"), display: new CellFrameDisplay(START.columns, START.rows), isolated: NOT_ISOLATED}, manifest);
+    await verify3d({label: "3D isolated", entry: workerEntry(DEMO_3D_DIRECTORY, "cells"), display: new CellFrameDisplay(START.columns, START.rows), isolated: ISOLATED}, manifest);
+    await verify3d({label: "3D not isolated", entry: workerEntry(DEMO_3D_DIRECTORY, "cells"), display: new CellFrameDisplay(START.columns, START.rows), isolated: NOT_ISOLATED}, manifest);
     const pixels3d = new PixelFrameDisplay(PIXEL_START);
-    await verify3d({label: "3D pixels isolated", entry: workerEntry("world3d-pixels"), display: pixels3d, isolated: ISOLATED, resize: () => pixels3d.resize(PIXEL_RESIZED)}, manifest);
-    await verify3d({label: "3D pixels not isolated", entry: workerEntry("world3d-pixels"), display: new PixelFrameDisplay(PIXEL_START), isolated: NOT_ISOLATED}, manifest);
-    await verifyGpuWithoutWebGpu("3D gpu", workerEntry("world3d-gpu"));
+    await verify3d({label: "3D pixels isolated", entry: workerEntry(DEMO_3D_DIRECTORY, "pixels"), display: pixels3d, isolated: ISOLATED, resize: () => pixels3d.resize(PIXEL_RESIZED)}, manifest);
+    await verify3d({label: "3D pixels not isolated", entry: workerEntry(DEMO_3D_DIRECTORY, "pixels"), display: new PixelFrameDisplay(PIXEL_START), isolated: NOT_ISOLATED}, manifest);
+    await verifyGpuWithoutWebGpu("3D gpu", workerEntry(DEMO_3D_DIRECTORY, "gpu"));
 
     if (failures > 0) {
         console.error(`${failures} world worker failures`);

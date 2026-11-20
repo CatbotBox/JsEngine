@@ -1,19 +1,5 @@
-import {EntityCommandBufferSystem, System} from "../../engine/core";
-import type {World} from "../../engine/core";
-import {GcSystem} from "../../engine/core/gcSystem";
-import {InputSystem} from "../../engine/input/inputSystem";
-import {TranslationSystemGroup} from "../../engine/translation/translationSystemGroup";
-import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
-
-type EngineRootSystemCtor = abstract new () => System;
-
-const ENGINE_ROOT_SYSTEMS: readonly EngineRootSystemCtor[] = [
-    TranslationSystemGroup,
-    RenderingSystemGroup,
-    EntityCommandBufferSystem,
-    GcSystem,
-    InputSystem,
-];
+import {System} from "../../engine/core";
+import type {SystemCtor, World} from "../../engine/core";
 
 // A gated root system on purpose: it counts only ticks in which gameplay ran, which is what step and play report.
 export class GameplayTickCounterSystem extends System {
@@ -24,18 +10,21 @@ export class GameplayTickCounterSystem extends System {
     }
 }
 
-export function isGameplaySystem(system: System): boolean {
-    return !ENGINE_ROOT_SYSTEMS.some(ctor => system instanceof ctor);
-}
-
 export class GameplaySystemGate {
     private readonly enabledBeforeSuspend = new Map<System, boolean>();
+    private readonly gated: readonly SystemCtor<System>[];
 
-    public constructor(private readonly world: World) {
+    public constructor(private readonly world: World, gameplaySystems: readonly SystemCtor<System>[]) {
+        this.gated = [GameplayTickCounterSystem, ...gameplaySystems];
     }
 
     public gameplaySystems(): System[] {
-        return (this.world.rootSystemGroup?.systems ?? []).filter(isGameplaySystem);
+        const live: System[] = [];
+        for (const ctor of this.gated) {
+            const system = this.world.tryGetSystem(ctor);
+            if (system !== undefined && !live.includes(system)) live.push(system);
+        }
+        return live;
     }
 
     public suspend(): void {

@@ -53,6 +53,8 @@ const SWARM_TUNING_RESOURCE = "SwarmTuning";
 const SWARM_TUNING_PATH = "assets/swarm.tuning.asset.json";
 const SWARM_START_SCENE = "scenes/main.scene.json";
 const SHIP_NAME = "ship";
+const SWARM_TITLE_PHASE = "Title";
+const SWARM_PLAYING_PHASE = "Playing";
 const EDITED_PATTERN_ROWS = ["#"];
 const EDITED_PATTERN_IMAGE_SUMMARY = {inline: {width: 1, height: 1}};
 const DEMO_2D_TUNING_RESOURCE = "Demo2dTuning";
@@ -490,6 +492,22 @@ async function verifyTuningEdit(page: EditorPage, label: string, typeName: strin
     await page.ask({op: "setMode", mode: "edit"});
 }
 
+async function swarmPhase(page: EditorPage): Promise<unknown> {
+    return (await page.ask({op: "getResource", typeName: SWARM_STATE_RESOURCE})).fields.phase;
+}
+
+async function verifySwarmGate(page: EditorPage, label: string): Promise<void> {
+    page.press(Key.Enter);
+    expect(await page.framesPass(EDIT_FRAMES_AFTER_KEY), `${label}: ${EDIT_FRAMES_AFTER_KEY} edit frames passed after pressing Enter`);
+    const editPhase = await swarmPhase(page);
+    expect(editPhase === SWARM_TITLE_PHASE, `${label}: Enter does not start a game in edit mode, the generated system list is suspended (phase ${JSON.stringify(editPhase)})`);
+    await page.ask({op: "setMode", mode: "play"});
+    page.press(Key.Enter);
+    const started = await waitUntil(async () => await swarmPhase(page) === SWARM_PLAYING_PHASE);
+    expect(started, `${label}: the same Enter starts a game in play mode`);
+    await page.ask({op: "setMode", mode: "edit"});
+}
+
 async function verifySwarm(project: BuiltProject): Promise<void> {
     const label = "Swarm editor";
     const page = new EditorPage(project, "the Swarm editor");
@@ -506,6 +524,7 @@ async function verifySwarm(project: BuiltProject): Promise<void> {
         const ship = await page.entityNamed(SHIP_NAME);
         expect(ship !== undefined && ship.componentTypeNames.includes("Ship") && ship.componentTypeNames.includes("SpritePattern"),
             `${label}: the start scene has the ship with its Ship and SpritePattern components`);
+        await verifySwarmGate(page, label);
         if (ship !== undefined) await verifySpritePatternEdit(page, label, ship.entity, SHIP_NAME);
         await verifySaveLoad(page, label, SHIP_NAME);
         await verifyDomainReload(project, page, label, SHIP_NAME);

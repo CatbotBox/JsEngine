@@ -1,7 +1,7 @@
 import {expect} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
 import {DebugWorld, EntityCommandBufferSystem, System, World} from "../../engine/core";
-import type {Entity} from "../../engine/core";
+import type {Entity, SystemCtor} from "../../engine/core";
 import {Children} from "../../engine/translation/children";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {encodePpm} from "../../engine/assets/image/ppm";
@@ -92,7 +92,11 @@ export interface EditorWorldOptions {
     readonly files?: Readonly<Record<string, string | Uint8Array>>;
     readonly tickMs?: number;
     readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
+    readonly gameplaySystems?: readonly SystemCtor<System>[];
 }
+
+const HARNESS_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [GameplayCounterSystem, SwitchedOffGameplaySystem];
+const NO_EXTRA_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [];
 
 const running: Harnessed[] = [];
 
@@ -131,6 +135,7 @@ export function editorWorld(populate: (world: World) => void = () => undefined, 
     }, world, registry, {
         tickIntervalMs: options.tickMs ?? TICK_MS,
         refetchFiles: options.refetchFiles,
+        gameplaySystems: [...HARNESS_GAMEPLAY_SYSTEMS, ...options.gameplaySystems ?? NO_EXTRA_GAMEPLAY_SYSTEMS],
         preloadAssets: async paths => {
             preloaded.push([...paths]);
             await sleep(PRELOAD_DELAY_MS);

@@ -2,22 +2,27 @@ import {DATA_ASSET_FILE_SUFFIX} from "../scene/dataAssetDocument";
 import {projectFileExtension, projectRelativePath} from "./projectPaths";
 
 export const PROJECT_MANIFEST_FILE = "jsengine.project.json";
-export const GENERATED_SCHEMAS_FILE = "schemas.generated.ts";
 export const PROJECT_ENTRY_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".mjs"];
 export const SCENE_FILE_SUFFIX = ".scene.json";
-export const ENGINE_IMPORT_PREFIX = "@jsengine/";
-export const STARTER_ENTRY_FILE = "project.ts";
+export const SCHEMAS_MANIFEST_KEY = "schemas";
+export const SYSTEMS_MANIFEST_KEY = "systems";
 
 export interface ProjectResourceBinding {
     readonly type: string;
     readonly path: string;
 }
 
+export interface GeneratedListSettings {
+    readonly exclude: readonly string[];
+}
+
 export interface ProjectManifest {
     readonly name: string;
-    readonly entry: string;
+    readonly entry?: string;
     readonly startScene?: string;
     readonly resources?: readonly ProjectResourceBinding[];
+    readonly schemas?: GeneratedListSettings;
+    readonly systems?: GeneratedListSettings;
     readonly editorExtensions?: string;
 }
 
@@ -45,7 +50,7 @@ function codeModuleProblems(key: string, value: unknown, fileExists: ((path: str
 }
 
 function entryProblems(value: unknown, entryExists: ((path: string) => boolean) | undefined): {readonly entry?: string, readonly problems: string[]} {
-    if (value === undefined) return {problems: [`"entry" is missing: name the game entry module, e.g. "${STARTER_ENTRY_FILE}"`]};
+    if (value === undefined) return {problems: []};
     const checked = codeModuleProblems("entry", value, entryExists);
     return {entry: checked.path, problems: checked.problems};
 }
@@ -103,6 +108,21 @@ function resourcesProblems(value: unknown): {readonly resources?: readonly Proje
     return {resources: checked.map(entry => entry.binding!), problems};
 }
 
+function excludeListProblems(key: string, value: unknown): {readonly exclude?: readonly string[], readonly problems: string[]} {
+    if (value === undefined) return {exclude: [], problems: []};
+    if (!Array.isArray(value)) return {problems: [`"${key}.exclude" must be an array of type names, got ${JSON.stringify(value)}`]};
+    const names = value.map(trimmedNonEmpty);
+    const problems = value.flatMap((name, index) => names[index] === undefined ? [`"${key}.exclude[${index}]" must be a non-empty type name, got ${JSON.stringify(name)}`] : []);
+    return problems.length > 0 ? {problems} : {exclude: names as string[], problems};
+}
+
+function generatedListProblems(key: string, value: unknown): {readonly settings?: GeneratedListSettings, readonly problems: string[]} {
+    if (value === undefined) return {problems: []};
+    if (!isManifestObject(value)) return {problems: [`"${key}" must be an object {"exclude": [type names]} when present, got ${JSON.stringify(value)}`]};
+    const checked = excludeListProblems(key, value.exclude);
+    return checked.exclude === undefined ? {problems: checked.problems} : {settings: {exclude: checked.exclude}, problems: []};
+}
+
 export function validateProjectManifest(text: string | undefined, entryExists?: (path: string) => boolean): ProjectManifestValidation {
     if (text === undefined) return {ok: false, problems: [`${PROJECT_MANIFEST_FILE} is missing: this folder is not a JsEngine project`]};
     let parsed: unknown;
@@ -119,14 +139,18 @@ export function validateProjectManifest(text: string | undefined, entryExists?: 
     const entry = entryProblems(parsed.entry, entryExists);
     const startScene = startSceneProblems(parsed.startScene);
     const resources = resourcesProblems(parsed.resources);
+    const schemas = generatedListProblems(SCHEMAS_MANIFEST_KEY, parsed.schemas);
+    const systems = generatedListProblems(SYSTEMS_MANIFEST_KEY, parsed.systems);
     const editorExtensions = editorExtensionsProblems(parsed.editorExtensions, entryExists);
-    problems.push(...entry.problems, ...startScene.problems, ...resources.problems, ...editorExtensions.problems);
+    problems.push(...entry.problems, ...startScene.problems, ...resources.problems, ...schemas.problems, ...systems.problems, ...editorExtensions.problems);
     if (problems.length > 0) return {ok: false, problems};
     const manifest: ProjectManifest = {
         name: (name as string).trim(),
-        entry: entry.entry!,
+        ...(entry.entry === undefined ? {} : {entry: entry.entry}),
         ...(startScene.startScene === undefined ? {} : {startScene: startScene.startScene}),
         ...(resources.resources === undefined ? {} : {resources: resources.resources}),
+        ...(schemas.settings === undefined ? {} : {schemas: schemas.settings}),
+        ...(systems.settings === undefined ? {} : {systems: systems.settings}),
         ...(editorExtensions.editorExtensions === undefined ? {} : {editorExtensions: editorExtensions.editorExtensions}),
     };
     return {ok: true, manifest};

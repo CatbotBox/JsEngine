@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {chooseRenderBackend, gpuFallbackWarning, webGpuUsable} from "./renderBackendBootstrap";
+import {chooseRenderBackend, gpuFallbackWarning, pageDefaultRenderBackend, webGpuUsable} from "./renderBackendBootstrap";
 import type {OffscreenTransferCanvas, WebGpuNavigator} from "./renderBackendBootstrap";
 
 const TRANSFERABLE_CANVAS: OffscreenTransferCanvas = {transferControlToOffscreen: () => undefined};
@@ -47,5 +47,14 @@ describe("webGpuUsable", () => {
         expect(await webGpuUsable(throwing, TRANSFERABLE_CANVAS)).toBe(false);
         expect(await webGpuUsable(rejecting, TRANSFERABLE_CANVAS)).toBe(false);
         expect(await webGpuUsable(throwingGetter, TRANSFERABLE_CANVAS)).toBe(false);
+    });
+});
+
+describe("pageDefaultRenderBackend", () => {
+    test("reads a known backend from the page element and ignores anything else", () => {
+        const pageDeclaring = (defaultBackend?: string) => ({documentElement: {dataset: {defaultBackend}}});
+        expect(pageDefaultRenderBackend(pageDeclaring("pixels"))).toBe("pixels");
+        expect(pageDefaultRenderBackend(pageDeclaring("vector"))).toBeUndefined();
+        expect(pageDefaultRenderBackend(pageDeclaring())).toBeUndefined();
     });
 });

@@ -10,14 +10,13 @@ import {MemoryPixelPresenter, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {TerminalScreen} from "./support/terminalScreen";
-import {launchSwarm} from "../demo/swarm/launch/swarmLaunch";
+import {startCellsDemo, startPixelsDemo, SWARM_PROJECT} from "./support/demoProjects";
 import {Bullet, Enemy, Spark} from "../demo/swarm/components";
 import {SwarmPhase, SwarmState} from "../demo/swarm/resources";
 import {SwarmTuning} from "../demo/swarm/tuning";
 import {PrefabSpawner} from "../src/engine/scene";
 import {SpritePattern} from "../src/engine/rendering/2d";
-import {installCellRenderingSwarm} from "../demo/swarm/launch/cellRendering";
-import {installPixelRenderingSwarm} from "../demo/swarm/launch/pixelRendering";
+import {seededSwarmFiles} from "./support/demoFrameHashLaunch";
 
 const SEED = 20261113;
 const FRAME_MS = 1000 / 60;
@@ -210,7 +209,7 @@ function median(values: readonly number[]): number {
 }
 
 function projectPlatform(): MemoryPlatform {
-    return new MemoryPlatform({fileSource: nodePlatform().files});
+    return new MemoryPlatform({fileSource: seededSwarmFiles(nodePlatform().files, SEED)});
 }
 
 async function runOnCells(): Promise<void> {
@@ -220,7 +219,7 @@ async function runOnCells(): Promise<void> {
     const platform = projectPlatform();
     const world = new App({platform}).createDebugWorld();
     const presenter = new AnsiCellPresenter(terminal);
-    await launchSwarm(world, {installRendering: () => installCellRenderingSwarm(world, presenter), seed: SEED});
+    await startCellsDemo(world, presenter, SWARM_PROJECT);
     const driver = new SwarmDriver(world, () => {
         screen.write(terminal.text());
         terminal.clear();
@@ -336,7 +335,7 @@ async function runOnPixels(): Promise<void> {
     const presenter = new MemoryPixelPresenter(PIXEL_SIZE);
     const platform = projectPlatform();
     const world = new App({platform}).createDebugWorld();
-    await launchSwarm(world, {installRendering: () => installPixelRenderingSwarm(world, presenter), seed: SEED});
+    await startPixelsDemo(world, presenter, SWARM_PROJECT);
     const driver = new SwarmDriver(world, () => presenter.frames.splice(0, presenter.frames.length - KEEP_LAST_FRAME));
     const isPainted = (rgb: number) => rgb !== BACKGROUND_RGB;
     const swarmerRgb = swarmerColorOf(world);

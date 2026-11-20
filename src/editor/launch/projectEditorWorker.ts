@@ -1,58 +1,43 @@
 import {App} from "../../engine/core";
-import type {DebugWorld} from "../../engine/core";
-import {Input} from "../../engine/input";
+import type {DebugWorld, System, SystemCtor} from "../../engine/core";
 import type {Platform} from "../../engine/platform/platform";
 import {Mesh} from "../../engine/rendering/3d/mesh";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
-import type {RenderPassCtor} from "../../engine/rendering/renderPasses";
-import type {ComponentSchemaRegistry} from "../../engine/scene";
-import {registerCellsComponentSchemas} from "../../backends/cells/cellsComponentSchemas";
-import {registerPixelsComponentSchemas} from "../../backends/pixels/pixelsComponentSchemas";
 import {installPixelsBackend} from "../../backends/pixels/pixelsBackend";
-import {PIXELS_HUD_TEXT_PASSES} from "../../backends/pixels/pixelsHudTextPasses";
-import {PIXELS_WORLD_TEXT_PASSES} from "../../backends/pixels/pixelsWorldTextPasses";
-import {PIXELS_HUD_SPRITE_PASSES} from "../../backends/pixels/2d/pixelsHudSpritePasses";
-import {PIXELS_SPRITE_PASSES} from "../../backends/pixels/2d/pixelsSpritePasses";
-import {PIXELS_MESH_PASSES} from "../../backends/pixels/3d/pixelsMeshPasses";
-import {registerGpuComponentSchemas} from "../../backends/gpu/gpuComponentSchemas";
+import {PIXELS_STANDARD_PASSES} from "../../backends/pixels/pixelsStandardPasses";
 import {installGpuBackend} from "../../backends/gpu/gpuBackend";
-import {GPU_MESH_PASSES} from "../../backends/gpu/gpuMeshPasses";
+import {GPU_STANDARD_PASSES} from "../../backends/gpu/gpuStandardPasses";
+import {Input} from "../../engine/input";
 import {PageConnection} from "../../hosts/web/worldWorkerPlatform";
 import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
 import {gpuCanvasPresenter, requestGpuDevice} from "../../hosts/web/gpuWorldDevice";
-import {attachEditorWorldService, editorSceneManager} from "../world/editorWorldService";
+import {attachEditorWorldService} from "../world/editorWorldService";
 import type {EditorServiceScope} from "../world/editorWorldService";
 import {ProjectFileSource} from "../project/projectFileSource";
-import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
-import type {ProjectManifest} from "../../engine/project/projectManifest";
-import {createProjectSchemaRegistry} from "../../engine/project/projectSchemas";
-import type {GeneratedProjectSchemas, SchemaRegistration} from "../../engine/project/projectSchemas";
-import {startProject} from "../../engine/project/projectStartup";
+import type {StartProject} from "../../engine/project/startGame";
 import type {ProjectFilesChannel} from "../project/projectFileSource";
 import type {
     ProjectAssetFile,
     ProjectAssetFiles,
-    ProjectEntryModule,
-    ProjectHost,
     ProjectLoadProgress,
     ProjectLoadProgressListener,
-} from "../../engine/project/projectEntry";
+} from "../../engine/project/assetFiles";
 
 type ProjectEditorWorkerScope = WorldWorkerScope & EditorServiceScope & ProjectFilesChannel;
+type SystemList = readonly SystemCtor<System>[];
+
+export interface ProjectSystemLists {
+    readonly shared: SystemList;
+    readonly backends: Readonly<Record<RenderBackendKind, SystemList>>;
+}
 
 const MESH_EXTENSION = ".obj";
 const BYTES_PER_MB = 1024 * 1024;
 const MB_DECIMALS = 1;
 const GPU_BACKEND: RenderBackendKind = "gpu";
-const BACKEND_SCHEMAS: readonly SchemaRegistration[] = [registerCellsComponentSchemas, registerPixelsComponentSchemas, registerGpuComponentSchemas];
-const PIXELS_2D_AND_HUD_PASSES: readonly RenderPassCtor[] = [
-    ...PIXELS_SPRITE_PASSES,
-    ...PIXELS_WORLD_TEXT_PASSES,
-    ...PIXELS_HUD_SPRITE_PASSES,
-    ...PIXELS_HUD_TEXT_PASSES,
-];
-const PIXELS_STANDARD_PASSES: readonly RenderPassCtor[] = [...PIXELS_MESH_PASSES, ...PIXELS_2D_AND_HUD_PASSES];
-const GPU_STANDARD_PASSES: readonly RenderPassCtor[] = [...GPU_MESH_PASSES, ...PIXELS_2D_AND_HUD_PASSES];
+const PIXELS_BACKEND: RenderBackendKind = "pixels";
+const SKIPPED_UNKNOWN_TYPES = "skip";
+const REPORTED_SCHEMA_CHANGES = "report";
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -99,17 +84,6 @@ class SetupStatusAssetFiles implements ProjectAssetFiles {
     }
 }
 
-export function projectComponentSchemas(entry: ProjectEntryModule, generated?: GeneratedProjectSchemas): ComponentSchemaRegistry {
-    return createProjectSchemaRegistry(entry, {backendSchemas: BACKEND_SCHEMAS, generated});
-}
-
-async function readProjectManifest(files: ProjectFileSource): Promise<ProjectManifest> {
-    await files.ensureLoaded([PROJECT_MANIFEST_FILE]);
-    const validation = validateProjectManifest(files.readText(PROJECT_MANIFEST_FILE));
-    if (!validation.ok) throw new Error(`${PROJECT_MANIFEST_FILE}: ${validation.problems.join("; ")}`);
-    return validation.manifest;
-}
-
 export async function preloadProjectAssets(files: ProjectFileSource, platform: Platform, paths: readonly string[]): Promise<void> {
     for (const path of new Set(paths)) {
         try {
@@ -121,43 +95,46 @@ export async function preloadProjectAssets(files: ProjectFileSource, platform: P
     }
 }
 
-async function installRenderBackend(world: DebugWorld, page: PageConnection): Promise<void> {
+async function installRenderBackend(world: DebugWorld, page: PageConnection): Promise<RenderBackendKind> {
     if (page.renderBackend() !== GPU_BACKEND) {
         installPixelsBackend(world, page.pixelPresenter(), PIXELS_STANDARD_PASSES);
-        return;
+        return PIXELS_BACKEND;
     }
     const gpu = await requestGpuDevice(page);
     installGpuBackend(world, gpu, gpuCanvasPresenter(page, gpu), GPU_STANDARD_PASSES);
+    return GPU_BACKEND;
 }
 
-async function startProjectWorld(
-    scope: ProjectEditorWorkerScope,
-    page: PageConnection,
-    files: ProjectFileSource,
-    entry: ProjectEntryModule,
-    generated: GeneratedProjectSchemas | undefined,
-): Promise<void> {
-    const registry = projectComponentSchemas(entry, generated);
+async function startProjectWorld(scope: ProjectEditorWorkerScope, page: PageConnection, files: ProjectFileSource, startProject: StartProject, systemLists: ProjectSystemLists): Promise<void> {
     const world = new App({platform: page.platform}).createDebugWorld();
-    await installRenderBackend(world, page);
+    const backend = await installRenderBackend(world, page);
+    const backendSystems = systemLists.backends[backend];
     await files.whenListed();
-    const manifest = await readProjectManifest(files);
     page.connectInput(world.resources.getOrCreate(Input));
     const assetFiles = new SetupStatusAssetFiles(files, page);
     const preloadAssets = (paths: readonly string[]) => preloadProjectAssets(files, world.platform, paths);
-    const scenes = editorSceneManager(world, registry, preloadAssets);
-    const host: ProjectHost = {files: assetFiles, scenes};
-    await startProject(world, entry, host, manifest, registry);
+    const game = await startProject(world, {
+        files: assetFiles,
+        preload: preloadAssets,
+        backendSystems,
+        unknownComponentTypes: SKIPPED_UNKNOWN_TYPES,
+        schemaChanges: REPORTED_SCHEMA_CHANGES,
+    });
     assetFiles.stopReporting();
-    attachEditorWorldService(scope, world, registry, {preloadAssets, scenes, refetchFiles: paths => files.refetch(paths)});
+    attachEditorWorldService(scope, world, game.registry, {
+        preloadAssets,
+        scenes: game.scenes,
+        gameplaySystems: [...backendSystems, ...systemLists.shared],
+        refetchFiles: paths => files.refetch(paths),
+    });
 }
 
-export function runProjectEditorWorker(entry: ProjectEntryModule, generated?: GeneratedProjectSchemas): void {
+export function runProjectEditorWorker(startProject: StartProject, systemLists: ProjectSystemLists): void {
     const scope = globalThis as unknown as ProjectEditorWorkerScope;
     const files = new ProjectFileSource(scope);
     void PageConnection.open(scope, files).then(async page => {
         try {
-            await startProjectWorld(scope, page, files, entry, generated);
+            await startProjectWorld(scope, page, files, startProject, systemLists);
         } catch (error) {
             console.error(error);
             page.fail(error);

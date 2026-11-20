@@ -4,7 +4,8 @@ import {encodePng} from "../src/engine/assets/image/png";
 import {nodeDeflate} from "../src/hosts/terminal";
 import {encodeIcns, encodeIco, ICNS_PNG_TYPES_BY_SIZE_PX, ICO_MAX_DIMENSION_PX} from "./iconFiles";
 import type {PngIconImage} from "./iconFiles";
-import {APP_ICON_DIRECTORY, APP_ICON_ICNS_FILE, APP_ICON_ICO_FILE, APP_ICON_PNG_FILE, ROOT} from "./windowBuild";
+import {APP_ICON_DIRECTORY, APP_ICON_ICNS_FILE, APP_ICON_ICO_FILE, APP_ICON_PNG_FILE} from "../src/toolchain/build/windowBuild";
+import {REPO_ROOT} from "../src/toolchain/repoPaths";
 
 type Rgb = readonly [number, number, number];
 
@@ -117,7 +118,7 @@ function renderPng(sizePx: number): PngIconImage {
 function writeIconFile(fileName: string, bytes: Uint8Array): void {
     const path = join(APP_ICON_DIRECTORY, fileName);
     writeFileSync(path, bytes);
-    console.log(`wrote ${relative(ROOT, path).replace(/\\/g, "/")} (${bytes.length} bytes)`);
+    console.log(`wrote ${relative(REPO_ROOT, path).replace(/\\/g, "/")} (${bytes.length} bytes)`);
 }
 
 const renderedBySize = new Map<number, PngIconImage>();

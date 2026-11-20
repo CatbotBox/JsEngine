@@ -1,6 +1,6 @@
 import {EntityCommandBufferSystem} from "../../engine/core";
 import type {ResourceCtor} from "../../engine/core/resource";
-import type {Entity, Resource, World, WorldStoppedEvent} from "../../engine/core";
+import type {Entity, Resource, System, SystemCtor, World, WorldStoppedEvent} from "../../engine/core";
 import {
     applySceneInPlace,
     DataAssets,
@@ -87,6 +87,7 @@ export interface EditorServiceScope {
 
 export interface EditorWorldServiceOptions {
     readonly preloadAssets?: ScenePreload;
+    readonly gameplaySystems?: readonly SystemCtor<System>[];
     readonly tickIntervalMs?: number;
     readonly scenes?: SceneManager;
     readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
@@ -100,6 +101,7 @@ const SKIPPED_UNKNOWN_TYPES = "skip";
 const REPORTED_SCHEMA_CHANGES = "report";
 const OPENED_SCENE_MODE = "single";
 const OPENED_SCENE_PERSISTENT_ENTITIES = "destroy";
+const NO_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [];
 
 export function editorSceneManager(world: World, registry: ComponentSchemaRegistry, preload?: ScenePreload): SceneManager {
     return new SceneManager(world, registry, {preload, unknownComponentTypes: SKIPPED_UNKNOWN_TYPES, schemaChanges: REPORTED_SCHEMA_CHANGES});
@@ -146,7 +148,7 @@ export class EditorWorldService {
         private readonly registry: ComponentSchemaRegistry,
         private readonly options: EditorWorldServiceOptions,
     ) {
-        this.gate = new GameplaySystemGate(world);
+        this.gate = new GameplaySystemGate(world, options.gameplaySystems ?? NO_GAMEPLAY_SYSTEMS);
         this.tickCounter = world.getOrCreateSystem(GameplayTickCounterSystem);
         this.scenes = options.scenes ?? editorSceneManager(world, registry, options.preloadAssets);
         this.assets = this.scenes.assets;
