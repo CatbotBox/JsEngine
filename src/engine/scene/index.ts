@@ -15,6 +15,7 @@ export type {
     FieldKind,
     FieldSchema,
     FieldType,
+    FieldTypeCodec,
     FieldTypeDefinition,
     FieldTypeResolver,
     IntegerFieldType,
@@ -29,7 +30,7 @@ export type {
     StringFieldType,
     StructFieldType,
 } from "./fieldSchema";
-export {categoryOf, DEFAULT_COMPONENT_CATEGORY, hasEntityFields, isEntityField, refersToEntities} from "./fieldSchema";
+export {categoryOf, DEFAULT_COMPONENT_CATEGORY, fieldAlias, hasEntityFields, isEntityField, refersToEntities} from "./fieldSchema";
 export type {Int, Quat, Rgb, TextLines} from "./fieldTypeAliases";
 export {createStructValue, defaultFieldValue} from "./fieldDefaults";
 export {
@@ -54,6 +55,16 @@ export type {
 } from "./componentSchemaBuilder";
 export {ComponentSchemaRegistry, STATIC_SCHEMA_KEY} from "./componentSchemaRegistry";
 export type {GeneratedComponentOptions} from "./componentSchemaRegistry";
+export {registerSchemaEntries} from "./schemaEntries";
+export type {
+    ComponentClassEntry,
+    FieldAliasEntry,
+    FieldTypeEntry,
+    GeneratedComponentEntry,
+    GeneratedResourceEntry,
+    ResourceClassEntry,
+    SchemaEntry,
+} from "./schemaEntries";
 export {
     ENGINE_ASSET_TYPES,
     MESH_ASSET_TYPE,

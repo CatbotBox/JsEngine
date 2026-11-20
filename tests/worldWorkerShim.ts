@@ -1,17 +1,16 @@
 import {readFileSync} from "fs";
 import {join, resolve} from "path";
-import {buildDemo3dManifest} from "../demo/3d/assets";
-import {DEMO_3D_PROJECT_DIRECTORY} from "../demo/3d/launch/demo3dLaunch";
-import type {Demo3dManifest} from "../demo/3d/assets";
+import {PROJECT_ASSET_MANIFEST_FILE} from "../src/hosts/web/webProjectAssets";
 import {nodePlatform} from "../src/hosts/terminal";
+import {buildProjectAssetManifest, projectAssetRegistry} from "../src/toolchain/build/projectAssets";
 
 const ROOT = resolve(__dirname, "..");
 const DIST = process.env.JSENGINE_VERIFY_DIST;
-const MANIFEST_URL = "3d-manifest.json";
+const ASSET_MANIFEST_SUFFIX = `/${PROJECT_ASSET_MANIFEST_FILE}`;
 const CHUNK_BYTES = 512 * 1024;
 const CHUNK_DELAY_MS = 5;
 
-let manifest: Demo3dManifest | undefined;
+const assetManifests = new Map<string, Uint8Array>();
 
 function paced(bytes: Uint8Array): ReadableStream<Uint8Array> {
     let offset = 0;
@@ -28,10 +27,16 @@ function paced(bytes: Uint8Array): ReadableStream<Uint8Array> {
     });
 }
 
-function served(url: string): Uint8Array | undefined {
-    if (DIST === undefined && url === MANIFEST_URL) {
-        return new TextEncoder().encode(JSON.stringify(manifest ??= buildDemo3dManifest(ROOT, DEMO_3D_PROJECT_DIRECTORY, nodePlatform())));
-    }
+async function assetManifest(url: string): Promise<Uint8Array> {
+    const directory = decodeURI(url).slice(0, -ASSET_MANIFEST_SUFFIX.length);
+    const built = assetManifests.get(directory)
+        ?? new TextEncoder().encode(JSON.stringify(buildProjectAssetManifest(ROOT, directory, nodePlatform(), await projectAssetRegistry(join(ROOT, directory)))));
+    assetManifests.set(directory, built);
+    return built;
+}
+
+async function served(url: string): Promise<Uint8Array | undefined> {
+    if (DIST === undefined && url.endsWith(ASSET_MANIFEST_SUFFIX)) return await assetManifest(url);
     try {
         return new Uint8Array(readFileSync(join(DIST ?? ROOT, decodeURI(url))));
     } catch {
@@ -41,7 +46,7 @@ function served(url: string): Uint8Array | undefined {
 
 async function fetchServed(url: string): Promise<Response> {
     (globalThis as {postMessage?: (message: unknown) => void}).postMessage?.({type: "verify-fetch", url});
-    const bytes = served(url);
+    const bytes = await served(url);
     if (bytes === undefined) return new Response("Not found", {status: 404});
     return new Response(paced(bytes));
 }

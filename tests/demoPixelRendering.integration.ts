@@ -20,10 +20,7 @@ import {MeshRenderStats} from "../src/engine/rendering/3d";
 import {isPixelFrame, MemoryPixelPresenter, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {nodePlatform} from "../src/hosts/terminal";
-import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
-import {launchDemo3d} from "../demo/3d/launch/demo3dLaunch";
-import {installPixelRendering2d} from "../demo/2d/launch/pixelRendering";
-import {installPixelRendering3d} from "../demo/3d/launch/pixelRendering";
+import {DEMO_2D_PROJECT, DEMO_3D_PROJECT, startPixelsDemo} from "./support/demoProjects";
 import {Demo2dCellsControlsSystem} from "../demo/2d/backend/cells/demo2dCellsControlsSystem";
 import {Demo3dCellsControlsSystem} from "../demo/3d/backend/cells/demo3dCellsControlsSystem";
 
@@ -116,7 +113,7 @@ async function runDemo2d(): Promise<void> {
     const platform = new MemoryPlatform({fileSource: nodePlatform().files});
     const world = new App({platform}).createDebugWorld();
     const input = world.resources.getOrCreate(Input);
-    await launchDemo2d(world, {installRendering: launched => installPixelRendering2d(launched, presenter)});
+    await startPixelsDemo(world, presenter, DEMO_2D_PROJECT);
     expect(activeRenderBackend(world) === "pixels", "the pixel installer marked the world as rendering through pixels");
     expect(world.tryGetSystem(Demo2dCellsControlsSystem) === undefined, "the pixel world has no cells half-block control");
 
@@ -169,7 +166,7 @@ async function runDemo3d(): Promise<void> {
     const presenter = new MemoryPixelPresenter(START);
     const world = new App({platform}).createDebugWorld();
     const input = world.resources.getOrCreate(Input);
-    await launchDemo3d(world, {installRendering: launched => installPixelRendering3d(launched, presenter)});
+    await startPixelsDemo(world, presenter, DEMO_3D_PROJECT);
     expect(activeRenderBackend(world) === "pixels", "the pixel installer marked the world as rendering through pixels");
     expect(world.tryGetSystem(Demo3dCellsControlsSystem) === undefined, "the pixel world has no cells half-block control");
 

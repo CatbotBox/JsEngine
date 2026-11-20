@@ -28,11 +28,8 @@ import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {PIXELS_MESH_PASSES} from "../src/backends/pixels/3d";
 import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {TerminalScreen} from "./support/terminalScreen";
-import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
-import {installCellRendering2d} from "../demo/2d/launch/cellRendering";
-import {DEMO_3D_PROJECT_DIRECTORY, launchDemo3d} from "../demo/3d/launch/demo3dLaunch";
+import {DEMO_2D_PROJECT, DEMO_3D_PROJECT, startCellsDemo, startPixelsDemo} from "./support/demoProjects";
 import {directoryFileSource} from "../src/engine/platform";
-import {installPixelRendering3d} from "../demo/3d/launch/pixelRendering";
 
 const FRAME_MS = 1000 / 60;
 const SETTLE_FRAMES = 6;
@@ -99,7 +96,7 @@ async function runDemo2dOnCells(): Promise<void> {
 
     const playing = new DebugWorld({platform});
     const playingPresenter = new AnsiCellPresenter(new MemoryTerminal(CELLS));
-    await launchDemo2d(playing, {installRendering: () => installCellRendering2d(playing, playingPresenter)});
+    await startCellsDemo(playing, playingPresenter, DEMO_2D_PROJECT);
     stepFrames(playing, SETTLE_FRAMES);
     keyDown(playing, Key.Space);
     stepFrames(playing, SPAWN_SETTLE_FRAMES);
@@ -143,7 +140,7 @@ async function runDemo3dOnPixels(): Promise<void> {
 
     const playing = new DebugWorld({platform});
     const playingPresenter = new MemoryPixelPresenter(PIXELS);
-    await launchDemo3d(playing, {installRendering: () => installPixelRendering3d(playing, playingPresenter)});
+    await startPixelsDemo(playing, playingPresenter, DEMO_3D_PROJECT);
     stepFrames(playing, SETTLE_FRAMES);
     keyDown(playing, Key.Space);
     stepFrames(playing, SPAWN_SETTLE_FRAMES);
@@ -162,7 +159,7 @@ async function runDemo3dOnPixels(): Promise<void> {
     const presenter = new MemoryPixelPresenter(PIXELS);
     const loaded = new DebugWorld({platform});
     installPixelsBackend(loaded, presenter, [...PIXELS_MESH_PASSES, ...PIXELS_HUD_TEXT_PASSES]);
-    const projectAssets = platformSceneAssetLoader({files: directoryFileSource(platform.files, DEMO_3D_PROJECT_DIRECTORY), inflate: platform.inflate});
+    const projectAssets = platformSceneAssetLoader({files: directoryFileSource(platform.files, DEMO_3D_PROJECT.directory), inflate: platform.inflate});
     const result = deserializeInto(loaded, registry, parseSceneDocument(JSON.stringify(saved.document)), {assets: projectAssets});
     expect(result.report.droppedComponents.length === 0 && result.report.danglingEntityRefs.length === 0, "loading reported nothing dropped or dangling");
     expect(sameDocument(serializeWorld(loaded, registry).document, saved.document), "the loaded world serializes to the same document");

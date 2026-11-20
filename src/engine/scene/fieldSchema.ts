@@ -112,9 +112,7 @@ export type StringFieldSchema = StringFieldType & FieldKeyed;
 export type EntityFieldSchema = EntityFieldType & FieldKeyed;
 export type EnumFieldSchema = EnumFieldType & FieldKeyed;
 
-export interface FieldTypeDefinition<V = unknown> {
-    readonly name: string;
-
+export interface FieldTypeCodec<V = unknown> {
     encode(value: V, path: string): SceneJsonValue;
 
     decode(json: SceneJsonValue, path: string): V;
@@ -122,11 +120,19 @@ export interface FieldTypeDefinition<V = unknown> {
     defaultValue(): V;
 }
 
+export interface FieldTypeDefinition<V = unknown> extends FieldTypeCodec<V> {
+    readonly name: string;
+}
+
 export type AliasedNumberKind = "number" | "integer";
 
 export interface FieldAlias {
     readonly kind?: AliasedNumberKind;
     readonly options: NumberFieldOptions;
+}
+
+export function fieldAlias(options: NumberFieldOptions, kind?: AliasedNumberKind): FieldAlias {
+    return kind === undefined ? {options} : {kind, options};
 }
 
 export interface FieldTypeResolver {

@@ -19,3 +19,4 @@ export * as Canvas from "./canvas";
 export {installPixelsBackend} from "./pixelsBackend";
 export {PIXELS_WORLD_TEXT_PASSES} from "./pixelsWorldTextPasses";
 export {PIXELS_HUD_TEXT_PASSES} from "./pixelsHudTextPasses";
+export {PIXELS_2D_AND_HUD_PASSES, PIXELS_STANDARD_PASSES} from "./pixelsStandardPasses";

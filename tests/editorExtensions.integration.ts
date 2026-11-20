@@ -23,14 +23,7 @@ const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const QUERY_START = "?";
 
-const MANIFEST = {name: "Extensions fixture", entry: "project.ts", editorExtensions: EXTENSIONS_MODULE};
-const ENTRY_SOURCE = [
-    `import type {World} from "@jsengine/engine/core";`,
-    ``,
-    `export function setupProject(_world: World): void {`,
-    `}`,
-    ``,
-].join("\r\n");
+const MANIFEST = {name: "Extensions fixture", editorExtensions: EXTENSIONS_MODULE};
 const EXTENSIONS_SOURCE = [
     `import type {EditorExtensions} from "@jsengine/editor/project/editorExtensions";`,
     ``,
@@ -75,7 +68,6 @@ async function build(server: ProjectServer, id: string): Promise<BuildProjectRes
 
 async function verifyEditorExtensions(server: ProjectServer, folder: string): Promise<void> {
     writeProjectFile(folder, PROJECT_MANIFEST_FILE, JSON.stringify(MANIFEST, null, 2) + "\n");
-    writeProjectFile(folder, "project.ts", ENTRY_SOURCE);
     writeProjectFile(folder, EXTENSIONS_MODULE, EXTENSIONS_SOURCE);
     const opened = await (await serverRequest(server, projectApiUrl("open"), {method: "POST", body: JSON.stringify({path: folder}), headers: JSON_HEADERS})).json() as OpenProjectResult;
     expect(opened.validation.ok, `the fixture manifest with "editorExtensions" validates (${JSON.stringify(opened.validation)})`);

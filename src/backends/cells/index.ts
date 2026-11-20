@@ -18,3 +18,4 @@ export * as ThreeD from "./3d";
 export * as Canvas from "./canvas";
 export {installCellsBackend} from "./cellsBackend";
 export {CELLS_HUD_TEXT_PASSES} from "./cellsHudTextPasses";
+export {CELLS_STANDARD_PASSES} from "./cellsStandardPasses";

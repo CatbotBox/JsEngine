@@ -3,6 +3,7 @@ import {TextColor} from "../../src/engine/rendering";
 import type {Int, PrefabAsset, Rgb, TextLines} from "../../src/engine/scene";
 
 export const MS_PER_SECOND = 1000;
+export const SWARM_TUNING_FILE = "assets/swarm.tuning.asset.json";
 
 const UNCAPPED = Number.POSITIVE_INFINITY;
 
@@ -115,6 +116,7 @@ export class HudTuning {
 }
 
 export class SwarmTuning extends Resource {
+    public randomSeed: Int | undefined = undefined;
     public maxSimulationStepMs = 0;
     public arena = new ArenaTuning();
     public ship = new ShipTuning();

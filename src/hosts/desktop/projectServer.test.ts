@@ -2,9 +2,10 @@ import {afterEach, beforeEach, describe, expect, test} from "../../engine/testin
 import type * as Fs from "fs";
 import type * as Os from "os";
 import type * as Path from "path";
-import {createProjectServer, describeBuildErrors, externalOpenCommand, splitCommandLine} from "./projectServer";
+import {createProjectServer, externalOpenCommand, splitCommandLine} from "./projectServer";
 import type {ProjectServer} from "./projectServer";
-import {PROJECT_MANIFEST_FILE, STARTER_ENTRY_FILE} from "../../engine/project/projectManifest";
+import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
+import {STARTER_SCENE_FILE} from "../../editor/project/projectTemplate";
 import type {OpenProjectResult} from "../../editor/project/projectServerApi";
 
 const fs = require("fs") as typeof Fs;
@@ -66,7 +67,7 @@ describe("project server", () => {
         const empty = await opened(folder);
         expect(empty.validation.ok).toBe(false);
         const created = await (await post("create", {path: folder, name: "Starter"})).json() as OpenProjectResult;
-        expect(created.validation).toEqual({ok: true, manifest: {name: "Starter", entry: STARTER_ENTRY_FILE}});
+        expect(created.validation).toEqual({ok: true, manifest: {name: "Starter", startScene: STARTER_SCENE_FILE}});
         expect(created.id).toBe(empty.id);
         expect(fs.existsSync(path.join(folder, PROJECT_MANIFEST_FILE))).toBe(true);
         const again = await post("create", {path: folder, name: "Starter"});
@@ -187,21 +188,5 @@ describe("external editor command", () => {
     test("command lines split on unquoted whitespace", () => {
         expect(splitCommandLine(`code  --wait 'a b' "" x"y z"w`)).toEqual(["code", "--wait", "a b", "", "xy zw"]);
         expect(splitCommandLine("   ")).toEqual([]);
-    });
-});
-
-describe("build errors", () => {
-    test("a missing entry export names the entry and the export", () => {
-        const repoRoot = path.resolve("/repo");
-        const projectFolder = path.join(repoRoot, "demo", "game");
-        const generated = path.join(repoRoot, "dist", "editor-projects", "x", "editorWorkerEntry.ts");
-        const described = describeBuildErrors([
-            {message: `No matching export in "demo/game/project.ts" for import "setupProject"`, file: generated, line: 1, column: 33},
-            {message: `Could not resolve: "./missing"`, file: path.join(projectFolder, "project.ts"), line: 3, column: 20},
-        ], {repoRoot, bunPath: "bun", folder: projectFolder, entry: "project.ts"}, generated);
-        expect(described).toEqual([
-            "entry project.ts does not export setupProject",
-            `project.ts:3:20: Could not resolve: "./missing"`,
-        ]);
     });
 });

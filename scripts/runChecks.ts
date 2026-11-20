@@ -16,9 +16,9 @@ interface CheckStep {
 
 const STEPS: readonly CheckStep[] = [
     {label: "typecheck", script: "typecheck", runtime: "any"},
-    {label: "unit tests (bun)", script: "test:unit:bun", runtime: "bun"},
-    {label: "unit tests (node)", script: "test:unit:node", runtime: "node"},
-    {label: "integration tests (bun)", script: "test:integration:bun", runtime: "bun"},
+    {label: "unit tests (bun)", script: "test", runtime: "bun"},
+    {label: "unit tests (node)", script: "test:node", runtime: "node"},
+    {label: "integration tests (bun)", script: "test:integration", runtime: "bun"},
     {label: "integration tests (node)", script: "test:integration:node", runtime: "node"},
     {label: "frame hashes", script: "test:frame-hashes", runtime: "bun"},
     {label: "demo frame hashes", script: "test:demo-frame-hashes", runtime: "bun"},

@@ -13,20 +13,15 @@ import {DataAssets, dataAssetPathOf, PrefabSpawner} from "../../src/engine/scene
 import {requireDebugWorld} from "../_shared/debugWorld";
 import {formatHudLines, formatHudText, HudLabel} from "../_shared/hud";
 import {Demo3dHud, EulerAngles, FlyCamera, ModelGrid} from "./components";
-import {ModelCatalog} from "./modelCatalog";
-import type {CatalogModel, Demo3dModelFiles, ModelDownload} from "./modelCatalog";
+import {assetModelFiles, ModelCatalog} from "./modelCatalog";
+import type {CatalogModel, ModelDownload} from "./modelCatalog";
 import {GridModels} from "./modelGrid";
 import {Demo3dTuning} from "./tuning";
 import type {Demo3dHudTuning, RenderPacingPreset} from "./tuning";
 
-export type {Demo3dModelFiles} from "./modelCatalog";
-
-export interface Demo3dHost {
-    readonly modelFiles?: Demo3dModelFiles;
-}
-
 const DEMO_NAME = "The 3D demo";
-const BEFORE_SIMULATION_PRIORITY = -1;
+const CONTROLS_PRIORITY = -10;
+const HUD_PRIORITY = 20;
 const QUARTER_TURN_RAD = Math.PI / 2;
 const SCREEN_UNIT_WIDTH_PER_HEIGHT = 1 / SCREEN_UNIT_HEIGHT_PER_WIDTH;
 const NO_ROLL_RAD = 0;
@@ -118,6 +113,19 @@ function sessionOf(world: World): Demo3dSession {
     return world.resources.get(Demo3dSession);
 }
 
+function requirePrefabSpawner(world: World): PrefabSpawner {
+    const spawner = world.resources.tryGet(PrefabSpawner);
+    if (spawner === undefined) throw new Error(`${DEMO_NAME} spawns model prefabs through a PrefabSpawner: start it with startGame, whose SceneManager creates one`);
+    return spawner;
+}
+
+function createSession(world: World): Demo3dSession {
+    const spawner = requirePrefabSpawner(world);
+    const session = new Demo3dSession(new ModelCatalog(spawner, assetModelFiles(world, spawner)), new GridModels(world));
+    session.catalog.refresh(world.resources.get(Demo3dTuning).models);
+    return session;
+}
+
 function cameraRotationOf(camera: Readonly<FlyCamera>, scratch: Vec3): Vec4 {
     return Quaternions.eulerToQuat(Vec.set3(scratch, camera.pitchRad, camera.yawRad, NO_ROLL_RAD));
 }
@@ -159,7 +167,7 @@ function renderPacingOf(tuning: Demo3dTuning, session: Demo3dSession): RenderPac
     return tuning.renderPacing[session.renderPacingIndex];
 }
 
-class Demo3dControlsSystem extends System {
+export class Demo3dControlsSystem extends System {
     private _flyCameras = this.createEntityQuery([FlyCamera, LocalPosition, LocalRotation]);
     private _zoomCameras = this.createEntityQuery([FlyCamera, FieldOfView]);
     private _suns = this.createEntityQuery([DirectionalLight, EulerAngles, LocalRotation]);
@@ -182,10 +190,13 @@ class Demo3dControlsSystem extends System {
     private _looking = false;
 
     override priority(): number {
-        return BEFORE_SIMULATION_PRIORITY;
+        return CONTROLS_PRIORITY;
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(Demo3dTuning);
+        const session = this.world.resources.insert(createSession(this.world));
+        this.downloadModelsLoadedUpFront(session);
         const actions = resolveInputActions(this.world, Demo3dAction);
         this._actions = actions;
         this._keyDownHandlers = [
@@ -345,6 +356,10 @@ class Demo3dControlsSystem extends System {
         if (grid.selectedModel >= session.catalog.models.length) grid.selectedModel = FIRST_MODEL;
     }
 
+    private downloadModelsLoadedUpFront(session: Demo3dSession): void {
+        session.catalog.downloadModelsLoadedUpFront((loaded, queuedSpawns) => this.spawnQueued(loaded, queuedSpawns));
+    }
+
     private downloadSelected(grid: ModelGrid, session: Demo3dSession): void {
         const model = session.catalog.models[grid.selectedModel];
         if (model !== undefined) session.catalog.downloadUnlessLoaded(model, (loaded, queuedSpawns) => this.spawnQueued(loaded, queuedSpawns));
@@ -397,6 +412,7 @@ class Demo3dControlsSystem extends System {
             console.error(`Could not reload ${path}:`, error);
         }
         session.catalog.refresh(tuning.models);
+        this.downloadModelsLoadedUpFront(session);
         const grid = this.grid();
         if (grid === undefined) return;
         this.clampSelection(grid, session);
@@ -466,7 +482,7 @@ class Demo3dControlsSystem extends System {
     }
 }
 
-class Demo3dHudSystem extends System {
+export class Demo3dHudSystem extends System {
     private _hud = this.createEntityQuery([Demo3dHud]);
     private _grids = this.createEntityQuery([ModelGrid]);
     private _preview = new HudLabel();
@@ -479,7 +495,13 @@ class Demo3dHudSystem extends System {
     private _framesPerSecond = 0;
     private _ticksPerSecond = 0;
 
+    override priority(): number {
+        return HUD_PRIORITY;
+    }
+
     protected onCreate(): void {
+        this.requireResourceForUpdate(Demo3dTuning);
+        this.requireResourceForUpdate(Demo3dSession);
         this._rateWindowStartMs = this.world.time.elapsedTimeMs;
     }
 
@@ -561,19 +583,4 @@ class Demo3dHudSystem extends System {
         this._rateWindowFrames = time.frameCount;
         this._rateWindowTicks = time.tickCount;
     }
-}
-
-function requirePrefabSpawner(world: World): PrefabSpawner {
-    const spawner = world.resources.tryGet(PrefabSpawner);
-    if (spawner === undefined) throw new Error(`${DEMO_NAME} spawns model prefabs through a PrefabSpawner: launch it with launchProject or startProject, whose SceneManager creates one`);
-    return spawner;
-}
-
-export function setupDemo3d(world: World, host: Demo3dHost): void {
-    const tuning = world.resources.get(Demo3dTuning);
-    const session = new Demo3dSession(new ModelCatalog(requirePrefabSpawner(world), host.modelFiles), new GridModels(world));
-    world.resources.insert(session);
-    session.catalog.refresh(tuning.models);
-    world.ensureSystemExists(Demo3dControlsSystem);
-    world.ensureSystemExists(Demo3dHudSystem);
 }

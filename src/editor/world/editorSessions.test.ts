@@ -83,7 +83,7 @@ describe("editor robustness", () => {
         const harnessed = editorWorld(world => {
             world.getOrCreateSystem(FailingGameplaySystem);
             world.entityManager.createEntity("only", [new LocalPosition()]);
-        }, {debugWorld: true});
+        }, {debugWorld: true, gameplaySystems: [FailingGameplaySystem]});
         const sceneText = (await ask(harnessed, {op: "saveScene"})).sceneText;
         FailingGameplaySystem.failNext = true;
         await ask(harnessed, {op: "setMode", mode: "play"});

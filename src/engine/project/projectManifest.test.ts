@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../testing/harness";
-import {PROJECT_MANIFEST_FILE, STARTER_ENTRY_FILE, validateProjectManifest} from "./projectManifest";
+import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "./projectManifest";
 import type {ProjectManifestValidation} from "./projectManifest";
 import {projectFileExtension, projectRelativePath} from "./projectPaths";
 
@@ -56,11 +56,12 @@ describe("validateProjectManifest", () => {
         ]);
     });
 
-    test("missing fields are named", () => {
-        expect(problemsOf(validateProjectManifest("{}"))).toEqual([
-            `"name" is missing: give the project a name`,
-            `"entry" is missing: name the game entry module, e.g. "${STARTER_ENTRY_FILE}"`,
-        ]);
+    test("a missing name is named", () => {
+        expect(problemsOf(validateProjectManifest("{}"))).toEqual([`"name" is missing: give the project a name`]);
+    });
+
+    test("the entry is optional, so the generated bootstrap runs", () => {
+        expect(validateProjectManifest(JSON.stringify({name: "Game"}), EXISTING_ENTRY)).toEqual({ok: true, manifest: {name: "Game"}});
     });
 
     test("the entry must be a module that exists", () => {
@@ -110,6 +111,44 @@ describe("validateProjectManifest resources", () => {
             `"resources[4].type" "Tuning" is already bound by "resources[2]"`,
             `"resources[4].path" must be a non-empty string path, got 3`,
         ]);
+    });
+});
+
+describe("validateProjectManifest schemas", () => {
+    const base = {name: "Game", entry: "src/game.ts"};
+
+    test("the exclude list comes back trimmed, an empty object excludes nothing, and leaving it out is fine", () => {
+        expect(validateProjectManifest(JSON.stringify({...base, schemas: {exclude: [" Debug ", "Cheat"]}}), EXISTING_ENTRY))
+            .toEqual({ok: true, manifest: {...base, schemas: {exclude: ["Debug", "Cheat"]}}});
+        expect(validateProjectManifest(JSON.stringify({...base, schemas: {}}), EXISTING_ENTRY)).toEqual({ok: true, manifest: {...base, schemas: {exclude: []}}});
+        expect(validateProjectManifest(JSON.stringify(base), EXISTING_ENTRY)).toEqual({ok: true, manifest: base});
+    });
+
+    test("anything else is named", () => {
+        const problems = (schemas: unknown) => problemsOf(validateProjectManifest(JSON.stringify({...base, schemas}), EXISTING_ENTRY));
+        expect(problems(["Debug"])).toEqual([`"schemas" must be an object {"exclude": [type names]} when present, got ["Debug"]`]);
+        expect(problems({exclude: "Debug"})).toEqual([`"schemas.exclude" must be an array of type names, got "Debug"`]);
+        expect(problems({exclude: ["Debug", " ", 3]})).toEqual([
+            `"schemas.exclude[1]" must be a non-empty type name, got " "`,
+            `"schemas.exclude[2]" must be a non-empty type name, got 3`,
+        ]);
+    });
+});
+
+describe("validateProjectManifest systems", () => {
+    const base = {name: "Game", entry: "src/game.ts"};
+
+    test("the exclude list comes back trimmed beside the schema list, and leaving it out is fine", () => {
+        expect(validateProjectManifest(JSON.stringify({...base, schemas: {exclude: ["Cheat"]}, systems: {exclude: [" DebugSystem "]}}), EXISTING_ENTRY))
+            .toEqual({ok: true, manifest: {...base, schemas: {exclude: ["Cheat"]}, systems: {exclude: ["DebugSystem"]}}});
+        expect(validateProjectManifest(JSON.stringify({...base, systems: {}}), EXISTING_ENTRY)).toEqual({ok: true, manifest: {...base, systems: {exclude: []}}});
+        expect(validateProjectManifest(JSON.stringify(base), EXISTING_ENTRY)).toEqual({ok: true, manifest: base});
+    });
+
+    test("anything else is named under systems", () => {
+        const problems = (systems: unknown) => problemsOf(validateProjectManifest(JSON.stringify({...base, systems}), EXISTING_ENTRY));
+        expect(problems("DebugSystem")).toEqual([`"systems" must be an object {"exclude": [type names]} when present, got "DebugSystem"`]);
+        expect(problems({exclude: [""]})).toEqual([`"systems.exclude[0]" must be a non-empty type name, got ""`]);
     });
 });
 

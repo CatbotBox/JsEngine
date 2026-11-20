@@ -25,8 +25,10 @@ const HALF = 0.5;
 const NO_STEP = 0;
 const NO_OFFSET = 0;
 const UNSET = -1;
-const RANDOM_TINT_PRIORITY = -2;
-const BEFORE_SIMULATION_PRIORITY = -1;
+const RANDOM_TINT_PRIORITY = -30;
+const CONTROLS_PRIORITY = -10;
+const HUD_PRIORITY = 10;
+const FADE_PRIORITY = 20;
 const INCLUDING_DISABLED = {includeDisabled: true} as const;
 const ENTITIES_INCLUDING_DISABLED = {includeEntity: true, includeDisabled: true} as const;
 
@@ -59,7 +61,7 @@ function commandBufferOf(world: World): EntityCommandBuffer {
 }
 
 function randomOf(world: World): Random {
-    const random = world.resources.get(Random);
+    const random = world.resources.getOrCreate(Random);
     random.reseedIfChanged(world.resources.get(Demo2dTuning).randomSeed);
     return random;
 }
@@ -114,11 +116,15 @@ function byCreationOrder(a: Entity, b: Entity): number {
     return getEntityCreationOrder(a)! - getEntityCreationOrder(b)!;
 }
 
-class RandomTintSystem extends System {
+export class RandomTintSystem extends System {
     private _tinted = this.createEntityQuery([RandomTint, Sprite]);
 
     override priority(): number {
         return RANDOM_TINT_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this.requireResourceForUpdate(Demo2dTuning);
     }
 
     onUpdate(): void {
@@ -138,7 +144,7 @@ class RandomTintSystem extends System {
     }
 }
 
-class Demo2dControlsSystem extends System {
+export class Demo2dControlsSystem extends System {
     private _players = this.createEntityQuery([PlayerTag, LocalPosition]);
     private _playerTransforms = this.createEntityQuery([PlayerTag, LocalToWorld]);
     private _cameras = this.createEntityQuery([PanCamera, LocalPosition]);
@@ -146,10 +152,11 @@ class Demo2dControlsSystem extends System {
     private _handlers: readonly ActionHandler[] = [];
 
     override priority(): number {
-        return BEFORE_SIMULATION_PRIORITY;
+        return CONTROLS_PRIORITY;
     }
 
     protected onCreate(): void {
+        this.requireResourceForUpdate(Demo2dTuning);
         const actions = resolveInputActions(this.world, Demo2dAction);
         this._actions = actions;
         this._handlers = [
@@ -211,8 +218,12 @@ class Demo2dControlsSystem extends System {
     }
 }
 
-class FadeSystem extends System {
+export class FadeSystem extends System {
     private _fading = this.createEntityQuery([OriginalColor, FadeToColor, Sprite]);
+
+    override priority(): number {
+        return FADE_PRIORITY;
+    }
 
     protected onCreate(): void {
         this.requireAllForUpdate(this._fading);
@@ -242,7 +253,7 @@ class FadeSystem extends System {
     }
 }
 
-class Demo2dHudSystem extends System {
+export class Demo2dHudSystem extends System {
     private _hud = this.createEntityQuery([Demo2dHud]);
     private _hudElements = this.createEntityQuery([HudElement]);
     private _entityCounter = new HudLabel();
@@ -252,7 +263,12 @@ class Demo2dHudSystem extends System {
     private _visible = true;
     private _actions!: Demo2dActions;
 
+    override priority(): number {
+        return HUD_PRIORITY;
+    }
+
     protected onCreate(): void {
+        this.requireResourceForUpdate(Demo2dTuning);
         this._actions = resolveInputActions(this.world, Demo2dAction);
     }
 
@@ -283,20 +299,4 @@ class Demo2dHudSystem extends System {
         }
         return this._fps;
     }
-}
-
-function requireDemo2dData(world: World): void {
-    const tuning = world.resources.get(Demo2dTuning);
-    const spawner = world.resources.tryGet(PrefabSpawner);
-    if (spawner === undefined) throw new Error(`${DEMO_NAME} spawns prefabs through a PrefabSpawner: launch it with launchProject or startProject, whose SceneManager creates one`);
-    spawner.templateOf(requirePixelPrefab(tuning));
-}
-
-export function setupDemo2d(world: World): void {
-    requireDemo2dData(world);
-    world.resources.insert(new Random(world.resources.get(Demo2dTuning).randomSeed));
-    world.ensureSystemExists(RandomTintSystem);
-    world.ensureSystemExists(Demo2dControlsSystem);
-    world.ensureSystemExists(Demo2dHudSystem);
-    world.ensureSystemExists(FadeSystem);
 }

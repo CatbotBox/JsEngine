@@ -71,6 +71,7 @@ export class PreloadedFileSource implements FileSource {
     private readonly lazyLoads = new Map<string, LazyLoad>();
     private readonly baseUrl: string;
     private readonly fetchFile: FetchFile;
+    private missRecorder: string[] | undefined;
 
     public constructor(options: PreloadedFileSourceOptions = {}) {
         this.baseUrl = options.baseUrl ?? "";
@@ -135,6 +136,42 @@ export class PreloadedFileSource implements FileSource {
             }));
         } finally {
             for (const load of loads) load.listeners.delete(report);
+        }
+    }
+
+    public async loadFetchingAsNeeded<T>(load: () => T, onProgress?: (progress: PreloadProgress) => void): Promise<T> {
+        const fetched = new Set<string>();
+        let finishedBytes = 0;
+        for (;;) {
+            const misses: string[] = [];
+            this.missRecorder = misses;
+            let result: T | undefined;
+            let failure: unknown;
+            let failed = false;
+            try {
+                result = load();
+            } catch (error) {
+                failure = error;
+                failed = true;
+            } finally {
+                this.missRecorder = undefined;
+            }
+            const next = misses.find(path => this.isPending(path));
+            if (next === undefined) {
+                if (failed) throw failure;
+                return result as T;
+            }
+            if (fetched.has(next)) throw failed ? failure : new Error(`${next} was fetched but its loader still could not read it`);
+            fetched.add(next);
+            const before = finishedBytes;
+            const size = transferBytesOf(this.entries.get(next)!.pending!);
+            await this.ensureLoaded([next], progress => onProgress?.({
+                loadedFiles: fetched.size - 1 + progress.loadedFiles,
+                totalFiles: fetched.size,
+                loadedBytes: before + progress.loadedBytes,
+                totalBytes: before + progress.totalBytes,
+            }));
+            finishedBytes += size;
         }
     }
 
@@ -253,7 +290,10 @@ export class PreloadedFileSource implements FileSource {
 
     private bytesOf(path: string): Uint8Array {
         const entry = this.entry(path);
-        if (entry.pending !== undefined) throw new Error(`${path} is lazy and not loaded yet; await ensureLoaded first`);
+        if (entry.pending !== undefined) {
+            this.missRecorder?.push(normalizePath(path));
+            throw new Error(`${path} is lazy and not loaded yet; await ensureLoaded first`);
+        }
         if (entry.bytes === undefined) throw new Error(`${path} was preloaded stat-only; its contents were not fetched`);
         return entry.bytes;
     }

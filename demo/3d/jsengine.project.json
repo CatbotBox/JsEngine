@@ -1,6 +1,5 @@
 {
   "name": "JsEngine 3D demo",
-  "entry": "project.ts",
   "startScene": "scenes/main.scene.json",
   "resources": [
     {

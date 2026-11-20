@@ -4,8 +4,9 @@ import type {ResolvedInputActions} from "../../../../src/engine/input";
 import {CellsRenderBackend} from "../../../../src/engine/rendering/renderBackend";
 import {MeshCellPassSettings} from "../../../../src/backends/cells/3d/meshCellPassSettings";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";
+import {Demo3dTuning} from "../../tuning";
 
-const BEFORE_SIMULATION_PRIORITY = -1;
+const CELLS_CONTROLS_PRIORITY = -20;
 const INCLUDING_DISABLED = {includeDisabled: true} as const;
 
 const Demo3dCellsAction = {
@@ -18,11 +19,12 @@ export class Demo3dCellsControlsSystem extends System {
     private _supersamplePresets!: SupersamplePresetKeys;
 
     override priority(): number {
-        return BEFORE_SIMULATION_PRIORITY;
+        return CELLS_CONTROLS_PRIORITY;
     }
 
     protected onCreate(): void {
         this.requireResourceForUpdate(CellsRenderBackend);
+        this.requireResourceForUpdate(Demo3dTuning);
         this._actions = resolveInputActions(this.world, Demo3dCellsAction);
         this._supersamplePresets = new SupersamplePresetKeys(this.world);
     }

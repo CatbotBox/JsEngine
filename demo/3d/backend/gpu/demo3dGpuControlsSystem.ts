@@ -10,11 +10,12 @@ import {
     SINGLE_SAMPLE_COUNT,
 } from "../../../../src/backends/gpu/gpuMeshPassSettings";
 import type {GpuSampleCount, GpuTextureFiltering} from "../../../../src/backends/gpu/gpuMeshPassSettings";
+import {Demo3dTuning} from "../../tuning";
 import type {SupersamplePreset} from "../../tuning";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";
 import {DemoSurfaceShaderSystem} from "./gpuSurfaceShaders";
 
-const BEFORE_SIMULATION_PRIORITY = -1;
+const GPU_CONTROLS_PRIORITY = -20;
 const INCLUDING_DISABLED = {includeDisabled: true} as const;
 const SINGLE_SAMPLE_PER_PIXEL = 1;
 
@@ -37,11 +38,12 @@ export class Demo3dGpuControlsSystem extends System {
     private _supersamplePresets!: SupersamplePresetKeys;
 
     override priority(): number {
-        return BEFORE_SIMULATION_PRIORITY;
+        return GPU_CONTROLS_PRIORITY;
     }
 
     protected onCreate(): void {
         this.requireResourceForUpdate(GpuRenderBackend);
+        this.requireResourceForUpdate(Demo3dTuning);
         this._actions = resolveInputActions(this.world, Demo3dGpuAction);
         this._supersamplePresets = new SupersamplePresetKeys(this.world);
     }

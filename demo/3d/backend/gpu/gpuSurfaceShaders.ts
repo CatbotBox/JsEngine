@@ -9,6 +9,7 @@ import type {SurfaceShaderChoice} from "../../tuning";
 const FIRST_CHOICE = 0;
 const NEXT_CHOICE_STEP = 1;
 const CLEARED_PARAM = 0;
+const SURFACE_SHADER_PRIORITY = 10;
 
 function writeParams(choice: SurfaceShaderChoice, params: Float32Array, instanceIndex: number): void {
     params.fill(CLEARED_PARAM);
@@ -24,6 +25,10 @@ export class DemoSurfaceShaderSystem extends System {
     private _applied = FIRST_CHOICE;
     private _nextInstanceIndex = 0;
 
+    override priority(): number {
+        return SURFACE_SHADER_PRIORITY;
+    }
+
     public cycle(): void {
         const count = this.choices().length;
         if (count > 0) this._selected = (this._selected + NEXT_CHOICE_STEP) % count;
@@ -31,6 +36,7 @@ export class DemoSurfaceShaderSystem extends System {
 
     protected onCreate(): void {
         this.requireResourceForUpdate(GpuRenderBackend);
+        this.requireResourceForUpdate(Demo3dTuning);
         this.requireAnyForUpdate(this._unassigned);
         this.requireAnyForUpdate(this._assigned);
     }

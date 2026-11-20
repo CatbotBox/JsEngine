@@ -4,7 +4,7 @@ import type {ResolvedInputActions} from "../../../../src/engine/input";
 import {CellsRenderBackend} from "../../../../src/engine/rendering/renderBackend";
 import {SpriteCellPassSettings} from "../../../../src/backends/cells/2d/spriteCellPassSettings";
 
-const BEFORE_SIMULATION_PRIORITY = -1;
+const CELLS_CONTROLS_PRIORITY = -20;
 const INCLUDING_DISABLED = {includeDisabled: true} as const;
 
 const Demo2dCellsAction = {
@@ -16,7 +16,7 @@ export class Demo2dCellsControlsSystem extends System {
     private _actions!: ResolvedInputActions<typeof Demo2dCellsAction>;
 
     override priority(): number {
-        return BEFORE_SIMULATION_PRIORITY;
+        return CELLS_CONTROLS_PRIORITY;
     }
 
     protected onCreate(): void {

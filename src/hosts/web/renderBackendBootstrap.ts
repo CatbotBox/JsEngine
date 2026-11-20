@@ -1,4 +1,5 @@
 import {renderBackendFromQuery} from "./worldWorkerProtocol";
+import {isRenderBackendKind} from "../../engine/rendering/renderBackend";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 
 const MODULE_SCRIPT_TYPE = "module";
@@ -29,6 +30,15 @@ export interface WebGpuNavigator {
 
 export interface OffscreenTransferCanvas {
     readonly transferControlToOffscreen?: unknown;
+}
+
+export interface BackendDefaultingPage {
+    readonly documentElement: {readonly dataset: {readonly defaultBackend?: string}};
+}
+
+export function pageDefaultRenderBackend(page: BackendDefaultingPage): RenderBackendKind | undefined {
+    const declared = page.documentElement.dataset.defaultBackend;
+    return isRenderBackendKind(declared) ? declared : undefined;
 }
 
 export function chooseRenderBackend(requested: RenderBackendKind, {gpuScript, webGpuUsable}: GpuAvailability): RenderBackendChoice {

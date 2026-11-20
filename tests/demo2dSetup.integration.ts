@@ -5,8 +5,7 @@ import {Ansi, AnsiCellPresenter, nodePlatform, TerminalInput} from "../src/hosts
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {TerminalScreen} from "./support/terminalScreen";
-import {launchDemo2d} from "../demo/2d/launch/demo2dLaunch";
-import {installCellRendering2d} from "../demo/2d/launch/cellRendering";
+import {DEMO_2D_PROJECT, startCellsDemo} from "./support/demoProjects";
 
 const FRAMES = 60;
 const FRAME_MS = 1000 / 60;
@@ -52,7 +51,7 @@ async function main(): Promise<void> {
         sink: world.resources.getOrCreate(Input),
         mouse: true,
     }).start();
-    await launchDemo2d(world, {installRendering: () => installCellRendering2d(world, presenter)});
+    await startCellsDemo(world, presenter, DEMO_2D_PROJECT);
 
     const tick = () => {
         const before = gameTerminal.length;

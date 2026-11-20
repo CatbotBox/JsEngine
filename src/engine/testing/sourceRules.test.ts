@@ -13,7 +13,7 @@ const TEST_SUFFIX = ".test.ts";
 const BUILD_OUTPUT_DIRECTORIES = new Set(["dist", "dist-prod", "node_modules"]);
 
 const NODE_API_USE = /require\("(fs|path|os|zlib|worker_threads|util|readline)"\)|from "(node:)?(fs|path|os|zlib|worker_threads|util|perf_hooks|timers|readline)"|process\.(stdout|stdin|env)/;
-const NODE_API_HOSTS = ["src/hosts/terminal/", "src/hosts/desktop/"];
+const NODE_API_HOSTS = ["src/hosts/terminal/", "src/hosts/desktop/", "src/toolchain/"];
 
 const BUN_TEST_IMPORT = /from\s+["']bun:test["']|require\(\s*["']bun:test["']\s*\)/;
 const HARNESS = path.join(SRC, "engine", "testing", "harness.ts");
@@ -41,22 +41,25 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     "demo backend pixels": ["engine", "backends/pixels", "demo", "demo backend pixels"],
     "demo backend gpu": ["engine", "backends/pixels", "backends/gpu", "demo", "demo backend gpu"],
     "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "demo", ...DEMO_BACKENDS, "demo launch"],
+    "demo generated": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "editor launch", "demo", ...DEMO_BACKENDS, "demo generated"],
+    "toolchain": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "hosts/desktop", "editor project", "editor", "toolchain"],
 };
 
 const UNSCHEDULED = "unscheduled";
 
 const WRONG_DIRECTION_ALLOWLIST_REMOVED_IN_STEP: Readonly<Record<string, number | typeof UNSCHEDULED>> = {};
 const WRONG_DIRECTION_ALLOWLIST = Object.keys(WRONG_DIRECTION_ALLOWLIST_REMOVED_IN_STEP);
-const DEMO_LAUNCH_ENTRIES: readonly string[] = ["index.ts", "project.ts"];
-const DEMO_LAUNCH_FOLDER = "launch";
+const DEMO_LAUNCH_ENTRY = "index.ts";
 const DEMO_BACKEND_FOLDER = "backend";
+const DEMO_GENERATED_FOLDER = "generated";
+const GENERATED_BACKEND_FILE = /\.(cells|pixels|gpu)\.ts$/;
 const EDITOR_LAUNCH_FOLDER = "launch";
 const EDITOR_PROJECT_FOLDER = "project";
 const EDITOR_SOURCES = "src/editor/";
-const WEB_GAME_ENTRY_NAMES = ["2d", "3d", "swarm", "2d-cells", "2d-pixels", "3d-cells", "3d-pixels", "3d-gpu", "swarm-cells", "swarm-pixels"];
-const DEMO_GAME_ENTRY_PATHS = [["launch", "web.worker.ts"], ["launch", "pixelWeb.worker.ts"], ["launch", "gpuWeb.worker.ts"], ["index.ts"]];
+const GENERATED_MAIN_PREFIX = "main.";
+const GENERATED_EDITOR_MAIN = "main.editor.worker.ts";
 const ENGINE_WORLD_SOURCE = "src/engine/core/world.ts";
-const ENGINE_PROJECT_LAUNCH_SOURCE = "src/engine/project/projectLaunch.ts";
+const ENGINE_START_GAME_SOURCE = "src/engine/project/startGame.ts";
 
 function typeScriptFilesUnder(directory: string): string[] {
     return fs.readdirSync(directory, {withFileTypes: true}).flatMap(entry => {
@@ -82,7 +85,10 @@ function layerOf(file: string): string | undefined {
     if (top === "src" && second === "editor" && third === EDITOR_PROJECT_FOLDER) return "editor project";
     if (top === "src") return second;
     if (top === "demo" && third === DEMO_BACKEND_FOLDER) return `demo backend ${fourth}`;
-    if (top === "demo") return DEMO_LAUNCH_ENTRIES.includes(third) || third === DEMO_LAUNCH_FOLDER ? "demo launch" : "demo";
+    const generatedBackend = top === "demo" && third === DEMO_GENERATED_FOLDER ? GENERATED_BACKEND_FILE.exec(fourth)?.[1] : undefined;
+    if (generatedBackend !== undefined) return `demo backend ${generatedBackend}`;
+    if (top === "demo" && third === DEMO_GENERATED_FOLDER && fourth !== undefined) return "demo generated";
+    if (top === "demo") return third === DEMO_LAUNCH_ENTRY ? "demo launch" : "demo";
     return undefined;
 }
 
@@ -129,15 +135,22 @@ function relativeImportClosure(entries: readonly string[]): string[] {
     return reached;
 }
 
+function generatedGameMains(demo: string): string[] {
+    const folder = path.join(DEMO, demo, DEMO_GENERATED_FOLDER);
+    if (!fs.existsSync(folder)) return [];
+    return fs.readdirSync(folder)
+        .filter(name => name.startsWith(GENERATED_MAIN_PREFIX) && name.endsWith(TYPESCRIPT_EXTENSION) && name !== GENERATED_EDITOR_MAIN)
+        .map(name => path.join(folder, name));
+}
+
 function gameEntries(): string[] {
-    const webEntries = WEB_GAME_ENTRY_NAMES.map(name => path.join(SRC, "hosts", "web", name + TYPESCRIPT_EXTENSION));
     const demoNames = fs.readdirSync(DEMO, {withFileTypes: true}).filter(entry => entry.isDirectory()).map(entry => entry.name);
-    const demoEntries = demoNames.flatMap(name => DEMO_GAME_ENTRY_PATHS.map(parts => path.join(DEMO, name, ...parts)));
-    return [...webEntries, ...demoEntries.filter(file => fs.existsSync(file))];
+    const handWrittenEntries = demoNames.map(name => path.join(DEMO, name, DEMO_LAUNCH_ENTRY)).filter(file => fs.existsSync(file));
+    return [...demoNames.flatMap(generatedGameMains), ...handWrittenEntries];
 }
 
 describe("source rules", () => {
-    test("only src/hosts/terminal and src/hosts/desktop touch node APIs among the non-test files under src/", () => {
+    test("only src/hosts/terminal, src/hosts/desktop and src/toolchain touch node APIs among the non-test files under src/", () => {
         const sourceFiles = typeScriptFilesUnder(SRC).filter(file => !file.endsWith(TEST_SUFFIX));
         const isNodeHost = (file: string) => NODE_API_HOSTS.some(host => fromRoot(file).startsWith(host));
         expect(linesMatching(sourceFiles.filter(file => !isNodeHost(file)), NODE_API_USE)).toEqual([]);
@@ -171,10 +184,11 @@ describe("source rules", () => {
     test("no game entry reaches src/editor through its relative imports", () => {
         const entries = gameEntries();
         expect(entries.filter(file => !fs.existsSync(file)).map(fromRoot)).toEqual([]);
-        expect(entries.length).toBeGreaterThan(WEB_GAME_ENTRY_NAMES.length);
+        expect(entries.some(file => fromRoot(file).endsWith(`/${DEMO_LAUNCH_ENTRY}`))).toBe(true);
+        expect(entries.some(file => path.basename(file).startsWith(GENERATED_MAIN_PREFIX))).toBe(true);
         const reached = relativeImportClosure(entries).map(fromRoot);
         expect(reached.includes(ENGINE_WORLD_SOURCE)).toBe(true);
-        expect(reached.includes(ENGINE_PROJECT_LAUNCH_SOURCE)).toBe(true);
+        expect(reached.includes(ENGINE_START_GAME_SOURCE)).toBe(true);
         expect(reached.filter(file => file.startsWith(EDITOR_SOURCES))).toEqual([]);
     });
 
