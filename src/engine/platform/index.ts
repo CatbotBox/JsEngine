@@ -10,8 +10,9 @@ export type {
     FramePacing,
     FrameCallback,
     FrameScheduler,
+    PlatformFeature,
 } from "./platform";
-export {WORKER_ENTRY_POINT} from "./platform";
+export {hasFeature, optionalFeature, PLATFORM_FEATURE_CONSTANTS, PLATFORM_FEATURES, WORKER_ENTRY_POINT} from "./platform";
 export {joinPath, dirname, normalizePath, isAbsolutePath} from "./paths";
 export {directoryFileSource} from "./directoryFileSource";
 export {

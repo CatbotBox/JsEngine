@@ -1,7 +1,8 @@
 import {App} from "../src/engine/core";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {Input} from "../src/engine/input";
-import {Ansi, AnsiCellPresenter, nodePlatform, TerminalInput} from "../src/hosts/terminal";
+import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
+import {TerminalInput} from "../src/hosts/terminalInput";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
 import {TerminalScreen} from "./support/terminalScreen";

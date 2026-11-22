@@ -1,1 +1,1 @@
-﻿export {consoleOverride} from './consoleOverride';
+﻿export {consoleOverride, installConsoleOverride} from './consoleOverride';

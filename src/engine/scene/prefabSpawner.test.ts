@@ -137,6 +137,18 @@ describe("PrefabSpawner", () => {
         expect(() => spawner.templateOf(unknownField)).toThrow(`Prefab "${PREFAB_PATH}" entities[0].components.LocalPosition: LocalPosition has no field "w"`);
     });
 
+    test("skips another backend's types in a prefab and names the keep list for an unknown one", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        const registry = new ComponentSchemaRegistry();
+        registerEngineComponentSchemas(registry);
+        registry.registerOtherBackendTypeNames(["SpriteCellPassSettings"]);
+        const spawner = prefabSpawnerOf(world, registry, platformSceneAssetLoader({files: world.platform.files, inflate: world.platform.inflate}));
+        const settings = prefabOf(record(FIRST_SCENE_ENTITY_ID, "settings", {LocalPosition: {xyz: ROOT_XYZ}, SpriteCellPassSettings: {}}));
+        expect(spawner.templateOf(settings).sourcePath).toBe(PREFAB_PATH);
+        const unknown = prefabOf(record(FIRST_SCENE_ENTITY_ID, "thing", {Missing: {}}));
+        expect(() => spawner.templateOf(unknown)).toThrow(`add "Missing" to "keep" in jsengine.project.json`);
+    });
+
     test("is created only with a registry and an asset loader", () => {
         const {world} = setup();
         expect(() => world.resources.getOrCreate(PrefabSpawner)).not.toThrow();

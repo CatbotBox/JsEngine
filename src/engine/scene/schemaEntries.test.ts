@@ -1,5 +1,6 @@
 import {describe, expect, test} from "../testing/harness";
 import {Component, ComponentType, Resource} from "../core";
+import type {AssetType} from "./assetTypes";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {componentSchema, resourceSchema} from "./componentSchemaBuilder";
 import {fieldAlias} from "./fieldSchema";
@@ -34,6 +35,10 @@ class Patrol extends Component {
 class HandWritten extends Component {
     public static readonly schema = componentSchema(HandWritten, "HandWritten").number("chance", {typeName: PERCENT_TYPE_NAME}).build();
     public chance = 0.5;
+}
+
+class Jukebox extends Component {
+    public song = "intro.wav";
 }
 
 class Settings extends Resource {
@@ -93,6 +98,44 @@ describe("registerSchemaEntries", () => {
         const registry = registered();
         expect(registry.byName("Patrol")!.category).toBe("Combat");
         expect(registry.resourceByName("Score")!.fields).toEqual([{key: "points", kind: "integer"}]);
+    });
+});
+
+describe("registerSchemaEntries for engine and backend lists", () => {
+    const patrolEntry: SchemaEntry = {kind: "componentSchema", build: () => componentSchema(Patrol, "Patrol").number("chance").build()};
+    const settingsEntry: SchemaEntry = {kind: "resourceSchema", build: () => resourceSchema(Settings, "Settings").number("volume").build()};
+    const soundType: AssetType<string> = {name: "sound", valueName: "Sound", fileSuffixes: [".wav"], isAsset: (value): value is string => typeof value === "string", load: path => path, pathOf: path => path};
+    const soundEntry: SchemaEntry = {kind: "assetType", type: soundType as AssetType};
+
+    test("builds a schema entry when it registers, and an entry listed twice registers once", () => {
+        const registry = new ComponentSchemaRegistry();
+        registerSchemaEntries(registry, [patrolEntry, settingsEntry, soundEntry]);
+        registerSchemaEntries(registry, [patrolEntry, settingsEntry, soundEntry]);
+        expect(registry.schemas.map(schema => schema.name)).toEqual(["Patrol"]);
+        expect(registry.resourceSchemas.map(schema => schema.name)).toEqual(["Settings"]);
+        expect(registry.assetTypes.map(type => type.name)).toEqual(["sound", "Settings"]);
+    });
+
+    test("registers asset types before the schemas whose fields load them, whatever the list order", () => {
+        const holderEntry: SchemaEntry = {kind: "componentSchema", build: () => componentSchema(Jukebox, "Jukebox").asset("song", "sound").build()};
+        const registry = new ComponentSchemaRegistry();
+        registerSchemaEntries(registry, [holderEntry, soundEntry]);
+        expect(registry.byName("Jukebox")!.fields).toEqual([{key: "song", kind: "asset", assetType: "sound"}]);
+    });
+
+    test("another schema under a registered name still fails", () => {
+        const registry = new ComponentSchemaRegistry();
+        registerSchemaEntries(registry, [patrolEntry]);
+        expect(() => registerSchemaEntries(registry, [{kind: "componentSchema", build: () => componentSchema(HandWritten, "Patrol").build()}]))
+            .toThrow(`a schema named "Patrol" is already registered`);
+    });
+
+    test("other backends' type names are carried, not registered", () => {
+        const registry = new ComponentSchemaRegistry();
+        registerSchemaEntries(registry, [{kind: "otherBackendTypes", names: ["SpriteCellPassSettings"]}]);
+        expect(registry.isOtherBackendTypeName("SpriteCellPassSettings")).toBe(true);
+        expect(registry.isOtherBackendTypeName("Mystery")).toBe(false);
+        expect(registry.byName("SpriteCellPassSettings")).toBeUndefined();
     });
 });
 

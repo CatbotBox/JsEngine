@@ -5,23 +5,15 @@ import {MAT4_ELEMENT, MAT4_FLOATS, MAT4_TRANSLATION_X, MAT4_TRANSLATION_Y, MAT4_
 
 const raw = (v: ReadonlyVec<number>): Float32Array => asFloat32Array(v);
 
-const identity = asFloat32Array(Vec16.alloc());
-identity[0] = 1;
-identity[1] = 0;
-identity[2] = 0;
-identity[3] = 0;
-identity[4] = 0;
-identity[5] = 1;
-identity[6] = 0;
-identity[7] = 0;
-identity[8] = 0;
-identity[9] = 0;
-identity[10] = 1;
-identity[11] = 0;
-identity[12] = 0;
-identity[13] = 0;
-identity[14] = 0;
-identity[15] = 1;
+const IDENTITY_DIAGONAL_VALUE = 1;
+const IDENTITY_DIAGONAL: readonly number[] = [MAT4_ELEMENT.m00, MAT4_ELEMENT.m11, MAT4_ELEMENT.m22, MAT4_ELEMENT.m33];
+const identity = identityMatrix();
+
+function identityMatrix(): Float32Array {
+    const matrix = asFloat32Array(Vec16.alloc());
+    for (const element of IDENTITY_DIAGONAL) matrix[element] = IDENTITY_DIAGONAL_VALUE;
+    return matrix;
+}
 
 const normalMatrixScratch = Vec16.alloc();
 const SINGULAR_DETERMINANT_EPSILON = 1e-8;

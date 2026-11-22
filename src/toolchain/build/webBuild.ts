@@ -24,14 +24,21 @@ import {
     webWorkerBundle,
     webWorkerMainFile,
 } from "../projectLayout";
-import {REPO_ROOT, SOURCE_ROOT, webDistOf} from "../repoPaths";
+import {REPO_ROOT, repoRelative, SOURCE_ROOT, webDistOf} from "../repoPaths";
+import {featureDefines} from "../targets";
+import type {HostTarget} from "../targets";
 import {isWebProjectDataFile} from "./webDistFiles";
 import {buildProjectAssetManifest, projectAssetRegistry} from "./projectAssets";
 import {reportGeneratedFiles} from "../generate/generatedFilesReport";
+import {bundleInputsOf, requireMetafile} from "./bundleMetafile";
+import type {MetafileBuildConfig, MetafileBuildOutput} from "./bundleMetafile";
+import {checkBundleFeatures, targetFeatureReport} from "./featureDetection";
+import type {FeatureCheckBundle, TargetFeatureReport} from "./featureDetection";
 
 export interface WebBuildOptions {
     readonly prod: boolean;
     readonly withEditor: boolean;
+    readonly target: HostTarget;
 }
 
 const WEB = join(SOURCE_ROOT, "hosts", "web");
@@ -62,18 +69,6 @@ interface BuiltAssets {
 const EDITOR_ENTRY: EntryPoint = {source: join(EDITOR_LAUNCH, "editor.ts"), output: "editor", backend: "pixels", role: "editor"};
 const DEFAULT_BUNDLE_ROLE: BundleRole = "game";
 const OUTPUT_EXTENSION_PLACEHOLDER = "[ext]";
-const BOOTSTRAP_BUNDLE = "bootstrap";
-const PRESENTER_MISSING_MESSAGES: Readonly<Record<RenderBackendKind, string>> = {
-    cells: "This world has no CellPresenterResource",
-    pixels: "This world has no PixelPresenterResource",
-    gpu: "This world has no GpuDeviceResource",
-};
-const EMBEDDED_BACKENDS: Readonly<Record<RenderBackendKind, readonly RenderBackendKind[]>> = {
-    cells: [],
-    pixels: [],
-    gpu: ["pixels"],
-};
-const NO_EMBEDDED_BACKENDS: readonly RenderBackendKind[] = [];
 const LANDING_PAGE = "index.html";
 const STATIC_FILES: readonly [from: string, to: string][] =
     [LANDING_PAGE, "2d.html", "3d.html", "swarm.html", "demo.css", "coi-serviceworker.js", "_headers"].map((name): [string, string] => [join(WEB, name), name]);
@@ -106,13 +101,6 @@ const GZIP_LEVEL_HOST_TRANSIT = 6;
 const PAGES_MAX_FILE_BYTES = 25 * MB;
 const PAGES_MAX_FILES = 20_000;
 
-const FORBIDDEN: readonly [label: string, pattern: RegExp][] = [
-    ["node module require", /require\(\s*["'](node:)?(fs|path|os|zlib|worker_threads|util)["']\s*\)/],
-    ["node: specifier", /["']node:[\w/]+["']/],
-    ["process stdio", /process\.(stdout|stdin)/],
-    ["fileLogger", /crash-logs/],
-];
-
 function outputFiles(directory: string): string[] {
     return readdirSync(directory).flatMap(name => {
         const path = join(directory, name);
@@ -120,22 +108,8 @@ function outputFiles(directory: string): string[] {
     });
 }
 
-function leaks(path: string): string[] {
-    const text = readFileSync(path, "utf8");
-    return FORBIDDEN.flatMap(([label, pattern]) => {
-        const match = pattern.exec(text);
-        if (match === null) return [];
-        const line = text.slice(0, match.index).split("\n").length;
-        return [`${path}:${line}: ${label}: ${match[0]}`];
-    });
-}
-
 function roleOf(entry: EntryPoint): BundleRole {
     return entry.role ?? DEFAULT_BUNDLE_ROLE;
-}
-
-function embeddedBackendsOf(entry: EntryPoint): readonly RenderBackendKind[] {
-    return entry.backend === undefined ? NO_EMBEDDED_BACKENDS : EMBEDDED_BACKENDS[entry.backend];
 }
 
 function transferBytes(file: AssetManifestFile): number {
@@ -186,6 +160,7 @@ class WebSiteBuild {
     private readonly out: string;
     private readonly projects: readonly SiteProject[];
     private readonly entries: readonly EntryPoint[];
+    private readonly featureChecks: FeatureCheckBundle[] = [];
 
     public constructor(private readonly options: WebBuildOptions) {
         this.out = webDistOf(options.prod);
@@ -193,7 +168,7 @@ class WebSiteBuild {
         this.entries = [...this.projects.flatMap(projectEntries), ...(options.withEditor ? [EDITOR_ENTRY] : [])];
     }
 
-    public async run(): Promise<void> {
+    public async run(): Promise<TargetFeatureReport> {
         rmSync(this.out, {recursive: true, force: true});
         mkdirSync(this.out, {recursive: true});
 
@@ -205,19 +180,15 @@ class WebSiteBuild {
         for (const project of this.projects) assets.push({project, manifest: await this.writeProjectAssets(project)});
         this.writeDemoProjectDataFiles();
 
-        const scripts = outputFiles(this.out).filter(path => path.endsWith(".js"));
-        guard(scripts.flatMap(leaks), "node APIs leaked into the browser bundle:");
-        const textByEntry = this.bundleTexts();
-        guard(this.backendLeaks(textByEntry), "a bundle mixes render backends:");
-        guard(this.editorProtocolMisplaced(textByEntry), "the editor protocol is in the wrong bundles:");
+        guard(this.editorProtocolMisplaced(this.bundleTexts()), "the editor protocol is in the wrong bundles:");
         guard(this.options.prod ? this.overPagesLimits() : [], "the site exceeds Cloudflare Pages limits:");
 
         console.log(`${this.options.prod ? "production" : "dev"} build in ${relative(REPO_ROOT, this.out).replace(/\\/g, "/")}`);
         this.report(assets);
         const editorBundles = this.entries.filter(entry => roleOf(entry) === "editor").length;
-        console.log(`guard OK: ${scripts.length} script(s) free of node APIs; ${this.entries.length} bundles each carry no other backend's presenter (gpu bundles embed the pixels one); `
-            + `${this.entries.length - editorBundles} game bundles free of "${EDITOR_MESSAGE_TYPE}", ${editorBundles} editor bundles carry it`
+        console.log(`guard OK: ${this.entries.length - editorBundles} game bundles free of "${EDITOR_MESSAGE_TYPE}", ${editorBundles} editor bundles carry it`
             + (this.options.withEditor ? "" : " (editor page and bundles skipped: --prod without --with-editor)"));
+        return targetFeatureReport(this.options.target, checkBundleFeatures(this.featureChecks));
     }
 
     private siteRelative(path: string): string {
@@ -228,28 +199,8 @@ class WebSiteBuild {
         return join(this.out, webBundleFile(entry.output));
     }
 
-    private otherBackendsIn(entry: EntryPoint, text: string): string[] {
-        const embedded = embeddedBackendsOf(entry);
-        return RENDER_BACKEND_KINDS.filter(backend => backend !== entry.backend && !embedded.includes(backend) && text.includes(PRESENTER_MISSING_MESSAGES[backend]))
-            .map(backend => `${this.siteRelative(this.bundlePath(entry))}: the ${backend} presenter is in a ${entry.backend ?? BOOTSTRAP_BUNDLE} bundle ("${PRESENTER_MISSING_MESSAGES[backend]}")`);
-    }
-
-    // The leak check matches presenter messages by text; fail if a backend's own bundles lack its message, i.e. the source message changed.
-    private backendMarkersNotFound(textByEntry: ReadonlyMap<EntryPoint, string>): string[] {
-        return RENDER_BACKEND_KINDS
-            .filter(backend => ![...textByEntry].some(([entry, text]) => entry.backend === backend && text.includes(PRESENTER_MISSING_MESSAGES[backend])))
-            .map(backend => `no ${backend} bundle contains "${PRESENTER_MISSING_MESSAGES[backend]}": the guard no longer matches the source message`);
-    }
-
     private bundleTexts(): Map<EntryPoint, string> {
         return new Map(this.entries.map(entry => [entry, readFileSync(this.bundlePath(entry), "utf8")]));
-    }
-
-    private backendLeaks(textByEntry: ReadonlyMap<EntryPoint, string>): string[] {
-        return [
-            ...[...textByEntry].flatMap(([entry, text]) => this.otherBackendsIn(entry, text)),
-            ...this.backendMarkersNotFound(textByEntry),
-        ];
     }
 
     private editorProtocolMisplaced(textByEntry: ReadonlyMap<EntryPoint, string>): string[] {
@@ -384,16 +335,21 @@ class WebSiteBuild {
 
     private async buildEachEntrySeparately(): Promise<void> {
         for (const {source, output} of this.entries) {
-            const result = await Bun.build({
+            const config: MetafileBuildConfig = {
                 entrypoints: [source],
                 outdir: this.out,
                 naming: `${output}.${OUTPUT_EXTENSION_PLACEHOLDER}`,
                 target: "browser",
                 sourcemap: "linked",
                 minify: this.options.prod,
-                define: {[DEV_RELOAD_DEFINE]: JSON.stringify(!this.options.prod)},
-            });
-            if (!result.success) throw new CliError(`bundling ${relative(REPO_ROOT, source).replace(/\\/g, "/")} failed:`, result.logs.map(String));
+                metafile: true,
+                throw: false,
+                define: {[DEV_RELOAD_DEFINE]: JSON.stringify(!this.options.prod), ...featureDefines(this.options.target)},
+            };
+            const result: MetafileBuildOutput = await Bun.build(config);
+            const bundle = webBundleFile(output);
+            if (!result.success) throw new CliError(`bundling ${repoRelative(source)} failed:`, result.logs.map(String));
+            this.featureChecks.push({...bundleInputsOf(source, requireMetafile(result, bundle)), name: bundle, target: this.options.target});
         }
     }
 }
@@ -402,7 +358,7 @@ export function regenerateDemoSites(): void {
     for (const site of DEMO_SITES) reportGeneratedFiles(writeGeneratedFiles(demoSiteFolder(site)), "regenerate");
 }
 
-export async function buildWebSite(options: WebBuildOptions): Promise<void> {
+export async function buildWebSite(options: WebBuildOptions): Promise<TargetFeatureReport> {
     regenerateDemoSites();
-    await new WebSiteBuild(options).run();
+    return await new WebSiteBuild(options).run();
 }

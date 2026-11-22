@@ -4,8 +4,7 @@ import type {Vec2, Vec3, Vec4} from "../math/types/vec";
 import type {TextColor} from "../rendering/textColor";
 import type {Mesh} from "../rendering/3d/mesh";
 import type {SpriteImage} from "../rendering/2d/spriteImage";
-import {MESH_ASSET_TYPE_NAME, PREFAB_ASSET_TYPE_NAME, SPRITE_IMAGE_ASSET_TYPE_NAME} from "./assetTypes";
-import {DEFAULT_COMPONENT_CATEGORY, STATIC_SCHEMA_KEY} from "./fieldSchema";
+import {DEFAULT_COMPONENT_CATEGORY, MESH_ASSET_TYPE_NAME, PREFAB_ASSET_TYPE_NAME, SPRITE_IMAGE_ASSET_TYPE_NAME, STATIC_SCHEMA_KEY} from "./fieldSchema";
 import type {
     ComponentPersistence,
     ComponentSchema,

@@ -22,6 +22,7 @@
     "test:integration:node": "node -r ts-node/register/transpile-only scripts/runIntegrationTests.ts",
     "test:frame-hashes": "bun tests/checkFrameHashes.ts",
     "test:demo-frame-hashes": "bun tests/checkDemoFrameHashes.ts",
+    "test:bundles": "bun src/toolchain/cli.ts build --report bundles",
     "jsengine": "bun src/toolchain/cli.ts",
     "demo": "bun src/toolchain/cli.ts run",
     "editor": "bun src/toolchain/cli.ts edit",

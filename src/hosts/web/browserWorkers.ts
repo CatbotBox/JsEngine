@@ -1,5 +1,5 @@
 import type {WorkerFactory, WorkerHandle} from "../../engine/platform/platform";
-import {WORKER_ENTRY_POINT} from "../../engine/platform/platform";
+import {optionalFeature, WORKER_ENTRY_POINT} from "../../engine/platform/platform";
 
 export interface BrowserWorker {
     postMessage(message: unknown, transfer?: readonly ArrayBuffer[]): void;
@@ -69,7 +69,8 @@ export function browserWorkerFactory(host: BrowserWorkerHost = globalThis as unk
 }
 
 export function browserWorkersIfIsolated(host: BrowserWorkerHost = globalThis as unknown as BrowserWorkerHost): WorkerFactory | undefined {
-    const shared = host.crossOriginIsolated === true && typeof host.SharedArrayBuffer === "function";
-    if (!shared || typeof host.Worker !== "function") return undefined;
+    const shared = optionalFeature("sharedMemory", () => host.crossOriginIsolated === true && typeof host.SharedArrayBuffer === "function") === true;
+    const spawnable = optionalFeature("workers", () => typeof host.Worker === "function") === true;
+    if (!shared || !spawnable) return undefined;
     return browserWorkerFactory(host);
 }

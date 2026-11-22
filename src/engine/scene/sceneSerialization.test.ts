@@ -1,4 +1,5 @@
 import {describe, expect, test} from "../testing/harness";
+import {registerBuiltinImageDecoders} from "../assets/image/builtinDecoders";
 import {MemoryPlatform} from "../testing/memoryPlatform";
 import {Component, FrameLoopSettings, UNCAPPED_RENDER_RATE, World} from "../core";
 import type {Entity} from "../core";
@@ -36,6 +37,8 @@ import {registerEngineComponentSchemas} from "./engineComponentSchemas";
 import {PrefabInstance} from "./prefabInstance";
 import {SceneInstance} from "./sceneInstance";
 import {platformSceneAssetLoader, sceneAssetPaths} from "./sceneAssets";
+import type {SceneAssetLoader} from "./sceneAssets";
+import {MESH_ASSET_TYPE_NAME} from "./fieldSchema";
 import {parseSceneDocument, SCENE_DOCUMENT_FORMAT} from "./sceneDocument";
 import type {SceneDocument, SceneFieldValues, SceneJsonValue} from "./sceneDocument";
 import {applySceneInPlace, deserializeInto, serializeWorld} from "./sceneSerialization";
@@ -180,6 +183,8 @@ function stepTimes(world: World, steps: number): void {
 function matrixOf(world: World, entity: Entity): number[] {
     return Vec.toArray(world.entityManager.getComponent<LocalToWorld>(entity, LocalToWorld)!.matrix);
 }
+
+registerBuiltinImageDecoders();
 
 describe("scene serialization", () => {
     test("every registered engine component round-trips through JSON into another world's handles", () => {
@@ -377,6 +382,22 @@ describe("scene serialization", () => {
         expect(Vec.toArray(lenient.entityManager.getComponent<LocalScale>(loaded.entities[1], LocalScale)!.xyz)).toEqual([2, 2, 2]);
     });
 
+    test("another backend's types are skipped silently under the throwing policy; an unknown type names the keep list as the fix", () => {
+        const document = parseSceneDocument(JSON.stringify({
+            format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [
+                {id: 1, name: "settings", enabled: true, components: {LocalPosition: {xyz: [1, 2, 3]}, SpriteCellPassSettings: {maxDepthFade: 3}}},
+            ],
+        }));
+        const registry = engineRegistry();
+        registry.registerOtherBackendTypeNames(["SpriteCellPassSettings"]);
+        const world = newWorld(memoryPlatform());
+        const loaded = deserializeInto(world, registry, document);
+        expect(loaded.report.skippedComponentTypes).toEqual([]);
+        expect(Vec.toArray(world.entityManager.getComponent<LocalPosition>(loaded.entities[0], LocalPosition)!.xyz)).toEqual([1, 2, 3]);
+        expect(() => deserializeInto(newWorld(memoryPlatform()), engineRegistry(), document))
+            .toThrow(`the component type "SpriteCellPassSettings" is not registered: register its schema, or, if only code names it, add "SpriteCellPassSettings" to "keep" in jsengine.project.json`);
+    });
+
     test("bad field values and unknown fields throw naming the path, before touching the world", () => {
         const registry = engineRegistry();
         const world = newWorld(memoryPlatform());
@@ -466,11 +487,11 @@ describe("scene serialization", () => {
         const image = world.entityManager.getComponent<Sprite>(built.child, Sprite)!.image;
         let meshLoads = 0;
         const countingLoader = platformSceneAssetLoader(platform);
-        const assets = {
+        const assets: SceneAssetLoader = {
             ...countingLoader,
-            loadMesh: (path: string) => {
-                meshLoads++;
-                return countingLoader.loadMesh(path);
+            loadCached<A>(kind: string, path: string, load: () => A): A {
+                if (kind === MESH_ASSET_TYPE_NAME) meshLoads++;
+                return countingLoader.loadCached(kind, path, load);
             },
         };
         applySceneInPlace(world, registry, snapshot, {assets});

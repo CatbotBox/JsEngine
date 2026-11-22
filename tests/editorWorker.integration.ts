@@ -1,6 +1,8 @@
+import {readFileSync} from "fs";
 import {resolve} from "path";
 import {connectWorldWorker} from "../src/hosts/web";
-import type {PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
+import type {CellSurfaceSize, CellWorldDisplay, PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
+import type {CellFrame} from "../src/backends/cells";
 import {copyPixelFrame} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
 import {Key, NO_MODIFIERS} from "../src/engine/input";
@@ -17,9 +19,13 @@ import {HttpProjectFileSystem} from "../src/editor/project/httpProjectFileSystem
 import type {HttpRequestInit, ProjectEventSource} from "../src/editor/project/httpProjectFileSystem";
 import {serveProjectFiles} from "../src/editor/project/projectFileServing";
 import type {ProjectFileServing, ProjectFilesPort} from "../src/editor/project/projectFileServing";
+import {sameGameTarget} from "../src/editor/project/editorSettings";
+import type {GameTarget} from "../src/editor/project/editorSettings";
 import {isBuildSuccess, projectApiUrl} from "../src/editor/project/projectServerApi";
 import type {BuildProjectResult, OpenProjectResult} from "../src/editor/project/projectServerApi";
 import {entityRemapOf} from "../src/editor/launch/projectRunner";
+import {terminalInputMessage} from "../src/editor/launch/terminalInputChannel";
+import type {RenderBackendKind} from "../src/engine/rendering/renderBackend";
 
 const ROOT = resolve(__dirname, "..");
 const DIST_FLAG = "--dist";
@@ -65,8 +71,17 @@ const DEMO_3D_TUNING_RESOURCE = "Demo3dTuning";
 const DEMO_3D_TUNING_PATH = "assets/demo3d.asset.json";
 const DEMO_3D_EDITED_TUNING_KEY = "sunRotateStepRad";
 const DEMO_3D_EDITED_TUNING_VALUE = 0.25;
+const WEB_PIXELS: GameTarget = {target: "web", backend: "pixels"};
+const TERMINAL: GameTarget = {target: "terminal", backend: "cells"};
+const TERMINAL_COLUMNS = 80;
+const TERMINAL_ROWS = 24;
+const RIGHT_ARROW_BYTES = "\x1b[C";
+const EDITOR_VIEWS: readonly EditorView[] = ["scene", "game"];
+const BACKEND_INSTALLERS: Readonly<Record<RenderBackendKind, string>> = {cells: "installCellsBackend", pixels: "installPixelsBackend", gpu: "installGpuBackend"};
+const UNFOLDED_FEATURE_CONSTANT = "typeof JSENGINE_HAS_";
 
 interface BuiltProject {
+    readonly id: string;
     readonly folder: string;
     readonly bundlePath: string;
     readonly files: HttpProjectFileSystem;
@@ -129,6 +144,35 @@ class PixelFrameRecorder implements PixelWorldDisplay {
     }
 }
 
+class CellFrameRecorder implements CellWorldDisplay {
+    public readonly statuses: string[] = [];
+    public readonly errors: string[] = [];
+    public frames = 0;
+
+    public surfaceSize(): CellSurfaceSize {
+        return {kind: "cells", columns: TERMINAL_COLUMNS, rows: TERMINAL_ROWS};
+    }
+
+    public onResize(): () => void {
+        return () => undefined;
+    }
+
+    public presentCells(_frame: CellFrame, onPresented: () => void): void {
+        this.frames++;
+        setTimeout(onPresented, 0);
+    }
+
+    public showStatus(text: string): void {
+        this.statuses.push(text);
+    }
+
+    public showError(text: string): void {
+        this.errors.push(text);
+    }
+}
+
+type RecordingDisplay = PixelFrameRecorder | CellFrameRecorder;
+
 function serverFetch(server: ProjectServer) {
     return (url: string, init?: HttpRequestInit) => server.handle(new Request(new URL(url, SERVER_ORIGIN), init as RequestInit));
 }
@@ -140,19 +184,26 @@ async function postJson<T>(server: ProjectServer, route: string, body: unknown):
     return parsed;
 }
 
-async function buildProject(server: ProjectServer, path: string, label: string): Promise<BuiltProject | undefined> {
+function verifySimulatedBundle(bundlePath: string, gameTarget: GameTarget, label: string): void {
+    const text = readFileSync(bundlePath, "utf8");
+    const installers = Object.entries(BACKEND_INSTALLERS).filter(([, installer]) => text.includes(installer)).map(([backend]) => backend);
+    expect(sameJson(installers, [gameTarget.backend]), `${label}: the ${gameTarget.target} ${gameTarget.backend} bundle carries only the ${gameTarget.backend} installer (${installers.join(", ")})`);
+    expect(!text.includes(UNFOLDED_FEATURE_CONSTANT), `${label}: the ${gameTarget.target} target's feature constants are folded into the bundle`);
+}
+
+async function buildProject(server: ProjectServer, path: string, label: string, gameTarget: GameTarget = WEB_PIXELS): Promise<BuiltProject | undefined> {
     const opened = await postJson<OpenProjectResult>(server, "open", {path});
     expect(opened.validation.ok, `${label}: ${path} is a valid project (${JSON.stringify(opened.validation)})`);
-    const built = await postJson<BuildProjectResult>(server, `${opened.id}/build`, {});
-    expect(isBuildSuccess(built), `${label}: the project builds on demand (${JSON.stringify(built)})`);
+    const built = await postJson<BuildProjectResult>(server, `${opened.id}/build`, {gameTarget});
+    expect(isBuildSuccess(built) && sameGameTarget(built.gameTarget, gameTarget), `${label}: the project builds on demand for ${gameTarget.target} ${gameTarget.backend} (${JSON.stringify(built)})`);
     const bundlePath = server.bundlePathOf(opened.id);
     if (!isBuildSuccess(built) || bundlePath === undefined) return undefined;
+    verifySimulatedBundle(bundlePath, gameTarget, label);
     const files = new HttpProjectFileSystem({projectId: opened.id, rootLabel: path, fetch: serverFetch(server), events: NO_SERVER_EVENTS});
-    return {folder: opened.path, bundlePath, files};
+    return {id: opened.id, folder: opened.path, bundlePath, files};
 }
 
 class EditorPage {
-    public readonly display = new PixelFrameRecorder();
     public readonly workerErrors: string[] = [];
     public readonly events: EditorEvent[] = [];
     public readonly client: EditorClient;
@@ -160,7 +211,7 @@ class EditorPage {
     private readonly connection: WorldWorkerPage;
     private readonly fileServing: ProjectFileServing;
 
-    public constructor(project: BuiltProject, name: string) {
+    public constructor(project: BuiltProject, name: string, public readonly display: RecordingDisplay = new PixelFrameRecorder()) {
         this.worker = new Worker(project.bundlePath, {type: "module"});
         this.worker.addEventListener("error", event => this.workerErrors.push(event.message));
         this.fileServing = serveProjectFiles(this.worker as unknown as ProjectFilesPort, project.files);
@@ -173,6 +224,10 @@ class EditorPage {
 
     public ask<R extends EditorRequest>(request: R): Promise<EditorResultOf<R>> {
         return this.client.request(request);
+    }
+
+    public sendTerminalBytes(data: string): void {
+        this.worker.postMessage(terminalInputMessage(data));
     }
 
     public press(key: Key): void {
@@ -536,6 +591,47 @@ async function verifySwarm(project: BuiltProject): Promise<void> {
     }
 }
 
+async function verifyTerminalTargetSwitch(server: ProjectServer): Promise<void> {
+    const label = "2D editor on the terminal target";
+    const project = await buildProject(server, "demo/2d", label, TERMINAL);
+    if (project === undefined) return;
+    const page = new EditorPage(project, "the 2D editor simulating the terminal", new CellFrameRecorder());
+    try {
+        await verifyStartsInEditMode(page, label);
+        const player = await page.entityNamed(PLAYER_NAME);
+        expect(player !== undefined, `${label}: listEntities has the player ${PLAYER_NAME}`);
+        if (player === undefined) return;
+        await page.ask({op: "setField", entity: player.entity, typeName: "LocalPosition", key: "xyz", value: PLAYER_EDITED_XYZ});
+        page.sendTerminalBytes(RIGHT_ARROW_BYTES);
+        expect(await page.framesPass(EDIT_FRAMES_AFTER_KEY), `${label}: ${EDIT_FRAMES_AFTER_KEY} edit frames passed after the right-arrow bytes`);
+        const editX = (await page.fieldOf(player.entity, "LocalPosition", "xyz") as number[])[X_COMPONENT];
+        expect(editX === PLAYER_EDITED_XYZ[X_COMPONENT], `${label}: terminal bytes do not move the player in edit mode (x ${editX})`);
+        await page.ask({op: "setMode", mode: "play"});
+        page.sendTerminalBytes(RIGHT_ARROW_BYTES);
+        const moved = await waitUntil(async () => (await page.fieldOf(player.entity, "LocalPosition", "xyz") as number[])[X_COMPONENT] === PLAYER_MOVED_X);
+        expect(moved, `${label}: the right-arrow bytes reach the game through TerminalInput in play mode (x ${PLAYER_EDITED_XYZ[X_COMPONENT]} -> ${PLAYER_MOVED_X})`);
+        await page.ask({op: "setMode", mode: "edit"});
+        for (const view of EDITOR_VIEWS) {
+            const shown = await page.ask({op: "setView", view});
+            const arrived = await page.framesKeepArriving();
+            expect(shown.view === view && arrived > 0, `${label}: the ${view} view draws through the one cells backend (${arrived} frames in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
+            await verifyPickingNamed(page, label, PLAYER_NAME, view);
+        }
+        const switched = await postJson<BuildProjectResult>(server, `${project.id}/build`, {gameTarget: WEB_PIXELS});
+        const switchedBundle = server.bundlePathOf(project.id);
+        expect(isBuildSuccess(switched) && sameGameTarget(switched.gameTarget, WEB_PIXELS) && switchedBundle !== project.bundlePath,
+            `${label}: switching to web pixels builds that target's bundle beside the terminal one (${JSON.stringify(switched)})`);
+        if (!isBuildSuccess(switched) || switchedBundle === undefined) return;
+        verifySimulatedBundle(switchedBundle, WEB_PIXELS, `${label} switched to web pixels`);
+        await verifyDomainReload({...project, bundlePath: switchedBundle}, page, `${label} switched to web pixels`, PLAYER_NAME);
+        page.expectNoErrors(label);
+    } catch (error) {
+        expect(false, `${label}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+        page.dispose();
+    }
+}
+
 async function main(): Promise<void> {
     if (typeof (globalThis as {Worker?: unknown}).Worker !== "function") {
         log("editor worker check: skipped, this runtime has no Web Worker global");
@@ -558,6 +654,7 @@ async function main(): Promise<void> {
         if (project2d !== undefined) await verify2d(project2d);
         if (project3d !== undefined) await verify3d(project3d);
         if (projectSwarm !== undefined) await verifySwarm(projectSwarm);
+        await verifyTerminalTargetSwitch(server);
     } finally {
         server.close();
     }

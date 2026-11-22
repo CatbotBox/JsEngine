@@ -1,4 +1,5 @@
 ﻿import {DebugWorld, EntityCommandBufferSystem} from "../src/engine";
+import {registerBuiltinImageDecoders} from "../src/engine/assets/image/builtinDecoders";
 import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatform";
 import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {Camera, HudElement, RenderBounds, TextColor, TextSprite, ScreenAnchor, WHITE_RGB} from "../src/engine/rendering";
@@ -14,6 +15,8 @@ import {FieldOfView} from "../src/engine/rendering/3d/fieldOfView";
 import {Quaternions} from "../src/engine/math/quaternions";
 import {Vec, Vec3} from "../src/engine/math/types/vec";
 import {AmbientLight, DirectionalLight, PointLight} from "../src/engine/rendering/3d/lighting";
+
+registerBuiltinImageDecoders();
 
 const SETTLE_TICKS = 4;
 const ADDED_ENTITY_SETTLE_TICKS = 3;

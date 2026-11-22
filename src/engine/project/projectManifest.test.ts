@@ -152,6 +152,22 @@ describe("validateProjectManifest systems", () => {
     });
 });
 
+describe("validateProjectManifest keep", () => {
+    const base = {name: "Game", entry: "src/game.ts"};
+
+    test("the keep list comes back trimmed, and leaving it out is fine", () => {
+        expect(validateProjectManifest(JSON.stringify({...base, keep: [" PointLight ", "Random"]}), EXISTING_ENTRY))
+            .toEqual({ok: true, manifest: {...base, keep: ["PointLight", "Random"]}});
+        expect(validateProjectManifest(JSON.stringify(base), EXISTING_ENTRY)).toEqual({ok: true, manifest: base});
+    });
+
+    test("anything but a list of type names is named", () => {
+        const problems = (keep: unknown) => problemsOf(validateProjectManifest(JSON.stringify({...base, keep}), EXISTING_ENTRY));
+        expect(problems("PointLight")).toEqual([`"keep" must be an array of type names, got "PointLight"`]);
+        expect(problems(["PointLight", ""])).toEqual([`"keep[1]" must be a non-empty type name, got ""`]);
+    });
+});
+
 describe("validateProjectManifest editorExtensions", () => {
     const base = {name: "Game", entry: "src/game.ts"};
     const existing = (path: string) => path === "src/game.ts" || path === "editor/extensions.ts";

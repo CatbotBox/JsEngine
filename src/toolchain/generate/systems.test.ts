@@ -206,8 +206,11 @@ describe("generateProjectSystems output", () => {
     test("writes an empty list for a backend without systems", () => {
         expect(sourceOf(generateFixture({"empty.ts": "export const NOTHING = 0;\n"}), PIXELS_LIST).split(LINE_BREAK).slice(1)).toEqual([
             `import type {System, SystemCtor} from "@jsengine/engine/core";`,
+            `import type {RenderPassCtor} from "@jsengine/engine/rendering/renderPasses";`,
             "",
             "export const generatedPixelsSystems: readonly SystemCtor<System>[] = [];",
+            "",
+            "export const generatedPixelsPasses: readonly RenderPassCtor[] = [];",
             "",
         ]);
     });

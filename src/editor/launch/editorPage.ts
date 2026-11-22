@@ -1,26 +1,29 @@
 import {installDomInput} from "../../hosts/web/domInput";
-import {gpuFallbackWarning, webGpuUsable} from "../../hosts/web/renderBackendBootstrap";
-import {renderBackendFromQuery} from "../../hosts/web/worldWorkerProtocol";
+import {webGpuUsable} from "../../hosts/web/renderBackendBootstrap";
 import {createEditorShell} from "../page/editorShell";
+import {showPopupMenu} from "../page/popupMenu";
 import {DirectoryHandleProjectFileSystem} from "../project/directoryHandleProjectFileSystem";
 import type {DirectoryHandleLike} from "../project/directoryHandleProjectFileSystem";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
 import type {ProjectManifest} from "../../engine/project/projectManifest";
+import {EDITOR_SETTINGS_FILE, gameTargetKey, parseEditorSettings, sameGameTarget} from "../project/editorSettings";
+import type {EditorSettings, GameTarget} from "../project/editorSettings";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {
     isBuildFailedEvent,
     isBuildSuccess,
     isRebuiltEvent,
-    PROJECT_BUILD_COPY_PATH,
     PROJECT_EVENT_BUILD_FAILED,
     PROJECT_EVENT_REBUILT,
+    projectBuildCopyPath,
 } from "../project/projectServerApi";
 import type {BuildProjectResult, OpenProjectResult} from "../project/projectServerApi";
 import type {ServerEventStream} from "../project/serverEvents";
-import {chooseEditorRenderBackend, EDITOR_DEFAULT_RENDER_BACKEND, editorViewportFromQuery, renderBackendLabelText} from "./editorViewport";
-import type {EditorRenderBackend} from "./editorViewport";
+import {editorViewportFor} from "./editorViewport";
 import {EditorExtensionLoader} from "./editorExtensionLoader";
 import {browseForFolder} from "./folderBrowser";
+import {chooseGameTarget, gameTargetLabelText, gameTargetMenuItems, gpuFallbackNotice, webGpuAvailability} from "./gameTargets";
+import type {GameTargetChoice, WebGpuAvailability} from "./gameTargets";
 import {ProjectRunner} from "./projectRunner";
 import {ProjectServerClient} from "./projectServerClient";
 import {browserStorageOrUndefined, forgetRecentProject, readRecentProjects, rememberRecentProject} from "./recentProjects";
@@ -34,24 +37,35 @@ export type EditorPageState = "start" | "loading" | "ready" | "failed" | "stoppe
 const EDITOR_STATE_KEY = "editorState";
 const EDITOR_VIEWPORT_KEY = "editorViewport";
 const RENDER_BACKEND_KEY = "renderBackend";
-const GPU_BACKEND: EditorRenderBackend = "gpu";
+const GAME_TARGET_KEY = "gameTarget";
 const EDITOR_TITLE_SUFFIX = " - JsEngine editor";
 const SCRIPT_TYPE = "text/javascript";
 const ABORT_ERROR_NAME = "AbortError";
 const PATH_SEPARATORS = /[\\/]+/;
+const VISIBLE = true;
+const HIDDEN = false;
+const NO_SETTINGS: EditorSettings = {};
 const SERVER_MODE_NOTE = "Pick any folder: a JsEngine project has a jsengine.project.json naming its entry module. Its code is built for the editor on open and rebuilt when it changes.";
 const SERVER_WITHOUT_BUILD_NOTE = "This host cannot build project code";
 const BROWSER_MODE_NOTE = "No dev server: projects open through the browser's folder access, and only projects whose code is already bundled can run.";
-const NOT_BUNDLED = "This project's code is not bundled. Open it with the dev server (jsengine edit) or the desktop editor (jsengine edit --target window) to build it.";
+const NOT_BUNDLED = "Open it with the dev server (jsengine edit) or the desktop editor (jsengine edit --target window) to build it, or pick another target there.";
 const CREATE_NEEDS_SERVER = "Creating a project needs the dev server (jsengine edit) or the desktop editor (jsengine edit --target window).";
 const NO_FOLDER_ACCESS = "This browser cannot open folders (it has no File System Access API). Use a Chromium-based browser, the dev server (jsengine edit) or the desktop editor (jsengine edit --target window).";
 const BUILD_WARNINGS_TITLE = "The game code built with warnings:";
 const PROJECT_QUERY_NEEDS_SERVER ="?project= opens a folder on the dev server or in the desktop editor, and neither is answering here.";
+const SWITCH_NEEDS_SERVER = "Switching the target rebuilds the game code, which needs the dev server (jsengine edit) or the desktop editor (jsengine edit --target window)";
+
+interface TargetSwitching {
+    remember(gameTarget: GameTarget): Promise<void>;
+    build(gameTarget: GameTarget): Promise<BuildProjectResult>;
+}
 
 interface ProjectLaunch {
     readonly manifest: ProjectManifest;
     readonly files: ProjectFileSystem;
     readonly workerUrl: string;
+    readonly target: GameTargetChoice;
+    readonly switching?: TargetSwitching;
     readonly buildWarnings?: readonly string[];
     readonly events?: ServerEventStream;
     readonly editorExtensionsUrl?: string;
@@ -65,12 +79,13 @@ function setPageState(state: EditorPageState): void {
     document.documentElement.dataset[EDITOR_STATE_KEY] = state;
 }
 
-async function editorRenderBackend(search: string): Promise<EditorRenderBackend> {
-    const requested = renderBackendFromQuery(search, EDITOR_DEFAULT_RENDER_BACKEND);
-    const usable = requested === GPU_BACKEND && await webGpuUsable(navigator, HTMLCanvasElement.prototype);
-    const choice = chooseEditorRenderBackend(requested, usable);
-    if (choice.fallbackReason !== undefined) console.warn(gpuFallbackWarning(choice.fallbackReason));
-    return choice.backend;
+function showGameTarget(gameTarget: GameTarget): void {
+    document.documentElement.dataset[RENDER_BACKEND_KEY] = gameTarget.backend;
+    document.documentElement.dataset[GAME_TARGET_KEY] = gameTargetKey(gameTarget);
+}
+
+async function pageWebGpuAvailability(): Promise<WebGpuAvailability> {
+    return webGpuAvailability(await webGpuUsable(navigator, HTMLCanvasElement.prototype));
 }
 
 function describeError(error: unknown): string {
@@ -93,7 +108,7 @@ class EditorStart {
     private readonly storage = browserStorageOrUndefined();
     private readonly screen: StartScreen;
 
-    public constructor(private readonly server: ProjectServerClient | undefined) {
+    public constructor(private readonly server: ProjectServerClient | undefined, private readonly webGpu: WebGpuAvailability) {
         this.screen = new StartScreen(document.body, {
             openProject: () => void this.chooseFolder(),
             openRecent: project => void this.openServerProject(project.path),
@@ -126,6 +141,10 @@ class EditorStart {
     private fail(title: string, problems: readonly string[], actions: readonly StartScreenAction[] = [this.backAction()]): void {
         setPageState("failed");
         this.screen.showProblems(title, problems, actions);
+    }
+
+    private chooseTarget(settings: EditorSettings): GameTargetChoice {
+        return chooseGameTarget(settings.gameTarget, location.search, this.webGpu);
     }
 
     private async chooseFolder(): Promise<void> {
@@ -187,9 +206,10 @@ class EditorStart {
         const manifest = validation.manifest;
         this.screen.showRecent(rememberRecentProject(this.storage, opened.path, manifest.name, Date.now()));
         this.screen.showBusy(`Building ${manifest.name}…`);
+        const target = this.chooseTarget(await server.editorSettings(opened.id).catch(() => NO_SETTINGS));
         let built: BuildProjectResult;
         try {
-            built = await server.build(opened.id);
+            built = await server.build(opened.id, target.gameTarget);
         } catch (error) {
             this.fail(`Could not build ${manifest.name}`, [describeError(error)]);
             return;
@@ -203,7 +223,14 @@ class EditorStart {
         }
         const events = server.events(opened.id);
         const files = server.files(opened.id, folderName(opened.path), events);
-        await this.launch({manifest, files, workerUrl: built.workerUrl, buildWarnings: built.warnings, events, editorExtensionsUrl: built.editorExtensionsUrl});
+        const switching: TargetSwitching = {
+            remember: async gameTarget => {
+                await server.updateEditorSettings(opened.id, {gameTarget});
+            },
+            build: gameTarget => server.build(opened.id, gameTarget),
+        };
+        const launched = {...target, gameTarget: built.gameTarget};
+        await this.launch({manifest, files, workerUrl: built.workerUrl, target: launched, switching, buildWarnings: built.warnings, events, editorExtensionsUrl: built.editorExtensionsUrl});
     }
 
     private async openWithDirectoryPicker(): Promise<void> {
@@ -229,35 +256,80 @@ class EditorStart {
             this.fail(`${handle.name} is not a JsEngine project`, [...validation.problems, CREATE_NEEDS_SERVER]);
             return;
         }
-        const bundle = await files.read(PROJECT_BUILD_COPY_PATH).catch(() => undefined);
+        const target = this.chooseTarget(parseEditorSettings(await files.readText(EDITOR_SETTINGS_FILE).catch(() => undefined)));
+        const bundlePath = projectBuildCopyPath(target.gameTarget);
+        const bundle = await files.read(bundlePath).catch(() => undefined);
         if (bundle === undefined) {
-            this.fail(`${validation.manifest.name} cannot run here`, [NOT_BUNDLED]);
+            const missing = `The code of ${validation.manifest.name} is not bundled for ${gameTargetLabelText(target.gameTarget)} (no ${bundlePath}).`;
+            this.fail(`${validation.manifest.name} cannot run here`, [missing, NOT_BUNDLED]);
             return;
         }
         const workerUrl = URL.createObjectURL(new Blob([bundle as Uint8Array<ArrayBuffer>], {type: SCRIPT_TYPE}));
-        await this.launch({manifest: validation.manifest, files, workerUrl});
+        await this.launch({manifest: validation.manifest, files, workerUrl, target});
     }
 
     private async launch(launch: ProjectLaunch): Promise<void> {
-        const renderBackend = await editorRenderBackend(location.search);
         this.screen.remove();
         const name = launch.manifest.name;
         document.title = name + EDITOR_TITLE_SUFFIX;
-        const shell = createEditorShell(document.body, {renderBackendLabel: renderBackendLabelText(renderBackend)});
+        const initialTarget = launch.target.gameTarget;
+        const shell = createEditorShell(document.body, {
+            targetLabel: gameTargetLabelText(initialTarget),
+            onGameTabMenu: (clientX, clientY) => showTargetMenu(clientX, clientY),
+        });
+        const fallbackReason = launch.target.fallbackReason;
+        if (fallbackReason !== undefined) {
+            const notice = gpuFallbackNotice(initialTarget, fallbackReason);
+            console.warn(notice);
+            shell.notice("warn", notice);
+        }
         shell.viewport.dataset[EDITOR_VIEWPORT_KEY] = "";
-        const viewport = editorViewportFromQuery(renderBackend, shell.viewport, location.search);
-        document.documentElement.dataset[RENDER_BACKEND_KEY] = renderBackend;
+        showGameTarget(initialTarget);
         const runner = new ProjectRunner({
             shell,
-            viewport,
+            viewport: editorViewportFor(initialTarget, shell.viewport, location.search, VISIBLE),
+            createHiddenViewport: gameTarget => editorViewportFor(gameTarget, shell.viewport, location.search, HIDDEN),
+            onTargetChanged: gameTarget => {
+                shell.showTargetLabel(gameTargetLabelText(gameTarget));
+                showGameTarget(gameTarget);
+            },
             files: launch.files,
             project: {name, startScene: launch.manifest.startScene ?? null},
             search: location.search,
             onReady: () => setPageState("ready"),
             onStopped: () => setPageState("stopped"),
         });
-        installDomInput(shell.viewport, {sink: runner.input, cellArea: () => viewport.cellArea()});
+        installDomInput(shell.viewport, {sink: runner.input, cellArea: () => runner.cellArea()});
         window.addEventListener("pagehide", () => runner.exit());
+        let desiredTarget = initialTarget;
+        const switchTarget = async (gameTarget: GameTarget): Promise<void> => {
+            const switching = launch.switching;
+            if (switching === undefined) return;
+            if (sameGameTarget(gameTarget, desiredTarget) && sameGameTarget(gameTarget, runner.gameTarget)) return;
+            desiredTarget = gameTarget;
+            const label = gameTargetLabelText(gameTarget);
+            await switching.remember(gameTarget).catch(error => shell.notice("warn", `Could not remember the target in ${EDITOR_SETTINGS_FILE}: ${describeError(error)}`));
+            shell.notice("info", `Building the game code for ${label}...`);
+            let built: BuildProjectResult;
+            try {
+                built = await switching.build(gameTarget);
+            } catch (error) {
+                shell.notice("error", `Could not build the game code for ${label}: ${describeError(error)}`);
+                return;
+            }
+            if (!isBuildSuccess(built)) {
+                shell.notice("error", `The game code did not build for ${label}:\n${built.errors.join("\n")}`);
+                return;
+            }
+            showBuildWarnings(built.warnings);
+            if (sameGameTarget(built.gameTarget, desiredTarget)) runner.reload(built);
+        };
+        const showTargetMenu = (clientX: number, clientY: number): void => showPopupMenu(document, clientX, clientY, gameTargetMenuItems({
+            current: runner.gameTarget,
+            webGpu: this.webGpu,
+            ...(launch.switching === undefined ? {switchUnavailableReason: SWITCH_NEEDS_SERVER} : {}),
+            choose: gameTarget => void switchTarget(gameTarget),
+        }));
         let shownWarnings = "";
         const showBuildWarnings = (warnings: readonly string[]) => {
             const text = warnings.join("\n");
@@ -270,9 +342,9 @@ class EditorStart {
         let extensionsUrl = launch.editorExtensionsUrl;
         let sessionStarted = false;
         launch.events?.on(PROJECT_EVENT_REBUILT, data => {
-            if (!isRebuiltEvent(data)) return;
+            if (!isRebuiltEvent(data) || !sameGameTarget(data.gameTarget, desiredTarget)) return;
             showBuildWarnings(data.warnings);
-            runner.reload(data.workerUrl);
+            runner.reload(data);
             extensionsUrl = data.editorExtensionsUrl;
             if (sessionStarted) void extensions.load(extensionsUrl);
         });
@@ -283,7 +355,7 @@ class EditorStart {
             await runner.start(launch.workerUrl);
         } catch (error) {
             setPageState("failed");
-            viewport.showError(describeError(error));
+            runner.showError(describeError(error));
             return;
         }
         sessionStarted = true;
@@ -294,7 +366,7 @@ class EditorStart {
 export async function startEditorPage(): Promise<void> {
     const project = new URLSearchParams(location.search).get(PROJECT_QUERY_PARAMETER)?.trim() ?? "";
     setPageState(project.length > 0 ? "loading" : "start");
-    const server = await ProjectServerClient.connect();
-    const start = new EditorStart(server);
+    const [server, webGpu] = await Promise.all([ProjectServerClient.connect(), pageWebGpuAvailability()]);
+    const start = new EditorStart(server, webGpu);
     if (project.length > 0) await start.openFromQuery(project);
 }

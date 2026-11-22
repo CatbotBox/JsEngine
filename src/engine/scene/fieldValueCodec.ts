@@ -4,7 +4,6 @@ import {Vec2, Vec3, Vec4} from "../math/types/vec";
 import {TextColor} from "../rendering/textColor";
 import {PACKED_RGB_MASK} from "../rendering/packedRgb";
 import type {SpriteImage} from "../rendering/2d/spriteImage";
-import {engineAssetType} from "./assetTypes";
 import type {AssetType} from "./assetTypes";
 import {createStructValue, customFieldTypeOf} from "./fieldDefaults";
 import type {AssetFieldType, FieldType, FieldTypeResolver, StructFieldType} from "./fieldSchema";
@@ -203,8 +202,8 @@ function loadAsset<A>(path: string, assetPath: string, load: () => A): A {
 }
 
 function assetTypeOf(fieldTypes: FieldTypeResolver | undefined, name: string, path: string): AssetType {
-    const type = fieldTypes?.assetType(name) ?? engineAssetType(name);
-    if (type === undefined) throw new Error(`Scene field ${path}: the asset type "${name}" is not registered`);
+    const type = fieldTypes?.assetType(name);
+    if (type === undefined) throw new Error(`Scene field ${path}: the asset type "${name}" is not registered${fieldTypes === undefined ? " (this context has no registry)" : ""}`);
     return type;
 }
 

@@ -1,41 +1,22 @@
+import type {CellFrame} from "../../backends/cells/cellFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
+import type {InputEventSink} from "../../engine/input/inputEvent";
+import {cellCanvasDisplayFromQuery} from "../../hosts/web/cellCanvasDisplay";
+import type {CellCanvasDisplay} from "../../hosts/web/cellCanvasDisplay";
 import type {CellArea} from "../../hosts/web/domInput";
 import {GpuCanvasDisplay} from "../../hosts/web/gpuCanvasDisplay";
 import {pixelCanvasDisplayFromQuery, pixelCanvasDisplayOptionsFromQuery} from "../../hosts/web/pixelCanvasDisplay";
 import type {PixelCanvasDisplay} from "../../hosts/web/pixelCanvasDisplay";
-import {chooseRenderBackend} from "../../hosts/web/renderBackendBootstrap";
-import type {GpuWorldDisplay, PixelWorldDisplay} from "../../hosts/web/worldWorkerPage";
-import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
-import type {PixelSurfaceSize} from "../../hosts/web/worldWorkerProtocol";
+import type {CellWorldDisplay, GpuWorldDisplay, PixelWorldDisplay} from "../../hosts/web/worldWorkerPage";
+import type {CellSurfaceSize, PixelSurfaceSize} from "../../hosts/web/worldWorkerProtocol";
+import type {GameTarget, SimulatedTarget} from "../project/editorSettings";
+import {TerminalInputEncoder} from "./terminalInputEncoder";
+import type {TerminalBytesSink} from "./terminalInputEncoder";
 
-export type EditorRenderBackend = "pixels" | "gpu";
-
-export const EDITOR_DEFAULT_RENDER_BACKEND: EditorRenderBackend = "pixels";
-export const EDITOR_RENDER_BACKEND_LABELS: Readonly<Record<EditorRenderBackend, string>> = {
-    pixels: "Pixels (CPU)",
-    gpu: "WebGPU (experimental)",
-};
 export const NO_CELL_AREA: CellArea = {left: 0, top: 0, width: 0, height: 0, columns: 0, rows: 0};
 
-const GPU_BACKEND: EditorRenderBackend = "gpu";
-const EDITOR_HAS_GPU_BACKEND = true;
+const TERMINAL_TARGET: SimulatedTarget = "terminal";
 const VISIBLE = true;
-
-export interface EditorRenderBackendChoice {
-    readonly backend: EditorRenderBackend;
-    readonly fallbackReason?: string;
-}
-
-export function chooseEditorRenderBackend(requested: RenderBackendKind, webGpuUsable: boolean): EditorRenderBackendChoice {
-    if (requested !== GPU_BACKEND) return {backend: EDITOR_DEFAULT_RENDER_BACKEND};
-    const choice = chooseRenderBackend(requested, {gpuScript: EDITOR_HAS_GPU_BACKEND, webGpuUsable});
-    if (choice.backend === GPU_BACKEND) return {backend: GPU_BACKEND};
-    return {backend: EDITOR_DEFAULT_RENDER_BACKEND, fallbackReason: choice.fallbackReason};
-}
-
-export function renderBackendLabelText(backend: EditorRenderBackend): string {
-    return `Renderer: ${EDITOR_RENDER_BACKEND_LABELS[backend]}`;
-}
 
 export interface SessionDisplayEvents {
     firstFrame(): void;
@@ -48,28 +29,49 @@ export interface SessionDisplayControls {
     dispose(): void;
 }
 
-export type EditorSessionDisplay = (PixelWorldDisplay | GpuWorldDisplay) & SessionDisplayControls;
+export type EditorSessionDisplay = (CellWorldDisplay | PixelWorldDisplay | GpuWorldDisplay) & SessionDisplayControls;
+
+export interface SessionInputPorts {
+    readonly events: InputEventSink;
+    readonly terminalBytes: TerminalBytesSink;
+}
 
 export interface EditorViewport {
-    readonly renderBackend: EditorRenderBackend;
+    readonly gameTarget: GameTarget;
 
     sessionDisplay(visible: boolean, events: SessionDisplayEvents): EditorSessionDisplay;
+
+    sessionInput(ports: SessionInputPorts): InputEventSink;
 
     cellArea(): CellArea;
 
     showError(text: string): void;
+
+    dispose(): void;
 }
 
-export type SharedPixelDisplay = Pick<PixelCanvasDisplay, "surfaceSize" | "onResize" | "presentPixels" | "showStatus" | "showError" | "cellArea">;
+interface SharedDisplay<Surface> {
+    surfaceSize(): Surface;
+    onResize(listener: () => void): () => void;
+    showStatus(text: string): void;
+    showError(text: string): void;
+    cellArea(): CellArea;
+    show(): void;
+    dispose(): void;
+}
 
-export class PixelSessionDisplay implements PixelWorldDisplay, SessionDisplayControls {
+export type SharedPixelDisplay = Pick<PixelCanvasDisplay, "surfaceSize" | "onResize" | "presentPixels" | "showStatus" | "showError" | "cellArea" | "show" | "dispose">;
+export type SharedCellDisplay = Pick<CellCanvasDisplay, "surfaceSize" | "onResize" | "presentCells" | "showStatus" | "showError" | "cellArea" | "show" | "dispose">;
+
+abstract class SharedSessionDisplay<Surface> implements SessionDisplayControls {
     private firstFrameSeen = false;
 
-    public constructor(private readonly display: SharedPixelDisplay, private visible: boolean, private readonly events: SessionDisplayEvents) {
+    protected constructor(private readonly shared: SharedDisplay<Surface>, private visible: boolean, private readonly events: SessionDisplayEvents) {
     }
 
     public show(): void {
         this.visible = true;
+        this.shared.show();
     }
 
     public hide(): void {
@@ -79,40 +81,62 @@ export class PixelSessionDisplay implements PixelWorldDisplay, SessionDisplayCon
     public dispose(): void {
     }
 
-    public surfaceSize(): PixelSurfaceSize {
-        return this.display.surfaceSize();
+    public surfaceSize(): Surface {
+        return this.shared.surfaceSize();
     }
 
     public onResize(listener: () => void): () => void {
-        return this.display.onResize(listener);
+        return this.shared.onResize(listener);
     }
 
-    public presentPixels(frame: PixelFrame, onPresented: () => void): void {
-        if (this.visible) this.display.presentPixels(frame, onPresented);
+    public showStatus(text: string): void {
+        if (this.visible) this.shared.showStatus(text);
+    }
+
+    public showError(text: string): void {
+        if (this.visible) this.shared.showError(text);
+        this.events.failed(text);
+    }
+
+    protected presentWhenVisible(draw: () => void, onPresented: () => void): void {
+        if (this.visible) draw();
         else onPresented();
         if (this.firstFrameSeen) return;
         this.firstFrameSeen = true;
         this.events.firstFrame();
     }
+}
 
-    public showStatus(text: string): void {
-        if (this.visible) this.display.showStatus(text);
+export class PixelSessionDisplay extends SharedSessionDisplay<PixelSurfaceSize> implements PixelWorldDisplay {
+    public constructor(private readonly display: SharedPixelDisplay, visible: boolean, events: SessionDisplayEvents) {
+        super(display, visible, events);
     }
 
-    public showError(text: string): void {
-        if (this.visible) this.display.showError(text);
-        this.events.failed(text);
+    public presentPixels(frame: PixelFrame, onPresented: () => void): void {
+        this.presentWhenVisible(() => this.display.presentPixels(frame, onPresented), onPresented);
+    }
+}
+
+export class CellSessionDisplay extends SharedSessionDisplay<CellSurfaceSize> implements CellWorldDisplay {
+    public constructor(private readonly display: SharedCellDisplay, visible: boolean, events: SessionDisplayEvents) {
+        super(display, visible, events);
+    }
+
+    public presentCells(frame: CellFrame, onPresented: () => void): void {
+        this.presentWhenVisible(() => this.display.presentCells(frame, onPresented), onPresented);
     }
 }
 
 export class PixelEditorViewport implements EditorViewport {
-    public readonly renderBackend: EditorRenderBackend = EDITOR_DEFAULT_RENDER_BACKEND;
-
-    public constructor(private readonly display: SharedPixelDisplay) {
+    public constructor(private readonly display: SharedPixelDisplay, public readonly gameTarget: GameTarget) {
     }
 
     public sessionDisplay(visible: boolean, events: SessionDisplayEvents): EditorSessionDisplay {
         return new PixelSessionDisplay(this.display, visible, events);
+    }
+
+    public sessionInput(ports: SessionInputPorts): InputEventSink {
+        return ports.events;
     }
 
     public cellArea(): CellArea {
@@ -121,6 +145,36 @@ export class PixelEditorViewport implements EditorViewport {
 
     public showError(text: string): void {
         this.display.showError(text);
+    }
+
+    public dispose(): void {
+        this.display.dispose();
+    }
+}
+
+export class CellEditorViewport implements EditorViewport {
+    public constructor(private readonly display: SharedCellDisplay, public readonly gameTarget: GameTarget) {
+    }
+
+    public sessionDisplay(visible: boolean, events: SessionDisplayEvents): EditorSessionDisplay {
+        return new CellSessionDisplay(this.display, visible, events);
+    }
+
+    public sessionInput(ports: SessionInputPorts): InputEventSink {
+        if (this.gameTarget.target !== TERMINAL_TARGET) return ports.events;
+        return new TerminalInputEncoder(ports.terminalBytes, () => this.cellArea());
+    }
+
+    public cellArea(): CellArea {
+        return this.display.cellArea();
+    }
+
+    public showError(text: string): void {
+        this.display.showError(text);
+    }
+
+    public dispose(): void {
+        this.display.dispose();
     }
 }
 
@@ -189,7 +243,6 @@ export class GpuSessionDisplay implements GpuWorldDisplay, SessionDisplayControl
 }
 
 export class GpuEditorViewport implements EditorViewport {
-    public readonly renderBackend: EditorRenderBackend = GPU_BACKEND;
     private current: SessionGpuCanvas | undefined;
     private focusHandedOver = false;
 
@@ -204,13 +257,17 @@ export class GpuEditorViewport implements EditorViewport {
         },
     };
 
-    public constructor(private readonly createCanvas: (visible: boolean) => SessionGpuCanvas) {
+    public constructor(private readonly createCanvas: (visible: boolean) => SessionGpuCanvas, public readonly gameTarget: GameTarget) {
     }
 
     public sessionDisplay(visible: boolean, events: SessionDisplayEvents): EditorSessionDisplay {
         const canvas = this.createCanvas(visible);
         if (visible) this.current = canvas;
         return new GpuSessionDisplay(canvas, visible, events, this.host);
+    }
+
+    public sessionInput(ports: SessionInputPorts): InputEventSink {
+        return ports.events;
     }
 
     public cellArea(): CellArea {
@@ -221,10 +278,21 @@ export class GpuEditorViewport implements EditorViewport {
         const canvas = this.current ??= this.createCanvas(VISIBLE);
         canvas.showError(text);
     }
+
+    public dispose(): void {
+        this.current?.dispose();
+    }
 }
 
-export function editorViewportFromQuery(backend: EditorRenderBackend, container: HTMLElement, search: string): EditorViewport {
-    if (backend !== GPU_BACKEND) return new PixelEditorViewport(pixelCanvasDisplayFromQuery(container, search));
-    const options = pixelCanvasDisplayOptionsFromQuery(search);
-    return new GpuEditorViewport(visible => new GpuCanvasDisplay(container, options, visible));
+export function editorViewportFor(gameTarget: GameTarget, container: HTMLElement, search: string, visible: boolean): EditorViewport {
+    switch (gameTarget.backend) {
+        case "cells":
+            return new CellEditorViewport(cellCanvasDisplayFromQuery(container, search, visible), gameTarget);
+        case "pixels":
+            return new PixelEditorViewport(pixelCanvasDisplayFromQuery(container, search, visible), gameTarget);
+        case "gpu": {
+            const options = pixelCanvasDisplayOptionsFromQuery(search);
+            return new GpuEditorViewport(sessionVisible => new GpuCanvasDisplay(container, options, sessionVisible), gameTarget);
+        }
+    }
 }

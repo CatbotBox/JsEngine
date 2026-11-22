@@ -5,17 +5,20 @@ import {
     BACKEND_FOLDER,
     GENERATED_SYSTEMS_EXPORT,
     GENERATED_SYSTEMS_FILE,
+    generatedBackendPassesExport,
     generatedBackendSystemsExport,
     generatedBackendSystemsFile,
 } from "../projectLayout";
+import type {CatalogPassList} from "./engineCatalog";
 import {generatedFileHeader} from "./generatedHeader";
 import type {GeneratedSource, GeneratorOutput, ProjectGenerator} from "./generatedHeader";
 import {ImportTable} from "./generatedImports";
 import {compareText, ProjectSources, SOURCE_EXTENSION_PATTERN} from "./projectSources";
-import type {ExportedClass} from "./projectSources";
+import type {ExportedClass, ExportReference} from "./projectSources";
+import {projectReachabilityOf} from "./schemas";
 
 export const SYSTEMS_GENERATOR_NAME = "systems";
-export const SYSTEMS_GENERATOR_VERSION = 1;
+export const SYSTEMS_GENERATOR_VERSION = 2;
 export const SYSTEMS_GENERATED_HEADER = generatedFileHeader(SYSTEMS_GENERATOR_NAME, SYSTEMS_GENERATOR_VERSION);
 export const UNMATCHED_SYSTEM_EXCLUDE_WARNING = "matches no system";
 export const SYSTEM_CONSTRUCTOR_ARGUMENTS_WARNING = "takes constructor arguments, so the system list cannot create it";
@@ -28,6 +31,9 @@ const ENGINE_CORE_MODULE = "core";
 const ENGINE_SYSTEM_CLASS = "System";
 const SYSTEM_TYPE = "System";
 const SYSTEM_CTOR_TYPE = "SystemCtor";
+const RENDER_PASS_CTOR_TYPE = "RenderPassCtor";
+const ENGINE_RENDER_PASSES_MODULE = ["rendering", "renderPasses"];
+const SPREAD = "...";
 const NO_EXCLUDED_NAMES: readonly string[] = [];
 const BACKEND_KIND_SEGMENT = 1;
 const FIRST_FILE_IN_KIND_FOLDER_SEGMENTS = 3;
@@ -42,10 +48,16 @@ interface DiscoveredSystem {
     readonly backend: RenderBackendKind | undefined;
 }
 
+interface PassList {
+    readonly exportName: string;
+    readonly lists: readonly CatalogPassList[];
+}
+
 interface SystemList {
     readonly file: string;
     readonly exportName: string;
     readonly systems: readonly DiscoveredSystem[];
+    readonly passes?: PassList;
 }
 
 function bySourceOrder(a: DiscoveredSystem, b: DiscoveredSystem): number {
@@ -68,12 +80,14 @@ class SystemsGenerator {
                 this.warnings.push(`${SYSTEMS_MANIFEST_KEY}.exclude: "${name}" ${UNMATCHED_SYSTEM_EXCLUDE_WARNING}; remove it from ${PROJECT_MANIFEST_FILE}`);
             }
         }
+        const reachability = projectReachabilityOf(this.sources);
         const lists: SystemList[] = [
             {file: GENERATED_SYSTEMS_FILE, exportName: GENERATED_SYSTEMS_EXPORT, systems: kept.filter(system => system.backend === undefined)},
             ...RENDER_BACKEND_KINDS.map(kind => ({
                 file: generatedBackendSystemsFile(kind),
                 exportName: generatedBackendSystemsExport(kind),
                 systems: kept.filter(system => system.backend === kind),
+                passes: {exportName: generatedBackendPassesExport(kind), lists: reachability.passLists(kind)},
             })),
         ];
         return {sources: lists.map(list => this.render(list)), warnings: this.warnings};
@@ -120,21 +134,28 @@ class SystemsGenerator {
 
     private render(list: SystemList): GeneratedSource {
         const specifierOf = (target: string) => this.sources.importSpecifier(list.file, target);
-        const imports = new ImportTable(reference => specifierOf(reference.fileName.replace(SOURCE_EXTENSION_PATTERN, "")), [SYSTEM_TYPE, SYSTEM_CTOR_TYPE, list.exportName]);
+        const reserved = [SYSTEM_TYPE, SYSTEM_CTOR_TYPE, RENDER_PASS_CTOR_TYPE, list.exportName, ...(list.passes === undefined ? [] : [list.passes.exportName])];
+        const imports = new ImportTable(reference => specifierOf(reference.fileName.replace(SOURCE_EXTENSION_PATTERN, "")), reserved);
         for (const system of list.systems) imports.add(system.exported.reference);
+        const passReferences = (list.passes?.lists ?? []).map((pass): ExportReference => ({fileName: this.sources.sourceModule(...pass.source.path), exportName: pass.source.name}));
+        for (const reference of passReferences) imports.add(reference);
         const engineCore = specifierOf(this.sources.engineModule(ENGINE_CORE_MODULE));
-        const declaration = `export const ${list.exportName}: readonly ${SYSTEM_CTOR_TYPE}<${SYSTEM_TYPE}>[] = [`;
-        const entries = list.systems.map(system => `${INDENT}${imports.localName(system.exported.reference)},`);
-        const body = entries.length === 0 ? [`${declaration}];`] : [declaration, ...entries, "];"];
-        const lines = [
-            SYSTEMS_GENERATED_HEADER,
-            `import type {${SYSTEM_TYPE}, ${SYSTEM_CTOR_TYPE}} from ${JSON.stringify(engineCore)};`,
-            ...imports.importLines(),
-            "",
-            ...body,
-        ];
+        const systemEntries = list.systems.map(system => imports.localName(system.exported.reference));
+        const typeImports = [`import type {${SYSTEM_TYPE}, ${SYSTEM_CTOR_TYPE}} from ${JSON.stringify(engineCore)};`];
+        const declarations = [...listDeclaration(`export const ${list.exportName}: readonly ${SYSTEM_CTOR_TYPE}<${SYSTEM_TYPE}>[] = [`, systemEntries)];
+        if (list.passes !== undefined) {
+            const renderPasses = specifierOf(this.sources.engineModule(...ENGINE_RENDER_PASSES_MODULE));
+            typeImports.push(`import type {${RENDER_PASS_CTOR_TYPE}} from ${JSON.stringify(renderPasses)};`);
+            const passEntries = passReferences.map(reference => SPREAD + imports.localName(reference));
+            declarations.push("", ...listDeclaration(`export const ${list.passes.exportName}: readonly ${RENDER_PASS_CTOR_TYPE}[] = [`, passEntries));
+        }
+        const lines = [SYSTEMS_GENERATED_HEADER, ...typeImports, ...imports.importLines(), "", ...declarations];
         return {file: list.file, source: lines.join(LINE_BREAK) + LINE_BREAK};
     }
+}
+
+function listDeclaration(declaration: string, entries: readonly string[]): string[] {
+    return entries.length === 0 ? [`${declaration}];`] : [declaration, ...entries.map(entry => `${INDENT}${entry},`), "];"];
 }
 
 function systemsOf(sources: ProjectSources, exclude: readonly string[]): GeneratorOutput {

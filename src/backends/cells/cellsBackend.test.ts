@@ -9,6 +9,7 @@ import {CellPresenterResource} from "./cellPresenterResource";
 import {CellRenderSystemGroup} from "./cellRenderSystemGroup";
 import {installCellsBackend} from "./cellsBackend";
 import {CELLS_HUD_TEXT_PASSES} from "./cellsHudTextPasses";
+import {CELLS_PASS_LISTS, CELLS_STANDARD_PASSES} from "./cellsStandardPasses";
 import {CELLS_SPRITE_PASSES} from "./2d/cellsSpritePasses";
 import {CELLS_WORLD_TEXT_PASSES} from "./2d/cellsWorldTextPasses";
 import {CELLS_MESH_PASSES} from "./3d/cellsMeshPasses";
@@ -37,6 +38,10 @@ function passOrder(world: World, passes: readonly RenderPassCtor[]): Function[] 
 }
 
 describe("installCellsBackend", () => {
+    test("the standard passes are the pass lists in order", () => {
+        expect(CELLS_PASS_LISTS.flat()).toEqual([...CELLS_STANDARD_PASSES]);
+    });
+
     test("inserts the presenter and only the cells marker", () => {
         const world = newWorld();
         const presenter = idlePresenter();

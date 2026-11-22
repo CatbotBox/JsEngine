@@ -1,9 +1,14 @@
 import {describe, expect, test} from "../testing/harness";
 import {MemoryPlatform} from "../testing/memoryPlatform";
-import {EntityCommandBufferSystem, Resource, System, World} from "../core";
+import {decodeImageFile} from "../assets/image/decodedImage";
+import type {ImageDecoderEntry} from "../assets/image/decodedImage";
+import {Component, EntityCommandBufferSystem, Resource, System, World} from "../core";
 import {Input, InputMap, Key, NO_MODIFIERS, resolveInputActions} from "../input";
+import {INPUT_MAP_SCHEMA_ENTRY} from "../input/schemas";
 import {LocalPosition} from "../translation/localPosition";
+import {LOCAL_POSITION_SCHEMA_ENTRY} from "../translation/schemas";
 import {
+    componentSchema,
     DATA_ASSET_FORMAT,
     DATA_ASSET_VERSION,
     resourceSchema,
@@ -36,13 +41,33 @@ const INPUT_TEXT = JSON.stringify({
     fields: {actions: [{name: "jump", keys: ["Space"], chords: [], buttons: []}]},
 });
 const JUMP_ACTIONS = {jump: "jump"} as const;
+const HOST_SCENE = "scenes/host.scene.json";
+const HOST_SCENE_TEXT = JSON.stringify({
+    format: SCENE_DOCUMENT_FORMAT,
+    version: SCENE_DOCUMENT_VERSION,
+    entities: [{id: 1, name: "Settings", enabled: true, components: {HostSettings: {}, OtherHostSettings: {}}}],
+});
+const SQUARE_IMAGE_PATH = "images/square.fake";
+const SQUARE_IMAGE_SIDE = 2;
+const RGBA_BYTES = 4;
+
+class HostSettings extends Component {
+}
 
 class Tuning extends Resource {
     public static readonly schema = resourceSchema(Tuning, "Tuning").number("speed").build();
     public speed = 1;
 }
 
-const SCHEMAS: readonly SchemaEntry[] = [{kind: "resourceClass", ctor: Tuning}];
+const SCHEMAS: readonly SchemaEntry[] = [LOCAL_POSITION_SCHEMA_ENTRY, {kind: "resourceClass", ctor: Tuning}];
+const HOST_SCHEMAS: readonly SchemaEntry[] = [
+    {kind: "componentSchema", build: () => componentSchema(HostSettings, "HostSettings").build()},
+    {kind: "otherBackendTypes", names: ["OtherHostSettings"]},
+];
+const SQUARE_DECODER: ImageDecoderEntry = {
+    extensions: [".fake"],
+    decode: () => ({width: SQUARE_IMAGE_SIDE, height: SQUARE_IMAGE_SIDE, rgba: new Uint8Array(SQUARE_IMAGE_SIDE * SQUARE_IMAGE_SIDE * RGBA_BYTES)}),
+};
 
 const NO_ASSET_FILES: ProjectAssetFiles = {
     list: () => [],
@@ -145,13 +170,30 @@ describe("startGame", () => {
 
     test("reads the project's files from its directory, so engine resources such as the input map resolve while systems are created", async () => {
         const world = worldWith({[`${DIRECTORY}/${INPUT_PATH}`]: INPUT_TEXT});
-        await startGame(world, {directory: DIRECTORY, systems: [JumpResolvingSystem], resources: [{type: "InputMap", path: INPUT_PATH}]});
+        await startGame(world, {directory: DIRECTORY, schemas: [INPUT_MAP_SCHEMA_ENTRY], systems: [JumpResolvingSystem], resources: [{type: "InputMap", path: INPUT_PATH}]});
         expect(steps).toEqual(["create resolved jump"]);
         const input = world.resources.get(Input);
         const {jump} = resolveInputActions(world, JUMP_ACTIONS);
         input.enqueue({type: "keyDown", key: Key.Space, repeat: false, ...NO_MODIFIERS});
         world.step();
         expect([input.actionPressed(jump), world.resources.tryGet(InputMap) !== undefined]).toEqual([true, true]);
+    });
+
+    test("registers the host's schemas, so a scene skips another backend's type and loads the host's own", async () => {
+        const world = worldWith({[HOST_SCENE]: HOST_SCENE_TEXT});
+        const game = await startGame(world, options({hostSchemas: HOST_SCHEMAS, startScene: HOST_SCENE}));
+        expect(game.registry.byName("HostSettings")).toBeDefined();
+        expect(game.registry.byName("OtherHostSettings")).toBeUndefined();
+        expect(namesIn(world)).toEqual(["Systems", "Settings"]);
+        const settings = sceneEntitiesInCreationOrder(world).find(entity => world.entityManager.nameOf(entity) === "Settings")!;
+        expect(world.entityManager.getComponent(settings, HostSettings)).toBeInstanceOf(HostSettings);
+    });
+
+    test("registers the image decoders the game lists before anything loads", async () => {
+        const world = worldWith({[SQUARE_IMAGE_PATH]: ""});
+        expect(() => decodeImageFile(SQUARE_IMAGE_PATH, world.platform)).toThrow("no image decoder is registered for .fake");
+        await startGame(world, options({imageDecoders: [SQUARE_DECODER]}));
+        expect(decodeImageFile(SQUARE_IMAGE_PATH, world.platform).width).toBe(SQUARE_IMAGE_SIDE);
     });
 
     test("offers the host's asset files to the game as a resource, and offers none without them", async () => {

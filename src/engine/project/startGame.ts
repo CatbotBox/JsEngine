@@ -1,3 +1,5 @@
+import {registerImageDecoders} from "../assets/image/decodedImage";
+import type {ImageDecoderEntry} from "../assets/image/decodedImage";
 import {createSystems} from "../core";
 import type {Resource, System, SystemCtor, World} from "../core";
 import {directoryFileSource} from "../platform/directoryFileSource";
@@ -13,7 +15,6 @@ import {AssetFiles} from "./assetFiles";
 import type {ProjectAssetFiles} from "./assetFiles";
 import type {ProjectResourceBinding} from "./projectManifest";
 import {createProjectSchemaRegistry} from "./projectSchemas";
-import type {SchemaRegistration} from "./projectSchemas";
 
 export interface GameHost {
     readonly directory?: string;
@@ -21,11 +22,12 @@ export interface GameHost {
     readonly files?: ProjectAssetFiles;
     readonly unknownComponentTypes?: UnknownComponentTypePolicy;
     readonly schemaChanges?: SchemaChangePolicy;
+    readonly hostSchemas?: readonly SchemaEntry[];
 }
 
 export interface GameOptions extends GameHost {
     readonly schemas?: readonly SchemaEntry[];
-    readonly backendSchemas?: readonly SchemaRegistration[];
+    readonly imageDecoders?: readonly ImageDecoderEntry[];
     readonly systems?: readonly SystemCtor<System>[];
     readonly resources?: readonly ProjectResourceBinding[];
     readonly startScene?: string;
@@ -48,6 +50,7 @@ const START_SCENE_LOAD_MODE: SceneLoadMode = "single";
 const DEFAULT_START_SCENE_ACTIVATION: SceneActivation = "onCommandBufferPlayback";
 const NO_RESOURCES: readonly ProjectResourceBinding[] = [];
 const NO_SYSTEMS: readonly SystemCtor<System>[] = [];
+const NO_IMAGE_DECODERS: readonly ImageDecoderEntry[] = [];
 
 function bindingLabel(index: number): string {
     return `resources[${index}]`;
@@ -79,6 +82,7 @@ async function loadResources(world: World, scenes: SceneManager, registry: Compo
 }
 
 export async function startGame(world: World, options: GameOptions): Promise<StartedGame> {
+    registerImageDecoders(options.imageDecoders ?? NO_IMAGE_DECODERS);
     const registry = createProjectSchemaRegistry(options);
     const scenes = new SceneManager(world, registry, {
         files: options.directory === undefined ? undefined : directoryFileSource(world.platform.files, options.directory),

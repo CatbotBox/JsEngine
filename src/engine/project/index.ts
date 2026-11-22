@@ -2,10 +2,11 @@ export type {ProjectAssetFile, ProjectAssetFiles, ProjectLoadProgress, ProjectLo
 export {AssetFiles} from "./assetFiles";
 export type {GameHost, GameOptions, ProjectHost, StartedGame, StartProject} from "./startGame";
 export {startGame} from "./startGame";
-export type {ProjectSchemaSources, SchemaRegistration} from "./projectSchemas";
+export type {ProjectSchemaSources} from "./projectSchemas";
 export {createProjectSchemaRegistry} from "./projectSchemas";
 export type {GeneratedListSettings, ProjectManifest, ProjectManifestValidation, ProjectResourceBinding} from "./projectManifest";
 export {
+    KEEP_MANIFEST_KEY,
     PROJECT_ENTRY_EXTENSIONS,
     PROJECT_MANIFEST_FILE,
     SCENE_FILE_SUFFIX,

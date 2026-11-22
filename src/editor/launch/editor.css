@@ -422,7 +422,7 @@ button.primary {
     color: var(--danger);
 }
 
-.view-tabs-renderer {
+.view-tabs-target {
     align-self: center;
     margin-left: auto;
     padding: 0 0.4rem;
@@ -1319,6 +1319,16 @@ body:not(.terminal-unfocused) .editor-viewport {
 
 .popup-menu-shortcut {
     color: var(--muted);
+}
+
+.popup-menu-check {
+    flex: none;
+    width: 1em;
+    margin-right: -1rem;
+}
+
+.popup-menu-check + .popup-menu-label {
+    flex: 1;
 }
 
 .popup-menu-separator {

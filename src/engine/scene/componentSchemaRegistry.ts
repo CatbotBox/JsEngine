@@ -2,7 +2,6 @@ import {ComponentType} from "../core/componentType";
 import type {Component, ComponentCtor, Resource} from "../core";
 import type {ResourceCtor} from "../core/resource";
 import type {AnyCT} from "../util/tokenUtils";
-import {ENGINE_ASSET_TYPES} from "./assetTypes";
 import type {AssetType} from "./assetTypes";
 import {dataAssetType} from "./dataAssetDocument";
 import {DEFAULT_COMPONENT_CATEGORY, STATIC_SCHEMA_KEY} from "./fieldSchema";
@@ -181,10 +180,7 @@ export class ComponentSchemaRegistry implements FieldTypeResolver {
     private readonly _fieldAliases = new Map<string, FieldAlias>();
     private readonly _fieldTypes = new Map<string, FieldTypeDefinition>();
     private readonly _assetTypes = new Map<string, AssetType>();
-
-    public constructor() {
-        for (const type of ENGINE_ASSET_TYPES) this._assetTypes.set(type.name, type);
-    }
+    private readonly _otherBackendTypeNames = new Set<string>();
 
     public get schemas(): readonly ComponentSchema[] {
         return this._schemas;
@@ -307,6 +303,17 @@ export class ComponentSchemaRegistry implements FieldTypeResolver {
         if (type.isDerived !== undefined && typeof type.isDerived !== "function") throw new Error(`${label} has an isDerived that is not a function`);
         if (this._assetTypes.has(name)) throw new Error(`${label} is already registered`);
         this._assetTypes.set(name, type as AssetType);
+    }
+
+    public registerOtherBackendTypeNames(names: readonly string[]): void {
+        for (const name of names) {
+            if (!isNonEmptyString(name)) throw new Error("ComponentSchemaRegistry: another backend's type name must be a non-empty string");
+            this._otherBackendTypeNames.add(name);
+        }
+    }
+
+    public isOtherBackendTypeName(name: string): boolean {
+        return this._otherBackendTypeNames.has(name);
     }
 
     public byName(name: string): ComponentSchema | undefined {

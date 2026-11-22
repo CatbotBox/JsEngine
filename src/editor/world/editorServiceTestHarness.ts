@@ -5,6 +5,7 @@ import type {Entity, SystemCtor} from "../../engine/core";
 import {Children} from "../../engine/translation/children";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {encodePpm} from "../../engine/assets/image/ppm";
+import {registerBuiltinImageDecoders} from "../../engine/assets/image/builtinDecoders";
 import {ComponentSchemaRegistry, registerEngineComponentSchemas} from "../../engine/scene";
 import {isEditorEventMessage} from "../editorProtocol";
 import type {EditorEntityDetails, EditorEntitySummary, EditorEvent, EditorRequest, EditorResultOf} from "../editorProtocol";
@@ -120,6 +121,7 @@ export function editorWorld(populate: (world: World) => void = () => undefined, 
     populate(world);
 
     const registry = new ComponentSchemaRegistry();
+    registerBuiltinImageDecoders();
     registerEngineComponentSchemas(registry);
     options.register?.(registry);
     const toWorld = new MessagePipe();

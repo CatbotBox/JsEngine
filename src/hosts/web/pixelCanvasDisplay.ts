@@ -9,6 +9,8 @@ import type {FixedFramebufferSize, PixelSurfaceSize} from "./worldWorkerProtocol
 export const PIXELATED_IMAGE_RENDERING = "pixelated";
 export const NO_SCREEN_UNITS = 0;
 
+const VISIBLE = true;
+
 export interface PixelCanvasDisplayOptions {
     readonly fixed?: FixedFramebufferSize;
     readonly devicePixelsPerFramebufferPixel?: number;
@@ -58,11 +60,23 @@ export class PixelCanvasDisplay implements PixelWorldDisplay {
     private readonly presenter: CanvasPixelPresenter<ImageData>;
     private screenUnit: ScreenUnitPx | undefined;
 
-    public constructor(container: HTMLElement, private readonly options: PixelCanvasDisplayOptions = {}) {
+    public constructor(container: HTMLElement, private readonly options: PixelCanvasDisplayOptions = {}, visible: boolean = VISIBLE) {
         this.shell = new CanvasDisplayShell<PixelFrame>(container, frame => this.draw(frame));
         this.shell.canvas.style.imageRendering = PIXELATED_IMAGE_RENDERING;
         this.presenter = new CanvasPixelPresenter<ImageData>({canvas: this.shell.canvas, context: this.shell.context2d()});
-        this.shell.mount(this.fit);
+        this.shell.mount(this.fit, visible);
+    }
+
+    public show(): void {
+        this.shell.show();
+    }
+
+    public hide(): void {
+        this.shell.hide();
+    }
+
+    public dispose(): void {
+        this.shell.dispose();
     }
 
     public surfaceSize(): PixelSurfaceSize {
@@ -115,6 +129,6 @@ export class PixelCanvasDisplay implements PixelWorldDisplay {
     };
 }
 
-export function pixelCanvasDisplayFromQuery(container: HTMLElement, search: string): PixelCanvasDisplay {
-    return new PixelCanvasDisplay(container, pixelCanvasDisplayOptionsFromQuery(search));
+export function pixelCanvasDisplayFromQuery(container: HTMLElement, search: string, visible: boolean = VISIBLE): PixelCanvasDisplay {
+    return new PixelCanvasDisplay(container, pixelCanvasDisplayOptionsFromQuery(search), visible);
 }

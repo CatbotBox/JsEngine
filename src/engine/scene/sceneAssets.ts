@@ -1,12 +1,10 @@
 import type {Resource} from "../core";
 import type {ResourceCtor} from "../core/resource";
 import type {FileSource} from "../platform/platform";
-import {Mesh} from "../rendering/3d/mesh";
 import type {MeshLoadOptions} from "../rendering/3d/mesh";
-import {SpriteImage} from "../rendering/2d/spriteImage";
-import {PREFAB_ASSET_TYPE_NAME} from "./assetTypes";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {parseDataAssetDocument} from "./dataAssetDocument";
+import {PREFAB_ASSET_TYPE_NAME} from "./fieldSchema";
 import type {FieldSchema, FieldType} from "./fieldSchema";
 import {PrefabAsset} from "./prefabAsset";
 import {isSceneJsonObject, parseSceneDocument} from "./sceneDocument";
@@ -22,9 +20,9 @@ export interface SceneAssetReference {
 }
 
 export interface SceneAssetLoader {
-    loadMesh(path: string): Mesh;
+    readonly loadOptions: MeshLoadOptions;
 
-    loadSpriteImage(path: string): SpriteImage;
+    loadCached<A>(kind: SceneAssetKind, path: string, load: () => A): A;
 
     loadPrefab(path: string): PrefabAsset;
 
@@ -37,20 +35,21 @@ export interface DataAssetSource {
     load<R extends Resource>(path: string, type?: ResourceCtor<R>): R;
 }
 
+function cacheKey(kind: SceneAssetKind, path: string): string {
+    return `${kind}:${path}`;
+}
+
 export function platformSceneAssetLoader(options: MeshLoadOptions, dataAssets?: DataAssetSource): SceneAssetLoader {
-    const meshes = new Map<string, Mesh>();
+    const loaded = new Map<string, unknown>();
     const prefabs = new Map<string, PrefabAsset>();
     return {
-        loadMesh(path: string): Mesh {
-            let mesh = meshes.get(path);
-            if (mesh === undefined) {
-                mesh = Mesh.fromFile(path, options);
-                meshes.set(path, mesh);
-            }
-            return mesh;
-        },
-        loadSpriteImage(path: string): SpriteImage {
-            return SpriteImage.fromFile(path, options);
+        loadOptions: options,
+        loadCached<A>(kind: SceneAssetKind, path: string, load: () => A): A {
+            const key = cacheKey(kind, path);
+            if (loaded.has(key)) return loaded.get(key) as A;
+            const asset = load();
+            loaded.set(key, asset);
+            return asset;
         },
         loadPrefab(path: string): PrefabAsset {
             let prefab = prefabs.get(path);
@@ -96,7 +95,7 @@ class AssetReferenceCollector {
     }
 
     private add(kind: SceneAssetKind, path: string): void {
-        const key = `${kind}:${path}`;
+        const key = cacheKey(kind, path);
         if (this.seen.has(key)) return;
         this.seen.add(key);
         this.references.push({kind, path});

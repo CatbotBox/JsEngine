@@ -1,9 +1,11 @@
 import {describe, expect, test} from "./harness";
 import type * as Fs from "fs";
 import type * as Path from "path";
+import type * as TypeScript from "typescript";
 
 const fs = require("fs") as typeof Fs;
 const path = require("path") as typeof Path;
+const ts = require("typescript") as typeof TypeScript;
 
 const ROOT = path.join(__dirname, "..", "..", "..");
 const SRC = path.join(ROOT, "src");
@@ -23,6 +25,7 @@ const RELATIVE_IMPORT = /(?:from|import|require)\s*\(?\s*["'](\.{1,2}(?:\/[^"']*
 const RESOLVE_SUFFIXES = ["", ".ts", ".js", "/index.ts"];
 
 const BACKENDS = ["backends/cells", "backends/pixels", "backends/gpu"];
+const TERMINAL_INPUT = "hosts/terminalInput";
 const DEMO_BACKENDS = ["demo backend cells", "demo backend pixels", "demo backend gpu"];
 
 const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
@@ -30,19 +33,20 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     "backends/cells": ["engine", "backends/cells"],
     "backends/pixels": ["engine", "backends/pixels"],
     "backends/gpu": ["engine", "backends/pixels", "backends/gpu"],
-    "hosts/terminal": ["engine", ...BACKENDS, "hosts/terminal"],
+    [TERMINAL_INPUT]: ["engine", TERMINAL_INPUT],
+    "hosts/terminal": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal"],
     "hosts/web": ["engine", ...BACKENDS, "hosts/web"],
     "hosts/desktop": ["engine", ...BACKENDS, "editor project", "hosts/desktop"],
     "editor project": ["engine", "editor project"],
     "editor": ["engine", ...BACKENDS, "editor project", "editor"],
-    "editor launch": ["engine", ...BACKENDS, "hosts/web", "editor project", "editor", "editor launch"],
+    "editor launch": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/web", "editor project", "editor", "editor launch"],
     "demo": ["engine", "demo"],
     "demo backend cells": ["engine", "backends/cells", "demo", "demo backend cells"],
     "demo backend pixels": ["engine", "backends/pixels", "demo", "demo backend pixels"],
     "demo backend gpu": ["engine", "backends/pixels", "backends/gpu", "demo", "demo backend gpu"],
-    "demo launch": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "demo", ...DEMO_BACKENDS, "demo launch"],
-    "demo generated": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "editor launch", "demo", ...DEMO_BACKENDS, "demo generated"],
-    "toolchain": ["engine", ...BACKENDS, "hosts/terminal", "hosts/web", "hosts/desktop", "editor project", "editor", "toolchain"],
+    "demo launch": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal", "hosts/web", "demo", ...DEMO_BACKENDS, "demo launch"],
+    "demo generated": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal", "hosts/web", "editor launch", "demo", ...DEMO_BACKENDS, "demo generated"],
+    "toolchain": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal", "hosts/web", "hosts/desktop", "editor project", "editor", "toolchain"],
 };
 
 const UNSCHEDULED = "unscheduled";
@@ -57,7 +61,22 @@ const EDITOR_LAUNCH_FOLDER = "launch";
 const EDITOR_PROJECT_FOLDER = "project";
 const EDITOR_SOURCES = "src/editor/";
 const GENERATED_MAIN_PREFIX = "main.";
-const GENERATED_EDITOR_MAIN = "main.editor.worker.ts";
+const GENERATED_EDITOR_MAIN_PREFIX = "main.editor-";
+const SIDE_EFFECT_FREE_ROOTS = [path.join(SRC, "engine"), path.join(SRC, "backends")];
+const TOP_LEVEL_STATEMENT_ALLOWLIST: readonly string[] = [];
+const LINE_BREAK = /\r?\n/;
+const DECLARATION_STATEMENT_KINDS: ReadonlySet<TypeScript.SyntaxKind> = new Set([
+    ts.SyntaxKind.ImportDeclaration,
+    ts.SyntaxKind.ImportEqualsDeclaration,
+    ts.SyntaxKind.ExportDeclaration,
+    ts.SyntaxKind.FunctionDeclaration,
+    ts.SyntaxKind.ClassDeclaration,
+    ts.SyntaxKind.InterfaceDeclaration,
+    ts.SyntaxKind.TypeAliasDeclaration,
+    ts.SyntaxKind.EnumDeclaration,
+    ts.SyntaxKind.ModuleDeclaration,
+    ts.SyntaxKind.VariableStatement,
+]);
 const ENGINE_WORLD_SOURCE = "src/engine/core/world.ts";
 const ENGINE_START_GAME_SOURCE = "src/engine/project/startGame.ts";
 
@@ -135,11 +154,26 @@ function relativeImportClosure(entries: readonly string[]): string[] {
     return reached;
 }
 
+function statementsOtherThanDeclarations(file: string, source: TypeScript.SourceFile, statements: readonly TypeScript.Statement[]): string[] {
+    return statements.flatMap(statement => {
+        const namespaceBody = ts.isModuleDeclaration(statement) ? statement.body : undefined;
+        if (namespaceBody !== undefined && ts.isModuleBlock(namespaceBody)) return statementsOtherThanDeclarations(file, source, namespaceBody.statements);
+        if (DECLARATION_STATEMENT_KINDS.has(statement.kind)) return [];
+        const line = source.getLineAndCharacterOfPosition(statement.getStart(source)).line + 1;
+        return [`${fromRoot(file)}:${line}: ${ts.SyntaxKind[statement.kind]}: ${statement.getText(source).split(LINE_BREAK)[0]}`];
+    });
+}
+
+function topLevelStatementsOtherThanDeclarations(file: string): string[] {
+    const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    return statementsOtherThanDeclarations(file, source, source.statements);
+}
+
 function generatedGameMains(demo: string): string[] {
     const folder = path.join(DEMO, demo, DEMO_GENERATED_FOLDER);
     if (!fs.existsSync(folder)) return [];
     return fs.readdirSync(folder)
-        .filter(name => name.startsWith(GENERATED_MAIN_PREFIX) && name.endsWith(TYPESCRIPT_EXTENSION) && name !== GENERATED_EDITOR_MAIN)
+        .filter(name => name.startsWith(GENERATED_MAIN_PREFIX) && name.endsWith(TYPESCRIPT_EXTENSION) && !name.startsWith(GENERATED_EDITOR_MAIN_PREFIX))
         .map(name => path.join(folder, name));
 }
 
@@ -181,6 +215,12 @@ describe("source rules", () => {
         expect([...layers].filter(layer => ALLOWED_LAYERS[layer] === undefined)).toEqual([]);
     });
 
+    test("terminal input imports only the engine, so the terminal host and the editor's terminal simulation share it", () => {
+        expect(ALLOWED_LAYERS[TERMINAL_INPUT]).toEqual(["engine", TERMINAL_INPUT]);
+        expect(ALLOWED_LAYERS["hosts/terminal"].includes(TERMINAL_INPUT) && ALLOWED_LAYERS["editor launch"].includes(TERMINAL_INPUT)).toBe(true);
+        expect(NODE_API_HOSTS.some(host => `src/${TERMINAL_INPUT}/`.startsWith(host))).toBe(false);
+    });
+
     test("no game entry reaches src/editor through its relative imports", () => {
         const entries = gameEntries();
         expect(entries.filter(file => !fs.existsSync(file)).map(fromRoot)).toEqual([]);
@@ -190,6 +230,12 @@ describe("source rules", () => {
         expect(reached.includes(ENGINE_WORLD_SOURCE)).toBe(true);
         expect(reached.includes(ENGINE_START_GAME_SOURCE)).toBe(true);
         expect(reached.filter(file => file.startsWith(EDITOR_SOURCES))).toEqual([]);
+    });
+
+    test("src/engine and src/backends run no code when imported: their top-level statements are declarations and exports only", () => {
+        const sourceFiles = SIDE_EFFECT_FREE_ROOTS.flatMap(typeScriptFilesUnder).filter(file => !file.endsWith(TEST_SUFFIX));
+        const found = sourceFiles.flatMap(topLevelStatementsOtherThanDeclarations);
+        expect(found.filter(entry => !TOP_LEVEL_STATEMENT_ALLOWLIST.some(allowed => entry.startsWith(allowed)))).toEqual([]);
     });
 
     test("every allowlist entry is still a wrong-direction import, so the list only shrinks", () => {

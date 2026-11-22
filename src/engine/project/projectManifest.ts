@@ -6,6 +6,7 @@ export const PROJECT_ENTRY_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js"
 export const SCENE_FILE_SUFFIX = ".scene.json";
 export const SCHEMAS_MANIFEST_KEY = "schemas";
 export const SYSTEMS_MANIFEST_KEY = "systems";
+export const KEEP_MANIFEST_KEY = "keep";
 
 export interface ProjectResourceBinding {
     readonly type: string;
@@ -23,6 +24,7 @@ export interface ProjectManifest {
     readonly resources?: readonly ProjectResourceBinding[];
     readonly schemas?: GeneratedListSettings;
     readonly systems?: GeneratedListSettings;
+    readonly keep?: readonly string[];
     readonly editorExtensions?: string;
 }
 
@@ -108,12 +110,23 @@ function resourcesProblems(value: unknown): {readonly resources?: readonly Proje
     return {resources: checked.map(entry => entry.binding!), problems};
 }
 
+function typeNameListProblems(label: string, value: unknown): {readonly names?: readonly string[], readonly problems: string[]} {
+    if (!Array.isArray(value)) return {problems: [`"${label}" must be an array of type names, got ${JSON.stringify(value)}`]};
+    const names = value.map(trimmedNonEmpty);
+    const problems = value.flatMap((name, index) => names[index] === undefined ? [`"${label}[${index}]" must be a non-empty type name, got ${JSON.stringify(name)}`] : []);
+    return problems.length > 0 ? {problems} : {names: names as string[], problems};
+}
+
 function excludeListProblems(key: string, value: unknown): {readonly exclude?: readonly string[], readonly problems: string[]} {
     if (value === undefined) return {exclude: [], problems: []};
-    if (!Array.isArray(value)) return {problems: [`"${key}.exclude" must be an array of type names, got ${JSON.stringify(value)}`]};
-    const names = value.map(trimmedNonEmpty);
-    const problems = value.flatMap((name, index) => names[index] === undefined ? [`"${key}.exclude[${index}]" must be a non-empty type name, got ${JSON.stringify(name)}`] : []);
-    return problems.length > 0 ? {problems} : {exclude: names as string[], problems};
+    const checked = typeNameListProblems(`${key}.exclude`, value);
+    return {exclude: checked.names, problems: checked.problems};
+}
+
+function keepListProblems(value: unknown): {readonly keep?: readonly string[], readonly problems: string[]} {
+    if (value === undefined) return {problems: []};
+    const checked = typeNameListProblems(KEEP_MANIFEST_KEY, value);
+    return {keep: checked.names, problems: checked.problems};
 }
 
 function generatedListProblems(key: string, value: unknown): {readonly settings?: GeneratedListSettings, readonly problems: string[]} {
@@ -141,8 +154,9 @@ export function validateProjectManifest(text: string | undefined, entryExists?: 
     const resources = resourcesProblems(parsed.resources);
     const schemas = generatedListProblems(SCHEMAS_MANIFEST_KEY, parsed.schemas);
     const systems = generatedListProblems(SYSTEMS_MANIFEST_KEY, parsed.systems);
+    const keep = keepListProblems(parsed[KEEP_MANIFEST_KEY]);
     const editorExtensions = editorExtensionsProblems(parsed.editorExtensions, entryExists);
-    problems.push(...entry.problems, ...startScene.problems, ...resources.problems, ...schemas.problems, ...systems.problems, ...editorExtensions.problems);
+    problems.push(...entry.problems, ...startScene.problems, ...resources.problems, ...schemas.problems, ...systems.problems, ...keep.problems, ...editorExtensions.problems);
     if (problems.length > 0) return {ok: false, problems};
     const manifest: ProjectManifest = {
         name: (name as string).trim(),
@@ -151,6 +165,7 @@ export function validateProjectManifest(text: string | undefined, entryExists?: 
         ...(resources.resources === undefined ? {} : {resources: resources.resources}),
         ...(schemas.settings === undefined ? {} : {schemas: schemas.settings}),
         ...(systems.settings === undefined ? {} : {systems: systems.settings}),
+        ...(keep.keep === undefined ? {} : {keep: keep.keep}),
         ...(editorExtensions.editorExtensions === undefined ? {} : {editorExtensions: editorExtensions.editorExtensions}),
     };
     return {ok: true, manifest};

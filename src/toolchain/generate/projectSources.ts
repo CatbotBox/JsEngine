@@ -12,6 +12,7 @@ const EXCLUDED_FILE_SUFFIXES: readonly string[] = [".test.ts", ".test.tsx", ".d.
 const EXCLUDED_DIRECTORY_NAMES: ReadonlySet<string> = new Set([".jsengine", "node_modules"]);
 const SOURCE_PATH = ["src"];
 const ENGINE_SOURCE_PATH = [...SOURCE_PATH, "engine"];
+const BACKENDS_SOURCE_PATH = [...SOURCE_PATH, "backends"];
 const ENGINE_PATHS_PATTERN = `${ENGINE_IMPORT_PREFIX}*`;
 const RELATIVE_IMPORT_PREFIX = "./";
 const PARENT_IMPORT_PREFIX = "../";
@@ -50,7 +51,7 @@ function isProjectSourceFile(name: string): boolean {
     return isSource && !isExcluded;
 }
 
-export function discoverProjectFiles(projectFolder: string): string[] {
+export function listProjectFiles(projectFolder: string, include: (name: string) => boolean): string[] {
     const found: string[] = [];
     const generatedFolder = join(projectFolder, GENERATED_FOLDER);
     const visit = (directory: string): void => {
@@ -58,7 +59,7 @@ export function discoverProjectFiles(projectFolder: string): string[] {
             const path = join(directory, entry.name);
             if (entry.isDirectory()) {
                 if (!EXCLUDED_DIRECTORY_NAMES.has(entry.name) && path !== generatedFolder) visit(path);
-            } else if (isProjectSourceFile(entry.name)) {
+            } else if (include(entry.name)) {
                 found.push(path);
             }
         }
@@ -67,7 +68,11 @@ export function discoverProjectFiles(projectFolder: string): string[] {
     return found.sort((a, b) => compareText(toPosix(relative(projectFolder, a)), toPosix(relative(projectFolder, b))));
 }
 
-function compilerOptions(repoRoot: string): ts.CompilerOptions {
+export function discoverProjectFiles(projectFolder: string): string[] {
+    return listProjectFiles(projectFolder, isProjectSourceFile);
+}
+
+export function projectCompilerOptions(repoRoot: string): ts.CompilerOptions {
     return {
         target: ts.ScriptTarget.ES2023,
         module: ts.ModuleKind.CommonJS,
@@ -89,6 +94,7 @@ function manifestOf(projectFolder: string): ProjectManifest | undefined {
 export class ProjectSources {
     public readonly checker: ts.TypeChecker;
     private readonly engineDirectory: string;
+    private readonly backendsDirectory: string;
     private readonly projectInsideRepo: boolean;
     private readManifest: ProjectManifest | undefined;
     private manifestWasRead = false;
@@ -101,6 +107,7 @@ export class ProjectSources {
     ) {
         this.checker = program.getTypeChecker();
         this.engineDirectory = join(repoRoot, ...ENGINE_SOURCE_PATH);
+        this.backendsDirectory = join(repoRoot, ...BACKENDS_SOURCE_PATH);
         this.projectInsideRepo = isInside(repoRoot, folder);
     }
 
@@ -108,7 +115,7 @@ export class ProjectSources {
         const folder = resolve(projectFolder);
         const root = resolve(repoRoot);
         const files = discoverProjectFiles(folder);
-        const program = ts.createProgram({rootNames: files, options: compilerOptions(root)});
+        const program = ts.createProgram({rootNames: files, options: projectCompilerOptions(root)});
         return new ProjectSources(folder, root, files, program);
     }
 
@@ -149,6 +156,13 @@ export class ProjectSources {
 
     public isEngineSymbol(symbol: ts.Symbol): boolean {
         return (symbol.declarations ?? []).some(declaration => isInside(this.engineDirectory, declaration.getSourceFile().fileName));
+    }
+
+    public isEngineOrBackendSymbol(symbol: ts.Symbol): boolean {
+        return (symbol.declarations ?? []).some(declaration => {
+            const fileName = declaration.getSourceFile().fileName;
+            return isInside(this.engineDirectory, fileName) || isInside(this.backendsDirectory, fileName);
+        });
     }
 
     public isEngineClass(symbol: ts.Symbol, name: string): boolean {

@@ -1,4 +1,4 @@
-import {DecodedImage, registerImageDecoder} from "./decodedImage";
+import type {DecodedImage, ImageDecoderEntry} from "./decodedImage";
 
 const MARKER_PREFIX = 0xFF;
 const MARKER_SOF0 = 0xC0;
@@ -120,8 +120,7 @@ export function decodeJpeg(bytes: Uint8Array): DecodedImage {
     return new JpegDecoder(bytes).decode();
 }
 
-registerImageDecoder(".jpg", decodeJpeg);
-registerImageDecoder(".jpeg", decodeJpeg);
+export const JPEG_IMAGE_DECODER: ImageDecoderEntry = {extensions: [".jpg", ".jpeg"], decode: decodeJpeg};
 
 interface FrameComponent {
     readonly id: number;

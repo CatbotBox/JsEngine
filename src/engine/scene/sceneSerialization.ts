@@ -19,6 +19,7 @@ import {EditorOnly} from "./editorOnly";
 import {childEntitiesOf, orderedSceneRoots, parentEntityOf, setSceneRootOrder, siblingOrderOf} from "./sceneHierarchy";
 import {DEFAULT_SCHEMA_CHANGE_POLICY, SchemaChangeCollector} from "./schemaChanges";
 import type {SchemaChange, SchemaChangePolicy} from "./schemaChanges";
+import {unregisteredTypeMessage} from "./unregisteredType";
 
 export type {SchemaChange, SchemaChangePolicy} from "./schemaChanges";
 
@@ -427,11 +428,12 @@ function planComponents(registry: ComponentSchemaRegistry, document: SceneDocume
             const path = componentPath(index, componentName);
             const schema = registry.byName(componentName);
             if (schema === undefined) {
+                if (registry.isOtherBackendTypeName(componentName)) continue;
                 if (policy === "skip") {
                     report.skipped.add(componentName);
                     continue;
                 }
-                throw new Error(`Scene document: ${path}: the component type "${componentName}" is not registered`);
+                throw new Error(`Scene document: ${path}: ${unregisteredTypeMessage("component", componentName)}`);
             }
             if (schema.persistence === "implied") continue;
             const {valueFields, entityFields} = planFieldGroup(componentName, schema.fields, record.components[componentName], path, options, report, validation);
@@ -458,11 +460,12 @@ function planResources(registry: ComponentSchemaRegistry, document: SceneDocumen
         const path = resourcePath(resourceName);
         const schema = registry.resourceByName(resourceName);
         if (schema === undefined) {
+            if (registry.isOtherBackendTypeName(resourceName)) continue;
             if (policy === "skip") {
                 report.skippedResources.add(resourceName);
                 continue;
             }
-            throw new Error(`Scene document: ${path}: the resource type "${resourceName}" is not registered`);
+            throw new Error(`Scene document: ${path}: ${unregisteredTypeMessage("resource", resourceName)}`);
         }
         const {valueFields, entityFields} = planFieldGroup(resourceName, schema.fields, resources[resourceName], path, options, report, validation);
         planned.push({schema, path, valueFields, entityFields});

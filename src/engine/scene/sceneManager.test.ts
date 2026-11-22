@@ -1,4 +1,5 @@
 import {describe, expect, test} from "../testing/harness";
+import {registerBuiltinImageDecoders} from "../assets/image/builtinDecoders";
 import {MemoryPlatform} from "../testing/memoryPlatform";
 import {EntityCommandBufferSystem, World} from "../core";
 import type {Entity} from "../core";
@@ -116,6 +117,8 @@ async function rejectionOf(promise: Promise<unknown>): Promise<string> {
     }
     throw new Error("expected the promise to reject");
 }
+
+registerBuiltinImageDecoders();
 
 describe("SceneManager loading", () => {
     test("a single load replaces every loaded scene, keeps persistent and EditorOnly entities, and becomes the active scene", () => {

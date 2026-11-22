@@ -16,10 +16,10 @@ import {
 } from "./kittyKeyboardProtocol";
 import type {KittyKeyReport} from "./kittyKeyboardProtocol";
 import {DISABLE_WIN32_INPUT_MODE, ENABLE_WIN32_INPUT_MODE, readWin32KeyReport, WIN32_KEY_REPORT} from "./win32InputMode";
-import {Key, keyForCharacter, NO_MODIFIERS, PointerButton} from "../../../engine/input";
-import type {CharacterKey, InputEventSink, Modifiers} from "../../../engine/input";
-import type {Platform} from "../../../engine/platform";
-import type {TerminalInputSource} from "../terminalInputSource";
+import {Key, keyForCharacter, NO_MODIFIERS, PointerButton} from "../../engine/input";
+import type {CharacterKey, InputEventSink, Modifiers} from "../../engine/input";
+import type {Platform} from "../../engine/platform";
+import type {TerminalInputSource} from "./terminalInputSource";
 
 const ESCAPE = "\x1b";
 const CSI = `${ESCAPE}[`;

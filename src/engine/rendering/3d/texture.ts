@@ -1,6 +1,5 @@
 import {DecodedImage, decodeImageFile} from "../../assets/image/decodedImage";
 import type {AssetLoadOptions} from "../../platform";
-import "../../assets/image/builtinDecoders";
 import {ALPHA_SHIFT, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK} from "../packedRgb";
 
 const RGBA_BYTES = 4;

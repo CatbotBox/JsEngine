@@ -2,9 +2,12 @@ import {RENDER_BACKEND_KINDS} from "../../engine/rendering/renderBackend";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 import {
     DEFAULT_ENTRY_FILE,
-    EDITOR_WORKER_MAIN_FILE,
+    editorWorkerMainFile,
     GENERATED_SYSTEMS_EXPORT,
     GENERATED_SYSTEMS_FILE,
+    generatedBackendPassesExport,
+    generatedBackendSchemasExport,
+    generatedBackendSchemasFile,
     generatedBackendSystemsExport,
     generatedBackendSystemsFile,
     projectSiteDirectory,
@@ -25,7 +28,7 @@ import type {ModuleImport} from "./generatedModule";
 import type {ProjectSources} from "./projectSources";
 
 export const MAINS_GENERATOR_NAME = "mains";
-export const MAINS_GENERATOR_VERSION = 1;
+export const MAINS_GENERATOR_VERSION = 3;
 export const MAINS_GENERATED_HEADER = generatedFileHeader(MAINS_GENERATOR_NAME, MAINS_GENERATOR_VERSION);
 
 interface ModuleExport {
@@ -35,7 +38,7 @@ interface ModuleExport {
 
 interface BackendMain {
     readonly installer: ModuleExport;
-    readonly passes: ModuleExport;
+    readonly editorPasses: ModuleExport;
     readonly display: ModuleExport;
     readonly presenterSetup: readonly string[];
     readonly installArguments: string;
@@ -50,7 +53,7 @@ const PRESENTER_FROM_PAGE = "presenter";
 const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
     cells: {
         installer: {path: ["backends", "cells", "cellsBackend"], name: "installCellsBackend"},
-        passes: {path: ["backends", "cells", "cellsStandardPasses"], name: "CELLS_STANDARD_PASSES"},
+        editorPasses: {path: ["backends", "cells", "cellsStandardPasses"], name: "CELLS_STANDARD_PASSES"},
         display: {path: ["hosts", "web", "cellCanvasDisplay"], name: "cellCanvasDisplayFromQuery"},
         presenterSetup: ["const presenter = page.cellPresenter();"],
         installArguments: PRESENTER_FROM_PAGE,
@@ -58,7 +61,7 @@ const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
     },
     pixels: {
         installer: {path: ["backends", "pixels", "pixelsBackend"], name: "installPixelsBackend"},
-        passes: {path: ["backends", "pixels", "pixelsStandardPasses"], name: "PIXELS_STANDARD_PASSES"},
+        editorPasses: {path: ["backends", "pixels", "pixelsStandardPasses"], name: "PIXELS_STANDARD_PASSES"},
         display: {path: ["hosts", "web", "pixelCanvasDisplay"], name: "pixelCanvasDisplayFromQuery"},
         presenterSetup: ["const presenter = page.pixelPresenter();"],
         installArguments: PRESENTER_FROM_PAGE,
@@ -66,7 +69,7 @@ const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
     },
     gpu: {
         installer: {path: ["backends", "gpu", "gpuBackend"], name: "installGpuBackend"},
-        passes: {path: ["backends", "gpu", "gpuStandardPasses"], name: "GPU_STANDARD_PASSES"},
+        editorPasses: {path: ["backends", "gpu", "gpuStandardPasses"], name: "GPU_STANDARD_PASSES"},
         display: {path: ["hosts", "web", "gpuCanvasDisplay"], name: "gpuCanvasDisplayFromQuery"},
         presenterSetup: ["const device = await requestGpuDevice(page);", "const presenter = gpuCanvasPresenter(page, device);"],
         installArguments: `device, ${PRESENTER_FROM_PAGE}`,
@@ -95,7 +98,7 @@ class MainsWriter {
             this.terminalMain(),
             this.webPageBootstrap(),
             ...RENDER_BACKEND_KINDS.flatMap(kind => [this.webPageMain(kind), this.webWorkerMain(kind)]),
-            this.editorWorkerMain(),
+            ...RENDER_BACKEND_KINDS.map(kind => this.editorWorkerMain(kind)),
         ];
     }
 
@@ -115,20 +118,30 @@ class MainsWriter {
         return {names: [generatedBackendSystemsExport(kind)], module: this.sources.projectModule(generatedBackendSystemsFile(kind))};
     }
 
+    private backendHostImports(kind: RenderBackendKind): ModuleImport[] {
+        return [
+            {names: [generatedBackendSystemsExport(kind), generatedBackendPassesExport(kind)], module: this.sources.projectModule(generatedBackendSystemsFile(kind))},
+            {names: [generatedBackendSchemasExport(kind)], module: this.sources.projectModule(generatedBackendSchemasFile(kind))},
+        ];
+    }
+
+    private backendHostOptions(kind: RenderBackendKind): string {
+        return `backendSystems: ${generatedBackendSystemsExport(kind)}, hostSchemas: ${generatedBackendSchemasExport(kind)}`;
+    }
+
     private terminalMain(): GeneratedSource {
         const backend = BACKEND_MAINS[TERMINAL_BACKEND];
         return this.source(TERMINAL_MAIN_FILE, [
             this.exported(backend.installer),
-            this.exported(backend.passes),
             {names: ["runTerminalGame"], module: this.sources.sourceModule("hosts", "terminal", "terminalGame")},
             this.startProjectImport(),
-            this.backendSystemsImport(TERMINAL_BACKEND),
+            ...this.backendHostImports(TERMINAL_BACKEND),
         ], [
             `const ${PROJECT_DIRECTORY_CONSTANT} = ${TERMINAL_PROJECT_DIRECTORY};`,
             "",
             `runTerminalGame(${JSON.stringify(this.gameName)}, async (world, presenter) => {`,
-            `${GENERATED_INDENT}${backend.installer.name}(world, presenter, ${backend.passes.name});`,
-            `${GENERATED_INDENT}await ${START_PROJECT_EXPORT}(world, {directory: ${PROJECT_DIRECTORY_CONSTANT}, backendSystems: ${generatedBackendSystemsExport(TERMINAL_BACKEND)}});`,
+            `${GENERATED_INDENT}${backend.installer.name}(world, presenter, ${generatedBackendPassesExport(TERMINAL_BACKEND)});`,
+            `${GENERATED_INDENT}await ${START_PROJECT_EXPORT}(world, {directory: ${PROJECT_DIRECTORY_CONSTANT}, ${this.backendHostOptions(TERMINAL_BACKEND)}});`,
             "});",
         ]);
     }
@@ -160,33 +173,38 @@ class MainsWriter {
         return this.source(webWorkerMainFile(kind), [
             {names: ["App"], module: this.sources.engineModule("core")},
             this.exported(backend.installer),
-            this.exported(backend.passes),
             ...backend.setupImports.map(module => this.exported(module)),
             {names: ["runProjectInWorker"], module: this.sources.sourceModule("hosts", "web", "projectWorker")},
             {names: ["runWorldWorker"], module: this.sources.sourceModule("hosts", "web", "worldWorker")},
             this.startProjectImport(),
-            this.backendSystemsImport(kind),
+            ...this.backendHostImports(kind),
         ], [
             `const ${PROJECT_DIRECTORY_CONSTANT} = ${JSON.stringify(this.siteDirectory)};`,
             "",
             "runWorldWorker(async (page, files) => {",
             ...backend.presenterSetup.map(line => GENERATED_INDENT + line),
             `${GENERATED_INDENT}const world = new App({platform: page.platform}).createDebugWorld();`,
-            `${GENERATED_INDENT}${backend.installer.name}(world, ${backend.installArguments}, ${backend.passes.name});`,
-            `${GENERATED_INDENT}await runProjectInWorker(world, page, files, {directory: ${PROJECT_DIRECTORY_CONSTANT}, ${START_PROJECT_EXPORT}, backendSystems: ${generatedBackendSystemsExport(kind)}});`,
+            `${GENERATED_INDENT}${backend.installer.name}(world, ${backend.installArguments}, ${generatedBackendPassesExport(kind)});`,
+            `${GENERATED_INDENT}await runProjectInWorker(world, page, files, {directory: ${PROJECT_DIRECTORY_CONSTANT}, ${START_PROJECT_EXPORT}, ${this.backendHostOptions(kind)}});`,
             "});",
         ]);
     }
 
-    private editorWorkerMain(): GeneratedSource {
-        const backends = RENDER_BACKEND_KINDS.map(kind => `${kind}: ${generatedBackendSystemsExport(kind)}`).join(", ");
-        return this.source(EDITOR_WORKER_MAIN_FILE, [
+    private editorWorkerMain(kind: RenderBackendKind): GeneratedSource {
+        const backend = BACKEND_MAINS[kind];
+        return this.source(editorWorkerMainFile(kind), [
+            this.exported(backend.installer),
+            this.exported(backend.editorPasses),
+            ...backend.setupImports.map(module => this.exported(module)),
             {names: ["runProjectEditorWorker"], module: this.sources.sourceModule("editor", "launch", "projectEditorWorker")},
             this.startProjectImport(),
             {names: [GENERATED_SYSTEMS_EXPORT], module: this.sources.projectModule(GENERATED_SYSTEMS_FILE)},
-            ...RENDER_BACKEND_KINDS.map(kind => this.backendSystemsImport(kind)),
+            this.backendSystemsImport(kind),
         ], [
-            `runProjectEditorWorker(${START_PROJECT_EXPORT}, {shared: ${GENERATED_SYSTEMS_EXPORT}, backends: {${backends}}});`,
+            `runProjectEditorWorker(${START_PROJECT_EXPORT}, {shared: ${GENERATED_SYSTEMS_EXPORT}, backend: ${generatedBackendSystemsExport(kind)}}, async (world, page) => {`,
+            ...backend.presenterSetup.map(line => GENERATED_INDENT + line),
+            `${GENERATED_INDENT}${backend.installer.name}(world, ${backend.installArguments}, ${backend.editorPasses.name});`,
+            "});",
         ]);
     }
 }
@@ -202,7 +220,7 @@ export const MAINS_GENERATOR: ProjectGenerator = {
         TERMINAL_MAIN_FILE,
         WEB_PAGE_BOOTSTRAP_FILE,
         ...RENDER_BACKEND_KINDS.flatMap(kind => [webPageMainFile(kind), webWorkerMainFile(kind)]),
-        EDITOR_WORKER_MAIN_FILE,
+        ...RENDER_BACKEND_KINDS.map(editorWorkerMainFile),
     ],
     generate: mainsOf,
 };

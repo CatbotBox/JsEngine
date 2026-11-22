@@ -1,27 +1,12 @@
-import {componentSchema} from "../../engine/scene/componentSchemaBuilder";
 import type {ComponentSchemaRegistry} from "../../engine/scene/componentSchemaRegistry";
-import {ENGINE_COMPONENT_CATEGORIES} from "../../engine/scene/engineComponentSchemas";
-import {PixelRenderSettings} from "./pixelRenderSettings";
-import {SpritePixelPassSettings} from "./2d/spritePixelPassSettings";
-import {MeshPixelPassSettings} from "./3d/meshPixelPassSettings";
+import {registerSchemaEntries} from "../../engine/scene/schemaEntries";
+import type {SchemaEntry} from "../../engine/scene/schemaEntries";
+import {SPRITE_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY} from "./2d/schemas";
+import {MESH_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY} from "./3d/schemas";
+import {PIXEL_RENDER_SETTINGS_SCHEMA_ENTRY} from "./schemas";
+
+export const PIXELS_SCHEMAS: readonly SchemaEntry[] = [PIXEL_RENDER_SETTINGS_SCHEMA_ENTRY, SPRITE_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY, MESH_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY];
 
 export function registerPixelsComponentSchemas(registry: ComponentSchemaRegistry): void {
-    registry.register(componentSchema(PixelRenderSettings, "PixelRenderSettings")
-        .rgb("backgroundColor")
-        .number("pixelsPerScreenUnitX")
-        .category(ENGINE_COMPONENT_CATEGORIES.settings)
-        .build());
-    registry.register(componentSchema(SpritePixelPassSettings, "SpritePixelPassSettings")
-        .number("maxDepthFade")
-        .category(ENGINE_COMPONENT_CATEGORIES.settings)
-        .build());
-    registry.register(componentSchema(MeshPixelPassSettings, "MeshPixelPassSettings")
-        .number("maxDepthFade")
-        .integer("supersampleX")
-        .integer("supersampleY")
-        .number("threadTriangleThreshold")
-        .number("threadAreaThreshold")
-        .number("lodTrianglesPerPixel")
-        .category(ENGINE_COMPONENT_CATEGORIES.settings)
-        .build());
+    registerSchemaEntries(registry, PIXELS_SCHEMAS);
 }

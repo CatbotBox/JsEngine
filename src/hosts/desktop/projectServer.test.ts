@@ -6,6 +6,9 @@ import {createProjectServer, externalOpenCommand, splitCommandLine} from "./proj
 import type {ProjectServer} from "./projectServer";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {STARTER_SCENE_FILE} from "../../editor/project/projectTemplate";
+import {EDITOR_SETTINGS_FILE} from "../../editor/project/editorSettings";
+import type {GameTarget} from "../../editor/project/editorSettings";
+import {EDITOR_SETTINGS_UPDATE_METHOD} from "../../editor/project/projectServerApi";
 import type {OpenProjectResult} from "../../editor/project/projectServerApi";
 
 const fs = require("fs") as typeof Fs;
@@ -19,6 +22,8 @@ const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 const HTTP_METHOD_NOT_ALLOWED = 405;
 const HTTP_CONFLICT = 409;
+const TERMINAL: GameTarget = {target: "terminal", backend: "cells"};
+const WINDOW_GPU: GameTarget = {target: "window", backend: "gpu"};
 
 let folder = "";
 let server: ProjectServer;
@@ -30,6 +35,10 @@ function request(route: string, init: RequestInit = {}): Promise<Response> {
 
 function post(route: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
     return request(route, {method: "POST", body: JSON.stringify(body), headers: {"Content-Type": "application/json", ...headers}});
+}
+
+function patch(route: string, body: unknown): Promise<Response> {
+    return request(route, {method: EDITOR_SETTINGS_UPDATE_METHOD, body: JSON.stringify(body), headers: {"Content-Type": "application/json"}});
 }
 
 async function opened(target: string): Promise<OpenProjectResult> {
@@ -157,6 +166,37 @@ describe("project server", () => {
         const build = await post(`${id}/build`, {});
         expect(build.status).toBe(HTTP_OK);
         expect(await build.json()).toEqual({errors: ["building project code needs the JsEngine source tree; start the editor from the repository"]});
+    });
+
+    test("editor settings read as nothing until saved, then live in .jsengine/editor.json beside the keys they do not own", async () => {
+        const {id} = await opened(folder);
+        const route = `${id}/editor-settings`;
+        const settingsFile = path.join(folder, EDITOR_SETTINGS_FILE);
+        expect(await (await request(route)).json()).toEqual({});
+        const saved = await patch(route, {gameTarget: TERMINAL});
+        expect(saved.status).toBe(HTTP_OK);
+        expect(await saved.json()).toEqual({gameTarget: TERMINAL});
+        expect(JSON.parse(fs.readFileSync(settingsFile, "utf8"))).toEqual({gameTarget: TERMINAL});
+        fs.writeFileSync(settingsFile, JSON.stringify({panels: {bottom: 200}, gameTarget: TERMINAL}));
+        expect((await patch(route, {gameTarget: WINDOW_GPU})).status).toBe(HTTP_OK);
+        expect(JSON.parse(fs.readFileSync(settingsFile, "utf8"))).toEqual({panels: {bottom: 200}, gameTarget: WINDOW_GPU});
+        expect(await (await request(route)).json()).toEqual({gameTarget: WINDOW_GPU});
+    });
+
+    test("editor settings refuse targets the editor does not simulate, unknown settings and other methods; a broken file reads as nothing", async () => {
+        const {id} = await opened(folder);
+        const route = `${id}/editor-settings`;
+        const unsupported = await patch(route, {gameTarget: {target: "window", backend: "cells"}});
+        expect(unsupported.status).toBe(HTTP_BAD_REQUEST);
+        expect((await unsupported.json()).error.includes("terminal cells")).toBe(true);
+        expect((await patch(route, {theme: "dark"})).status).toBe(HTTP_BAD_REQUEST);
+        expect((await post(route, {gameTarget: TERMINAL})).status).toBe(HTTP_METHOD_NOT_ALLOWED);
+        expect(fs.existsSync(path.join(folder, EDITOR_SETTINGS_FILE))).toBe(false);
+        fs.mkdirSync(path.dirname(path.join(folder, EDITOR_SETTINGS_FILE)), {recursive: true});
+        fs.writeFileSync(path.join(folder, EDITOR_SETTINGS_FILE), "{not json");
+        expect(await (await request(route)).json()).toEqual({});
+        fs.writeFileSync(path.join(folder, EDITOR_SETTINGS_FILE), JSON.stringify({gameTarget: {target: "terminal", backend: "gpu"}}));
+        expect(await (await request(route)).json()).toEqual({});
     });
 
     test("browse lists folders and drive or root shortcuts", async () => {

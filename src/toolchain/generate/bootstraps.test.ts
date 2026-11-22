@@ -3,7 +3,7 @@ import {tmpdir} from "os";
 import {basename, dirname, join, resolve} from "path";
 import {describe, expect, test} from "../../engine/testing/harness";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
-import {EDITOR_WORKER_MAIN_FILE, GENERATED_GAME_FILE, TERMINAL_MAIN_FILE, WEB_PAGE_BOOTSTRAP_FILE, webPageMainFile, webWorkerMainFile} from "../projectLayout";
+import {editorWorkerMainFile, GENERATED_GAME_FILE, TERMINAL_MAIN_FILE, WEB_PAGE_BOOTSTRAP_FILE, webPageMainFile, webWorkerMainFile} from "../projectLayout";
 import {GAME_GENERATED_HEADER, GAME_GENERATOR} from "./gameModule";
 import type {GeneratedSource, GeneratorOutput, ProjectGenerator} from "./generatedHeader";
 import {MAINS_GENERATED_HEADER, MAINS_GENERATOR} from "./mains";
@@ -14,6 +14,8 @@ const LINE_BREAK = "\r\n";
 const INSIDE_REPO_FIXTURE_PREFIX = join(__dirname, "fixture-");
 const OUTSIDE_REPO_FIXTURE_PREFIX = join(tmpdir(), "jsengine-bootstraps-");
 const OWN_ENTRY = "src/main.ts";
+const PNG_FILE = "art/hero.png";
+const JPEG_FILE = "art/sky.JPG";
 
 type FixtureFiles = Readonly<Record<string, string>>;
 
@@ -72,10 +74,21 @@ describe("game bootstrap generator", () => {
         expectLine(lines, `export const projectStartScene: string | undefined = undefined;`);
     });
 
-    test("a project outside the repo imports the engine through the alias", () => {
+    test("a project outside the repo imports the engine through the alias, and the game registers no backend's schemas", () => {
         const source = sourceOf(generateFixture(GAME_GENERATOR, {name: "Outside"}).output, GENERATED_GAME_FILE);
         expect(source.includes(`from "@jsengine/engine/project/startGame";`)).toBe(true);
-        expect(source.includes(`from "@jsengine/backends/cells/cellsComponentSchemas";`)).toBe(true);
+        expect(source.includes("backends/")).toBe(false);
+    });
+
+    test("registers the image decoders for the image files in the project folder, and none without images", () => {
+        const withImages = linesOf(generateFixture(GAME_GENERATOR, {name: "Pictures"}, OUTSIDE_REPO_FIXTURE_PREFIX, {[PNG_FILE]: "", [JPEG_FILE]: ""}).output, GENERATED_GAME_FILE);
+        expectLine(withImages, `import {PNG_IMAGE_DECODER} from "@jsengine/engine/assets/image/png";`);
+        expectLine(withImages, `import {JPEG_IMAGE_DECODER} from "@jsengine/engine/assets/image/jpeg";`);
+        expectLine(withImages, `export const projectImageDecoders: readonly ImageDecoderEntry[] = [PNG_IMAGE_DECODER, JPEG_IMAGE_DECODER];`);
+        expectLine(withImages, `        imageDecoders: projectImageDecoders,`);
+        const withoutImages = linesOf(generateFixture(GAME_GENERATOR, {name: "Words"}).output, GENERATED_GAME_FILE);
+        expectLine(withoutImages, `export const projectImageDecoders: readonly ImageDecoderEntry[] = [];`);
+        expect(withoutImages.some(line => line.includes("assets/image/png") || line.includes("assets/image/jpeg"))).toBe(false);
     });
 
     test("is deterministic", () => {
@@ -97,8 +110,10 @@ describe("mains generator", () => {
         expectLine(lines, `import {startProject} from "./game";`);
         expectLine(lines, "const PROJECT_DIRECTORY = `${__dirname}/..`;");
         expectLine(lines, `runTerminalGame("Terminal Game", async (world, presenter) => {`);
-        expectLine(lines, `    installCellsBackend(world, presenter, CELLS_STANDARD_PASSES);`);
-        expectLine(lines, `    await startProject(world, {directory: PROJECT_DIRECTORY, backendSystems: generatedCellsSystems});`);
+        expectLine(lines, `import {generatedCellsPasses, generatedCellsSystems} from "./systems.cells";`);
+        expectLine(lines, `import {generatedCellsSchemas} from "./schemas.cells";`);
+        expectLine(lines, `    installCellsBackend(world, presenter, generatedCellsPasses);`);
+        expectLine(lines, `    await startProject(world, {directory: PROJECT_DIRECTORY, backendSystems: generatedCellsSystems, hostSchemas: generatedCellsSchemas});`);
     });
 
     test("web mains name the bundles after the project folder and the worker reads the project's site folder", () => {
@@ -108,8 +123,8 @@ describe("mains generator", () => {
         expectLine(linesOf(output, webPageMainFile("pixels")), `startWorldPage("${slug}-pixels.worker.js", "Web Game", pixelCanvasDisplayFromQuery);`);
         const worker = linesOf(output, webWorkerMainFile("pixels"));
         expectLine(worker, `const PROJECT_DIRECTORY = "${slug}";`);
-        expectLine(worker, `    installPixelsBackend(world, presenter, PIXELS_STANDARD_PASSES);`);
-        expectLine(worker, `    await runProjectInWorker(world, page, files, {directory: PROJECT_DIRECTORY, startProject, backendSystems: generatedPixelsSystems});`);
+        expectLine(worker, `    installPixelsBackend(world, presenter, generatedPixelsPasses);`);
+        expectLine(worker, `    await runProjectInWorker(world, page, files, {directory: PROJECT_DIRECTORY, startProject, backendSystems: generatedPixelsSystems, hostSchemas: generatedPixelsSchemas});`);
     });
 
     test("the gpu worker asks for the device before it creates the world", () => {
@@ -117,12 +132,20 @@ describe("mains generator", () => {
         const device = lines.indexOf(`    const device = await requestGpuDevice(page);`);
         const world = lines.indexOf(`    const world = new App({platform: page.platform}).createDebugWorld();`);
         expect(device >= 0 && world > device).toBe(true);
-        expectLine(lines, `    installGpuBackend(world, device, presenter, GPU_STANDARD_PASSES);`);
+        expectLine(lines, `    installGpuBackend(world, device, presenter, generatedGpuPasses);`);
     });
 
-    test("the editor main hands the editor the entry's startProject and every system list", () => {
-        const lines = linesOf(generateFixture(MAINS_GENERATOR, {name: "Edited"}).output, EDITOR_WORKER_MAIN_FILE);
-        expectLine(lines, `runProjectEditorWorker(startProject, {shared: generatedSystems, backends: {cells: generatedCellsSystems, pixels: generatedPixelsSystems, gpu: generatedGpuSystems}});`);
+    test("each backend gets an editor main that hands the editor the entry's startProject, its system lists and its installer with every standard pass", () => {
+        const {output} = generateFixture(MAINS_GENERATOR, {name: "Edited"});
+        const cells = linesOf(output, editorWorkerMainFile("cells"));
+        expectLine(cells, `runProjectEditorWorker(startProject, {shared: generatedSystems, backend: generatedCellsSystems}, async (world, page) => {`);
+        expectLine(cells, `    const presenter = page.cellPresenter();`);
+        expectLine(cells, `    installCellsBackend(world, presenter, CELLS_STANDARD_PASSES);`);
+        expect(cells.some(line => line.includes("Pixels") || line.includes("Gpu"))).toBe(false);
+        const gpu = linesOf(output, editorWorkerMainFile("gpu"));
+        expectLine(gpu, `    const device = await requestGpuDevice(page);`);
+        expectLine(gpu, `    installGpuBackend(world, device, presenter, GPU_STANDARD_PASSES);`);
+        expectLine(linesOf(output, editorWorkerMainFile("pixels")), `    installPixelsBackend(world, presenter, PIXELS_STANDARD_PASSES);`);
     });
 
     test("every main starts the manifest's own entry when it names one", () => {

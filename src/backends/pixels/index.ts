@@ -11,7 +11,7 @@ export type {PixelScreenSize} from "./pixelCameraSizingSystem";
 export {PixelTextRasterizer} from "./pixelTextRasterizer";
 export {TextSpritePixelPassSystem} from "./textSpritePixelPassSystem";
 export {HudTextSpritePixelPassSystem} from "./hudTextSpritePixelPassSystem";
-export {registerPixelsComponentSchemas} from "./pixelsComponentSchemas";
+export {PIXELS_SCHEMAS, registerPixelsComponentSchemas} from "./pixelsComponentSchemas";
 
 export * as TwoD from "./2d";
 export * as ThreeD from "./3d";
