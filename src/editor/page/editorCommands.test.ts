@@ -173,6 +173,8 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
         showKeyboardShortcuts: () => calls.push("shortcuts"),
         openSceneChooser: () => calls.push("openSceneChooser"),
         openProjectSettings: () => calls.push("openProjectSettings"),
+        buildUnavailableReason: () => undefined,
+        openBuildWindow: () => calls.push("openBuildWindow"),
     };
     const registry = new CommandRegistry();
     const commands = registerEditorCommands(registry, host);
@@ -230,10 +232,10 @@ describe("editor menu bar", () => {
         const menus = menuBarItems(fakeEditor());
         expect([...menus.keys()]).toEqual(["File", "Edit", "Assets", "Entity", "Window", "Help"]);
         expect(labels(menuNamed(menus, "File"))).toEqual([
-            "New Scene", "Open Scene…", "Open Recent", "-", "Save", "Save As…", "Save All", "-", "Set as Start Scene", "Project Settings…", "-", "Close Project",
+            "New Scene", "Open Scene…", "Open Recent", "-", "Save", "Save As…", "Save All", "-", "Set as Start Scene", "Project Settings…", "Build…", "-", "Close Project",
         ]);
         expect(labels(menuNamed(menus, "Edit"))).toEqual([
-            "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Duplicate", "Rename", "Delete", "-", "Select All", "Frame Selected", "-", "Play", "Pause", "Step", "-", "Preferences…",
+            "Undo", "Redo", "Undo History", "-", "Cut", "Copy", "Paste", "Duplicate", "Rename", "Delete", "-", "Select All", "Frame Selected", "-", "Play", "Pause", "Step", "-", "Preferences…",
         ]);
         expect(labels(menuNamed(menus, "Assets"))).toEqual(["Create", "-", "Show in Explorer", "Refresh"]);
         expect(labels((find(menuNamed(menus, "Assets"), "Create") as MenuSubmenu).items)).toEqual(["Folder", "Scene", "Prefab", "Script", "-", "Data Asset"]);
@@ -241,7 +243,7 @@ describe("editor menu bar", () => {
             "Create Empty", "Create Empty Child", "-", "Camera", "Sprite", "Text", "Mesh", "-", "Directional Light", "Point Light", "Ambient Light",
         ]);
         expect(labels(menuNamed(menus, "Window"))).toEqual([
-            "Scene View", "Game View", "Maximize on Play", "Stats", "-", "Project", "Console", "Settings", "Data Assets", "-", "Hierarchy", "Inspector", "Bottom Panel", "-", "Reset Layout",
+            "Scene View", "Game View", "Maximize on Play", "Stats", "-", "Project", "Console", "History", "Settings", "Data Assets", "-", "Hierarchy", "Inspector", "Bottom Panel", "-", "Reset Layout",
         ]);
         expect(labels(menuNamed(menus, "Help"))).toEqual(["Command Palette…", "Keyboard Shortcuts"]);
     });
@@ -277,6 +279,16 @@ describe("editor menu bar", () => {
         expect(editor.calls).toEqual(["openProjectSettings"]);
     });
 
+    test("Build… waits for the game, then opens the build window", () => {
+        const editor = fakeEditor();
+        expect(action(menuNamed(menuBarItems(editor), "File"), "Build…").title).toBe(WAITING_REASON);
+        editor.mount();
+        const build = action(menuNamed(menuBarItems(editor), "File"), "Build…");
+        expect(build.disabled).toBe(false);
+        build.run();
+        expect(editor.calls).toEqual(["openBuildWindow"]);
+    });
+
     test("before the game connects, editing commands wait while window, palette and help commands work", () => {
         const editor = fakeEditor();
         const menus = menuBarItems(editor);
@@ -287,6 +299,9 @@ describe("editor menu bar", () => {
         }
         action(menuNamed(menus, "Window"), "Console").run();
         expect(action(menuNamed(menuBarItems(editor), "Window"), "Console").checked).toBe(true);
+        expect(action(menuNamed(menus, "Edit"), "Undo History").disabled).toBe(false);
+        action(menuNamed(menus, "Edit"), "Undo History").run();
+        expect(action(menuNamed(menuBarItems(editor), "Window"), "History").checked).toBe(true);
     });
 
     test("Close Project works only when the page can return to the start screen", () => {

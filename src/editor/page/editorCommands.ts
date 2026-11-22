@@ -57,6 +57,10 @@ export interface EditorCommandHost {
     openSceneChooser(): void;
 
     openProjectSettings(): void;
+
+    buildUnavailableReason(): string | undefined;
+
+    openBuildWindow(): void;
 }
 
 export interface DataAssetCreation {
@@ -86,6 +90,7 @@ export interface FileCommands {
     readonly saveAll: Command<void>;
     readonly setStartScene: Command<string | undefined>;
     readonly projectSettings: Command<void>;
+    readonly build: Command<void>;
     readonly closeProject: Command<void>;
 }
 
@@ -102,6 +107,7 @@ export interface SceneCommands {
 export interface EditCommands {
     readonly undo: Command<void>;
     readonly redo: Command<void>;
+    readonly undoHistory: Command<void>;
     readonly cut: Command<readonly Entity[]>;
     readonly copy: Command<readonly Entity[]>;
     readonly paste: Command<void>;
@@ -241,6 +247,7 @@ const NO_COMPONENT_VALUES_REASON = "Nothing to copy yet";
 const NO_COPIED_VALUES_REASON = "No component values copied";
 const UNDO_LABEL = "Undo";
 const REDO_LABEL = "Redo";
+const HISTORY_TAB: BottomTab = "history";
 const PLAY_LABEL = "Play";
 const STOP_LABEL = "Stop";
 const OPEN_LABEL = "Open";
@@ -398,6 +405,10 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             },
         }),
         projectSettings: action("file.projectSettings", FILE_CATEGORY, "Project Settings…", () => host.openProjectSettings()),
+        build: action("file.build", FILE_CATEGORY, "Build…", () => host.openBuildWindow(), {
+            shortcuts: ["Ctrl+Shift+B"],
+            disabledReason: () => blocked() ?? host.buildUnavailableReason(),
+        }),
         closeProject: registry.add({
             id: "file.closeProject",
             category: FILE_CATEGORY,
@@ -471,6 +482,7 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             disabledReason: whenOpen(({workspace}) => !workspace.recording ? REDO_WHILE_PLAYING_REASON : workspace.undo.canRedo ? undefined : NOTHING_TO_REDO_REASON),
             explainsWhenDisabled: playing,
         }),
+        undoHistory: registry.add({id: "edit.undoHistory", category: EDIT_CATEGORY, label: "Undo History", run: () => host.showBottomTab(HISTORY_TAB)}),
         cut: registry.addTargeted<readonly Entity[]>({
             id: "edit.cut", category: EDIT_CATEGORY, label: "Cut", shortcuts: ["Ctrl+X"], target: selection,
             disabledReason: entities => blocked() ?? selectionProblem(entities),

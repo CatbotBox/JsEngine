@@ -22,19 +22,24 @@ import {isLayoutMaximized} from "./gameViewOptions";
 import {GameStatsOverlay} from "./gameStatsOverlay";
 import {HierarchyView} from "./hierarchyView";
 import type {Key} from "../../engine/input/key";
-import type {GenerateProjectReport} from "../project/projectServerApi";
+import type {GenerateProjectReport, PackageResult, TargetReportResult} from "../project/projectServerApi";
+import type {ProjectTarget} from "../../engine/project/projectTargets";
+import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {InspectorView} from "./inspectorView";
 import {MenuBar} from "./menuBar";
 import {clampPanelSizes, DEFAULT_PANEL_SIZES, PANEL_SIZES_STORAGE_KEY, panelSizesText, parsePanelSizes, resizedPanel} from "./panelSizes";
 import type {AvailableArea, PanelSizeKey, PanelSizes} from "./panelSizes";
 import {sceneAndPrefabPaths} from "./projectFiles";
 import {ProjectSettingsWindow} from "./projectSettingsWindow";
+import {openBuildWindow} from "./buildWindow";
+import type {BuildWindow} from "./buildWindow";
 import {ProjectView} from "./projectView";
 import {RotationEulerCache} from "./rotationEulerCache";
 import {SceneTabsView} from "./sceneTabsView";
 import {SceneView} from "./sceneView";
 import {SettingsView} from "./settingsView";
 import {showKeyboardShortcuts} from "./shortcutsDialog";
+import {UndoHistoryView} from "./undoHistoryView";
 
 export const EDITOR_VIEWPORT_ID = "viewport";
 export const BOTTOM_TAB_STORAGE_KEY = "jsengine.editor.bottomTab";
@@ -63,10 +68,19 @@ const OPEN_SCENE_LABEL = "Open scene";
 const OPEN_SCENE_PLACEHOLDER = "Search scenes and prefabs";
 const NO_SCENES_TEXT = "No scenes or prefabs in the project";
 
+export interface ProjectBuildServices {
+    readonly targetReport: (target: ProjectTarget) => Promise<TargetReportResult>;
+    readonly packageProject: () => Promise<PackageResult>;
+    readonly unavailableReason?: string;
+}
+
+export const BUILD_NEEDS_SERVER_REASON = "Building needs the project server: open the project through the dev server or the desktop app";
+
 export interface EditorShellOptions {
     readonly targetLabel?: string;
     readonly closeProject?: () => void;
     readonly generate?: () => Promise<GenerateProjectReport>;
+    readonly projectBuild?: ProjectBuildServices;
     readonly keyOfEvent?: (event: KeyboardEvent) => Key | undefined;
 }
 
@@ -88,6 +102,7 @@ interface ShellLayout {
     readonly bottomTabs: HTMLElement;
     readonly projectPanel: HTMLElement;
     readonly consolePanel: HTMLElement;
+    readonly historyPanel: HTMLElement;
     readonly settingsPanel: HTMLElement;
     readonly assetsPanel: HTMLElement;
     readonly splitters: ReadonlyMap<PanelSizeKey, HTMLElement>;
@@ -134,14 +149,15 @@ function buildLayout(body: HTMLElement): ShellLayout {
     stage.append(viewport, overlay);
     center.append(sceneTabs, prefabBreadcrumb, viewTabs, stage);
     const inspector = panel(document, "aside", "editor-inspector editor-panel", "Inspector");
-    const bottom = panel(document, "section", "editor-bottom", "Project, Console, Settings and Data Assets");
+    const bottom = panel(document, "section", "editor-bottom", "Project, Console, History, Settings and Data Assets");
     const bottomTabs = createElement(document, "div", "editor-tabs bottom-tabs");
     bottomTabs.setAttribute("role", "tablist");
     const projectPanel = createElement(document, "div", "bottom-panel project-panel");
     const consolePanel = createElement(document, "div", "bottom-panel console-panel");
+    const historyPanel = createElement(document, "div", "bottom-panel undo-history-panel");
     const settingsPanel = createElement(document, "div", "bottom-panel settings-panel");
     const assetsPanel = createElement(document, "div", "bottom-panel data-assets-panel");
-    bottom.append(bottomTabs, projectPanel, consolePanel, settingsPanel, assetsPanel);
+    bottom.append(bottomTabs, projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel);
     const splitters = new Map<PanelSizeKey, HTMLElement>();
     for (const key of ["hierarchyWidthPx", "inspectorWidthPx", "bottomHeightPx"] as const) {
         const splitter = createElement(document, "div", `splitter splitter-${key}`);
@@ -150,11 +166,11 @@ function buildLayout(body: HTMLElement): ShellLayout {
         splitters.set(key, splitter);
     }
     root.append(menuRow, toolbar, hierarchy, splitters.get("hierarchyWidthPx")!, center, splitters.get("inspectorWidthPx")!, inspector, splitters.get("bottomHeightPx")!, bottom);
-    for (const element of [hierarchy, inspector, projectPanel, settingsPanel, assetsPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
+    for (const element of [hierarchy, inspector, projectPanel, historyPanel, settingsPanel, assetsPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
     body.append(root);
     return {
         root, menuRow, menuStatus, toolbar, hierarchy, center, sceneTabs, prefabBreadcrumb, viewTabs, stage, viewport, overlay, inspector, bottom, bottomTabs,
-        projectPanel, consolePanel, settingsPanel, assetsPanel, splitters,
+        projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel, splitters,
     };
 }
 
@@ -259,6 +275,7 @@ class EditorShellImplementation implements EditorShell {
     private targetLabel: string;
     private gameTargetMenu: readonly MenuEntry[] | undefined;
     private projectSettings: ProjectSettingsWindow | undefined;
+    private buildWindow: BuildWindow | undefined;
     private readonly bottomTabButtons = new Map<BottomTab, HTMLButtonElement>();
     private readonly viewTabButtons = new Map<EditorView, HTMLButtonElement>();
 
@@ -302,6 +319,7 @@ class EditorShellImplementation implements EditorShell {
         const project = new ProjectView(this.layout.projectPanel, workspace, this.editorCommands, {rebuildsOnCodeChange: this.options.generate !== undefined});
         const consoleView = new ConsoleView(this.layout.consolePanel, workspace);
         consoleView.onCountsChanged(() => this.showConsoleBadge(workspace));
+        new UndoHistoryView(this.layout.historyPanel, workspace);
         const scene = new SceneView(this.layout.stage, this.viewport, this.layout.overlay, workspace);
         this.layout.stage.append(new GameStatsOverlay(this.document, workspace, this.viewport, () => this.targetLabel).element);
         const settings = new SettingsView(this.layout.settingsPanel, workspace, rotations);
@@ -369,6 +387,8 @@ class EditorShellImplementation implements EditorShell {
             showKeyboardShortcuts: () => showKeyboardShortcuts(this.document, this.commands.all()),
             openSceneChooser: () => this.openSceneChooser(),
             openProjectSettings: () => this.openProjectSettings(),
+            buildUnavailableReason: () => this.options.projectBuild === undefined ? BUILD_NEEDS_SERVER_REASON : this.options.projectBuild.unavailableReason,
+            openBuildWindow: () => this.openBuildWindow(),
         };
     }
 
@@ -413,6 +433,7 @@ class EditorShellImplementation implements EditorShell {
         }
         this.layout.projectPanel.hidden = tab !== "project";
         this.layout.consolePanel.hidden = tab !== "console";
+        this.layout.historyPanel.hidden = tab !== "history";
         this.layout.settingsPanel.hidden = tab !== "settings";
         this.layout.assetsPanel.hidden = tab !== "assets";
         this.mounted?.settings.setVisible(tab === "settings");
@@ -519,6 +540,28 @@ class EditorShellImplementation implements EditorShell {
             onFilesChanged: listener => workspace.session.files.onChange(listener),
         }, () => {
             this.projectSettings = undefined;
+        });
+    }
+
+    private openBuildWindow(): void {
+        const workspace = this.mounted?.workspace;
+        const projectBuild = this.options.projectBuild;
+        if (workspace === undefined || projectBuild === undefined) return;
+        if (this.buildWindow !== undefined) {
+            this.buildWindow.focus();
+            return;
+        }
+        this.buildWindow = openBuildWindow({
+            document: this.document,
+            services: {
+                readManifest: () => workspace.session.files.readText(PROJECT_MANIFEST_FILE),
+                targetReport: projectBuild.targetReport,
+                packageProject: projectBuild.packageProject,
+                log: (level, text) => workspace.log(level, text),
+            },
+            ...(projectBuild.unavailableReason === undefined ? {} : {unavailableReason: projectBuild.unavailableReason}),
+        }, () => {
+            this.buildWindow = undefined;
         });
     }
 

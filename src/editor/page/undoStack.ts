@@ -439,6 +439,13 @@ interface UndoEntry {
     coalesceKey: string | undefined;
 }
 
+export interface UndoHistory {
+    readonly doneOldestFirst: readonly string[];
+    readonly undoneNextFirst: readonly string[];
+}
+
+const INITIAL_DEPTH = 0;
+
 export class UndoStack {
     private readonly done: UndoEntry[] = [];
     private readonly undone: UndoEntry[] = [];
@@ -465,6 +472,23 @@ export class UndoStack {
 
     public get depth(): number {
         return this.done.length;
+    }
+
+    public get history(): UndoHistory {
+        return {
+            doneOldestFirst: this.done.map(entry => entry.command.label),
+            undoneNextFirst: this.undone.map(entry => entry.command.label).reverse(),
+        };
+    }
+
+    public async jumpTo(depth: number): Promise<void> {
+        const target = Math.min(Math.max(depth, INITIAL_DEPTH), this.done.length + this.undone.length);
+        while (this.done.length > target) {
+            if (!(await this.undo())) return;
+        }
+        while (this.done.length < target) {
+            if (!(await this.redo())) return;
+        }
     }
 
     public push(command: UndoCommand, coalesceKey?: string): void {

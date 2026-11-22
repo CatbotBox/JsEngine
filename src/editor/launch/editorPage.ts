@@ -1,6 +1,7 @@
 import {installDomInput, keyOf} from "../../hosts/web/domInput";
 import {webGpuUsable} from "../../hosts/web/renderBackendBootstrap";
 import {createEditorShell} from "../page/editorShell";
+import type {ProjectBuildServices} from "../page/editorShell";
 import {DirectoryHandleProjectFileSystem} from "../project/directoryHandleProjectFileSystem";
 import type {DirectoryHandleLike} from "../project/directoryHandleProjectFileSystem";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
@@ -71,6 +72,7 @@ interface ProjectLaunch {
     readonly events?: ServerEventStream;
     readonly editorExtensionsUrl?: string;
     readonly generate?: () => Promise<GenerateProjectReport>;
+    readonly projectBuild?: ProjectBuildServices;
 }
 
 interface DirectoryPickerWindow {
@@ -233,7 +235,13 @@ class EditorStart {
         };
         const launched = {...target, gameTarget: built.gameTarget};
         const generate = () => server.generate(opened.id);
-        await this.launch({manifest, files, workerUrl: built.workerUrl, target: launched, switching, buildWarnings: built.warnings, events, editorExtensionsUrl: built.editorExtensionsUrl, generate});
+        const unavailableReason = server.capabilities.buildUnavailableReason;
+        const projectBuild: ProjectBuildServices = {
+            targetReport: buildTarget => server.targetReport(opened.id, buildTarget),
+            packageProject: () => server.packageProject(opened.id),
+            ...(unavailableReason === undefined ? {} : {unavailableReason}),
+        };
+        await this.launch({manifest, files, workerUrl: built.workerUrl, target: launched, switching, buildWarnings: built.warnings, events, editorExtensionsUrl: built.editorExtensionsUrl, generate, projectBuild});
     }
 
     private async openWithDirectoryPicker(): Promise<void> {
@@ -281,6 +289,7 @@ class EditorStart {
             closeProject: () => location.assign(location.pathname),
             keyOfEvent: keyOf,
             ...(launch.generate === undefined ? {} : {generate: launch.generate}),
+            ...(launch.projectBuild === undefined ? {} : {projectBuild: launch.projectBuild}),
         });
         let projectTargets: ProjectTargets | undefined = launch.manifest.targets;
         const pixelScaleOf = (gameTarget: GameTarget): number | undefined => targetRenderDefaults(projectTargets, gameTarget.target).pixelScale;

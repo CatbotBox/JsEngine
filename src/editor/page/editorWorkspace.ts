@@ -255,8 +255,8 @@ export class EditorWorkspace implements UndoContext {
         for (const listener of this.listeners.get(topic) ?? []) listener();
     }
 
-    public log(level: EditorConsoleLevel, text: string, timeMs: number = Date.now()): void {
-        const append = this.consoleLog.add(level, text, timeMs);
+    public log(level: EditorConsoleLevel, text: string, timeMs: number = Date.now(), stack?: string): void {
+        const append = this.consoleLog.add(level, text, timeMs, stack);
         for (const listener of this.consoleListeners) listener(append);
     }
 
@@ -531,6 +531,17 @@ export class EditorWorkspace implements UndoContext {
         }
         await this.run(async () => {
             await this.undo.redo();
+        });
+    }
+
+    public async jumpToHistory(depth: number): Promise<void> {
+        if (!this.recording) {
+            this.notice("warn", "The undo history is not available while the game runs; stop it first");
+            return;
+        }
+        const history = this.undo;
+        await this.run(async () => {
+            if (this.undo === history) await history.jumpTo(depth);
         });
     }
 
@@ -914,7 +925,7 @@ export class EditorWorkspace implements UndoContext {
     private receive(event: EditorEvent): void {
         switch (event.kind) {
             case "console":
-                this.log(event.level, event.text, event.timeMs);
+                this.log(event.level, event.text, event.timeMs, event.stack);
                 return;
             case "worldStopped":
                 this.worldStoppedError = event.error;
