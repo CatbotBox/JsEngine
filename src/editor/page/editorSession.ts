@@ -4,6 +4,7 @@ import type {ProjectFileSystem} from "../project/projectFileSystem";
 import type {MenuEntry} from "./commandMenus";
 import type {CommandRegistry} from "./commandRegistry";
 import type {EditorClient} from "./editorClient";
+import type {StackMapper} from "./stackMapper";
 
 export interface EditorProject {
     readonly name: string;
@@ -19,6 +20,7 @@ export interface EditorSession {
     readonly events: EditorEventSource;
     readonly files: ProjectFileSystem;
     readonly project: EditorProject;
+    readonly stackMapper?: StackMapper;
 }
 
 export type EntityRemap = ReadonlyMap<Entity, Entity>;

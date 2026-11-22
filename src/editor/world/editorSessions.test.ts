@@ -110,6 +110,7 @@ describe("editor robustness", () => {
         FailingRenderSystem.failNext = true;
         expect(await waitUntil(() => eventsOfKind(harnessed, "worldStopped").length > 0)).toBe(true);
         expect(eventsOfKind(harnessed, "worldStopped")[0].error).toBe("render exploded");
+        expect(eventsOfKind(harnessed, "worldStopped")[0].stack?.includes("editorSessions.test.ts")).toBe(true);
         const frames = harnessed.probe.frames;
         expect(await waitUntil(() => eventsOfKind(harnessed, "console").some(event => event.level === "error"))).toBe(true);
         expect(harnessed.probe.frames).toBe(frames);

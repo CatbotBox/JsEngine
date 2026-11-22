@@ -7,6 +7,7 @@ import type {CellArea} from "../../hosts/web/domInput";
 import {sameGameTarget} from "../project/editorSettings";
 import type {GameTarget} from "../project/editorSettings";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
+import {BundleStackMapper} from "../page/stackMapper";
 import type {EditorViewport} from "./editorViewport";
 import {gameTargetLabelText} from "./gameTargets";
 import {ProjectWorkerSession} from "./projectWorkerSession";
@@ -91,6 +92,7 @@ export class ProjectRunner {
         enqueue: (event: InputEvent) => this.current?.input.enqueue(event),
     };
 
+    private readonly stackMapper = new BundleStackMapper(location.href);
     private current: ProjectWorkerSession | undefined;
     private viewport: EditorViewport;
     private mounted = false;
@@ -137,6 +139,7 @@ export class ProjectRunner {
     }
 
     private startSession(workerUrl: string, viewport: EditorViewport, visibility: SessionVisibility): Promise<ProjectWorkerSession> {
+        this.stackMapper.addBundle(workerUrl);
         return ProjectWorkerSession.start({
             workerUrl,
             viewport,
@@ -152,7 +155,7 @@ export class ProjectRunner {
     }
 
     private editorSession(session: ProjectWorkerSession): EditorSession {
-        return {client: session.client, events: session.events, files: this.options.files, project: this.options.project};
+        return {client: session.client, events: session.events, files: this.options.files, project: this.options.project, stackMapper: this.stackMapper};
     }
 
     private notice(level: EditorNoticeLevel, text: string): void {

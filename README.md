@@ -43,11 +43,19 @@ optional `entry` names a module of your own exporting the same `startProject`; w
 Without the editor or a manifest, call `startGame(world, {schemas, systems, resources, startScene})` from your own entry
 (`demo/libraryOnly`).
 
+`jsengine build --target web --project <dir>` (or `--target window`) writes that one project to
+`dist/web/<folder>/`: its page, bundles, data files and assets, served at `/<folder>/?backend=pixels`. The page is
+`<dir>/web/index.html` when the project has one (the samples do), else one made from the manifest's `name` and
+`targets.web.backend`. Without `--project` the build covers every sample project, each in its own folder beside the
+landing page. `jsengine package --target window --project <dir>` makes a desktop app of that project alone, named after
+the manifest's `name`.
+
 2D sprites and HUD elements render alongside 3D through the same screen buffer.
 
 ## Deploying the web build
 
-`bun run web:deploy` builds `dist/web-prod` and uploads it to Cloudflare Pages on the account you are logged in to
+`bun run web:deploy` builds the sample projects into `dist/web-prod` (the landing page at `/`, the games at `/2d/`,
+`/3d/` and `/swarm/`) and uploads it to Cloudflare Pages on the account you are logged in to
 (the first run opens a browser to log in). The build fails if the site exceeds Pages' 25 MiB per-file or
 20,000-file limits.
 

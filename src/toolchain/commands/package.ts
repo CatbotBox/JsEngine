@@ -1,9 +1,9 @@
 import {EXIT_SUCCESS, parseOptions, usageError} from "../cliArguments";
 import {requireTargetFeatures} from "../build/featureDetection";
 import {buildWebSite} from "../build/webBuild";
-import {demoSiteOf, demoSitePath} from "../demoSites";
 import {checkWindowPackageInputs, packageWindow} from "../package/windowPackage";
 import {declaredTargetDefaults, projectFolderOf} from "../project";
+import {projectPagePath} from "../projectSites";
 import {BACKEND_OPTION, backendFor, BUILD_TARGETS, PROJECT_OPTION} from "../targets";
 import type {HostTarget} from "../targets";
 import type {CommandResult} from "./command";
@@ -23,11 +23,10 @@ export async function packageCommand(args: readonly string[]): Promise<CommandRe
     if (options.value("target") !== PACKAGED_TARGET) throw usageError(`jsengine package makes desktop apps only; pass --target ${PACKAGED_TARGET}`);
     backendFor(PACKAGED_TARGET, options.value("backend"));
     const folder = projectFolderOf(options.value("project"));
-    const site = demoSiteOf(folder);
     const defaults = declaredTargetDefaults(folder, PACKAGED_TARGET);
-    const page = demoSitePath(site, backendFor(PACKAGED_TARGET, options.value("backend"), defaults.backend), defaults.pixelScale);
+    const page = projectPagePath(folder, backendFor(PACKAGED_TARGET, options.value("backend"), defaults.backend), defaults.pixelScale);
     checkWindowPackageInputs();
-    if (!options.flag("no-build")) requireTargetFeatures(await buildWebSite({prod: false, withEditor: true, target: PACKAGED_TARGET}));
-    await packageWindow({site, page, zip: !options.flag("no-zip")});
+    if (!options.flag("no-build")) requireTargetFeatures(await buildWebSite({prod: false, withEditor: true, target: PACKAGED_TARGET, project: folder}));
+    await packageWindow({project: folder, page, zip: !options.flag("no-zip")});
     return EXIT_SUCCESS;
 }

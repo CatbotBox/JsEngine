@@ -152,9 +152,22 @@ describe("editor views", () => {
         const projected = projectToScreen(info.worldToScreen as Mat4, [3, 2, 7]);
         expect(rounded([projected.x, projected.y, projected.w])).toEqual([11, 6, 1]);
         expect(info.bounds).toEqual([
-            {entity: scene.small, min: [-2, -2, 0], max: [2, 2, 0]},
-            {entity: scene.camera, min: [2, 1, 0], max: [2, 1, 0]},
+            {entity: scene.small, min: [-2, -2, 0], max: [2, 2, 0], pivot: [0, 0, 0], rotation: [0, 0, 0, 1]},
+            {entity: scene.camera, min: [2, 1, 0], max: [2, 1, 0], pivot: [2, 1, 0], rotation: [0, 0, 0, 1]},
         ]);
+    });
+
+    test("view info reports each entity's world pivot and world rotation through its parents", async () => {
+        const scene = {} as Scene2d;
+        const harnessed = editorWorld(world => scene2d(world, scene));
+        expect(await framesPass(harnessed)).toBe(true);
+        const quarterTurn: [number, number, number, number] = [0, 0, Math.SQRT1_2, Math.SQRT1_2];
+        const parent = await ask(harnessed, {op: "createEntity", name: "parent", components: {LocalPosition: {xyz: [10, 0, 0]}, LocalRotation: {xyzw: quarterTurn}}});
+        const child = await ask(harnessed, {op: "createEntity", name: "child", parent: parent.entity, components: {LocalPosition: {xyz: [1, 0, 0]}}});
+        const info = await ask(harnessed, {op: "getViewInfo", view: "game", entities: [child.entity]});
+        const [placed] = info.bounds;
+        expect(rounded(placed.pivot)).toEqual([10, 1, 0]);
+        expect(rounded(placed.rotation)).toEqual(rounded(quarterTurn));
     });
 
     test("2D picking returns the boxes under the point, nearest z then smallest first, skipping HUD and disabled entities", async () => {

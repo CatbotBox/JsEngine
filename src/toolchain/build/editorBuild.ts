@@ -1,6 +1,7 @@
 import {createHash} from "crypto";
 import {mkdirSync, rmSync, statSync, writeFileSync} from "fs";
 import {dirname, isAbsolute, join, relative, resolve, sep} from "path";
+import {pathToFileURL} from "url";
 import type {BuildConfig, BuildOutput, BunPlugin} from "bun";
 import type {ProjectManifest} from "../../engine/project/projectManifest";
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensions";
@@ -73,6 +74,16 @@ export const ENGINE_IMPORTS: BunPlugin = {
         build.onResolve({filter: ENGINE_IMPORT_FILTER}, args => {
             const path = engineImportPath(args.path);
             return path === undefined ? undefined : {path};
+        });
+    },
+};
+
+export const EXTERNAL_ENGINE_IMPORTS: BunPlugin = {
+    name: "jsengine-external-imports",
+    setup(build) {
+        build.onResolve({filter: ENGINE_IMPORT_FILTER}, args => {
+            const path = engineImportPath(args.path);
+            return path === undefined ? undefined : {path: pathToFileURL(path).href, external: true};
         });
     },
 };

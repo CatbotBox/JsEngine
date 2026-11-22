@@ -35,6 +35,8 @@ import {ConsoleLog} from "./consoleLog";
 import type {ConsoleAppend} from "./consoleLog";
 import {askForText} from "./dialogs";
 import {errorText, readStorage, writeStorage} from "./dom";
+import {ENTITY_TEMPLATE_NAMES, entityTemplateProblem, entityTemplateRequest, hasPerspectiveCamera} from "./entityTemplates";
+import type {EntityTemplate} from "./entityTemplates";
 import {entitySummaryLabel} from "./entityTree";
 import {isInlineAssetSummary} from "./fieldValueText";
 import {parentLookupOf, planMoves, siblingIndexIn, siblingListsOf, subtreeInListOrder, topmostEntities} from "./hierarchyDrop";
@@ -59,7 +61,10 @@ import type {ProjectEntry} from "../project/projectFileSystem";
 import {FileExistenceCommand, newFileSnapshot, ObservedProjectFiles} from "./fileUndo";
 import {GAME_VIEW_OPTIONS_STORAGE_KEY, gameViewOptionsText, parseGameViewOptions, withGameViewOption} from "./gameViewOptions";
 import type {GameViewOptionChoice, GameViewOptions} from "./gameViewOptions";
+import {HANDLE_MODES_STORAGE_KEY, handleModesText, parseHandleModes} from "./handleModes";
+import type {HandleModes} from "./handleModes";
 import {SceneDocuments} from "./sceneDocuments";
+import type {StackMapper} from "./stackMapper";
 import type {TabHistory} from "./sceneDocuments";
 import {parseSnapSteps, SNAP_STEPS_STORAGE_KEY, snapStepsText, withSnapStep} from "./snapSteps";
 import type {SnapStepChoice, SnapSteps} from "./snapSteps";
@@ -148,6 +153,7 @@ export class EditorWorkspace implements UndoContext {
     public view: EditorView = "scene";
     public tool: EditorTool = "move";
     public snapSteps: SnapSteps;
+    public handleModes: HandleModes;
     public gameViewOptions: GameViewOptions;
     public worldStoppedError: string | null = null;
     public schemas = new Map<string, EditorComponentDescription>();
@@ -175,6 +181,7 @@ export class EditorWorkspace implements UndoContext {
 
     public constructor(private currentSession: EditorSession, public readonly document: Document) {
         this.snapSteps = parseSnapSteps(readStorage(document.defaultView, SNAP_STEPS_STORAGE_KEY));
+        this.handleModes = parseHandleModes(readStorage(document.defaultView, HANDLE_MODES_STORAGE_KEY));
         this.gameViewOptions = parseGameViewOptions(readStorage(document.defaultView, GAME_VIEW_OPTIONS_STORAGE_KEY));
         this.scenes = new SceneDocuments(this, currentSession.project.startScene, () => this.createHistory());
         this.files = new ObservedProjectFiles(() => this.currentSession.files, {
@@ -205,6 +212,10 @@ export class EditorWorkspace implements UndoContext {
 
     public get session(): EditorSession {
         return this.currentSession;
+    }
+
+    public get stackMapper(): StackMapper | undefined {
+        return this.currentSession.stackMapper;
     }
 
     public get undo(): UndoStack {
@@ -260,8 +271,8 @@ export class EditorWorkspace implements UndoContext {
         for (const listener of this.consoleListeners) listener(append);
     }
 
-    public notice(level: EditorNoticeLevel, text: string): void {
-        this.log(NOTICE_CONSOLE_LEVELS[level], text);
+    public notice(level: EditorNoticeLevel, text: string, stack?: string): void {
+        this.log(NOTICE_CONSOLE_LEVELS[level], text, Date.now(), stack);
         this.status = {level, text};
         this.emit("status");
     }
@@ -365,6 +376,12 @@ export class EditorWorkspace implements UndoContext {
     public setSnapStep(choice: SnapStepChoice): void {
         this.snapSteps = withSnapStep(this.snapSteps, choice);
         writeStorage(this.document.defaultView, SNAP_STEPS_STORAGE_KEY, snapStepsText(this.snapSteps));
+        this.emit("state");
+    }
+
+    public setHandleModes(modes: HandleModes): void {
+        this.handleModes = modes;
+        writeStorage(this.document.defaultView, HANDLE_MODES_STORAGE_KEY, handleModesText(modes));
         this.emit("state");
     }
 
@@ -558,6 +575,19 @@ export class EditorWorkspace implements UndoContext {
         await this.run(async () => {
             const created = await this.request(parent === null ? {op: "createEntity", name: DEFAULT_ENTITY_NAME} : {op: "createEntity", name: DEFAULT_ENTITY_NAME, parent});
             await this.recordCreation(parent === null ? "Create Empty" : "Create Empty Child", [created.entity]);
+            this.select([created.entity]);
+        });
+    }
+
+    public templateProblem(template: EntityTemplate): string | undefined {
+        return entityTemplateProblem(template, new Set(this.schemas.keys()));
+    }
+
+    public async createFromTemplate(template: EntityTemplate): Promise<void> {
+        await this.run(async () => {
+            const context = {knownTypeNames: new Set(this.schemas.keys()), perspective: hasPerspectiveCamera(this.entities)};
+            const created = await this.request(entityTemplateRequest(template, context));
+            await this.recordCreation(`Create ${ENTITY_TEMPLATE_NAMES[template]}`, [created.entity]);
             this.select([created.entity]);
         });
     }
@@ -929,7 +959,7 @@ export class EditorWorkspace implements UndoContext {
                 return;
             case "worldStopped":
                 this.worldStoppedError = event.error;
-                this.notice("error", `World stopped: ${event.error}`);
+                this.notice("error", `World stopped: ${event.error}`, event.stack);
                 this.emit("state");
                 return;
             case "modeChanged":

@@ -1,12 +1,18 @@
 import {
+    AXIS_X,
+    AXIS_Y,
+    AXIS_Z,
+    boundsCenter,
     conjugateQuaternion,
     IDENTITY_QUATERNION,
     multiplyQuaternions,
     normalizeQuaternion,
     quaternionFromAxisAngle,
     rotateVector,
+    unionOfBounds,
 } from "./editorCameraMath";
 import type {Quaternion, Vector3} from "./editorCameraMath";
+import type {HandlePosition} from "./handleModes";
 
 export type Matrix3 = readonly number[];
 
@@ -15,8 +21,17 @@ export interface LocalTransform {
     readonly scale: Vector3;
 }
 
+export interface EntityPlacement<E> {
+    readonly entity: E;
+    readonly min: Vector3;
+    readonly max: Vector3;
+    readonly pivot: Vector3;
+    readonly rotation: Quaternion;
+}
+
 export const IDENTITY_MATRIX3: Matrix3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 export const UNIT_SCALE: Vector3 = [1, 1, 1];
+export const WORLD_AXES: readonly Vector3[] = [AXIS_X, AXIS_Y, AXIS_Z];
 
 const SIZE = 3;
 const SINGULAR_DETERMINANT = 1e-12;
@@ -85,4 +100,19 @@ export function rotatedAboutWorldAxis(local: Quaternion, parentWorld: Quaternion
 export function localDeltaOf(parentLinear: Matrix3, worldDelta: Vector3): Vector3 {
     const inverse = invertMatrix3(parentLinear);
     return inverse === undefined ? worldDelta : applyMatrix3(inverse, worldDelta);
+}
+
+export function handleOrigin<E>(placed: readonly EntityPlacement<E>[], primary: E | undefined, position: HandlePosition): Vector3 | undefined {
+    if (position === "pivot") return (placed.find(placement => placement.entity === primary) ?? placed[placed.length - 1])?.pivot;
+    const union = unionOfBounds(placed);
+    return union === undefined ? undefined : boundsCenter(union.min, union.max);
+}
+
+export function handleAxisRotation<E>(placed: readonly EntityPlacement<E>[], primary: E | undefined, alongEntity: boolean): Quaternion {
+    if (!alongEntity) return IDENTITY_QUATERNION;
+    return (placed.find(placement => placement.entity === primary) ?? placed[placed.length - 1])?.rotation ?? IDENTITY_QUATERNION;
+}
+
+export function handleAxes(rotation: Quaternion, axisCount: number): Vector3[] {
+    return WORLD_AXES.slice(0, axisCount).map(axis => rotateVector(rotation, axis));
 }

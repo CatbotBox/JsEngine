@@ -12,11 +12,11 @@ import {
     generatedBackendSchemasFile,
     generatedBackendSystemsExport,
     generatedBackendSystemsFile,
-    projectSiteDirectory,
     projectSlug,
     START_PROJECT_EXPORT,
     TERMINAL_MAIN_FILE,
     WEB_PAGE_BOOTSTRAP_FILE,
+    WEB_PROJECT_DIRECTORY,
     webBundleFile,
     webPageBundle,
     webPageMainFile,
@@ -30,7 +30,7 @@ import type {ModuleImport} from "./generatedModule";
 import type {ProjectSources} from "./projectSources";
 
 export const MAINS_GENERATOR_NAME = "mains";
-export const MAINS_GENERATOR_VERSION = 3;
+export const MAINS_GENERATOR_VERSION = 4;
 export const MAINS_GENERATED_HEADER = generatedFileHeader(MAINS_GENERATOR_NAME, MAINS_GENERATOR_VERSION);
 
 interface ModuleExport {
@@ -89,14 +89,12 @@ const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
 
 class MainsWriter {
     private readonly slug: string;
-    private readonly siteDirectory: string;
     private readonly gameName: string;
     private readonly entryModule: string;
     private readonly webSettings: ProjectTargetSettings;
 
     public constructor(private readonly sources: ProjectSources) {
         this.slug = projectSlug(sources.folder);
-        this.siteDirectory = projectSiteDirectory(sources.folder);
         this.gameName = sources.manifest?.name ?? this.slug;
         this.entryModule = sources.projectModule(sources.manifest?.entry ?? DEFAULT_ENTRY_FILE);
         this.webSettings = targetSettingsOf(sources.manifest?.targets, WEB_TARGET);
@@ -199,7 +197,7 @@ class MainsWriter {
             this.startProjectImport(),
             ...this.backendHostImports(kind),
         ], [
-            `const ${PROJECT_DIRECTORY_CONSTANT} = ${JSON.stringify(this.siteDirectory)};`,
+            `const ${PROJECT_DIRECTORY_CONSTANT} = ${JSON.stringify(WEB_PROJECT_DIRECTORY)};`,
             "",
             "runWorldWorker(async (page, files) => {",
             ...backend.presenterSetup.map(line => GENERATED_INDENT + line),

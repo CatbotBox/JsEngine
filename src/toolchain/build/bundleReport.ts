@@ -4,7 +4,7 @@ import {RENDER_BACKEND_KINDS} from "../../engine/rendering/renderBackend";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 import {DEV_RELOAD_DEFINE} from "../../hosts/web/devReload";
 import {CliError} from "../cliArguments";
-import {DEMO_SITES, demoSiteFolder} from "../demoSites";
+import {sampleProjectPaths} from "../projectSites";
 import {TERMINAL_MAIN_FILE, WEB_PAGE_BOOTSTRAP_FILE, webPageMainFile, webWorkerMainFile} from "../projectLayout";
 import {REPO_ROOT, repoRelative} from "../repoPaths";
 import {featureDefines} from "../targets";
@@ -90,8 +90,8 @@ function projectBundles(project: string): BundleSpec[] {
     ];
 }
 
-function demoBundles(): BundleSpec[] {
-    return DEMO_SITES.flatMap(site => projectBundles(repoRelative(demoSiteFolder(site))));
+function sampleProjectBundles(): BundleSpec[] {
+    return sampleProjectPaths().flatMap(projectBundles);
 }
 
 async function buildBundle(spec: BundleSpec): Promise<BuiltBundle> {
@@ -114,9 +114,9 @@ async function buildBundle(spec: BundleSpec): Promise<BuiltBundle> {
     };
 }
 
-export async function buildDemoBundles(): Promise<BuiltBundle[]> {
+export async function buildSampleProjectBundles(): Promise<BuiltBundle[]> {
     const bundles: BuiltBundle[] = [];
-    for (const spec of demoBundles()) bundles.push(await buildBundle(spec));
+    for (const spec of sampleProjectBundles()) bundles.push(await buildBundle(spec));
     return bundles;
 }
 

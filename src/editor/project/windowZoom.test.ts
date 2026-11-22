@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {DEFAULT_ZOOM_FACTOR, nextZoomFactor, storedZoomFactor, ZOOM_FACTORS, zoomCommandOf, zoomSettingsText} from "./windowZoom";
+import {DEFAULT_ZOOM_FACTOR, nearestZoomFactor, nextZoomFactor, storedZoomFactor, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "./windowZoom";
 
 const KEY_DOWN = {type: "keyDown", control: false, meta: false, alt: false};
 const MIN_ZOOM = ZOOM_FACTORS[0];
@@ -36,5 +36,15 @@ describe("windowZoom", () => {
         expect(storedZoomFactor("not json")).toBe(DEFAULT_ZOOM_FACTOR);
         expect(storedZoomFactor(zoomSettingsText(MAX_ZOOM * 2))).toBe(DEFAULT_ZOOM_FACTOR);
         expect(storedZoomFactor(JSON.stringify({zoomFactor: "2"}))).toBe(DEFAULT_ZOOM_FACTOR);
+    });
+
+    test("a zoom request names a factor in range or nothing; any factor snaps to the nearest listed one", () => {
+        expect(zoomFactorOfText(zoomSettingsText(1.25))).toBe(1.25);
+        expect(zoomFactorOfText("null")).toBeUndefined();
+        expect(zoomFactorOfText("<!doctype html>")).toBeUndefined();
+        expect(zoomFactorOfText(zoomSettingsText(MIN_ZOOM / 2))).toBeUndefined();
+        expect(nearestZoomFactor(1.3)).toBe(1.25);
+        expect(nearestZoomFactor(MAX_ZOOM * 2)).toBe(MAX_ZOOM);
+        expect(nearestZoomFactor(1)).toBe(DEFAULT_ZOOM_FACTOR);
     });
 });

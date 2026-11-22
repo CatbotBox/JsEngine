@@ -1,6 +1,7 @@
 import {runCli} from "../src/toolchain/cli";
 import {EXIT_SUCCESS, EXIT_USAGE} from "../src/toolchain/cliArguments";
-import {DEMO_SITES} from "../src/toolchain/demoSites";
+import type {CommandResult} from "../src/toolchain/commands/command";
+import {sampleProjectPaths} from "../src/toolchain/projectSites";
 
 type SmokeSuite = "window" | "editor";
 type SmokeBackend = "cells" | "pixels" | "gpu";
@@ -19,10 +20,15 @@ const EDITOR_DEFAULT_BACKEND: SmokeBackend = "gpu";
 const EDITOR_GPU_PROJECT_ORDER: readonly string[] = ["demo/3d", "demo/2d", "demo/swarm"];
 const EDITOR_PIXELS_PROJECT_ORDER: readonly string[] = ["demo/2d", "demo/3d", "demo/swarm"];
 const USAGE = "usage: bun scripts/smokeTests.ts [window|editor] [--backend=cells|pixels|gpu]";
+const SHOWCASE_WINDOW_BUILD: readonly string[] = ["build", "--target", "window"];
 
 function windowRuns(backend: SmokeBackend | undefined): SmokeRun[] {
     const backends = backend === undefined ? GAME_BACKENDS : [backend];
-    return backends.flatMap(each => DEMO_SITES.map((site): SmokeRun => ({command: "run", project: site.project, backend: each})));
+    return backends.flatMap(each => sampleProjectPaths().map((project): SmokeRun => ({command: "run", project, backend: each})));
+}
+
+function failWith(exitCode: CommandResult): void {
+    process.exitCode = typeof exitCode === "number" ? exitCode : EXIT_USAGE;
 }
 
 function editorRuns(backend: SmokeBackend = EDITOR_DEFAULT_BACKEND): SmokeRun[] {
@@ -47,11 +53,15 @@ async function main(): Promise<void> {
         return;
     }
     const runs = parsed.suite === "window" ? windowRuns(parsed.backend) : editorRuns(parsed.backend);
-    for (const [index, run] of runs.entries()) {
-        const firstRunBuilds = index === 0 ? [] : ["--no-build"];
-        const exitCode = await runCli([run.command, "--target", "window", "--project", run.project, "--backend", run.backend, "--smoke", ...firstRunBuilds]);
+    const built = await runCli(SHOWCASE_WINDOW_BUILD);
+    if (built !== EXIT_SUCCESS) {
+        failWith(built);
+        return;
+    }
+    for (const run of runs) {
+        const exitCode = await runCli([run.command, "--target", "window", "--project", run.project, "--backend", run.backend, "--smoke", "--no-build"]);
         if (exitCode !== EXIT_SUCCESS) {
-            process.exitCode = typeof exitCode === "number" ? exitCode : EXIT_USAGE;
+            failWith(exitCode);
             return;
         }
     }

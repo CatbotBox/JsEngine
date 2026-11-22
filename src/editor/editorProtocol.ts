@@ -29,6 +29,8 @@ export type EditorVec3 = readonly [number, number, number];
 
 export type EditorQuaternion = readonly [number, number, number, number];
 
+export type EditorComponentValues = {readonly [typeName: string]: SceneJsonObject};
+
 export interface DescribeSchemasRequest {
     readonly op: "describeSchemas";
 }
@@ -79,6 +81,7 @@ export interface CreateEntityRequest {
     readonly op: "createEntity";
     readonly name?: string;
     readonly parent?: Entity;
+    readonly components?: EditorComponentValues;
 }
 
 export interface DestroyEntityRequest {
@@ -524,6 +527,8 @@ export interface EditorEntityBounds {
     readonly entity: Entity;
     readonly min: EditorVec3;
     readonly max: EditorVec3;
+    readonly pivot: EditorVec3;
+    readonly rotation: EditorQuaternion;
 }
 
 export interface EditorViewInfo {
@@ -636,6 +641,7 @@ export interface EditorConsoleEvent {
 export interface EditorWorldStoppedEvent {
     readonly kind: "worldStopped";
     readonly error: string;
+    readonly stack?: string;
 }
 
 export interface EditorModeChangedEvent {
@@ -750,6 +756,10 @@ function isFieldEdit(value: unknown): boolean {
     return isRecord(value) && targetsComponent(value) && isString(value.key) && value.value !== undefined;
 }
 
+function isComponentValues(value: unknown): boolean {
+    return isRecord(value) && Object.values(value).every(isRecord);
+}
+
 function isSceneRef(value: unknown): boolean {
     return isRecord(value) && isWholeNumber(value.id) && (value.path === null || isString(value.path));
 }
@@ -783,7 +793,7 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
         case "removeComponent":
             return targetsComponent(value);
         case "createEntity":
-            return isAbsentOr(value.name, isString) && isAbsentOr(value.parent, isEntityHandle);
+            return isAbsentOr(value.name, isString) && isAbsentOr(value.parent, isEntityHandle) && isAbsentOr(value.components, isComponentValues);
         case "setEnabled":
             return isEntityHandle(value.entity) && typeof value.enabled === "boolean";
         case "renameEntity":
@@ -847,7 +857,7 @@ export function isEditorEvent(value: unknown): value is EditorEvent {
         case "console":
             return isConsoleLevel(value.level) && isString(value.text) && isFiniteNumber(value.timeMs) && isAbsentOr(value.stack, isString);
         case "worldStopped":
-            return isString(value.error);
+            return isString(value.error) && isAbsentOr(value.stack, isString);
         case "modeChanged":
             return isEditorMode(value.mode) && isWholeNumber(value.gameplayTicks) && isEditorView(value.view);
         default:

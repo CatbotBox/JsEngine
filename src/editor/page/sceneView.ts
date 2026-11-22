@@ -1,12 +1,9 @@
 import type {Entity} from "../../engine/core";
 import type {SceneJsonValue} from "../../engine/scene";
 import type {EditorEntityDetails, EditorFieldValue, EditorViewInfo} from "../editorProtocol";
-import {capturePointer, errorText, hasCommandModifier, releasePointer} from "./dom";
+import {capturePointer, errorText, hasCommandModifier, releasePointer, visualScaleOf} from "./dom";
 import {
     addVectors,
-    AXIS_X,
-    AXIS_Y,
-    AXIS_Z,
     degreesToRadians,
     dollyCamera,
     flyCamera,
@@ -19,17 +16,30 @@ import {
     panCamera2d,
     panOrbitCamera,
     poseOfOrbitCamera,
-    rotateVector,
     scaleVector,
     unionOfBounds,
 } from "./editorCameraMath";
 import type {CameraPose, OrbitCamera, Quaternion, Vector3} from "./editorCameraMath";
+import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
 import {numberOfWire} from "./fieldValueText";
 import {parentLookupOf, topmostEntities, UNPARENT_TARGET} from "./hierarchyDrop";
 import {LatestOnly} from "./latestOnly";
 import {isAssetKind} from "./projectFiles";
-import {chainLinear, chainRotation, IDENTITY_MATRIX3, localDeltaOf, rotatedAboutWorldAxis, snapToIncrement, snapVector, UNIT_SCALE} from "./transformMath";
+import {
+    chainLinear,
+    chainRotation,
+    handleAxes,
+    handleAxisRotation,
+    handleOrigin,
+    IDENTITY_MATRIX3,
+    localDeltaOf,
+    rotatedAboutWorldAxis,
+    snapToIncrement,
+    snapVector,
+    UNIT_SCALE,
+    WORLD_AXES,
+} from "./transformMath";
 import type {LocalTransform, Matrix3} from "./transformMath";
 import {HOLDS_NO_ENTITIES} from "./undoStack";
 import type {FieldChange} from "./undoStack";
@@ -45,6 +55,7 @@ import {
     projectedBoxEdges,
     projectPoint,
     isInFront,
+    layoutRectOf,
     rectContains,
     screenAxisPx,
     screenPointOf,
@@ -73,7 +84,7 @@ const RIGHT_BUTTON = 2;
 const WHEEL_DELTA_LINES = 1;
 const WHEEL_DELTA_PAGES = 2;
 const MS_PER_SECOND = 1000;
-const AXES: readonly Vector3[] = [AXIS_X, AXIS_Y, AXIS_Z];
+const AXES_IN_2D = 2;
 const AXIS_COLORS = ["#ff5f57", "#5ad65a", "#4fa3f7"];
 const SELECTION_COLOR = "#ffb347";
 const HOVER_COLOR = "#ffe066";
@@ -360,12 +371,14 @@ export class SceneView {
     private overlayScale(info: EditorViewInfo): OverlayScale | undefined {
         const canvas = this.viewport.querySelector("canvas");
         if (canvas === null) return undefined;
-        return overlayScaleOf(info, canvas.getBoundingClientRect(), this.overlay.getBoundingClientRect());
+        const visualScale = visualScaleOf(this.overlay);
+        return overlayScaleOf(info, layoutRectOf(canvas.getBoundingClientRect(), visualScale), layoutRectOf(this.overlay.getBoundingClientRect(), visualScale));
     }
 
     private pointOf(event: {readonly clientX: number, readonly clientY: number}): ScreenPoint {
         const bounds = this.overlay.getBoundingClientRect();
-        return {x: event.clientX - bounds.left, y: event.clientY - bounds.top};
+        const visualScale = visualScaleOf(this.overlay);
+        return {x: (event.clientX - bounds.left) / visualScale, y: (event.clientY - bounds.top) / visualScale};
     }
 
     private selectedBounds(info: EditorViewInfo): EditorViewInfo["bounds"] {
@@ -374,8 +387,13 @@ export class SceneView {
     }
 
     private gizmoOrigin(info: EditorViewInfo): Vector3 | undefined {
-        const union = unionOfBounds(this.selectedBounds(info));
-        return union === undefined ? undefined : scaleVector(addVectors(union.min, union.max), 0.5);
+        return handleOrigin(this.selectedBounds(info), this.workspace.primary, this.workspace.handleModes.position);
+    }
+
+    private gizmoAxes(info: EditorViewInfo, tool: EditorTool): Vector3[] {
+        const alongEntity = tool === "scale" || this.workspace.handleModes.rotation === "local";
+        const rotation = handleAxisRotation(this.selectedBounds(info), this.workspace.primary, alongEntity);
+        return handleAxes(rotation, info.projection === "perspective" ? WORLD_AXES.length : AXES_IN_2D);
     }
 
     private moveSnap(info: EditorViewInfo): number {
@@ -391,13 +409,8 @@ export class SceneView {
         if (!isInFront(projected)) return [];
         const center = overlayPointOf(scale, projected);
         if (tool === "rotate") return [{kind: "ring", center, radius: ROTATE_RING_RADIUS_PX}];
-        const axisCount = info.projection === "perspective" ? AXES.length : 2;
         const handles: Handle[] = [];
-        const primary = this.workspace.primary;
-        const primaryDetails = primary === undefined ? undefined : this.workspace.detailsOf(primary);
-        const rotation = tool === "scale" && primaryDetails !== undefined ? localTransformOf(primaryDetails).rotation : IDENTITY_QUATERNION;
-        for (let axisIndex = 0; axisIndex < axisCount; axisIndex++) {
-            const axis = tool === "scale" ? rotateVector(rotation, AXES[axisIndex]) : AXES[axisIndex];
+        for (const [axisIndex, axis] of this.gizmoAxes(info, tool).entries()) {
             const perUnit = screenAxisPx(info.worldToScreen, scale, origin, axis);
             if (perUnit === undefined) continue;
             const length = Math.hypot(perUnit.x, perUnit.y);

@@ -219,13 +219,15 @@ export class EditorViews {
         for (const entity of entities) {
             if (seen.has(entity) || !isSceneEntityHandle(this.world, entity)) continue;
             seen.add(entity);
+            const worldMatrix = mat4FromVec16(worldMatrixOf(this.world, entity));
+            const pivot = translationOf(worldMatrix);
+            const rotation = quaternionOf(worldMatrix);
             const bounds = untrackedComponentOf<WorldSpaceRenderBounds>(this.world, entity, boundsType);
             if (bounds !== undefined) {
-                result.push({entity, min: [bounds.xMin, bounds.yMin, bounds.zMin], max: [bounds.xMax, bounds.yMax, bounds.zMax]});
+                result.push({entity, min: [bounds.xMin, bounds.yMin, bounds.zMin], max: [bounds.xMax, bounds.yMax, bounds.zMax], pivot, rotation});
                 continue;
             }
-            const position = translationOf(mat4FromVec16(worldMatrixOf(this.world, entity)));
-            result.push({entity, min: position, max: position});
+            result.push({entity, min: pivot, max: pivot, pivot, rotation});
         }
         return result;
     }

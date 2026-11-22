@@ -8,7 +8,7 @@ import {CommandRegistry, keyChordOf} from "./commandRegistry";
 import type {RegisteredCommand} from "./commandRegistry";
 import {ConsoleView} from "./consoleView";
 import {DataAssetsView, DIRTY_MARKER} from "./dataAssetsView";
-import {capturePointer, createButton, createElement, isTextEntryElement, readStorage, writeStorage} from "./dom";
+import {capturePointer, createButton, createElement, isTextEntryElement, readStorage, visualScaleOf, writeStorage} from "./dom";
 import {registerEditorCommands} from "./editorCommands";
 import type {EditorCommandHost, EditorCommands} from "./editorCommands";
 import {editorMenuBar, FILE_MENU_LABEL} from "./editorMenus";
@@ -20,6 +20,7 @@ import {EditorWorkspace} from "./editorWorkspace";
 import {fittedAspectRect, GAME_VIEW_ASPECT_STORAGE_KEY, gameViewAspectOf} from "./gameViewAspect";
 import {isLayoutMaximized} from "./gameViewOptions";
 import {GameStatsOverlay} from "./gameStatsOverlay";
+import {DEFAULT_HANDLE_MODES} from "./handleModes";
 import {HierarchyView} from "./hierarchyView";
 import type {Key} from "../../engine/input/key";
 import type {GenerateProjectReport, PackageResult, TargetReportResult} from "../project/projectServerApi";
@@ -27,13 +28,29 @@ import type {ProjectTarget} from "../../engine/project/projectTargets";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {InspectorView} from "./inspectorView";
 import {MenuBar} from "./menuBar";
-import {clampPanelSizes, DEFAULT_PANEL_SIZES, PANEL_SIZES_STORAGE_KEY, panelSizesText, parsePanelSizes, resizedPanel} from "./panelSizes";
-import type {AvailableArea, PanelSizeKey, PanelSizes} from "./panelSizes";
+import {
+    ALL_PANELS_SHOWN,
+    clampPanelSizes,
+    DEFAULT_PANEL_SIZES,
+    LAYOUT_PANELS,
+    PANEL_SIZES_STORAGE_KEY,
+    panelSizesText,
+    parsePanelSizes,
+    parsePanelVisibility,
+    resizedPanel,
+    shownPanelSizes,
+    splitterThicknessPx,
+    withPanelToggled,
+} from "./panelSizes";
+import type {AvailableArea, LayoutPanel, PanelSizeKey, PanelSizes, PanelVisibility} from "./panelSizes";
 import {sceneAndPrefabPaths} from "./projectFiles";
 import {ProjectSettingsWindow} from "./projectSettingsWindow";
 import {openBuildWindow} from "./buildWindow";
 import type {BuildWindow} from "./buildWindow";
+import {PreferencesDialog} from "./preferencesDialog";
 import {ProjectView} from "./projectView";
+import {applyPageUiScale, pageUiScale, storedPageUiScale, windowUiScale} from "./uiScale";
+import type {UiScale} from "./uiScale";
 import {RotationEulerCache} from "./rotationEulerCache";
 import {SceneTabsView} from "./sceneTabsView";
 import {SceneView} from "./sceneView";
@@ -52,6 +69,16 @@ const CSS_VARIABLES: Readonly<Record<PanelSizeKey, string>> = {
     hierarchyWidthPx: "--hierarchy-width",
     inspectorWidthPx: "--inspector-width",
     bottomHeightPx: "--bottom-height",
+};
+const SPLITTER_CSS_VARIABLES: Readonly<Record<LayoutPanel, string>> = {
+    hierarchy: "--hierarchy-splitter",
+    inspector: "--inspector-splitter",
+    bottom: "--bottom-splitter",
+};
+const HIDDEN_PANEL_CLASSES: Readonly<Record<LayoutPanel, string>> = {
+    hierarchy: "hierarchy-hidden",
+    inspector: "inspector-hidden",
+    bottom: "bottom-hidden",
 };
 const CONNECTING_TEXT = "Waiting for the game…";
 const ACTIVE_CLASS = "active";
@@ -176,34 +203,57 @@ function buildLayout(body: HTMLElement): ShellLayout {
 
 class PanelResizer {
     private sizes: PanelSizes;
+    private visibility: PanelVisibility;
 
     public constructor(private readonly layout: ShellLayout, private readonly window: Window | null) {
-        this.sizes = parsePanelSizes(readStorage(window, PANEL_SIZES_STORAGE_KEY));
+        const stored = readStorage(window, PANEL_SIZES_STORAGE_KEY);
+        this.sizes = parsePanelSizes(stored);
+        this.visibility = parsePanelVisibility(stored);
         this.apply(this.clamped(this.sizes));
         for (const [key, splitter] of layout.splitters) this.installSplitter(key, splitter);
         window?.addEventListener("resize", () => this.apply(this.clamped(this.sizes)));
     }
 
+    public shown(panel: LayoutPanel): boolean {
+        return this.visibility[panel];
+    }
+
+    public toggle(panel: LayoutPanel): void {
+        this.visibility = withPanelToggled(this.visibility, panel);
+        this.apply(this.clamped(this.sizes));
+        this.store();
+    }
+
     public reset(): void {
+        this.visibility = ALL_PANELS_SHOWN;
         this.apply(this.clamped(DEFAULT_PANEL_SIZES));
-        writeStorage(this.window, PANEL_SIZES_STORAGE_KEY, panelSizesText(this.sizes));
+        this.store();
+    }
+
+    private store(): void {
+        writeStorage(this.window, PANEL_SIZES_STORAGE_KEY, panelSizesText(this.sizes, this.visibility));
     }
 
     private area(): AvailableArea {
         const bounds = this.layout.root.getBoundingClientRect();
         const barsHeight = this.layout.menuRow.getBoundingClientRect().height + this.layout.toolbar.getBoundingClientRect().height;
-        return {widthPx: bounds.width, heightPx: bounds.height - barsHeight};
+        const scale = visualScaleOf(this.layout.root);
+        return {widthPx: bounds.width / scale, heightPx: (bounds.height - barsHeight) / scale};
     }
 
     private clamped(sizes: PanelSizes): PanelSizes {
         const area = this.area();
-        return area.widthPx > 0 && area.heightPx > 0 ? clampPanelSizes(sizes, area) : sizes;
+        return area.widthPx > 0 && area.heightPx > 0 ? clampPanelSizes(sizes, area, this.visibility) : sizes;
     }
 
     private apply(sizes: PanelSizes): void {
         this.sizes = sizes;
-        for (const [key, variable] of Object.entries(CSS_VARIABLES) as [PanelSizeKey, string][]) {
-            this.layout.root.style.setProperty(variable, `${sizes[key]}px`);
+        const shown = shownPanelSizes(sizes, this.visibility);
+        const root = this.layout.root;
+        for (const [key, variable] of Object.entries(CSS_VARIABLES) as [PanelSizeKey, string][]) root.style.setProperty(variable, `${shown[key]}${PIXELS}`);
+        for (const panel of LAYOUT_PANELS) {
+            root.style.setProperty(SPLITTER_CSS_VARIABLES[panel], `${splitterThicknessPx(this.visibility, panel)}${PIXELS}`);
+            root.classList.toggle(HIDDEN_PANEL_CLASSES[panel], !this.visibility[panel]);
         }
     }
 
@@ -214,18 +264,19 @@ class PanelResizer {
             event.preventDefault();
             capturePointer(splitter, event.pointerId);
             const start = vertical ? event.clientX : event.clientY;
+            const scale = visualScaleOf(this.layout.root);
             const startSize = this.sizes[key];
             this.layout.root.classList.add(DRAGGING_CLASS);
             const onMove = (move: PointerEvent): void => {
-                const delta = (vertical ? move.clientX : move.clientY) - start;
-                this.apply(resizedPanel(this.sizes, key, startSize, delta, this.area()));
+                const delta = ((vertical ? move.clientX : move.clientY) - start) / scale;
+                this.apply(resizedPanel(this.sizes, key, startSize, delta, this.area(), this.visibility));
             };
             const onUp = (): void => {
                 splitter.removeEventListener("pointermove", onMove);
                 splitter.removeEventListener("pointerup", onUp);
                 splitter.removeEventListener("pointercancel", onUp);
                 this.layout.root.classList.remove(DRAGGING_CLASS);
-                writeStorage(this.window, PANEL_SIZES_STORAGE_KEY, panelSizesText(this.sizes));
+                this.store();
             };
             splitter.addEventListener("pointermove", onMove);
             splitter.addEventListener("pointerup", onUp);
@@ -276,6 +327,7 @@ class EditorShellImplementation implements EditorShell {
     private gameTargetMenu: readonly MenuEntry[] | undefined;
     private projectSettings: ProjectSettingsWindow | undefined;
     private buildWindow: BuildWindow | undefined;
+    private preferences: PreferencesDialog | undefined;
     private readonly bottomTabButtons = new Map<BottomTab, HTMLButtonElement>();
     private readonly viewTabButtons = new Map<EditorView, HTMLButtonElement>();
 
@@ -284,6 +336,7 @@ class EditorShellImplementation implements EditorShell {
         const window = this.document.defaultView;
         this.layout = buildLayout(body);
         this.viewport = this.layout.viewport;
+        applyPageUiScale(this.layout.root, storedPageUiScale(window));
         this.resizer = new PanelResizer(this.layout, window);
         observeViewportSize(this.viewport);
         onSizeChange(this.layout.stage, () => this.applyGameViewAspect());
@@ -298,6 +351,7 @@ class EditorShellImplementation implements EditorShell {
             gameViewAspectLabel: () => gameViewAspectOf(this.gameViewAspectId).label,
             gameTargetLabel: () => this.targetLabel,
             gameTargetMenu: () => this.gameTargetMenu,
+            handleModes: () => this.mounted?.workspace.handleModes ?? DEFAULT_HANDLE_MODES,
         });
         this.buildTabs();
         this.showBottomTab(this.bottomTab);
@@ -379,6 +433,11 @@ class EditorShellImplementation implements EditorShell {
             bottomTab: () => this.bottomTab,
             showBottomTab: tab => this.showBottomTab(tab),
             resetLayout: () => this.resetLayout(),
+            panelShown: panel => this.resizer.shown(panel),
+            togglePanel: panel => {
+                this.resizer.toggle(panel);
+                this.commands.changed();
+            },
             gameViewAspect: () => this.gameViewAspectId,
             setGameViewAspect: id => this.setGameViewAspect(id),
             textSelected: () => this.document.getSelection()?.isCollapsed === false,
@@ -389,6 +448,7 @@ class EditorShellImplementation implements EditorShell {
             openProjectSettings: () => this.openProjectSettings(),
             buildUnavailableReason: () => this.options.projectBuild === undefined ? BUILD_NEEDS_SERVER_REASON : this.options.projectBuild.unavailableReason,
             openBuildWindow: () => this.openBuildWindow(),
+            openPreferences: () => this.openPreferences(),
         };
     }
 
@@ -563,6 +623,27 @@ class EditorShellImplementation implements EditorShell {
         }, () => {
             this.buildWindow = undefined;
         });
+    }
+
+    private openPreferences(): void {
+        if (this.preferences !== undefined) {
+            this.preferences.focus();
+            return;
+        }
+        this.preferences = PreferencesDialog.open({
+            document: this.document,
+            uiScale: () => this.uiScale(),
+            snapSteps: () => this.mounted?.workspace.snapSteps,
+            setSnapStep: choice => this.mounted?.workspace.setSnapStep(choice),
+        }, () => {
+            this.preferences = undefined;
+        });
+    }
+
+    private async uiScale(): Promise<UiScale> {
+        const window = this.document.defaultView;
+        const scalesWindow = window === null ? undefined : await windowUiScale((path, init) => window.fetch(path, init));
+        return scalesWindow ?? pageUiScale(this.layout.root, window);
     }
 
     private showDataAssetsTitle(dataAssets: DataAssetsView): void {

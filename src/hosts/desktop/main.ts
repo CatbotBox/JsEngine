@@ -4,7 +4,7 @@ import {readFile, writeFile} from "fs/promises";
 import {join} from "path";
 import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "./webDistFiles";
 import {createProjectServer, locateBun} from "./projectServer";
-import {nextZoomFactor, storedZoomFactor, zoomCommandOf, zoomSettingsText} from "./windowZoom";
+import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../../editor/project/windowZoom";
 
 const SCHEME = "app";
 const HOST = "bundle";
@@ -19,6 +19,9 @@ const MIN_WINDOW_WIDTH_PX = 1280;
 const MIN_WINDOW_HEIGHT_PX = 800;
 const WINDOW_WORK_AREA_FRACTION = 0.8;
 const HTTP_NOT_FOUND = 404;
+const HTTP_BAD_REQUEST = 400;
+const HTTP_PUT = "PUT";
+const JSON_CONTENT_TYPE = "application/json";
 const BITMAP_BYTES_PER_PIXEL = 4;
 const ARGV_APP_ARGS_START_UNPACKAGED = 2;
 const ARGV_APP_ARGS_START_PACKAGED = 1;
@@ -78,6 +81,7 @@ protocol.registerSchemesAsPrivileged([
 
 async function respond(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === WINDOW_ZOOM_PATH) return await respondToWindowZoom(request);
     if (projectServer.handles(url)) return await projectServer.handle(request);
     const path = distFileFor(distDirectory, url.pathname);
     if (path === undefined) return new Response("Not found", {status: HTTP_NOT_FOUND, headers: ISOLATION_HEADERS});
@@ -158,15 +162,29 @@ function loadZoomFactor(): number {
     return storedZoomFactor(existsSync(path) ? readFileSync(path, "utf8") : undefined);
 }
 
+function applyZoomFactor(window: BrowserWindow, zoomFactor: number): void {
+    window.webContents.setZoomFactor(zoomFactor);
+    void writeFile(windowSettingsPath(), zoomSettingsText(zoomFactor));
+}
+
 function handleZoomShortcuts(window: BrowserWindow): void {
     window.webContents.on("before-input-event", (event, input) => {
         const command = zoomCommandOf(input);
         if (command === undefined) return;
         event.preventDefault();
-        const zoomFactor = nextZoomFactor(window.webContents.getZoomFactor(), command);
-        window.webContents.setZoomFactor(zoomFactor);
-        void writeFile(windowSettingsPath(), zoomSettingsText(zoomFactor));
+        applyZoomFactor(window, nextZoomFactor(window.webContents.getZoomFactor(), command));
     });
+}
+
+async function respondToWindowZoom(request: Request): Promise<Response> {
+    const window = mainWindow;
+    if (window === undefined) return new Response("No window to zoom", {status: HTTP_NOT_FOUND, headers: ISOLATION_HEADERS});
+    if (request.method === HTTP_PUT) {
+        const zoomFactor = zoomFactorOfText(await request.text());
+        if (zoomFactor === undefined) return new Response(`Send {"zoomFactor": n} with n from ${ZOOM_FACTORS[0]} to ${ZOOM_FACTORS[ZOOM_FACTORS.length - 1]}`, {status: HTTP_BAD_REQUEST, headers: ISOLATION_HEADERS});
+        applyZoomFactor(window, zoomFactor);
+    }
+    return new Response(zoomSettingsText(window.webContents.getZoomFactor()), {headers: {...ISOLATION_HEADERS, "Content-Type": JSON_CONTENT_TYPE}});
 }
 
 function confirmLeavingUnsavedPages(window: BrowserWindow): void {

@@ -9,14 +9,16 @@ import {EDITOR_TOOLS} from "./editorTools";
 import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
 import {GAME_VIEW_OPTIONS} from "./gameViewOptions";
+import {HANDLE_POSITION_LABELS, HANDLE_ROTATION_LABELS} from "./handleModes";
+import type {HandleModes} from "./handleModes";
 import type {GameViewOption} from "./gameViewOptions";
 
 export const SCENE_FILE_NAME = "scene.json";
 export const MAX_LISTED_REPORT_PATHS = 3;
 
 const MODE_LABELS: Readonly<Record<EditorMode, string>> = {edit: "Editing", play: "Playing", paused: "Paused"};
-const CENTER_HANDLE_TEXT = "Center";
-const GLOBAL_HANDLE_TEXT = "Global";
+const HANDLE_POSITION_HINT = "where the handles sit: the primary selection's pivot or the selection's bounds centre";
+const HANDLE_ROTATION_HINT = "how the move handles turn: with the primary selection (Local) or with the world axes (Global); scale handles always follow the selection";
 const SNAP_TEXT = "Snap";
 const SNAP_TITLE = "Ctrl snaps while dragging a handle; choose the move, rotate and scale steps";
 const PLAY_HINT = "press again to stop and restore the scene";
@@ -107,6 +109,8 @@ export interface ToolbarOptions {
     gameTargetLabel(): string;
 
     gameTargetMenu(): readonly MenuEntry[] | undefined;
+
+    handleModes(): HandleModes;
 }
 
 function toolbarGroup(document: Document, className: string, ariaLabel: string, controls: readonly HTMLElement[]): HTMLElement {
@@ -122,8 +126,8 @@ export function buildToolbar(container: HTMLElement, commands: EditorCommands, o
     const registry = commands.registry;
     const tools = EDITOR_TOOLS.map(tool => commandButton(document, registry, commands.tools.tools[tool], {className: `toolbar-tool tool-${tool}`, hint: TOOL_HINTS[tool]}));
     const handles = [
-        commandButton(document, registry, commands.tools.handlePosition, {className: "toolbar-handle-position", text: CENTER_HANDLE_TEXT}),
-        commandButton(document, registry, commands.tools.handleRotation, {className: "toolbar-handle-rotation", text: GLOBAL_HANDLE_TEXT}),
+        commandButton(document, registry, commands.tools.handlePosition, {className: "toolbar-handle-position", text: () => HANDLE_POSITION_LABELS[options.handleModes().position], hint: HANDLE_POSITION_HINT}),
+        commandButton(document, registry, commands.tools.handleRotation, {className: "toolbar-handle-rotation", text: () => HANDLE_ROTATION_LABELS[options.handleModes().rotation], hint: HANDLE_ROTATION_HINT}),
     ];
     const snap = dropdownButton(document, registry, {className: "toolbar-snap", title: SNAP_TITLE, text: () => SNAP_TEXT, entries: () => snapMenu(commands)});
     const playback = [

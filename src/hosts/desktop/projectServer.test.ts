@@ -287,7 +287,7 @@ describe("project server", () => {
 });
 
 describe("project server target builds", () => {
-    test("a target report runs jsengine build with --project for the terminal only, and splits the report from the other output", async () => {
+    test("a target report runs jsengine build with --project for every target, and splits the report from the other output", async () => {
         const runs = serverWithToolchain(async args => {
             const target = requestedTargetOf(args);
             const report = target === "terminal" ? DOM_PROBLEM_REPORT : passingReport(target);
@@ -298,15 +298,15 @@ describe("project server target builds", () => {
         expect(await targetReport(id, "web")).toEqual({report: passingReport("web"), output: ["warning: web note", "bundled"]});
         expect(runs).toEqual([
             ["build", "--target", "terminal", "--report", "json", "--project", projectFolder],
-            ["build", "--target", "web", "--report", "json"],
+            ["build", "--target", "web", "--report", "json", "--project", projectFolder],
         ]);
     });
 
     test("a run that prints no report becomes a failed report carrying what the CLI said", async () => {
-        serverWithToolchain(async () => ({stdout: "regenerate generated/\n", stderr: "jsengine: the window build covers every demo; drop --project\n", exitCode: EXIT_USAGE}));
+        serverWithToolchain(async () => ({stdout: "regenerate generated/\n", stderr: "jsengine: game has no jsengine.project.json; point --project at a folder that holds one\n", exitCode: EXIT_USAGE}));
         const {id} = await opened(folder);
         expect(await targetReport(id, "window")).toEqual({
-            report: {ok: false, target: "window", bundles: [], errors: [`jsengine build --target window exited with ${EXIT_USAGE}:`, "jsengine: the window build covers every demo; drop --project"]},
+            report: {ok: false, target: "window", bundles: [], errors: [`jsengine build --target window exited with ${EXIT_USAGE}:`, "jsengine: game has no jsengine.project.json; point --project at a folder that holds one"]},
             output: ["regenerate generated/"],
         });
         serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_FAILURE}));

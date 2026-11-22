@@ -171,11 +171,11 @@
                 <dt>esc</dt><dd>stop</dd>
             </dl>
             <div class="links">
-                <a class="play" href="swarm.html">Play on pixels</a>
-                <a class="play" href="swarm.html?backend=cells">Play on cells</a>
+                <a class="play" href="swarm/">Play on pixels</a>
+                <a class="play" href="swarm/?backend=cells">Play on cells</a>
             </div>
         </section>
-        <a class="card" href="2d.html">
+        <a class="card" href="2d/">
             <h2>2D</h2>
             <p>Sprites composited into half-block cells, with thousands of entities fading colour through ECS
                 systems.</p>
@@ -188,7 +188,7 @@
             </dl>
             <span class="play">Play 2D</span>
         </a>
-        <a class="card" href="3d.html">
+        <a class="card" href="3d/">
             <h2>3D</h2>
             <p>A software rasterizer: OBJ meshes from binary mesh caches, textures, Blinn-Phong lighting and level of
                 detail, threaded where the page is cross-origin isolated. The bugatti downloads on demand.</p>
@@ -205,10 +205,10 @@
         </a>
     </div>
     <p class="backends">The same games on the pixels backend, an RGBA framebuffer drawn onto the canvas instead of
-        cells: <a href="2d.html?backend=pixels">2D on pixels</a> &middot; <a href="3d.html?backend=pixels">3D on
+        cells: <a href="2d/?backend=pixels">2D on pixels</a> &middot; <a href="3d/?backend=pixels">3D on
         pixels</a></p>
     <footer>
-        Embedding: <code>3d.html?cols=120&amp;rows=40</code> fixes the terminal size, <code>?threads=N</code> sets the
+        Embedding: <code>3d/?cols=120&amp;rows=40</code> fixes the terminal size, <code>?threads=N</code> sets the
         number of raster threads. On pixels, <code>?width=640&amp;height=384</code> fixes the framebuffer size and
         <code>?scale=N</code> draws each framebuffer pixel as N device pixels.
     </footer>

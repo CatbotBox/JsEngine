@@ -1,6 +1,5 @@
-import {basename, isAbsolute, relative, resolve} from "path";
+import {basename, resolve} from "path";
 import type {RenderBackendKind} from "../engine/rendering/renderBackend";
-import {REPO_ROOT, slashed} from "./repoPaths";
 
 export const ENGINE_IMPORT_PREFIX = "@jsengine/";
 export const GENERATED_FOLDER = "generated";
@@ -16,6 +15,8 @@ export const WEB_PAGE_BOOTSTRAP_FILE = `${GENERATED_FOLDER}/main.web.ts`;
 export const EDITOR_WORKER_MAIN_PREFIX = "main.editor-";
 export const BACKEND_FOLDER = "backend";
 export const WEB_BUNDLE_EXTENSION = ".js";
+export const WEB_PROJECT_DIRECTORY = ".";
+export const PROJECT_WEB_PAGE_FILE = "web/index.html";
 
 const GENERATED_EXPORT_PREFIX = "generated";
 const SYSTEMS_EXPORT_SUFFIX = "Systems";
@@ -26,7 +27,6 @@ const SLUG_UNSAFE_CHARACTERS = /[^a-z0-9]+/g;
 const SLUG_SEPARATOR = "-";
 const SLUG_EDGE_SEPARATORS = /^-+|-+$/g;
 const DEFAULT_SLUG = "game";
-const PARENT_SEGMENT = "..";
 
 export function generatedBackendSystemsFile(kind: RenderBackendKind): string {
     return `${GENERATED_FOLDER}/systems.${kind}.ts`;
@@ -64,15 +64,13 @@ export function editorWorkerMainFile(kind: RenderBackendKind): string {
     return `${GENERATED_FOLDER}/${EDITOR_WORKER_MAIN_PREFIX}${kind}.worker.ts`;
 }
 
-export function projectSlug(projectFolder: string): string {
-    const slug = basename(resolve(projectFolder)).toLowerCase().replace(SLUG_UNSAFE_CHARACTERS, SLUG_SEPARATOR).replace(SLUG_EDGE_SEPARATORS, "");
-    return slug.length > 0 ? slug : DEFAULT_SLUG;
+export function slugOf(text: string): string {
+    return text.toLowerCase().replace(SLUG_UNSAFE_CHARACTERS, SLUG_SEPARATOR).replace(SLUG_EDGE_SEPARATORS, "");
 }
 
-export function projectSiteDirectory(projectFolder: string): string {
-    const fromRepo = relative(REPO_ROOT, resolve(projectFolder));
-    const insideRepo = fromRepo.length > 0 && !isAbsolute(fromRepo) && !fromRepo.startsWith(PARENT_SEGMENT);
-    return insideRepo ? slashed(fromRepo) : projectSlug(projectFolder);
+export function projectSlug(projectFolder: string): string {
+    const slug = slugOf(basename(resolve(projectFolder)));
+    return slug.length > 0 ? slug : DEFAULT_SLUG;
 }
 
 export function webPageBootstrapBundle(slug: string): string {

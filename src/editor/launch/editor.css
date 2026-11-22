@@ -22,6 +22,9 @@
     --inspector-width: 340px;
     --bottom-height: 220px;
     --splitter: 5px;
+    --hierarchy-splitter: var(--splitter);
+    --inspector-splitter: var(--splitter);
+    --bottom-splitter: var(--splitter);
     --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
     color-scheme: dark;
 }
@@ -66,8 +69,8 @@ button.primary {
 .editor {
     display: grid;
     height: 100%;
-    grid-template-columns: var(--hierarchy-width) var(--splitter) minmax(0, 1fr) var(--splitter) var(--inspector-width);
-    grid-template-rows: var(--menubar-height) var(--toolbar-height) minmax(0, 1fr) var(--splitter) var(--bottom-height);
+    grid-template-columns: var(--hierarchy-width) var(--hierarchy-splitter) minmax(0, 1fr) var(--inspector-splitter) var(--inspector-width);
+    grid-template-rows: var(--menubar-height) var(--toolbar-height) minmax(0, 1fr) var(--bottom-splitter) var(--bottom-height);
     grid-template-areas:
         "menubar menubar menubar menubar menubar"
         "toolbar toolbar toolbar toolbar toolbar"
@@ -89,6 +92,15 @@ button.primary {
 .editor.maximized .editor-inspector,
 .editor.maximized .editor-bottom,
 .editor.maximized .splitter {
+    display: none;
+}
+
+.editor.hierarchy-hidden .editor-hierarchy,
+.editor.hierarchy-hidden .splitter-hierarchyWidthPx,
+.editor.inspector-hidden .editor-inspector,
+.editor.inspector-hidden .splitter-inspectorWidthPx,
+.editor.bottom-hidden .editor-bottom,
+.editor.bottom-hidden .splitter-bottomHeightPx {
     display: none;
 }
 
@@ -2374,7 +2386,6 @@ body:not(.terminal-unfocused) .editor-viewport {
     font-weight: 600;
 }
 
-.build-target-scope,
 .build-target-status {
     color: var(--muted);
 }
@@ -2388,7 +2399,6 @@ body:not(.terminal-unfocused) .editor-viewport {
 }
 
 .build-target.failing .build-target-name,
-.build-target.failing .build-target-scope,
 .build-target.failing .build-target-status {
     opacity: 0.55;
 }

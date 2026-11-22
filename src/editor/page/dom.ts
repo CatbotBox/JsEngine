@@ -30,6 +30,11 @@ export function isTextEntryElement(element: Element | null): boolean {
     return (element as HTMLElement).isContentEditable === true;
 }
 
+export function visualScaleOf(element: HTMLElement): number {
+    const visualWidth = element.getBoundingClientRect().width;
+    return element.offsetWidth > 0 && visualWidth > 0 ? visualWidth / element.offsetWidth : 1;
+}
+
 export function errorText(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }

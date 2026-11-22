@@ -1,12 +1,12 @@
 import {join} from "path";
 import {parseOptions, usageError} from "../cliArguments";
-import {demoSiteOf, demoSitePath} from "../demoSites";
 import {writeGeneratedFiles} from "../generate/generatedFiles";
 import {reportGeneratedFiles} from "../generate/generatedFilesReport";
 import {launchTerminal} from "../launch/terminalLaunch";
 import {launchWindow} from "../launch/windowLaunch";
 import {TERMINAL_MAIN_FILE} from "../projectLayout";
 import {declaredTargetDefaults, projectFolderOf} from "../project";
+import {projectPagePath} from "../projectSites";
 import {serveSite} from "../serve/devServer";
 import {BACKEND_OPTION, backendFor, PROJECT_OPTION, RUN_TARGETS, targetOf} from "../targets";
 import {KEEP_RUNNING, requireScope} from "./command";
@@ -37,9 +37,9 @@ export async function runCommand(args: readonly string[]): Promise<CommandResult
         reportGeneratedFiles(writeGeneratedFiles(folder), "regenerate");
         return await launchTerminal(join(folder, TERMINAL_MAIN_FILE), {node: options.flag("node"), watch: options.flag("watch")});
     }
-    const page = demoSitePath(demoSiteOf(folder), backendFor(target, options.value("backend"), defaults.backend), defaults.pixelScale);
+    const page = projectPagePath(folder, backendFor(target, options.value("backend"), defaults.backend), defaults.pixelScale);
     const build = !options.flag("no-build");
-    if (target === "window") return await launchWindow({page, build, smoke: options.flag("smoke"), screenshot: options.value("screenshot")});
-    serveSite({prod: false, build, isolated: true, open: page});
+    if (target === "window") return await launchWindow({page, build, project: folder, smoke: options.flag("smoke"), screenshot: options.value("screenshot")});
+    serveSite({prod: false, build, isolated: true, open: page, project: folder});
     return KEEP_RUNNING;
 }

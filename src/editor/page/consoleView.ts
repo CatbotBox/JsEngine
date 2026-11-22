@@ -4,6 +4,7 @@ import {allConsoleLevels, consoleRows} from "./consoleLog";
 import type {ConsoleRow} from "./consoleLog";
 import {createButton, createElement} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
+import type {StackLine} from "./sourceMaps";
 
 export const CONSOLE_BOTTOM_SLACK_PX = 8;
 
@@ -17,6 +18,8 @@ const COLLAPSED_MARKER = "▸";
 const EXPANDED_MARKER = "▾";
 const SHOW_STACK_TITLE = "Show the stack trace";
 const HIDE_STACK_TITLE = "Hide the stack trace";
+const MAPPED_FRAME_CLASS = "console-mapped-frame";
+const STACK_LINE_BREAK = "\n";
 const SEARCH_PLACEHOLDER = "Search";
 const SEARCH_INPUT_TYPE = "search";
 const SINGLE_OCCURRENCE = 1;
@@ -31,6 +34,7 @@ interface RenderedRow {
     readonly repeat: HTMLElement;
     readonly stack: HTMLElement;
     shown: ConsoleRow | undefined;
+    mappedStack: string | undefined;
 }
 
 function timeText(timeMs: number): string {
@@ -146,6 +150,7 @@ export class ConsoleView {
             repeat: createElement(document, "span", "console-repeat"),
             stack: createElement(document, "pre", "console-stack"),
             shown: undefined,
+            mappedStack: undefined,
         };
         element.append(row.expander, row.time, row.text, row.repeat, row.stack);
         element.addEventListener("click", () => {
@@ -157,14 +162,44 @@ export class ConsoleView {
     }
 
     private fill(row: RenderedRow, model: ConsoleRow): void {
+        const stackChanged = row.shown?.stack !== model.stack;
         row.shown = model;
         row.element.className = `console-entry level-${model.level}`;
         row.time.textContent = timeText(model.timeMs);
         row.text.textContent = model.text;
         row.repeat.textContent = String(model.count);
         row.repeat.hidden = model.count === SINGLE_OCCURRENCE;
-        row.stack.textContent = model.stack ?? "";
+        if (stackChanged) {
+            row.stack.textContent = model.stack ?? "";
+            row.mappedStack = undefined;
+        }
         this.showExpansion(row, model.key);
+    }
+
+    private showMappedStack(row: RenderedRow): void {
+        const stack = row.shown?.stack;
+        const mapper = this.workspace.stackMapper;
+        if (stack === undefined || mapper === undefined || row.mappedStack === stack) return;
+        row.mappedStack = stack;
+        mapper.mapStack(stack).then(lines => {
+            if (row.mappedStack === stack) this.renderStackLines(row, lines);
+        }, () => undefined);
+    }
+
+    private renderStackLines(row: RenderedRow, lines: readonly StackLine[]): void {
+        const document = row.stack.ownerDocument;
+        const nodes: Node[] = [];
+        for (const line of lines) {
+            if (nodes.length > 0) nodes.push(document.createTextNode(STACK_LINE_BREAK));
+            if (line.bundleFrame === undefined) {
+                nodes.push(document.createTextNode(line.text));
+                continue;
+            }
+            const frame = createElement(document, "span", MAPPED_FRAME_CLASS, line.text);
+            frame.title = line.bundleFrame.trim();
+            nodes.push(frame);
+        }
+        row.stack.replaceChildren(...nodes);
     }
 
     private showExpansion(row: RenderedRow, key: string): void {
@@ -177,6 +212,7 @@ export class ConsoleView {
         row.expander.title = expanded ? HIDE_STACK_TITLE : SHOW_STACK_TITLE;
         row.expander.setAttribute("aria-expanded", String(expanded));
         row.stack.hidden = !expanded;
+        if (expanded) this.showMappedStack(row);
     }
 
     private toggleStack(key: string): void {

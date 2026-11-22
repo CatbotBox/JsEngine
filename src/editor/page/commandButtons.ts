@@ -6,7 +6,7 @@ import {closePopupMenu} from "./popupMenu";
 
 export interface CommandButtonOptions {
     readonly className: string;
-    readonly text?: string;
+    readonly text?: string | (() => string);
     readonly hint?: string;
 }
 
@@ -38,7 +38,7 @@ export function commandButton(document: Document, registry: CommandRegistry, com
     button.addEventListener("click", () => void command.runAlone());
     const refresh = (): void => {
         const state = command.stateAlone();
-        button.textContent = options.text ?? state.label;
+        button.textContent = typeof options.text === "function" ? options.text() : options.text ?? state.label;
         button.disabled = !state.enabled;
         button.title = commandTitle(state, options.hint);
         if (state.checked === undefined) return;
