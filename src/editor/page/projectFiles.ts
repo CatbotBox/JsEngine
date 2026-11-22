@@ -155,10 +155,78 @@ export function findFolder(root: ProjectFolder, path: string): ProjectFolder | u
     return current;
 }
 
+export function projectFolderPaths(entries: readonly ProjectEntry[], extra: readonly string[] = []): string[] {
+    const folders = new Set<string>([ROOT_FOLDER_PATH]);
+    const addWithParents = (folder: string): void => {
+        for (let path = normalizeProjectPath(folder); path !== ROOT_FOLDER_PATH && !folders.has(path); path = parentFolderOf(path)) folders.add(path);
+    };
+    for (const entry of entries) addWithParents(entry.kind === "directory" ? entry.path : parentFolderOf(entry.path));
+    for (const folder of extra) addWithParents(folder);
+    return [...folders].sort((a, b) => a.localeCompare(b));
+}
+
 export function allProjectPaths(entries: readonly ProjectEntry[]): Set<string> {
     return new Set(entries.map(entry => normalizeProjectPath(entry.path)));
 }
 
 export function renamedPath(path: string, newName: string): string {
     return joinProjectPath(parentFolderOf(path), newName.trim());
+}
+
+const SCENE_DOCUMENT_KINDS: ReadonlySet<ProjectFileKind> = new Set(["scene", "prefab"]);
+
+export function sceneAndPrefabPaths(entries: readonly ProjectEntry[]): string[] {
+    return entries
+        .filter(entry => entry.kind === "file")
+        .map(entry => normalizeProjectPath(entry.path))
+        .filter(path => SCENE_DOCUMENT_KINDS.has(projectFileKind(path)))
+        .sort((a, b) => a.localeCompare(b));
+}
+
+const EDITOR_DOCUMENT_KINDS: ReadonlySet<ProjectFileKind> = new Set(["scene", "prefab", "dataAsset"]);
+
+export function opensInEditor(kind: ProjectFileKind): boolean {
+    return EDITOR_DOCUMENT_KINDS.has(kind);
+}
+
+export type ProjectItemKind = ProjectFileKind | "folder";
+
+export interface ProjectItemRef {
+    readonly path: string;
+    readonly kind: ProjectItemKind;
+}
+
+export const PROJECT_ITEM_KIND_TITLES: Readonly<Record<ProjectItemKind, string>> = {folder: "Folder", ...PROJECT_FILE_KIND_TITLES};
+
+const DUPLICATE_NUMBER_SUFFIX = / \d+$/;
+
+export function projectItemsOf(entries: readonly ProjectEntry[]): ProjectItemRef[] {
+    return entries
+        .map(entry => {
+            const path = normalizeProjectPath(entry.path);
+            return {path, kind: entry.kind === "directory" ? "folder" as const : projectFileKind(path)};
+        })
+        .filter(item => item.path !== ROOT_FOLDER_PATH);
+}
+
+export function duplicatePath(existing: ReadonlySet<string>, path: string, isFolder: boolean): string {
+    const name = baseNameOf(path);
+    const extension = isFolder ? "" : extensionOf(name);
+    const stem = name.slice(0, name.length - extension.length);
+    const unnumbered = stem.replace(DUPLICATE_NUMBER_SUFFIX, "");
+    const base = unnumbered.length === 0 ? stem : unnumbered;
+    const folder = parentFolderOf(path);
+    for (let suffix = FIRST_DUPLICATE_SUFFIX; ; suffix++) {
+        const candidate = joinProjectPath(folder, `${base}${DUPLICATE_SEPARATOR}${suffix}${extension}`);
+        if (!existing.has(candidate)) return candidate;
+    }
+}
+
+export function duplicatePaths(existing: ReadonlySet<string>, items: readonly ProjectItemRef[]): string[] {
+    const taken = new Set(existing);
+    return items.map(item => {
+        const target = duplicatePath(taken, item.path, item.kind === "folder");
+        taken.add(target);
+        return target;
+    });
 }

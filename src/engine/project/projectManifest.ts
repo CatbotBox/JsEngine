@@ -1,5 +1,7 @@
 import {DATA_ASSET_FILE_SUFFIX} from "../scene/dataAssetDocument";
 import {projectFileExtension, projectRelativePath} from "./projectPaths";
+import {targetsProblems, TARGETS_MANIFEST_KEY} from "./projectTargets";
+import type {ProjectTargets} from "./projectTargets";
 
 export const PROJECT_MANIFEST_FILE = "jsengine.project.json";
 export const PROJECT_ENTRY_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".mjs"];
@@ -25,6 +27,7 @@ export interface ProjectManifest {
     readonly schemas?: GeneratedListSettings;
     readonly systems?: GeneratedListSettings;
     readonly keep?: readonly string[];
+    readonly targets?: ProjectTargets;
     readonly editorExtensions?: string;
 }
 
@@ -155,8 +158,9 @@ export function validateProjectManifest(text: string | undefined, entryExists?: 
     const schemas = generatedListProblems(SCHEMAS_MANIFEST_KEY, parsed.schemas);
     const systems = generatedListProblems(SYSTEMS_MANIFEST_KEY, parsed.systems);
     const keep = keepListProblems(parsed[KEEP_MANIFEST_KEY]);
+    const targets = targetsProblems(parsed[TARGETS_MANIFEST_KEY]);
     const editorExtensions = editorExtensionsProblems(parsed.editorExtensions, entryExists);
-    problems.push(...entry.problems, ...startScene.problems, ...resources.problems, ...schemas.problems, ...systems.problems, ...keep.problems, ...editorExtensions.problems);
+    problems.push(...entry.problems, ...startScene.problems, ...resources.problems, ...schemas.problems, ...systems.problems, ...keep.problems, ...targets.problems, ...editorExtensions.problems);
     if (problems.length > 0) return {ok: false, problems};
     const manifest: ProjectManifest = {
         name: (name as string).trim(),
@@ -166,6 +170,7 @@ export function validateProjectManifest(text: string | undefined, entryExists?: 
         ...(schemas.settings === undefined ? {} : {schemas: schemas.settings}),
         ...(systems.settings === undefined ? {} : {systems: systems.settings}),
         ...(keep.keep === undefined ? {} : {keep: keep.keep}),
+        ...(targets.targets === undefined ? {} : {targets: targets.targets}),
         ...(editorExtensions.editorExtensions === undefined ? {} : {editorExtensions: editorExtensions.editorExtensions}),
     };
     return {ok: true, manifest};

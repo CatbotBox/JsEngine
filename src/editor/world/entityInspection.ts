@@ -28,7 +28,6 @@ import type {
     EditorFieldDescription,
     EditorFieldTypeDescription,
     EditorFieldValue,
-    ListEntitiesResult,
 } from "../editorProtocol";
 
 interface EntityRow {
@@ -206,7 +205,7 @@ export function siblingIndexOf(world: World, entity: Entity): number {
     return order.siblingIndexOf.get(entity) ?? 0;
 }
 
-export function listEntities(world: World, registry: ComponentSchemaRegistry): ListEntitiesResult {
+export function entitySummaries(world: World, registry: ComponentSchemaRegistry, sceneIdOf: (entity: Entity) => number): EditorEntitySummary[] {
     const namesByArchetype = new Map<EntityArchetype<AnyCT>, readonly string[]>();
     const namesOf = (archetype: EntityArchetype<AnyCT>): readonly string[] => {
         let names = namesByArchetype.get(archetype);
@@ -218,7 +217,7 @@ export function listEntities(world: World, registry: ComponentSchemaRegistry): L
     };
     const rows = sceneRowsInCreationOrder(world);
     const order = siblingOrderOf(world, rows.map(row => row.entity));
-    const entities = rows.map(({entity, enabled, archetype, row}): EditorEntitySummary => ({
+    return rows.map(({entity, enabled, archetype, row}): EditorEntitySummary => ({
         entity,
         name: world.entityManager.nameOf(entity) ?? null,
         enabled,
@@ -226,8 +225,8 @@ export function listEntities(world: World, registry: ComponentSchemaRegistry): L
         siblingIndex: order.siblingIndexOf.get(entity) ?? 0,
         prefabSourcePath: prefabSourcePathInRow(archetype, row),
         componentTypeNames: namesOf(archetype),
+        sceneId: sceneIdOf(entity),
     }));
-    return {entities};
 }
 
 function editorEncodeContext(world: World, registry: ComponentSchemaRegistry): FieldEncodeContext {

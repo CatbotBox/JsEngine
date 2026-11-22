@@ -115,12 +115,18 @@ export interface SerializeEntitiesRequest {
     readonly entities: readonly Entity[];
 }
 
+export interface EditorSceneRef {
+    readonly id: number;
+    readonly path: string | null;
+}
+
 export interface InstantiateEntitiesRequest {
     readonly op: "instantiateEntities";
     readonly documentText: string;
     readonly parent?: Entity | null;
     readonly siblingIndex?: number;
     readonly prefabSourcePath?: string;
+    readonly scene?: EditorSceneRef;
 }
 
 export interface GetPrefabOverridesRequest {
@@ -172,12 +178,24 @@ export interface GetViewInfoRequest {
 
 export interface SaveSceneRequest {
     readonly op: "saveScene";
+    readonly scene?: EditorSceneRef;
 }
 
 export interface LoadSceneRequest {
     readonly op: "loadScene";
     readonly sceneText: string;
     readonly path?: string;
+    readonly additive?: boolean;
+}
+
+export interface UnloadSceneRequest {
+    readonly op: "unloadScene";
+    readonly sceneId: number;
+}
+
+export interface SetActiveSceneRequest {
+    readonly op: "setActiveScene";
+    readonly scene: EditorSceneRef;
 }
 
 export interface ExportSnapshotRequest {
@@ -204,6 +222,10 @@ export interface StepRequest {
 
 export interface DescribeAssetTypesRequest {
     readonly op: "describeAssetTypes";
+}
+
+export interface GetTickStatsRequest {
+    readonly op: "getTickStats";
 }
 
 export interface GetResourceRequest {
@@ -258,11 +280,14 @@ export type EditorRequest =
     | GetViewInfoRequest
     | SaveSceneRequest
     | LoadSceneRequest
+    | UnloadSceneRequest
+    | SetActiveSceneRequest
     | ExportSnapshotRequest
     | ImportSnapshotRequest
     | SetModeRequest
     | StepRequest
     | DescribeAssetTypesRequest
+    | GetTickStatsRequest
     | GetResourceRequest
     | SetResourceFieldRequest
     | ListSettingsRequest
@@ -363,6 +388,12 @@ export interface DescribeAssetTypesResult {
     readonly assetTypes: readonly EditorAssetTypeDescription[];
 }
 
+export interface EditorTickStats {
+    readonly ticks: number;
+    readonly tickMsTotal: number;
+    readonly timeMs: number;
+}
+
 export interface EditorEntitySummary {
     readonly entity: Entity;
     readonly name: string | null;
@@ -371,10 +402,14 @@ export interface EditorEntitySummary {
     readonly siblingIndex: number;
     readonly prefabSourcePath: string | null;
     readonly componentTypeNames: readonly string[];
+    readonly sceneId: number;
 }
 
 export interface ListEntitiesResult {
     readonly entities: readonly EditorEntitySummary[];
+    readonly scenes: readonly EditorSceneRef[];
+    readonly activeSceneId: number;
+    readonly editedSceneIds: readonly number[];
 }
 
 export interface InlineSpriteImageSummary {
@@ -504,11 +539,21 @@ export interface EditorViewInfo {
 export interface SaveSceneResult {
     readonly sceneText: string;
     readonly report: SceneSaveReport;
+    readonly sceneId: number;
 }
 
 export interface LoadSceneResult {
     readonly entityCount: number;
     readonly report: SceneLoadReport;
+    readonly sceneId: number;
+}
+
+export interface UnloadSceneResult {
+    readonly activeSceneId: number;
+}
+
+export interface SetActiveSceneResult {
+    readonly sceneId: number;
 }
 
 export interface ExportSnapshotResult {
@@ -561,11 +606,14 @@ export interface EditorResultByOp {
     readonly getViewInfo: EditorViewInfo;
     readonly saveScene: SaveSceneResult;
     readonly loadScene: LoadSceneResult;
+    readonly unloadScene: UnloadSceneResult;
+    readonly setActiveScene: SetActiveSceneResult;
     readonly exportSnapshot: ExportSnapshotResult;
     readonly importSnapshot: ImportSnapshotResult;
     readonly setMode: EditorServiceState;
     readonly step: EditorServiceState;
     readonly describeAssetTypes: DescribeAssetTypesResult;
+    readonly getTickStats: EditorTickStats;
     readonly getResource: EditorResourceDetails;
     readonly setResourceField: SetFieldResult;
     readonly listSettings: ListSettingsResult;
@@ -701,15 +749,23 @@ function isFieldEdit(value: unknown): boolean {
     return isRecord(value) && targetsComponent(value) && isString(value.key) && value.value !== undefined;
 }
 
+function isSceneRef(value: unknown): boolean {
+    return isRecord(value) && isWholeNumber(value.id) && (value.path === null || isString(value.path));
+}
+
+function isBoolean(value: unknown): boolean {
+    return typeof value === "boolean";
+}
+
 export function isEditorRequest(value: unknown): value is EditorRequest {
     if (!isRecord(value)) return false;
     switch (value.op) {
         case "describeSchemas":
         case "listEntities":
-        case "saveScene":
         case "exportSnapshot":
         case "step":
         case "describeAssetTypes":
+        case "getTickStats":
         case "listSettings":
             return true;
         case "getEntity":
@@ -740,7 +796,8 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
             return isString(value.documentText)
                 && isAbsentOr(value.parent, isNullableEntityHandle)
                 && isAbsentOr(value.siblingIndex, isWholeNumber)
-                && isAbsentOr(value.prefabSourcePath, isString);
+                && isAbsentOr(value.prefabSourcePath, isString)
+                && isAbsentOr(value.scene, isSceneRef);
         case "revertPrefabInstance":
             return isEntityHandle(value.entity) && isAbsentOr(value.paths, isStringList);
         case "updatePrefabInstances":
@@ -755,8 +812,14 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
                 && isAbsentOr(value.fieldOfViewDegrees, isFieldOfViewDegrees);
         case "getViewInfo":
             return isEditorView(value.view) && isAbsentOr(value.entities, isEntityList);
+        case "saveScene":
+            return isAbsentOr(value.scene, isSceneRef);
         case "loadScene":
-            return isString(value.sceneText) && isAbsentOr(value.path, isString);
+            return isString(value.sceneText) && isAbsentOr(value.path, isString) && isAbsentOr(value.additive, isBoolean);
+        case "unloadScene":
+            return isWholeNumber(value.sceneId);
+        case "setActiveScene":
+            return isSceneRef(value.scene);
         case "importSnapshot":
             return isString(value.documentText)
                 && isEditorMode(value.mode)

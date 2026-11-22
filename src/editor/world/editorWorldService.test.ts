@@ -68,6 +68,16 @@ function serviceState(mode: EditorMode, gameplayTicks: number, view: EditorView)
 }
 
 describe("EditorWorldService requests", () => {
+    test("getTickStats counts the ticks the service ran and the time they took", async () => {
+        const harnessed = editorWorld();
+        const first = await ask(harnessed, {op: "getTickStats"});
+        expect(await framesPass(harnessed)).toBe(true);
+        const later = await ask(harnessed, {op: "getTickStats"});
+        expect(later.ticks - first.ticks).toBeGreaterThan(SETTLE_FRAMES - 1);
+        expect(later.tickMsTotal >= first.tickMsTotal).toBe(true);
+        expect(later.timeMs).toBeGreaterThan(first.timeMs);
+    });
+
     test("describeSchemas lists every registered type with its persistence, field kinds, nullability, enum names and category", async () => {
         const harnessed = editorWorld();
         const {components} = await ask(harnessed, {op: "describeSchemas"});

@@ -22,14 +22,14 @@ export interface ChoiceOptions<T> {
 
 const CANCEL_TEXT = "Cancel";
 
-interface Modal {
+export interface Modal {
     readonly dialog: HTMLElement;
     readonly buttons: HTMLElement;
 
     close(): void;
 }
 
-function openModal(document: Document, title: string, onCancel: () => void): Modal {
+export function openModal(document: Document, title: string, onCancel: () => void): Modal {
     const previousFocus = document.activeElement;
     const backdrop = createElement(document, "div", "editor-modal-backdrop");
     const dialog = createElement(document, "div", "editor-modal");
@@ -101,6 +101,75 @@ export function askForText(document: Document, options: TextPromptOptions): Prom
         );
         input.focus();
         input.select();
+    });
+}
+
+export interface SavePathOptions {
+    readonly title: string;
+    readonly folders: readonly string[];
+    readonly folder: string;
+    readonly name: string;
+    readonly extension: string;
+    readonly rootLabel: string;
+    readonly confirmText: string;
+    readonly validate?: (folder: string, name: string) => string | undefined;
+}
+
+export interface ChosenSavePath {
+    readonly folder: string;
+    readonly name: string;
+}
+
+export function askForSavePath(document: Document, options: SavePathOptions): Promise<ChosenSavePath | undefined> {
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = (value: ChosenSavePath | undefined): void => {
+            if (settled) return;
+            settled = true;
+            modal.close();
+            resolve(value);
+        };
+        const modal = openModal(document, options.title, () => finish(undefined));
+        const folderLabel = createElement(document, "label", "editor-modal-field");
+        const folder = createElement(document, "select", "field-input");
+        for (const path of options.folders) {
+            const option = createElement(document, "option", "", path.length === 0 ? options.rootLabel : path);
+            option.value = path;
+            folder.append(option);
+        }
+        folder.value = options.folder;
+        folderLabel.append(createElement(document, "span", "", "Folder"), folder);
+        const nameLabel = createElement(document, "label", "editor-modal-field");
+        const nameRow = createElement(document, "span", "editor-modal-name");
+        const name = createElement(document, "input", "field-input");
+        name.type = "text";
+        name.spellcheck = false;
+        name.value = options.name;
+        nameRow.append(name, createElement(document, "span", "editor-modal-extension", options.extension));
+        nameLabel.append(createElement(document, "span", "", "Name"), nameRow);
+        const problem = createElement(document, "p", "editor-modal-problem");
+        problem.hidden = true;
+        const submit = (): void => {
+            const reason = options.validate?.(folder.value, name.value);
+            if (reason !== undefined) {
+                problem.textContent = reason;
+                problem.hidden = false;
+                return;
+            }
+            finish({folder: folder.value, name: name.value.trim()});
+        };
+        name.addEventListener("keydown", event => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            submit();
+        });
+        for (const element of [folderLabel, nameLabel, problem]) modal.dialog.insertBefore(element, modal.buttons);
+        modal.buttons.append(
+            createButton(document, {className: "", text: CANCEL_TEXT, title: CANCEL_TEXT, onClick: () => finish(undefined)}),
+            createButton(document, {className: "primary", text: options.confirmText, title: options.confirmText, onClick: submit}),
+        );
+        name.focus();
+        name.select();
     });
 }
 

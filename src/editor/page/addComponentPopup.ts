@@ -1,4 +1,5 @@
 import type {EditorComponentDescription, EditorFieldDescription} from "../editorProtocol";
+import {isHiddenComponent} from "./componentVisibility";
 import {createElement} from "./dom";
 
 export interface AddableComponent {
@@ -24,7 +25,7 @@ const NO_MATCH_TEXT = "No component matches";
 const HIGHLIGHT_CLASS = "highlighted";
 
 export function isAddableSchema(schema: EditorComponentDescription): boolean {
-    return schema.persistence === "fields";
+    return schema.persistence === "fields" && !isHiddenComponent(schema);
 }
 
 export function requiredEntityFields(schema: EditorComponentDescription): EditorFieldDescription[] {

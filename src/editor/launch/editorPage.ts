@@ -1,11 +1,12 @@
-import {installDomInput} from "../../hosts/web/domInput";
+import {installDomInput, keyOf} from "../../hosts/web/domInput";
 import {webGpuUsable} from "../../hosts/web/renderBackendBootstrap";
 import {createEditorShell} from "../page/editorShell";
-import {showPopupMenu} from "../page/popupMenu";
 import {DirectoryHandleProjectFileSystem} from "../project/directoryHandleProjectFileSystem";
 import type {DirectoryHandleLike} from "../project/directoryHandleProjectFileSystem";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
 import type {ProjectManifest} from "../../engine/project/projectManifest";
+import {targetRenderDefaults} from "../../engine/project/projectTargets";
+import type {ProjectTargets} from "../../engine/project/projectTargets";
 import {EDITOR_SETTINGS_FILE, gameTargetKey, parseEditorSettings, sameGameTarget} from "../project/editorSettings";
 import type {EditorSettings, GameTarget} from "../project/editorSettings";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
@@ -17,12 +18,12 @@ import {
     PROJECT_EVENT_REBUILT,
     projectBuildCopyPath,
 } from "../project/projectServerApi";
-import type {BuildProjectResult, OpenProjectResult} from "../project/projectServerApi";
+import type {BuildProjectResult, GenerateProjectReport, OpenProjectResult} from "../project/projectServerApi";
 import type {ServerEventStream} from "../project/serverEvents";
 import {editorViewportFor} from "./editorViewport";
 import {EditorExtensionLoader} from "./editorExtensionLoader";
 import {browseForFolder} from "./folderBrowser";
-import {chooseGameTarget, gameTargetLabelText, gameTargetMenuItems, gpuFallbackNotice, webGpuAvailability} from "./gameTargets";
+import {chooseGameTarget, gameTargetLabelText, gpuFallbackNotice, projectGameTarget, registerGameTargetCommand, webGpuAvailability} from "./gameTargets";
 import type {GameTargetChoice, WebGpuAvailability} from "./gameTargets";
 import {ProjectRunner} from "./projectRunner";
 import {ProjectServerClient} from "./projectServerClient";
@@ -69,6 +70,7 @@ interface ProjectLaunch {
     readonly buildWarnings?: readonly string[];
     readonly events?: ServerEventStream;
     readonly editorExtensionsUrl?: string;
+    readonly generate?: () => Promise<GenerateProjectReport>;
 }
 
 interface DirectoryPickerWindow {
@@ -143,8 +145,8 @@ class EditorStart {
         this.screen.showProblems(title, problems, actions);
     }
 
-    private chooseTarget(settings: EditorSettings): GameTargetChoice {
-        return chooseGameTarget(settings.gameTarget, location.search, this.webGpu);
+    private chooseTarget(settings: EditorSettings, manifest: ProjectManifest): GameTargetChoice {
+        return chooseGameTarget(settings.gameTarget, location.search, this.webGpu, projectGameTarget(manifest.targets));
     }
 
     private async chooseFolder(): Promise<void> {
@@ -206,7 +208,7 @@ class EditorStart {
         const manifest = validation.manifest;
         this.screen.showRecent(rememberRecentProject(this.storage, opened.path, manifest.name, Date.now()));
         this.screen.showBusy(`Building ${manifest.name}…`);
-        const target = this.chooseTarget(await server.editorSettings(opened.id).catch(() => NO_SETTINGS));
+        const target = this.chooseTarget(await server.editorSettings(opened.id).catch(() => NO_SETTINGS), manifest);
         let built: BuildProjectResult;
         try {
             built = await server.build(opened.id, target.gameTarget);
@@ -230,7 +232,8 @@ class EditorStart {
             build: gameTarget => server.build(opened.id, gameTarget),
         };
         const launched = {...target, gameTarget: built.gameTarget};
-        await this.launch({manifest, files, workerUrl: built.workerUrl, target: launched, switching, buildWarnings: built.warnings, events, editorExtensionsUrl: built.editorExtensionsUrl});
+        const generate = () => server.generate(opened.id);
+        await this.launch({manifest, files, workerUrl: built.workerUrl, target: launched, switching, buildWarnings: built.warnings, events, editorExtensionsUrl: built.editorExtensionsUrl, generate});
     }
 
     private async openWithDirectoryPicker(): Promise<void> {
@@ -256,7 +259,7 @@ class EditorStart {
             this.fail(`${handle.name} is not a JsEngine project`, [...validation.problems, CREATE_NEEDS_SERVER]);
             return;
         }
-        const target = this.chooseTarget(parseEditorSettings(await files.readText(EDITOR_SETTINGS_FILE).catch(() => undefined)));
+        const target = this.chooseTarget(parseEditorSettings(await files.readText(EDITOR_SETTINGS_FILE).catch(() => undefined)), validation.manifest);
         const bundlePath = projectBuildCopyPath(target.gameTarget);
         const bundle = await files.read(bundlePath).catch(() => undefined);
         if (bundle === undefined) {
@@ -275,7 +278,20 @@ class EditorStart {
         const initialTarget = launch.target.gameTarget;
         const shell = createEditorShell(document.body, {
             targetLabel: gameTargetLabelText(initialTarget),
-            onGameTabMenu: (clientX, clientY) => showTargetMenu(clientX, clientY),
+            closeProject: () => location.assign(location.pathname),
+            keyOfEvent: keyOf,
+            ...(launch.generate === undefined ? {} : {generate: launch.generate}),
+        });
+        let projectTargets: ProjectTargets | undefined = launch.manifest.targets;
+        const pixelScaleOf = (gameTarget: GameTarget): number | undefined => targetRenderDefaults(projectTargets, gameTarget.target).pixelScale;
+        launch.files.onChange(change => {
+            if (!change.paths.includes(PROJECT_MANIFEST_FILE)) return;
+            void launch.files.readText(PROJECT_MANIFEST_FILE).then(text => {
+                const validation = validateProjectManifest(text);
+                if (!validation.ok) return;
+                projectTargets = validation.manifest.targets;
+                document.title = validation.manifest.name + EDITOR_TITLE_SUFFIX;
+            }, () => undefined);
         });
         const fallbackReason = launch.target.fallbackReason;
         if (fallbackReason !== undefined) {
@@ -287,8 +303,8 @@ class EditorStart {
         showGameTarget(initialTarget);
         const runner = new ProjectRunner({
             shell,
-            viewport: editorViewportFor(initialTarget, shell.viewport, location.search, VISIBLE),
-            createHiddenViewport: gameTarget => editorViewportFor(gameTarget, shell.viewport, location.search, HIDDEN),
+            viewport: editorViewportFor(initialTarget, shell.viewport, location.search, VISIBLE, pixelScaleOf(initialTarget)),
+            createHiddenViewport: gameTarget => editorViewportFor(gameTarget, shell.viewport, location.search, HIDDEN, pixelScaleOf(gameTarget)),
             onTargetChanged: gameTarget => {
                 shell.showTargetLabel(gameTargetLabelText(gameTarget));
                 showGameTarget(gameTarget);
@@ -324,12 +340,13 @@ class EditorStart {
             showBuildWarnings(built.warnings);
             if (sameGameTarget(built.gameTarget, desiredTarget)) runner.reload(built);
         };
-        const showTargetMenu = (clientX: number, clientY: number): void => showPopupMenu(document, clientX, clientY, gameTargetMenuItems({
-            current: runner.gameTarget,
+        const targets = registerGameTargetCommand(shell.commands, {
+            current: () => runner.gameTarget,
             webGpu: this.webGpu,
             ...(launch.switching === undefined ? {switchUnavailableReason: SWITCH_NEEDS_SERVER} : {}),
             choose: gameTarget => void switchTarget(gameTarget),
-        }));
+        });
+        shell.setGameTargetMenu(targets.menuEntries);
         let shownWarnings = "";
         const showBuildWarnings = (warnings: readonly string[]) => {
             const text = warnings.join("\n");

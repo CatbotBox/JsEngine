@@ -19,6 +19,7 @@ import type {
     EditorServiceState,
     EditorView,
     InstantiateEntitiesRequest,
+    ListEntitiesResult,
     SetFieldResult,
     SetFieldsResult,
 } from "../editorProtocol";
@@ -32,8 +33,8 @@ import type {Vector3} from "./editorCameraMath";
 import type {EditorTool} from "./editorTools";
 import {ConsoleLog} from "./consoleLog";
 import type {ConsoleAppend} from "./consoleLog";
-import {askForChoice, askForText} from "./dialogs";
-import {errorText} from "./dom";
+import {askForText} from "./dialogs";
+import {errorText, readStorage, writeStorage} from "./dom";
 import {entitySummaryLabel} from "./entityTree";
 import {isInlineAssetSummary} from "./fieldValueText";
 import {parentLookupOf, planMoves, siblingIndexIn, siblingListsOf, subtreeInListOrder, topmostEntities} from "./hierarchyDrop";
@@ -47,18 +48,21 @@ import {
 import {
     allProjectPaths,
     fileNameProblem,
-    joinProjectPath,
     normalizeProjectPath,
     PREFAB_EXTENSION,
     projectFileKind,
-    SCENE_EXTENSION,
-    SCENES_FOLDER,
     stemOf,
     uniqueChildPath,
 } from "./projectFiles";
 import type {ProjectFileKind} from "./projectFiles";
 import type {ProjectEntry} from "../project/projectFileSystem";
-import {sceneLoadStatus, sceneSaveStatus} from "./editorToolbar";
+import {FileExistenceCommand, newFileSnapshot, ObservedProjectFiles} from "./fileUndo";
+import {GAME_VIEW_OPTIONS_STORAGE_KEY, gameViewOptionsText, parseGameViewOptions, withGameViewOption} from "./gameViewOptions";
+import type {GameViewOptionChoice, GameViewOptions} from "./gameViewOptions";
+import {SceneDocuments} from "./sceneDocuments";
+import type {TabHistory} from "./sceneDocuments";
+import {parseSnapSteps, SNAP_STEPS_STORAGE_KEY, snapStepsText, withSnapStep} from "./snapSteps";
+import type {SnapStepChoice, SnapSteps} from "./snapSteps";
 import {
     ComponentPresenceCommand,
     CompositeCommand,
@@ -76,11 +80,11 @@ import {
 } from "./undoStack";
 import type {EditorRequester, EntityValueShape, FieldChange, RecordedSubtree, StoredValues, UndoCommand, UndoContext} from "./undoStack";
 
-export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile" | "entityPick" | "openDataAsset";
+export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile" | "entityPick" | "openDataAsset" | "files";
 
 export type DragPayload =
     | {readonly kind: "entities", readonly entities: readonly Entity[]}
-    | {readonly kind: "asset", readonly path: string, readonly fileKind: ProjectFileKind};
+    | {readonly kind: "asset", readonly path: string, readonly fileKind: ProjectFileKind, readonly movedPaths: readonly string[]};
 
 export interface AssetPlacement {
     readonly target: DropTarget;
@@ -110,7 +114,6 @@ const SPRITE_KEY = "image";
 const UNSAFE_FILE_NAME_CHARACTERS = /[\\/:*?"<>|\u0000-\u001f]/g;
 const SAFE_REPLACEMENT = "_";
 const NO_VALUES: SceneJsonObject = {};
-const UNSAVED_DOCUMENT_NAME = "Untitled";
 const ENTITY_PICK_HINT = "Click an entity in the Scene view to pick it (Esc cancels)";
 const ENTITY_PICK_SCENE_VIEW_HINT = "Switch to the Scene view and click an entity to pick it (Esc cancels)";
 const CANCEL_KEY = "Escape";
@@ -119,8 +122,6 @@ const DATA_ASSETS_FOLDER = "assets";
 interface EntityPick {
     finish(entity: Entity | undefined): void;
 }
-
-type SaveChoice = "save" | "discard";
 
 type ServiceStateUpdate = Pick<EditorServiceState, "mode" | "gameplayTicks" | "view"> & {readonly worldStoppedError?: string | null};
 
@@ -138,17 +139,17 @@ export function safeFileStem(name: string): string {
 }
 
 export class EditorWorkspace implements UndoContext {
-    public readonly refs = new EntityRefs();
-    public readonly undo: UndoStack;
     public readonly consoleLog = new ConsoleLog();
     public readonly refresh: EditorRefresh;
+    public readonly scenes: SceneDocuments;
+    public readonly files: ObservedProjectFiles;
     public mode: EditorMode = "edit";
     public gameplayTicks = 0;
     public view: EditorView = "scene";
     public tool: EditorTool = "move";
+    public snapSteps: SnapSteps;
+    public gameViewOptions: GameViewOptions;
     public worldStoppedError: string | null = null;
-    public documentPath: string | null = null;
-    public dirty = false;
     public schemas = new Map<string, EditorComponentDescription>();
     public resourceSchemas = new Map<string, EditorResourceDescription>();
     public assetTypes = new Map<string, EditorAssetTypeDescription>();
@@ -173,13 +174,19 @@ export class EditorWorkspace implements UndoContext {
     private entityPick: EntityPick | undefined;
 
     public constructor(private currentSession: EditorSession, public readonly document: Document) {
-        this.undo = new UndoStack(this);
-        this.undo.onChange(() => this.emit("state"));
+        this.snapSteps = parseSnapSteps(readStorage(document.defaultView, SNAP_STEPS_STORAGE_KEY));
+        this.gameViewOptions = parseGameViewOptions(readStorage(document.defaultView, GAME_VIEW_OPTIONS_STORAGE_KEY));
+        this.scenes = new SceneDocuments(this, currentSession.project.startScene, () => this.createHistory());
+        this.files = new ObservedProjectFiles(() => this.currentSession.files, {
+            moved: (from, to) => this.scenes.pathRenamed(from, to),
+            removed: path => this.scenes.pathDeleted(path),
+            changed: () => this.emit("files"),
+        });
         this.refresh = new EditorRefresh({
             client: () => this.client,
             selection: () => this.selection,
             instanceRootOf: entity => prefabInstanceRootOf(entity, candidate => this.summaries.get(candidate)),
-            showEntities: entities => this.showEntities(entities),
+            showListing: listing => this.showListing(listing),
             showSelectionDetails: details => {
                 this.selectionDetails = details;
                 this.requestUnknownSchemas(details.details);
@@ -200,6 +207,14 @@ export class EditorWorkspace implements UndoContext {
         return this.currentSession;
     }
 
+    public get undo(): UndoStack {
+        return this.scenes.activeTab.history.undo;
+    }
+
+    public get refs(): EntityRefs {
+        return this.scenes.activeTab.history.refs;
+    }
+
     public get recording(): boolean {
         return this.mode === "edit";
     }
@@ -210,10 +225,6 @@ export class EditorWorkspace implements UndoContext {
 
     public get pickingEntity(): boolean {
         return this.entityPick !== undefined;
-    }
-
-    public get documentName(): string {
-        return this.documentPath === null ? UNSAVED_DOCUMENT_NAME : stemOf(this.documentPath);
     }
 
     public summaryOf(entity: Entity): EditorEntitySummary | undefined {
@@ -351,21 +362,30 @@ export class EditorWorkspace implements UndoContext {
         this.emit("state");
     }
 
+    public setSnapStep(choice: SnapStepChoice): void {
+        this.snapSteps = withSnapStep(this.snapSteps, choice);
+        writeStorage(this.document.defaultView, SNAP_STEPS_STORAGE_KEY, snapStepsText(this.snapSteps));
+        this.emit("state");
+    }
+
+    public setGameViewOption(choice: GameViewOptionChoice): void {
+        this.gameViewOptions = withGameViewOption(this.gameViewOptions, choice);
+        writeStorage(this.document.defaultView, GAME_VIEW_OPTIONS_STORAGE_KEY, gameViewOptionsText(this.gameViewOptions));
+        this.emit("state");
+    }
+
     public reveal(path: string): void {
         this.revealedPath = path;
         this.emit("reveal");
     }
 
-    public markDirty(): void {
-        if (this.dirty) return;
-        this.dirty = true;
-        this.emit("document");
-    }
-
-    public setDocument(path: string | null, dirty: boolean): void {
-        this.documentPath = path;
-        this.dirty = dirty;
-        this.emit("document");
+    public worldReplaced(): void {
+        this.cancelEntityPick();
+        this.worldStoppedError = null;
+        this.select([]);
+        this.emit("sceneLoaded");
+        this.emit("state");
+        void this.loadSchemas();
     }
 
     public applyServiceState(state: ServiceStateUpdate): void {
@@ -439,7 +459,9 @@ export class EditorWorkspace implements UndoContext {
     public async createDataAsset(typeName: string, path: string): Promise<boolean> {
         const created = await this.run(async () => {
             const {fields} = await this.request({op: "defaultResourceFields", typeName});
-            await this.currentSession.files.write(path, dataAssetText(typeName, fields));
+            const text = dataAssetText(typeName, fields);
+            await this.files.write(path, text);
+            this.record(new FileExistenceCommand(`Create ${typeName} Data Asset`, [newFileSnapshot(path, text)], true));
             this.reveal(path);
             this.openDataAsset(path);
             this.notice("info", `Created the ${typeName} data asset ${path}`);
@@ -498,7 +520,7 @@ export class EditorWorkspace implements UndoContext {
             return;
         }
         await this.run(async () => {
-            if (await this.undo.undo()) this.markDirty();
+            await this.undo.undo();
         });
     }
 
@@ -508,7 +530,7 @@ export class EditorWorkspace implements UndoContext {
             return;
         }
         await this.run(async () => {
-            if (await this.undo.redo()) this.markDirty();
+            await this.undo.redo();
         });
     }
 
@@ -519,7 +541,6 @@ export class EditorWorkspace implements UndoContext {
     public record(command: UndoCommand, coalesceKey?: string): void {
         if (!this.recording) return;
         this.undo.push(command, coalesceKey);
-        this.markDirty();
     }
 
     public async createEmpty(parent: Entity | null): Promise<void> {
@@ -555,13 +576,19 @@ export class EditorWorkspace implements UndoContext {
         });
     }
 
-    public async copy(entities: readonly Entity[]): Promise<void> {
-        if (entities.length === 0) return;
-        await this.run(async () => {
+    public async copy(entities: readonly Entity[]): Promise<boolean> {
+        if (entities.length === 0) return false;
+        const copied = await this.run(async () => {
             const roots = topmostEntities(entities, parentLookupOf(this.links()));
             this.entityClipboard = (await this.request({op: "serializeEntities", entities: roots})).documentText;
             this.notice("info", `Copied ${roots.length === 1 ? "1 entity" : `${roots.length} entities`}`);
+            return true;
         });
+        return copied === true;
+    }
+
+    public async cut(entities: readonly Entity[]): Promise<void> {
+        if (await this.copy(entities)) await this.destroy(entities);
     }
 
     public async paste(): Promise<void> {
@@ -744,7 +771,9 @@ export class EditorWorkspace implements UndoContext {
             const [previous] = await this.captureSubtrees([entity], links);
             await this.request({op: "destroyEntity", entity});
             for (const ref of previous.entities) this.refs.markDead(ref);
-            const created = await this.request({op: "instantiateEntities", documentText, parent, siblingIndex: previous.siblingIndex, prefabSourcePath: path});
+            const created = await this.request(previous.scene === undefined
+                ? {op: "instantiateEntities", documentText, parent, siblingIndex: previous.siblingIndex, prefabSourcePath: path}
+                : {op: "instantiateEntities", documentText, parent, siblingIndex: previous.siblingIndex, prefabSourcePath: path, scene: previous.scene});
             const root = created.roots[0];
             const [instance] = await this.captureSubtrees([root], await this.freshLinks());
             this.record(new CompositeCommand("Create Prefab", [new ExistenceCommand("Create Prefab", [previous], false), new ExistenceCommand("Create Prefab", [instance], true)]));
@@ -764,7 +793,7 @@ export class EditorWorkspace implements UndoContext {
             const {documentText} = await this.request({op: "applyPrefabInstance", entity: root});
             await this.currentSession.files.write(sourcePath, documentText);
             const {updated} = await this.request({op: "updatePrefabInstances", sourcePath, documentText});
-            this.markDirty();
+            this.scenes.prefabChanged(sourcePath);
             this.notice("info", `Applied overrides to ${sourcePath} (${updated.length === 1 ? "1 instance" : `${updated.length} instances`} updated)`);
         });
     }
@@ -787,98 +816,15 @@ export class EditorWorkspace implements UndoContext {
         });
     }
 
-    public async openDocument(path: string): Promise<void> {
-        if (!(await this.confirmDiscardChanges())) return;
-        await this.loadDocument(path);
-    }
-
-    public async loadDocument(path: string): Promise<void> {
-        await this.run(async () => {
-            const sceneText = await this.currentSession.files.readText(path);
-            const loaded = await this.request({op: "loadScene", sceneText, path});
-            this.afterLoad(path);
-            this.notice("info", `${sceneLoadStatus(loaded)} from ${path}`);
-        });
-    }
-
-    public async saveDocument(): Promise<boolean> {
-        if (!this.recording) {
-            this.notice("warn", "The scene can only be saved while editing; stop the game first");
-            return false;
-        }
-        const path = this.documentPath ?? await this.askNewScenePath();
-        if (path === undefined) return false;
-        const saved = await this.run(async () => {
-            const result = await this.request({op: "saveScene"});
-            const prefab = projectFileKind(path) === "prefab";
-            if (prefab && documentRootCount(parseSceneDocument(result.sceneText)) !== 1) {
-                throw new Error(`${path} is a prefab, which must have exactly one root entity; parent the others under one root before saving`);
-            }
-            await this.currentSession.files.write(path, result.sceneText);
-            if (prefab) await this.request({op: "updatePrefabInstances", sourcePath: path, documentText: result.sceneText});
-            this.setDocument(path, false);
-            this.notice("info", sceneSaveStatus(result.report, path));
-            return true;
-        });
-        return saved === true;
-    }
-
-    public async confirmDiscardChanges(): Promise<boolean> {
-        if (!this.dirty) return true;
-        const choice = await askForChoice<SaveChoice>(this.document, {
-            title: "Unsaved changes",
-            message: `${this.documentName} has unsaved changes.`,
-            choices: [{label: "Save", value: "save", primary: true}, {label: "Don't save", value: "discard"}],
-        });
-        if (choice === undefined) return false;
-        if (choice === "discard") return true;
-        return this.saveDocument();
-    }
-
     public entityValueShapes(typeName: string): Map<string, EntityValueShape> {
         const schema = this.schemas.get(typeName);
         return new Map((schema?.fields ?? []).map(field => [field.key, entityValueShapeOf(field)]));
     }
 
-    private afterLoad(path: string): void {
-        this.cancelEntityPick();
-        this.undo.clear();
-        this.worldStoppedError = null;
-        this.select([]);
-        this.setDocument(path, false);
-        this.emit("sceneLoaded");
-        this.emit("state");
-        void this.loadSchemas();
-    }
-
-    private async askNewScenePath(): Promise<string | undefined> {
-        const files = this.currentSession.files;
-        const existing = allProjectPaths(await files.list());
-        const name = await askForText(this.document, {
-            title: "Save scene",
-            label: `Scene name (saved in ${SCENES_FOLDER}/)`,
-            initialValue: "Main",
-            confirmText: "Save",
-            validate: value => fileNameProblem(value),
-        });
-        if (name === undefined) return undefined;
-        const path = joinProjectPath(SCENES_FOLDER, `${name.trim()}${SCENE_EXTENSION}`);
-        if (existing.has(path)) {
-            const overwrite = await askForChoice(this.document, {
-                title: "Replace scene",
-                message: `${path} already exists. Replace it?`,
-                choices: [{label: "Replace", value: true, primary: true}],
-            });
-            if (overwrite !== true) return undefined;
-        }
-        if (!existing.has(SCENES_FOLDER)) {
-            try {
-                await files.makeDirectory(SCENES_FOLDER);
-            } catch (error) {
-                this.reportError(error);
-            }
-        }
-        return path;
+    private createHistory(): TabHistory {
+        const undo = new UndoStack(this);
+        undo.onChange(() => this.emit("state"));
+        return {undo, refs: new EntityRefs()};
     }
 
     private async placeAt(entity: Entity, position: Vector3): Promise<void> {
@@ -914,8 +860,7 @@ export class EditorWorkspace implements UndoContext {
     }
 
     private async freshLinks(): Promise<HierarchyLink[]> {
-        const {entities} = await this.request({op: "listEntities"});
-        this.showEntities(entities);
+        this.showListing(await this.request({op: "listEntities"}));
         return this.links();
     }
 
@@ -928,12 +873,14 @@ export class EditorWorkspace implements UndoContext {
             const parent = linkOf.get(root)?.parent ?? null;
             const recordedCount = parseSceneDocument(documentText).entities.length;
             const inOrder = subtreeInListOrder(links, root);
+            const sceneId = this.summaries.get(root)?.sceneId;
             subtrees.push(recordSubtree(this.refs, {
                 root,
                 entitiesInCreationOrder: inOrder.length === recordedCount ? inOrder : [root],
                 documentText,
                 parent,
                 siblingIndex: siblingIndexIn(lists, parent, root),
+                scene: parent === null && sceneId !== undefined ? this.scenes.sceneRefFor(sceneId) : undefined,
             }));
         }
         return subtrees;
@@ -945,9 +892,10 @@ export class EditorWorkspace implements UndoContext {
         this.record(new ExistenceCommand(label, subtrees, true));
     }
 
-    private showEntities(entities: readonly EditorEntitySummary[]): void {
-        this.entities = entities;
-        this.summaries = new Map(entities.map(summary => [summary.entity, summary]));
+    private showListing(listing: ListEntitiesResult): void {
+        this.scenes.acceptListing(listing);
+        this.entities = listing.entities;
+        this.summaries = new Map(listing.entities.map(summary => [summary.entity, summary]));
         this.emit("entities");
     }
 

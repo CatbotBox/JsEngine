@@ -13,6 +13,8 @@ import {
     withoutPrefabInstances,
 } from "./prefabInstancePaths";
 
+const SCENE_ID = 1;
+
 function component(typeName: string, fields: EditorComponentDetails["fields"]): EditorComponentDetails {
     return {typeName, inspectable: true, inferred: false, fields};
 }
@@ -54,7 +56,7 @@ describe("multi-selection", () => {
 });
 
 function summary(entity: number, parent: number | null, siblingIndex: number, prefabSourcePath: string | null = null): EditorEntitySummary {
-    return {entity: entity as Entity, name: null, enabled: true, parent: parent as Entity | null, siblingIndex, prefabSourcePath, componentTypeNames: []};
+    return {entity: entity as Entity, name: null, enabled: true, parent: parent as Entity | null, siblingIndex, prefabSourcePath, componentTypeNames: [], sceneId: SCENE_ID};
 }
 
 describe("prefab instance paths", () => {

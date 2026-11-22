@@ -4,12 +4,13 @@ import {ServerEventStream} from "../project/serverEvents";
 import type {StreamingFetch} from "../project/serverEvents";
 import {editorSettingsOf} from "../project/editorSettings";
 import type {EditorSettings, GameTarget} from "../project/editorSettings";
-import {EDITOR_SETTINGS_UPDATE_METHOD, PROJECT_EDITOR_SETTINGS_ROUTE, projectApiUrl} from "../project/projectServerApi";
+import {EDITOR_SETTINGS_UPDATE_METHOD, isGenerateProjectReport, PROJECT_EDITOR_SETTINGS_ROUTE, PROJECT_GENERATE_ROUTE, projectApiUrl} from "../project/projectServerApi";
 import type {
     BrowseResult,
     BuildProjectRequest,
     BuildProjectResult,
     CreateProjectRequest,
+    GenerateProjectReport,
     OpenProjectRequest,
     OpenProjectResult,
     PickFolderResult,
@@ -79,6 +80,12 @@ export class ProjectServerClient {
         return await this.post<BuildProjectResult>(`${encodeURIComponent(projectId)}/build`, body);
     }
 
+    public async generate(projectId: string): Promise<GenerateProjectReport> {
+        const report = await this.post<unknown>(`${encodeURIComponent(projectId)}/${PROJECT_GENERATE_ROUTE}`, {});
+        if (!isGenerateProjectReport(report)) throw new Error(`the project server answered generate with ${JSON.stringify(report)}`);
+        return report;
+    }
+
     public async editorSettings(projectId: string): Promise<EditorSettings> {
         return editorSettingsOf(await this.json<unknown>(this.editorSettingsRoute(projectId), {cache: NO_STORE}));
     }
@@ -93,7 +100,7 @@ export class ProjectServerClient {
     }
 
     public files(projectId: string, rootLabel: string, events: ServerEventStream): HttpProjectFileSystem {
-        return new HttpProjectFileSystem({projectId, rootLabel, fetch: this.fetch, events});
+        return new HttpProjectFileSystem({projectId, rootLabel, fetch: this.fetch, events, showInFolder: this.capabilities.showInFolder});
     }
 
     private editorSettingsRoute(projectId: string): string {

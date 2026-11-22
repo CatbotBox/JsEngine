@@ -1,34 +1,69 @@
 import type {Entity} from "../../engine/core";
 import type {EditorEntitySummary} from "../editorProtocol";
-import {createButton, createElement, hasCommandModifier} from "./dom";
+import {createElement, hasCommandModifier} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
-import {buildEntityTree, ENTITY_TREE_ROW_LIMIT, entitySummaryLabel, entityTreeRows} from "./entityTree";
+import {buildEntityTree, ENTITY_TREE_ROW_LIMIT, entitySummaryLabel} from "./entityTree";
 import type {EntityTreeNode, EntityTreeRow} from "./entityTree";
 import {dropTargetFor, dropZoneAt, isDropAllowed, parentLookupOf, siblingListsOf, UNPARENT_TARGET} from "./hierarchyDrop";
 import type {DropTarget, DropZone} from "./hierarchyDrop";
 import {parseHierarchySearch} from "./hierarchySearch";
+import {clickedSelection, selectionModifiersOf} from "./listSelection";
 import {isAssetKind} from "./projectFiles";
-import {MENU_SEPARATOR, showPopupMenu} from "./popupMenu";
-import type {MenuItem} from "./popupMenu";
+import {showCommandMenu} from "./commandMenus";
+import {commandButton} from "./commandButtons";
+import type {EditorCommands} from "./editorCommands";
+import {hierarchyMenu, sceneMenu} from "./editorMenus";
+import {hierarchyRows, sceneGroups} from "./sceneHierarchy";
+import type {HierarchyRow, SceneGroup} from "./sceneHierarchy";
+import {TAB_DIRTY_MARKER} from "./sceneTabs";
 
+const CREATE_BUTTON_TEXT = "+";
 const INDENT_PX_PER_LEVEL = 14;
 const BASE_INDENT_PX = 4;
 const MAX_INDENTED_DEPTH = 24;
+const SCENE_ROW_DEPTH = 1;
 const SEARCH_PLACEHOLDER = "Search (t:Type filters components)";
 const DRAG_TEXT_TYPE = "text/plain";
 const DROP_CLASSES: Readonly<Record<DropZone, string>> = {before: "drop-before", onto: "drop-onto", after: "drop-after"};
 const EMPTY_DROP_CLASS = "drop-root";
+const SCENE_DROP_CLASS = "drop-onto";
 const SELECTED_CLASS = "selected";
+const ENTITY_ROW_SELECTOR = ".entity-row";
+const SCENE_ROW_SELECTOR = ".scene-row";
+const UNLOADED_SUFFIX = " (not loaded)";
+const ACTIVE_SCENE_TITLE = "the active scene: new entities go here";
+const START_SCENE_TITLE = "the start scene";
+const START_BADGE_TEXT = "start";
 const NO_ROW_INDEX = -1;
 
 interface RenderedRow {
-    readonly row: EntityTreeRow;
+    readonly row: HierarchyRow;
     readonly element: HTMLElement;
 }
 
-function rowKey(row: EntityTreeRow): string {
-    const summary = row.summary;
-    return `${summary.entity}:${row.depth}:${row.hasChildren ? (row.expanded ? 2 : 1) : 0}:${summary.enabled ? 1 : 0}:${summary.prefabSourcePath ?? ""}:${entitySummaryLabel(summary)}`;
+interface FoundTarget {
+    readonly target: DropTarget;
+    readonly sceneId: number | undefined;
+    readonly indicator: HTMLElement;
+    readonly className: string;
+}
+
+function rowKey(row: HierarchyRow): string {
+    if (row.kind === "scene") {
+        const group = row.group;
+        return `scene:${group.key}:${row.expanded ? 1 : 0}:${group.roots.length > 0 ? 1 : 0}:${group.label}:${group.path ?? ""}:${group.active ? 1 : 0}:${group.dirty ? 1 : 0}:${group.loaded ? 1 : 0}:${group.start ? 1 : 0}`;
+    }
+    const entityRow = row.row;
+    const summary = entityRow.summary;
+    return `${summary.entity}:${entityRow.depth}:${entityRow.hasChildren ? (entityRow.expanded ? 2 : 1) : 0}:${summary.enabled ? 1 : 0}:${summary.prefabSourcePath ?? ""}:${entitySummaryLabel(summary)}`;
+}
+
+function entityRowOf(row: HierarchyRow): EntityTreeRow | undefined {
+    return row.kind === "entity" ? row.row : undefined;
+}
+
+function indentPx(depth: number): string {
+    return `${BASE_INDENT_PX + Math.min(depth, MAX_INDENTED_DEPTH) * INDENT_PX_PER_LEVEL}px`;
 }
 
 export class HierarchyView {
@@ -37,7 +72,9 @@ export class HierarchyView {
     private readonly note: HTMLElement;
     private readonly heading: HTMLElement;
     private readonly collapsed = new Set<Entity>();
+    private readonly collapsedScenes = new Set<string>();
     private roots: EntityTreeNode[] = [];
+    private groups: SceneGroup[] = [];
     private rendered: RenderedRow[] = [];
     private renderedKey: string | undefined;
     private shownSelectionKey: string | undefined;
@@ -45,11 +82,11 @@ export class HierarchyView {
     private renaming: Entity | undefined;
     private dropIndicator: {readonly element: HTMLElement, readonly className: string} | undefined;
 
-    public constructor(container: HTMLElement, private readonly workspace: EditorWorkspace) {
+    public constructor(container: HTMLElement, private readonly workspace: EditorWorkspace, private readonly commands: EditorCommands) {
         const document = container.ownerDocument;
         const header = createElement(document, "div", "panel-header");
         this.heading = createElement(document, "h2", "panel-heading", "Hierarchy");
-        header.append(this.heading, createButton(document, {className: "panel-header-button", text: "+", title: "Create an empty entity", onClick: () => void workspace.createEmpty(null)}));
+        header.append(this.heading, commandButton(document, commands.registry, commands.entity.createEmpty, {className: "panel-header-button", text: CREATE_BUTTON_TEXT}));
         this.search = createElement(document, "input", "field-input hierarchy-search");
         this.search.type = "search";
         this.search.placeholder = SEARCH_PLACEHOLDER;
@@ -83,12 +120,14 @@ export class HierarchyView {
             this.render();
         });
         workspace.on("selection", () => this.render());
+        workspace.on("document", () => this.render());
         this.render();
     }
 
     public beginRename(entity: Entity): void {
-        const rendered = this.rendered.find(entry => entry.row.summary.entity === entity);
-        if (rendered === undefined) return;
+        const rendered = this.rendered.find(entry => entityRowOf(entry.row)?.summary.entity === entity);
+        const row = rendered === undefined ? undefined : entityRowOf(rendered.row);
+        if (rendered === undefined || row === undefined) return;
         const label = rendered.element.querySelector<HTMLElement>(".tree-label");
         if (label === null) return;
         this.renaming = entity;
@@ -96,7 +135,7 @@ export class HierarchyView {
         const input = createElement(document, "input", "field-input tree-rename");
         input.type = "text";
         input.spellcheck = false;
-        input.value = rendered.row.summary.name ?? "";
+        input.value = row.summary.name ?? "";
         input.setAttribute("aria-label", "New name");
         let finished = false;
         const finish = (commit: boolean): void => {
@@ -124,18 +163,23 @@ export class HierarchyView {
     }
 
     private visibleEntities(): Entity[] {
-        return this.rendered.map(entry => entry.row.summary.entity);
+        return this.rendered.flatMap(entry => {
+            const row = entityRowOf(entry.row);
+            return row === undefined ? [] : [row.summary.entity];
+        });
     }
 
     private render(): void {
         if (this.renaming !== undefined) return;
-        const shown = entityTreeRows(this.roots, parseHierarchySearch(this.search.value), ENTITY_TREE_ROW_LIMIT, this.collapsed);
+        const scenes = this.workspace.scenes;
+        this.groups = sceneGroups(scenes.activeTab.scenes, scenes.worldScenes, this.roots, scenes.startScene);
+        const shown = hierarchyRows(this.groups, parseHierarchySearch(this.search.value), ENTITY_TREE_ROW_LIMIT, this.collapsed, this.collapsedScenes);
         this.heading.textContent = `Hierarchy (${this.workspace.entities.length})`;
         const selected = new Set(this.workspace.selection);
         const key = `${shown.hiddenCount}|${shown.rows.map(rowKey).join("\n")}`;
         if (key !== this.renderedKey) {
             this.renderedKey = key;
-            this.rendered = shown.rows.map(row => ({row, element: this.rowElement(row, selected.has(row.summary.entity))}));
+            this.rendered = shown.rows.map(row => ({row, element: this.rowElement(row, selected)}));
             this.list.replaceChildren(...this.rendered.map(entry => entry.element));
             this.note.hidden = shown.hiddenCount === 0;
             this.note.textContent = `${shown.hiddenCount} more not shown (first ${ENTITY_TREE_ROW_LIMIT} rows); search to see more`;
@@ -146,30 +190,58 @@ export class HierarchyView {
     private showSelection(selected: ReadonlySet<Entity>): void {
         const selectionKey = this.workspace.selection.join(",");
         for (const {row, element} of this.rendered) {
-            const isSelected = selected.has(row.summary.entity);
+            const entityRow = entityRowOf(row);
+            if (entityRow === undefined) continue;
+            const isSelected = selected.has(entityRow.summary.entity);
             element.classList.toggle(SELECTED_CLASS, isSelected);
             element.setAttribute("aria-selected", String(isSelected));
         }
         if (selectionKey === this.shownSelectionKey) return;
         this.shownSelectionKey = selectionKey;
         const primary = this.workspace.primary;
-        this.rendered.find(entry => entry.row.summary.entity === primary)?.element.scrollIntoView({block: "nearest"});
+        this.rendered.find(entry => entityRowOf(entry.row)?.summary.entity === primary)?.element.scrollIntoView({block: "nearest"});
     }
 
-    private rowElement(row: EntityTreeRow, selected: boolean): HTMLElement {
+    private rowElement(row: HierarchyRow, selected: ReadonlySet<Entity>): HTMLElement {
+        if (row.kind === "scene") return this.sceneRowElement(row.group, row.expanded);
+        return this.entityRowElement(row.row, selected.has(row.row.summary.entity));
+    }
+
+    private sceneRowElement(group: SceneGroup, expanded: boolean): HTMLElement {
+        const document = this.list.ownerDocument;
+        const element = createElement(document, "div", "tree-row scene-row");
+        element.classList.toggle("active-scene", group.active);
+        element.classList.toggle("unloaded", !group.loaded);
+        element.setAttribute("role", "treeitem");
+        element.setAttribute("aria-level", String(SCENE_ROW_DEPTH));
+        if (group.roots.length > 0) element.setAttribute("aria-expanded", String(expanded));
+        element.dataset.scene = group.key;
+        element.style.paddingLeft = indentPx(0);
+        const arrow = createElement(document, "span", group.roots.length === 0 ? "tree-arrow leaf" : expanded ? "tree-arrow expanded" : "tree-arrow");
+        arrow.dataset.sceneToggle = group.key;
+        const text = `${group.label}${group.dirty ? TAB_DIRTY_MARKER : ""}${group.loaded ? "" : UNLOADED_SUFFIX}`;
+        const label = createElement(document, "span", "tree-label", text);
+        const notes = [group.active ? ACTIVE_SCENE_TITLE : undefined, group.start ? START_SCENE_TITLE : undefined].filter((note): note is string => note !== undefined);
+        label.title = `${group.path ?? group.label}${notes.length === 0 ? "" : ` (${notes.join("; ")})`}`;
+        element.append(arrow, label);
+        if (group.start) element.append(createElement(document, "span", "scene-badge", START_BADGE_TEXT));
+        return element;
+    }
+
+    private entityRowElement(row: EntityTreeRow, selected: boolean): HTMLElement {
         const document = this.list.ownerDocument;
         const summary = row.summary;
-        const element = createElement(document, "div", "tree-row");
+        const element = createElement(document, "div", "tree-row entity-row");
         element.classList.toggle(SELECTED_CLASS, selected);
         element.classList.toggle("disabled", !summary.enabled);
         element.classList.toggle("prefab-instance", summary.prefabSourcePath !== null);
         element.setAttribute("role", "treeitem");
-        element.setAttribute("aria-level", String(row.depth + 1));
+        element.setAttribute("aria-level", String(row.depth + SCENE_ROW_DEPTH + 1));
         element.setAttribute("aria-selected", String(selected));
         if (row.hasChildren) element.setAttribute("aria-expanded", String(row.expanded));
         element.draggable = true;
         element.dataset.entity = String(summary.entity);
-        element.style.paddingLeft = `${BASE_INDENT_PX + Math.min(row.depth, MAX_INDENTED_DEPTH) * INDENT_PX_PER_LEVEL}px`;
+        element.style.paddingLeft = indentPx(row.depth + SCENE_ROW_DEPTH);
         const arrow = createElement(document, "span", row.hasChildren ? (row.expanded ? "tree-arrow expanded" : "tree-arrow") : "tree-arrow leaf");
         arrow.dataset.toggle = String(summary.entity);
         const label = createElement(document, "span", "tree-label", entitySummaryLabel(summary));
@@ -180,7 +252,13 @@ export class HierarchyView {
 
     private rowOf(target: EventTarget | null): HTMLElement | undefined {
         if (!(target instanceof Element)) return undefined;
-        return target.closest<HTMLElement>(".tree-row") ?? undefined;
+        return target.closest<HTMLElement>(ENTITY_ROW_SELECTOR) ?? undefined;
+    }
+
+    private sceneGroupAt(target: EventTarget | null): SceneGroup | undefined {
+        if (!(target instanceof Element)) return undefined;
+        const key = target.closest<HTMLElement>(SCENE_ROW_SELECTOR)?.dataset.scene;
+        return key === undefined ? undefined : this.groups.find(group => group.key === key);
     }
 
     private entityAt(target: EventTarget | null): Entity | undefined {
@@ -190,6 +268,14 @@ export class HierarchyView {
 
     private onClick(event: MouseEvent): void {
         const target = event.target;
+        const sceneToggle = target instanceof Element ? target.closest<HTMLElement>("[data-scene-toggle]") : null;
+        if (sceneToggle !== null) {
+            const key = sceneToggle.dataset.sceneToggle ?? "";
+            if (this.collapsedScenes.has(key)) this.collapsedScenes.delete(key);
+            else this.collapsedScenes.add(key);
+            this.render();
+            return;
+        }
         if (target instanceof Element && target.closest("[data-toggle]") !== null) {
             const entity = Number((target.closest("[data-toggle]") as HTMLElement).dataset.toggle) as Entity;
             if (this.collapsed.has(entity)) this.collapsed.delete(entity);
@@ -206,20 +292,9 @@ export class HierarchyView {
     }
 
     private selectWithModifiers(entity: Entity, event: {readonly ctrlKey: boolean, readonly metaKey: boolean, readonly shiftKey: boolean}): void {
-        if (event.shiftKey && this.anchor !== undefined) {
-            const visible = this.visibleEntities();
-            const from = visible.indexOf(this.anchor);
-            const to = visible.indexOf(entity);
-            if (from !== NO_ROW_INDEX && to !== NO_ROW_INDEX) {
-                const range = visible.slice(Math.min(from, to), Math.max(from, to) + 1);
-                const base = hasCommandModifier(event) ? this.workspace.selection.filter(selected => !range.includes(selected)) : [];
-                this.workspace.select([...base, ...(from <= to ? range : range.reverse())]);
-                return;
-            }
-        }
-        this.anchor = entity;
-        if (hasCommandModifier(event)) this.workspace.toggleSelected(entity);
-        else this.workspace.select([entity]);
+        const next = clickedSelection(this.visibleEntities(), {selected: this.workspace.selection, anchor: this.anchor}, entity, selectionModifiersOf(event));
+        this.anchor = next.anchor;
+        this.workspace.select(next.selected);
     }
 
     private onKeyDown(event: KeyboardEvent): void {
@@ -242,24 +317,19 @@ export class HierarchyView {
     private onContextMenu(event: MouseEvent): void {
         event.preventDefault();
         const workspace = this.workspace;
+        const document = this.list.ownerDocument;
+        const entry = this.sceneGroupAt(event.target)?.entry;
+        if (entry !== undefined) {
+            showCommandMenu(document, event.clientX, event.clientY, sceneMenu(this.commands, entry));
+            return;
+        }
         const entity = this.entityAt(event.target);
         if (entity !== undefined && !workspace.selection.includes(entity)) {
             this.anchor = entity;
             workspace.select([entity]);
         }
         const selection = entity === undefined ? [] : workspace.selection;
-        const hasSelection = selection.length > 0;
-        const items: MenuItem[] = [
-            {label: "Create Empty", run: () => void workspace.createEmpty(null)},
-            {label: "Create Empty Child", disabled: entity === undefined, run: () => entity !== undefined && void workspace.createEmpty(entity)},
-            MENU_SEPARATOR,
-            {label: "Copy", shortcut: "Ctrl+C", disabled: !hasSelection, run: () => void workspace.copy(selection)},
-            {label: "Paste", shortcut: "Ctrl+V", disabled: workspace.entityClipboard === undefined, run: () => void workspace.paste()},
-            {label: "Duplicate", shortcut: "Ctrl+D", disabled: !hasSelection, run: () => void workspace.duplicate(selection)},
-            {label: "Rename", shortcut: "F2", disabled: entity === undefined, run: () => entity !== undefined && this.beginRename(entity)},
-            {label: "Delete", shortcut: "Del", disabled: !hasSelection, run: () => void workspace.destroy(selection)},
-        ];
-        showPopupMenu(this.list.ownerDocument, event.clientX, event.clientY, items);
+        showCommandMenu(document, event.clientX, event.clientY, hierarchyMenu(this.commands, entity, selection));
     }
 
     private onDragStart(event: DragEvent): void {
@@ -278,29 +348,44 @@ export class HierarchyView {
         this.clearDropIndicator();
     }
 
-    private targetFor(event: DragEvent): {readonly target: DropTarget, readonly indicator: HTMLElement, readonly className: string} | undefined {
+    private targetFor(event: DragEvent): FoundTarget | undefined {
+        const group = this.sceneGroupAt(event.target);
+        if (group !== undefined) {
+            const indicator = event.target instanceof Element ? event.target.closest<HTMLElement>(SCENE_ROW_SELECTOR) : null;
+            if (!group.loaded || group.sceneId === null || indicator === null) return undefined;
+            return {target: UNPARENT_TARGET, sceneId: group.sceneId, indicator, className: SCENE_DROP_CLASS};
+        }
         const rowElement = this.rowOf(event.target);
-        if (rowElement === undefined) return {target: UNPARENT_TARGET, indicator: this.list, className: EMPTY_DROP_CLASS};
+        if (rowElement === undefined) return {target: UNPARENT_TARGET, sceneId: undefined, indicator: this.list, className: EMPTY_DROP_CLASS};
         const entity = Number(rowElement.dataset.entity) as Entity;
-        const rendered = this.rendered.find(entry => entry.row.summary.entity === entity);
-        if (rendered === undefined) return undefined;
+        const rendered = this.rendered.find(entry => entityRowOf(entry.row)?.summary.entity === entity);
+        const row = rendered === undefined ? undefined : entityRowOf(rendered.row);
+        if (row === undefined) return undefined;
         const bounds = rowElement.getBoundingClientRect();
         const zone = dropZoneAt(event.clientY - bounds.top, bounds.height);
-        const summary: EditorEntitySummary = rendered.row.summary;
-        const target = dropTargetFor({entity, parent: summary.parent, expandedWithChildren: rendered.row.expanded}, zone, siblingListsOf(this.workspace.links()));
-        return {target, indicator: rowElement, className: DROP_CLASSES[zone]};
+        const summary: EditorEntitySummary = row.summary;
+        const target = dropTargetFor({entity, parent: summary.parent, expandedWithChildren: row.expanded}, zone, siblingListsOf(this.workspace.links()));
+        return {target, sceneId: summary.sceneId, indicator: rowElement, className: DROP_CLASSES[zone]};
     }
 
-    private acceptsDrag(target: DropTarget): boolean {
+    private staysInScene(entities: readonly Entity[], sceneId: number | undefined): boolean {
+        if (sceneId === undefined) return true;
+        return entities.every(entity => this.workspace.summaryOf(entity)?.sceneId === sceneId);
+    }
+
+    private acceptsDrag(found: FoundTarget): boolean {
         const drag = this.workspace.drag;
         if (drag === undefined) return false;
-        if (drag.kind === "asset") return isAssetKind(drag.fileKind);
-        return isDropAllowed(target, new Set(drag.entities), parentLookupOf(this.workspace.links()));
+        if (drag.kind === "asset") {
+            const landsInActiveScene = found.target.parent !== null || found.sceneId === undefined || found.sceneId === this.workspace.scenes.worldScenes.activeSceneId;
+            return isAssetKind(drag.fileKind) && landsInActiveScene;
+        }
+        return this.staysInScene(drag.entities, found.sceneId) && isDropAllowed(found.target, new Set(drag.entities), parentLookupOf(this.workspace.links()));
     }
 
     private onDragOver(event: DragEvent): void {
         const found = this.targetFor(event);
-        if (found === undefined || !this.acceptsDrag(found.target)) {
+        if (found === undefined || !this.acceptsDrag(found)) {
             this.clearDropIndicator();
             return;
         }
@@ -315,14 +400,12 @@ export class HierarchyView {
     private onDrop(event: DragEvent): void {
         const found = this.targetFor(event);
         const drag = this.workspace.drag;
+        const accepted = found !== undefined && this.acceptsDrag(found);
         this.endDrag();
-        if (found === undefined || drag === undefined) return;
+        if (found === undefined || drag === undefined || !accepted) return;
         event.preventDefault();
-        if (drag.kind === "asset") {
-            if (isAssetKind(drag.fileKind)) void this.workspace.instantiateAsset(drag.path, {target: found.target});
-            return;
-        }
-        if (isDropAllowed(found.target, new Set(drag.entities), parentLookupOf(this.workspace.links()))) void this.workspace.reparent(drag.entities, found.target);
+        if (drag.kind === "asset") void this.workspace.instantiateAsset(drag.path, {target: found.target});
+        else void this.workspace.reparent(drag.entities, found.target);
     }
 
     private clearDropIndicator(): void {

@@ -9,7 +9,9 @@ export const PROJECT_EVENT_BUILD_FAILED = "build-failed";
 export const PROJECT_WORKER_FILE = "worker.js";
 export const PROJECT_BUILD_FOLDER = ".jsengine/build";
 export const PROJECT_OPEN_EXTERNALLY_ROUTE = "open-external";
+export const PROJECT_SHOW_IN_FOLDER_ROUTE = "show-in-folder";
 export const PROJECT_EDITOR_SETTINGS_ROUTE = "editor-settings";
+export const PROJECT_GENERATE_ROUTE = "generate";
 export const EDITOR_SETTINGS_UPDATE_METHOD = "PATCH";
 
 export interface ProjectCapabilities {
@@ -17,6 +19,7 @@ export interface ProjectCapabilities {
     readonly buildUnavailableReason?: string;
     readonly pickFolder: boolean;
     readonly browse: boolean;
+    readonly showInFolder: boolean;
 }
 
 export interface PickFolderResult {
@@ -76,6 +79,10 @@ export interface OpenExternallyRequest {
     readonly path: string;
 }
 
+export interface ShowInFolderRequest {
+    readonly path: string;
+}
+
 export interface FilesChangedEvent {
     readonly paths: readonly string[];
 }
@@ -89,6 +96,10 @@ export interface BuildFailedEvent {
 export interface ProjectApiError {
     readonly error: string;
 }
+
+export type GenerateProjectReport =
+    | {readonly ok: true; readonly written: readonly string[]; readonly unchanged: readonly string[]; readonly warnings: readonly string[]}
+    | {readonly ok: false; readonly errors: readonly string[]};
 
 export function projectApiUrl(route: string): string {
     return PROJECT_API_PREFIX + route;
@@ -127,4 +138,10 @@ export function isRebuiltEvent(value: unknown): value is RebuiltEvent {
 
 export function isBuildFailedEvent(value: unknown): value is BuildFailedEvent {
     return isRecord(value) && isStringList(value.errors);
+}
+
+export function isGenerateProjectReport(value: unknown): value is GenerateProjectReport {
+    if (!isRecord(value)) return false;
+    if (value.ok === false) return isStringList(value.errors);
+    return value.ok === true && isStringList(value.written) && isStringList(value.unchanged) && isStringList(value.warnings);
 }

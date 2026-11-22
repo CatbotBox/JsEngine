@@ -13,6 +13,19 @@ export {
     SCHEMAS_MANIFEST_KEY,
     validateProjectManifest,
 } from "./projectManifest";
+export type {ProjectTarget, ProjectTargets, ProjectTargetSettings, TargetRenderDefaults} from "./projectTargets";
+export {
+    declaredTargets,
+    isProjectTarget,
+    PIXEL_SCALE_LIMITS,
+    PROJECT_TARGETS,
+    TARGET_DEFAULT_BACKENDS,
+    TARGET_RENDER_BACKENDS,
+    targetDrawsPixels,
+    targetRenderDefaults,
+    TARGETS_MANIFEST_KEY,
+    targetSettingsOf,
+} from "./projectTargets";
 export {
     isInsideProjectDirectory,
     joinProjectPath,

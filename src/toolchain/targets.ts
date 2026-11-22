@@ -1,16 +1,18 @@
 import {PLATFORM_FEATURE_CONSTANTS, PLATFORM_FEATURES} from "../engine/platform/platform";
 import type {PlatformFeature} from "../engine/platform/platform";
+import {PROJECT_TARGETS, TARGET_DEFAULT_BACKENDS, TARGET_RENDER_BACKENDS} from "../engine/project/projectTargets";
+import type {ProjectTarget} from "../engine/project/projectTargets";
 import {RENDER_BACKEND_KINDS} from "../engine/rendering/renderBackend";
 import type {RenderBackendKind} from "../engine/rendering/renderBackend";
 import {usageError} from "./cliArguments";
 import type {OptionSpec} from "./cliArguments";
 
 export type Target = "web" | "window" | "terminal" | "editor";
-export type RunTarget = Exclude<Target, "editor">;
+export type RunTarget = ProjectTarget;
 export type HostTarget = "web" | "window";
 
 export const DEFAULT_TARGET: Target = "web";
-export const RUN_TARGETS: readonly RunTarget[] = ["web", "window", "terminal"];
+export const RUN_TARGETS: readonly RunTarget[] = PROJECT_TARGETS;
 export const BUILD_TARGETS: readonly Target[] = ["web", "window", "terminal", "editor"];
 export const HOST_TARGETS: readonly HostTarget[] = ["web", "window"];
 
@@ -32,9 +34,9 @@ interface TargetBackends {
 }
 
 const TARGET_BACKENDS: Readonly<Record<Target, TargetBackends>> = {
-    web: {backends: RENDER_BACKEND_KINDS, defaultBackend: "pixels", limit: "the web target renders cells, pixels or gpu"},
-    window: {backends: RENDER_BACKEND_KINDS, defaultBackend: "pixels", limit: "the window target renders cells, pixels or gpu"},
-    terminal: {backends: ["cells"], defaultBackend: "cells", limit: "the terminal renders cells only"},
+    web: {backends: TARGET_RENDER_BACKENDS.web, defaultBackend: TARGET_DEFAULT_BACKENDS.web, limit: "the web target renders cells, pixels or gpu"},
+    window: {backends: TARGET_RENDER_BACKENDS.window, defaultBackend: TARGET_DEFAULT_BACKENDS.window, limit: "the window target renders cells, pixels or gpu"},
+    terminal: {backends: TARGET_RENDER_BACKENDS.terminal, defaultBackend: TARGET_DEFAULT_BACKENDS.terminal, limit: "the terminal renders cells only"},
     editor: {backends: RENDER_BACKEND_KINDS, defaultBackend: "gpu", limit: "the editor renders cells, pixels or gpu"},
 };
 
@@ -55,9 +57,10 @@ export function featureDefines(target: RunTarget): Record<string, string> {
     return Object.fromEntries([...featureConstantValues(target)].map(([name, value]) => [name, JSON.stringify(value)]));
 }
 
-export function targetOf(value: string | undefined, allowed: readonly Target[]): Target {
-    const target = (value ?? DEFAULT_TARGET) as Target;
-    if (!allowed.includes(target)) throw usageError(`--target ${target} is not available here; use one of ${allowed.join(", ")}`);
+export function targetOf<T extends Target>(value: string | undefined, allowed: readonly T[]): T {
+    const requested = value ?? DEFAULT_TARGET;
+    const target = allowed.find(each => each === requested);
+    if (target === undefined) throw usageError(`--target ${requested} is not available here; use one of ${allowed.join(", ")}`);
     return target;
 }
 
@@ -73,9 +76,9 @@ export function editorSimulationOf(simulate: string | undefined, backend: string
     return {target, backend: backendFor(target, backend)};
 }
 
-export function backendFor(target: Target, requested: string | undefined): RenderBackendKind {
+export function backendFor(target: Target, requested: string | undefined, configured?: RenderBackendKind): RenderBackendKind {
     const rule = TARGET_BACKENDS[target];
-    if (requested === undefined) return rule.defaultBackend;
+    if (requested === undefined) return configured ?? rule.defaultBackend;
     const backend = rule.backends.find(kind => kind === requested);
     if (backend === undefined) throw usageError(`${rule.limit}; drop --backend ${requested} or use --backend ${rule.defaultBackend}`);
     return backend;

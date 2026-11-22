@@ -20,9 +20,11 @@ import {
     storedValuesOf,
     UndoStack,
 } from "./undoStack";
+import type {ProjectFileOperations} from "./fileUndo";
 import type {EditorRequester, EntityValueShapes, FieldChange, UndoContext} from "./undoStack";
 
 const FIRST_NEW_HANDLE = 100;
+const UNUSED_FILES = {} as ProjectFileOperations;
 const ENTITY = 1 as Entity;
 const OTHER = 2 as Entity;
 const NO_ENTITY_SHAPES: EntityValueShapes = new Map();
@@ -104,7 +106,7 @@ describe("undo stack", () => {
     beforeEach(() => {
         world = new FakeWorld();
         refs = new EntityRefs();
-        const context: UndoContext = {client: world, refs};
+        const context: UndoContext = {client: world, refs, files: UNUSED_FILES};
         stack = new UndoStack(context);
     });
 
@@ -223,7 +225,7 @@ describe("undo stack", () => {
     });
 
     test("the oldest entries are dropped past the limit", () => {
-        const small = new UndoStack({client: world, refs}, 2);
+        const small = new UndoStack({client: world, refs, files: UNUSED_FILES}, 2);
         for (let i = 0; i < 5; i++) small.push(new RenameCommand(`Rename ${i}`, refs.refOf(ENTITY), null, `name ${i}`));
         expect(small.depth).toBe(2);
         expect(small.undoLabel).toBe("Rename 4");

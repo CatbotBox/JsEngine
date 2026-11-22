@@ -60,10 +60,6 @@ export const HANDLE_LENGTH_PX = 72;
 export const HANDLE_HIT_PX = 7;
 export const HANDLE_END_SIZE_PX = 8;
 export const ROTATE_RING_RADIUS_PX = 64;
-export const MOVE_SNAP_2D_UNITS = 1;
-export const MOVE_SNAP_3D_UNITS = 0.25;
-export const ROTATE_SNAP_DEGREES = 15;
-export const SCALE_SNAP = 0.1;
 export const MIN_SCALE_FACTOR = 0.01;
 export const VIEW_INFO_RETRY_MS = 1000;
 export const WHEEL_PIXELS_PER_NOTCH = 100;
@@ -383,7 +379,8 @@ export class SceneView {
     }
 
     private moveSnap(info: EditorViewInfo): number {
-        return info.projection === "perspective" ? MOVE_SNAP_3D_UNITS : MOVE_SNAP_2D_UNITS;
+        const steps = this.workspace.snapSteps;
+        return info.projection === "perspective" ? steps.move3d : steps.move2d;
     }
 
     private buildHandles(info: EditorViewInfo, scale: OverlayScale): Handle[] {
@@ -731,7 +728,7 @@ export class SceneView {
             }
             case "ring": {
                 let angle = wrapAngleRadians(pointerAngleRadians(gesture.origin, gesture.current) - pointerAngleRadians(gesture.origin, gesture.start));
-                if (gesture.snapping) angle = snapToIncrement(angle, degreesToRadians(ROTATE_SNAP_DEGREES));
+                if (gesture.snapping) angle = snapToIncrement(angle, degreesToRadians(this.workspace.snapSteps.rotateDegrees));
                 const axis = viewAxisOf(info);
                 const radians = viewRotationSign(info) * angle;
                 for (const target of targets) {
@@ -745,11 +742,12 @@ export class SceneView {
                     ? pointerDelta.x * handle.direction.x + pointerDelta.y * handle.direction.y
                     : pointerDelta.x - pointerDelta.y;
                 const factor = Math.max(MIN_SCALE_FACTOR, 1 + along / HANDLE_LENGTH_PX);
+                const scaleStep = this.workspace.snapSteps.scale;
                 for (const target of targets) {
                     const scaled = target.scale.map((component, index) => {
                         if (handle.kind === "scaleAxis" && index !== handle.axisIndex) return component;
                         const value = component * factor;
-                        return gesture.snapping ? snapToIncrement(value, SCALE_SNAP) : value;
+                        return gesture.snapping ? snapToIncrement(value, scaleStep) : value;
                     });
                     changes.push(field(target, LOCAL_SCALE, VEC3_KEY, target.scaleJson, [scaled[0], scaled[1], scaled[2]]));
                 }

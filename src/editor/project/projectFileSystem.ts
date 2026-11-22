@@ -31,4 +31,6 @@ export interface ProjectFileSystem {
     onChange(listener: (change: ProjectFileChange) => void): () => void;
 
     openExternally?(path: string): Promise<void>;
+
+    showInFolder?(path: string): Promise<void>;
 }

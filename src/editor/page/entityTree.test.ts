@@ -7,9 +7,10 @@ import {EMPTY_SEARCH, parseHierarchySearch} from "./hierarchySearch";
 
 const UNLIMITED_ROWS = Number.POSITIVE_INFINITY;
 const MISSING_PARENT = 999 as Entity;
+const SCENE_ID = 1;
 
 function summary(entity: number, name: string | null, parent: number | null, siblingIndex = 0, componentTypeNames: readonly string[] = []): EditorEntitySummary {
-    return {entity: entity as Entity, name, enabled: true, parent: parent as Entity | null, siblingIndex, prefabSourcePath: null, componentTypeNames};
+    return {entity: entity as Entity, name, enabled: true, parent: parent as Entity | null, siblingIndex, prefabSourcePath: null, componentTypeNames, sceneId: SCENE_ID};
 }
 
 interface NamedTree {

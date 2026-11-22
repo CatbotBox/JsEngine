@@ -127,6 +127,23 @@ describe("mains generator", () => {
         expectLine(worker, `    await runProjectInWorker(world, page, files, {directory: PROJECT_DIRECTORY, startProject, backendSystems: generatedPixelsSystems, hostSchemas: generatedPixelsSchemas});`);
     });
 
+    test("the web target's backend and pixel scale from the manifest become the page defaults, and ?backend= / ?scale= still override them", () => {
+        const {folder, output} = generateFixture(MAINS_GENERATOR, {name: "Tuned", targets: {web: {backend: "gpu", pixelScale: 3}, terminal: {}}});
+        const slug = basename(folder).toLowerCase();
+        const bootstrap = linesOf(output, WEB_PAGE_BOOTSTRAP_FILE);
+        expectLine(bootstrap, `loadRenderBackendScript({cells: "${slug}-cells.js", pixels: "${slug}-pixels.js", gpu: "${slug}-gpu.js"}, {defaultBackend: "gpu"});`);
+        expect(bootstrap.some(line => line.includes("pageDefaultRenderBackend"))).toBe(false);
+        expectLine(linesOf(output, webPageMainFile("pixels")), `startWorldPage("${slug}-pixels.worker.js", "Tuned", pixelCanvasDisplayScaledBy(3));`);
+        expectLine(linesOf(output, webPageMainFile("gpu")), `startWorldPage("${slug}-gpu.worker.js", "Tuned", gpuCanvasDisplayScaledBy(3));`);
+        expectLine(linesOf(output, webPageMainFile("cells")), `startWorldPage("${slug}-cells.worker.js", "Tuned", cellCanvasDisplayFromQuery);`);
+    });
+
+    test("another target's settings leave the web page defaults to the page", () => {
+        const {output} = generateFixture(MAINS_GENERATOR, {name: "Windowed", targets: {window: {backend: "gpu", pixelScale: 2}}});
+        expect(sourceOf(output, WEB_PAGE_BOOTSTRAP_FILE).includes("{defaultBackend: pageDefaultRenderBackend(document)}")).toBe(true);
+        expect(sourceOf(output, webPageMainFile("pixels")).includes(", pixelCanvasDisplayFromQuery);")).toBe(true);
+    });
+
     test("the gpu worker asks for the device before it creates the world", () => {
         const lines = linesOf(generateFixture(MAINS_GENERATOR, {name: "Gpu Game"}).output, webWorkerMainFile("gpu"));
         const device = lines.indexOf(`    const device = await requestGpuDevice(page);`);

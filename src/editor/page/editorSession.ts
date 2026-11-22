@@ -1,6 +1,8 @@
 import type {Entity} from "../../engine/core";
 import type {EditorEvent} from "../editorProtocol";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
+import type {MenuEntry} from "./commandMenus";
+import type {CommandRegistry} from "./commandRegistry";
 import type {EditorClient} from "./editorClient";
 
 export interface EditorProject {
@@ -25,6 +27,7 @@ export type EditorNoticeLevel = "info" | "warn" | "error";
 
 export interface EditorShell {
     readonly viewport: HTMLElement;
+    readonly commands: CommandRegistry;
 
     mount(session: EditorSession): Promise<void>;
 
@@ -33,4 +36,6 @@ export interface EditorShell {
     notice(level: EditorNoticeLevel, text: string): void;
 
     showTargetLabel(text: string): void;
+
+    setGameTargetMenu(entries: readonly MenuEntry[]): void;
 }

@@ -16,6 +16,11 @@ export interface MenuSubmenu extends MenuEntry {
     readonly items: readonly MenuItem[];
 }
 
+export interface PopupMenuOptions {
+    readonly anchor?: Element;
+    readonly onClose?: () => void;
+}
+
 export const MENU_SEPARATOR = "separator";
 
 export type MenuItem = MenuAction | MenuSubmenu | typeof MENU_SEPARATOR;
@@ -26,6 +31,7 @@ const CHECK_MARK = "✓";
 const UNCHECKED_MARK = "";
 const MENU_ITEM_ROLE = "menuitem";
 const CHECKABLE_ROLE = "menuitemradio";
+const NO_OPTIONS: PopupMenuOptions = {};
 
 function isSubmenu(item: MenuAction | MenuSubmenu): item is MenuSubmenu {
     return "items" in item;
@@ -36,7 +42,7 @@ export function closePopupMenu(document: Document): void {
     openMenus.get(document)?.();
 }
 
-export function showPopupMenu(document: Document, clientX: number, clientY: number, items: readonly MenuItem[]): void {
+export function showPopupMenu(document: Document, clientX: number, clientY: number, items: readonly MenuItem[], options: PopupMenuOptions = NO_OPTIONS): void {
     closePopupMenu(document);
     const menu = createElement(document, "div", "popup-menu");
     menu.setAttribute("role", "menu");
@@ -46,9 +52,10 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
         document.removeEventListener("pointerdown", onOutside, true);
         document.removeEventListener("keydown", onKey, true);
         if (openMenus.get(document) === close) openMenus.delete(document);
+        options.onClose?.();
     };
     const onOutside = (event: Event): void => {
-        if (event.target instanceof Node && menu.contains(event.target)) return;
+        if (event.target instanceof Node && (menu.contains(event.target) || options.anchor?.contains(event.target) === true)) return;
         close();
     };
     const onKey = (event: KeyboardEvent): void => {

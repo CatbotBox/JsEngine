@@ -68,6 +68,18 @@ describe("HttpProjectFileSystem", () => {
         expect(JSON.parse(requests[6].body as string)).toEqual({path: "src/game.ts"});
     });
 
+    test("show in folder exists only when the server can show files, and the root is the empty path", async () => {
+        const {fetch, requests} = recordingFetch(() => response(200, "{}"));
+        expect(new HttpProjectFileSystem({projectId: "p1", rootLabel: "game", fetch, events: new ScriptedEvents()}).showInFolder).toBeUndefined();
+        const files = new HttpProjectFileSystem({projectId: "p1", rootLabel: "game", fetch, events: new ScriptedEvents(), showInFolder: true});
+        await files.showInFolder?.("art/a.png");
+        await files.showInFolder?.("");
+        expect(requests.map(request => `${request.method} ${request.url} ${request.body as string}`)).toEqual([
+            `POST /__project/p1/show-in-folder {"path":"art/a.png"}`,
+            `POST /__project/p1/show-in-folder {"path":""}`,
+        ]);
+    });
+
     test("server errors become errors naming the operation and the server's reason", async () => {
         const {fetch} = recordingFetch(() => response(404, JSON.stringify({error: "missing.png is not a file in the project"})));
         const files = new HttpProjectFileSystem({projectId: "p1", rootLabel: "game", fetch, events: new ScriptedEvents()});

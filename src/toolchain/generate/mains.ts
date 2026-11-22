@@ -1,3 +1,5 @@
+import {targetSettingsOf} from "../../engine/project/projectTargets";
+import type {ProjectTarget, ProjectTargetSettings} from "../../engine/project/projectTargets";
 import {RENDER_BACKEND_KINDS} from "../../engine/rendering/renderBackend";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 import {
@@ -40,6 +42,7 @@ interface BackendMain {
     readonly installer: ModuleExport;
     readonly editorPasses: ModuleExport;
     readonly display: ModuleExport;
+    readonly scaledDisplay?: ModuleExport;
     readonly presenterSetup: readonly string[];
     readonly installArguments: string;
     readonly setupImports: readonly ModuleExport[];
@@ -49,6 +52,8 @@ const TERMINAL_BACKEND: RenderBackendKind = "cells";
 const PROJECT_DIRECTORY_CONSTANT = "PROJECT_DIRECTORY";
 const TERMINAL_PROJECT_DIRECTORY = "`${__dirname}/..`";
 const PRESENTER_FROM_PAGE = "presenter";
+const WEB_TARGET: ProjectTarget = "web";
+const PAGE_DEFAULT_BACKEND_FUNCTION = "pageDefaultRenderBackend";
 
 const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
     cells: {
@@ -63,6 +68,7 @@ const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
         installer: {path: ["backends", "pixels", "pixelsBackend"], name: "installPixelsBackend"},
         editorPasses: {path: ["backends", "pixels", "pixelsStandardPasses"], name: "PIXELS_STANDARD_PASSES"},
         display: {path: ["hosts", "web", "pixelCanvasDisplay"], name: "pixelCanvasDisplayFromQuery"},
+        scaledDisplay: {path: ["hosts", "web", "pixelCanvasDisplay"], name: "pixelCanvasDisplayScaledBy"},
         presenterSetup: ["const presenter = page.pixelPresenter();"],
         installArguments: PRESENTER_FROM_PAGE,
         setupImports: [],
@@ -71,6 +77,7 @@ const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
         installer: {path: ["backends", "gpu", "gpuBackend"], name: "installGpuBackend"},
         editorPasses: {path: ["backends", "gpu", "gpuStandardPasses"], name: "GPU_STANDARD_PASSES"},
         display: {path: ["hosts", "web", "gpuCanvasDisplay"], name: "gpuCanvasDisplayFromQuery"},
+        scaledDisplay: {path: ["hosts", "web", "gpuCanvasDisplay"], name: "gpuCanvasDisplayScaledBy"},
         presenterSetup: ["const device = await requestGpuDevice(page);", "const presenter = gpuCanvasPresenter(page, device);"],
         installArguments: `device, ${PRESENTER_FROM_PAGE}`,
         setupImports: [
@@ -85,12 +92,14 @@ class MainsWriter {
     private readonly siteDirectory: string;
     private readonly gameName: string;
     private readonly entryModule: string;
+    private readonly webSettings: ProjectTargetSettings;
 
     public constructor(private readonly sources: ProjectSources) {
         this.slug = projectSlug(sources.folder);
         this.siteDirectory = projectSiteDirectory(sources.folder);
         this.gameName = sources.manifest?.name ?? this.slug;
         this.entryModule = sources.projectModule(sources.manifest?.entry ?? DEFAULT_ENTRY_FILE);
+        this.webSettings = targetSettingsOf(sources.manifest?.targets, WEB_TARGET);
     }
 
     public all(): GeneratedSource[] {
@@ -148,23 +157,34 @@ class MainsWriter {
 
     private webPageBootstrap(): GeneratedSource {
         const scripts = RENDER_BACKEND_KINDS.map(kind => `${kind}: ${JSON.stringify(webBundleFile(webPageBundle(this.slug, kind)))}`).join(", ");
+        const projectBackend = this.webSettings.backend;
+        const bootstrapNames = projectBackend === undefined ? ["loadRenderBackendScript", PAGE_DEFAULT_BACKEND_FUNCTION] : ["loadRenderBackendScript"];
+        const defaultBackend = projectBackend === undefined ? `${PAGE_DEFAULT_BACKEND_FUNCTION}(document)` : JSON.stringify(projectBackend);
         return this.source(WEB_PAGE_BOOTSTRAP_FILE, [
             {names: ["connectDevReload"], module: this.sources.sourceModule("hosts", "web", "devReload")},
-            {names: ["loadRenderBackendScript", "pageDefaultRenderBackend"], module: this.sources.sourceModule("hosts", "web", "renderBackendBootstrap")},
+            {names: bootstrapNames, module: this.sources.sourceModule("hosts", "web", "renderBackendBootstrap")},
         ], [
-            `loadRenderBackendScript({${scripts}}, {defaultBackend: pageDefaultRenderBackend(document)});`,
+            `loadRenderBackendScript({${scripts}}, {defaultBackend: ${defaultBackend}});`,
             "connectDevReload();",
         ]);
     }
 
+    private webPageDisplay(kind: RenderBackendKind): {readonly module: ModuleExport, readonly expression: string} {
+        const backend = BACKEND_MAINS[kind];
+        const pixelScale = this.webSettings.pixelScale;
+        const scaled = backend.scaledDisplay;
+        if (pixelScale === undefined || scaled === undefined) return {module: backend.display, expression: backend.display.name};
+        return {module: scaled, expression: `${scaled.name}(${pixelScale})`};
+    }
+
     private webPageMain(kind: RenderBackendKind): GeneratedSource {
-        const display = BACKEND_MAINS[kind].display;
+        const display = this.webPageDisplay(kind);
         const worker = JSON.stringify(webBundleFile(webWorkerBundle(this.slug, kind)));
         return this.source(webPageMainFile(kind), [
-            this.exported(display),
+            this.exported(display.module),
             {names: ["startWorldPage"], module: this.sources.sourceModule("hosts", "web", "worldPage")},
         ], [
-            `startWorldPage(${worker}, ${JSON.stringify(this.gameName)}, ${display.name});`,
+            `startWorldPage(${worker}, ${JSON.stringify(this.gameName)}, ${display.expression});`,
         ]);
     }
 

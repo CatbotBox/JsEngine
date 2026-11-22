@@ -2,6 +2,8 @@ import {existsSync, readFileSync} from "fs";
 import {join, relative, resolve} from "path";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../engine/project/projectManifest";
 import type {ProjectManifest} from "../engine/project/projectManifest";
+import {declaredTargets, targetRenderDefaults, TARGETS_MANIFEST_KEY} from "../engine/project/projectTargets";
+import type {ProjectTarget, TargetRenderDefaults} from "../engine/project/projectTargets";
 import {CliError, usageError} from "./cliArguments";
 import {slashed} from "./repoPaths";
 
@@ -27,4 +29,11 @@ export function readProjectManifest(folder: string): ProjectManifest {
     const validation = validateProjectManifest(readFileSync(join(folder, PROJECT_MANIFEST_FILE), "utf8"), path => existsSync(join(folder, path)));
     if (validation.ok) return validation.manifest;
     throw new CliError(`${displayPath(join(folder, PROJECT_MANIFEST_FILE))} has problems; fix them and try again`, validation.problems);
+}
+
+export function declaredTargetDefaults(folder: string, target: ProjectTarget): TargetRenderDefaults {
+    const manifest = readProjectManifest(folder);
+    const declared = declaredTargets(manifest.targets);
+    if (declared.includes(target)) return targetRenderDefaults(manifest.targets, target);
+    throw usageError(`${displayPath(join(folder, PROJECT_MANIFEST_FILE))} does not list the ${target} target under "${TARGETS_MANIFEST_KEY}" (it lists ${declared.join(", ")}); add "${target}": {} there, or pick one of those`);
 }

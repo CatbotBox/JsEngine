@@ -48,10 +48,10 @@ export function fitFramebuffer(container: ContainerSize, devicePixelRatio: numbe
     return {widthPx, heightPx, cssWidthPx: widthPx * scale / devicePixelRatio, cssHeightPx: heightPx * scale / devicePixelRatio};
 }
 
-export function pixelCanvasDisplayOptionsFromQuery(search: string): PixelCanvasDisplayOptions {
+export function pixelCanvasDisplayOptionsFromQuery(search: string, defaultPixelScale?: number): PixelCanvasDisplayOptions {
     return {
         fixed: fixedFramebufferSizeFromQuery(search),
-        devicePixelsPerFramebufferPixel: pixelScaleFromQuery(search),
+        devicePixelsPerFramebufferPixel: pixelScaleFromQuery(search) ?? defaultPixelScale,
     };
 }
 
@@ -129,6 +129,10 @@ export class PixelCanvasDisplay implements PixelWorldDisplay {
     };
 }
 
-export function pixelCanvasDisplayFromQuery(container: HTMLElement, search: string, visible: boolean = VISIBLE): PixelCanvasDisplay {
-    return new PixelCanvasDisplay(container, pixelCanvasDisplayOptionsFromQuery(search), visible);
+export function pixelCanvasDisplayFromQuery(container: HTMLElement, search: string, visible: boolean = VISIBLE, defaultPixelScale?: number): PixelCanvasDisplay {
+    return new PixelCanvasDisplay(container, pixelCanvasDisplayOptionsFromQuery(search, defaultPixelScale), visible);
+}
+
+export function pixelCanvasDisplayScaledBy(pixelScale: number): (container: HTMLElement, search: string) => PixelCanvasDisplay {
+    return (container, search) => pixelCanvasDisplayFromQuery(container, search, VISIBLE, pixelScale);
 }

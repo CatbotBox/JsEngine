@@ -177,7 +177,7 @@ demo/2d terminal cells main: 177 modules, 221700 bytes minified
   src/hosts/terminalInput/kittyKeyboardProtocol.ts
   src/hosts/terminalInput/terminalInput.ts
   src/hosts/terminalInput/win32InputMode.ts
-demo/2d web all bootstrap: 10 modules, 4495 bytes minified
+demo/2d web all bootstrap: 10 modules, 4505 bytes minified
   demo/2d/generated/main.web.ts
   src/engine/input/inputEvent.ts
   src/engine/input/key.ts
@@ -188,7 +188,7 @@ demo/2d web all bootstrap: 10 modules, 4495 bytes minified
   src/hosts/web/devReload.ts
   src/hosts/web/renderBackendBootstrap.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells page: 18 modules, 24261 bytes minified
+demo/2d web cells page: 18 modules, 24366 bytes minified
   demo/2d/generated/main.web-cells.ts
   src/backends/cells/canvas/canvasCellColors.ts
   src/backends/cells/canvas/canvasCellPresenter.ts
@@ -381,7 +381,7 @@ demo/2d web cells worker: 173 modules, 214010 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels page: 15 modules, 16493 bytes minified
+demo/2d web pixels page: 16 modules, 16512 bytes minified
   demo/2d/generated/main.web-pixels.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/canvas/canvasPixelPresenter.ts
@@ -390,6 +390,7 @@ demo/2d web pixels page: 15 modules, 16493 bytes minified
   src/engine/input/key.ts
   src/engine/input/pointerButton.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/pixelScale.ts
   src/engine/rendering/textColor.ts
   src/hosts/web/canvasDisplayShell.ts
   src/hosts/web/domInput.ts
@@ -570,7 +571,7 @@ demo/2d web pixels worker: 172 modules, 211042 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu page: 15 modules, 16033 bytes minified
+demo/2d web gpu page: 16 modules, 16052 bytes minified
   demo/2d/generated/main.web-gpu.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/pixelFrame.ts
@@ -578,6 +579,7 @@ demo/2d web gpu page: 15 modules, 16033 bytes minified
   src/engine/input/key.ts
   src/engine/input/pointerButton.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/pixelScale.ts
   src/engine/rendering/textColor.ts
   src/hosts/web/canvasDisplayShell.ts
   src/hosts/web/domInput.ts
@@ -976,7 +978,7 @@ demo/3d terminal cells main: 199 modules, 292069 bytes minified
   src/hosts/terminalInput/kittyKeyboardProtocol.ts
   src/hosts/terminalInput/terminalInput.ts
   src/hosts/terminalInput/win32InputMode.ts
-demo/3d web all bootstrap: 10 modules, 4495 bytes minified
+demo/3d web all bootstrap: 10 modules, 4505 bytes minified
   demo/3d/generated/main.web.ts
   src/engine/input/inputEvent.ts
   src/engine/input/key.ts
@@ -987,7 +989,7 @@ demo/3d web all bootstrap: 10 modules, 4495 bytes minified
   src/hosts/web/devReload.ts
   src/hosts/web/renderBackendBootstrap.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells page: 18 modules, 24261 bytes minified
+demo/3d web cells page: 18 modules, 24366 bytes minified
   demo/3d/generated/main.web-cells.ts
   src/backends/cells/canvas/canvasCellColors.ts
   src/backends/cells/canvas/canvasCellPresenter.ts
@@ -1202,7 +1204,7 @@ demo/3d web cells worker: 195 modules, 284168 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels page: 15 modules, 16493 bytes minified
+demo/3d web pixels page: 16 modules, 16512 bytes minified
   demo/3d/generated/main.web-pixels.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/canvas/canvasPixelPresenter.ts
@@ -1211,6 +1213,7 @@ demo/3d web pixels page: 15 modules, 16493 bytes minified
   src/engine/input/key.ts
   src/engine/input/pointerButton.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/pixelScale.ts
   src/engine/rendering/textColor.ts
   src/hosts/web/canvasDisplayShell.ts
   src/hosts/web/domInput.ts
@@ -1414,7 +1417,7 @@ demo/3d web pixels worker: 195 modules, 282573 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu page: 15 modules, 16033 bytes minified
+demo/3d web gpu page: 16 modules, 16052 bytes minified
   demo/3d/generated/main.web-gpu.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/pixelFrame.ts
@@ -1422,6 +1425,7 @@ demo/3d web gpu page: 15 modules, 16033 bytes minified
   src/engine/input/key.ts
   src/engine/input/pointerButton.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/pixelScale.ts
   src/engine/rendering/textColor.ts
   src/hosts/web/canvasDisplayShell.ts
   src/hosts/web/domInput.ts
@@ -1820,7 +1824,7 @@ demo/swarm terminal cells main: 178 modules, 240450 bytes minified
   src/hosts/terminalInput/kittyKeyboardProtocol.ts
   src/hosts/terminalInput/terminalInput.ts
   src/hosts/terminalInput/win32InputMode.ts
-demo/swarm web all bootstrap: 10 modules, 4504 bytes minified
+demo/swarm web all bootstrap: 10 modules, 4514 bytes minified
   demo/swarm/generated/main.web.ts
   src/engine/input/inputEvent.ts
   src/engine/input/key.ts
@@ -1831,7 +1835,7 @@ demo/swarm web all bootstrap: 10 modules, 4504 bytes minified
   src/hosts/web/devReload.ts
   src/hosts/web/renderBackendBootstrap.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells page: 18 modules, 24253 bytes minified
+demo/swarm web cells page: 18 modules, 24358 bytes minified
   demo/swarm/generated/main.web-cells.ts
   src/backends/cells/canvas/canvasCellColors.ts
   src/backends/cells/canvas/canvasCellPresenter.ts
@@ -2025,7 +2029,7 @@ demo/swarm web cells worker: 174 modules, 232773 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels page: 15 modules, 16485 bytes minified
+demo/swarm web pixels page: 16 modules, 16504 bytes minified
   demo/swarm/generated/main.web-pixels.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/canvas/canvasPixelPresenter.ts
@@ -2034,6 +2038,7 @@ demo/swarm web pixels page: 15 modules, 16485 bytes minified
   src/engine/input/key.ts
   src/engine/input/pointerButton.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/pixelScale.ts
   src/engine/rendering/textColor.ts
   src/hosts/web/canvasDisplayShell.ts
   src/hosts/web/domInput.ts
@@ -2216,7 +2221,7 @@ demo/swarm web pixels worker: 174 modules, 230351 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu page: 15 modules, 16025 bytes minified
+demo/swarm web gpu page: 16 modules, 16044 bytes minified
   demo/swarm/generated/main.web-gpu.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/pixelFrame.ts
@@ -2224,6 +2229,7 @@ demo/swarm web gpu page: 15 modules, 16025 bytes minified
   src/engine/input/key.ts
   src/engine/input/pointerButton.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/pixelScale.ts
   src/engine/rendering/textColor.ts
   src/hosts/web/canvasDisplayShell.ts
   src/hosts/web/domInput.ts

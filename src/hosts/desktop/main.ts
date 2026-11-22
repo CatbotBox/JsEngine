@@ -1,4 +1,4 @@
-import {app, BrowserWindow, dialog, Menu, protocol, screen} from "electron";
+import {app, BrowserWindow, dialog, Menu, protocol, screen, shell} from "electron";
 import {existsSync, readFileSync} from "fs";
 import {readFile, writeFile} from "fs/promises";
 import {join} from "path";
@@ -24,6 +24,11 @@ const ARGV_APP_ARGS_START_UNPACKAGED = 2;
 const ARGV_APP_ARGS_START_PACKAGED = 1;
 const AS_USER_GESTURE = true;
 const WINDOW_SETTINGS_FILE = "window-settings.json";
+const LEAVE_PAGE_BUTTONS = ["Leave", "Stay"];
+const LEAVE_PAGE_INDEX = 0;
+const STAY_ON_PAGE_INDEX = 1;
+const LEAVE_PAGE_TITLE = "Unsaved changes";
+const LEAVE_PAGE_MESSAGE = "This page has unsaved changes. Leave and lose them?";
 
 export interface PackagedLaunch {
     readonly page: string;
@@ -64,6 +69,7 @@ const projectServer = createProjectServer({
         const result = mainWindow === undefined ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(mainWindow, options);
         return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
     },
+    showInFolder: async path => shell.showItemInFolder(path),
 });
 
 protocol.registerSchemesAsPrivileged([
@@ -163,6 +169,20 @@ function handleZoomShortcuts(window: BrowserWindow): void {
     });
 }
 
+function confirmLeavingUnsavedPages(window: BrowserWindow): void {
+    window.webContents.on("will-prevent-unload", event => {
+        const choice = dialog.showMessageBoxSync(window, {
+            type: "question",
+            buttons: LEAVE_PAGE_BUTTONS,
+            defaultId: STAY_ON_PAGE_INDEX,
+            cancelId: STAY_ON_PAGE_INDEX,
+            title: LEAVE_PAGE_TITLE,
+            message: LEAVE_PAGE_MESSAGE,
+        });
+        if (choice === LEAVE_PAGE_INDEX) event.preventDefault();
+    });
+}
+
 async function openWindow(): Promise<void> {
     protocol.handle(SCHEME, respond);
     Menu.setApplicationMenu(null);
@@ -177,6 +197,7 @@ async function openWindow(): Promise<void> {
     });
     mainWindow = window;
     handleZoomShortcuts(window);
+    confirmLeavingUnsavedPages(window);
     if (launch !== undefined) window.on("page-title-updated", (event: PreventableEvent) => event.preventDefault());
     const pageErrors: string[] = [];
     window.webContents.on("console-message", event => {
