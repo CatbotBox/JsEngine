@@ -45,8 +45,6 @@ export interface BuildTargetList {
     readonly problem?: string;
 }
 
-export const SITE_WIDE_TARGETS: readonly ProjectTarget[] = ["web", "window"];
-
 const CHAIN_SEPARATOR = " -> ";
 const LOCATION_SEPARATOR = ":";
 const PACKAGE_COMMAND = `jsengine package --target ${PACKAGED_TARGET}`;

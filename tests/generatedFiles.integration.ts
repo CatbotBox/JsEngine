@@ -3,7 +3,7 @@ import {dirname, join, relative, resolve} from "path";
 import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
 import {runCli} from "../src/toolchain/cli";
 import {EXIT_FAILURE, EXIT_SUCCESS} from "../src/toolchain/cliArguments";
-import {DEMO_SITES, demoSiteFolder} from "../src/toolchain/demoSites";
+import {sampleProjectPaths} from "../src/toolchain/projectSites";
 import {checkGeneratedFiles} from "../src/toolchain/generate/generatedFiles";
 import {generatedFileHeader} from "../src/toolchain/generate/generatedHeader";
 import {SCHEMAS_GENERATOR_NAME, SCHEMAS_GENERATOR_VERSION} from "../src/toolchain/generate/schemas";
@@ -82,9 +82,9 @@ function writeFixture(folder: string): void {
 }
 
 async function checkDemosAreCurrent(): Promise<void> {
-    for (const site of DEMO_SITES) {
-        const exitCode = await runCli(["generate", "--check", "--project", demoSiteFolder(site)]);
-        expect(exitCode === EXIT_SUCCESS, `${site.project}: jsengine generate --check passes (regenerate with bun run jsengine generate --project ${site.project})`);
+    for (const project of sampleProjectPaths()) {
+        const exitCode = await runCli(["generate", "--check", "--project", join(ROOT, project)]);
+        expect(exitCode === EXIT_SUCCESS, `${project}: jsengine generate --check passes (regenerate with bun run jsengine generate --project ${project})`);
     }
 }
 

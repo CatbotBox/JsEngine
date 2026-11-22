@@ -111,6 +111,10 @@ export function overlayScaleOf(info: Pick<EditorViewInfo, "screenWidth" | "scree
     };
 }
 
+export function layoutRectOf(visual: CssRect, visualScale: number): CssRect {
+    return {left: visual.left / visualScale, top: visual.top / visualScale, width: visual.width / visualScale, height: visual.height / visualScale};
+}
+
 export function overlayPointOf(scale: OverlayScale, point: ScreenPoint): ScreenPoint {
     return {x: scale.originLeftPx + point.x * scale.pxPerUnitX, y: scale.originTopPx + point.y * scale.pxPerUnitY};
 }

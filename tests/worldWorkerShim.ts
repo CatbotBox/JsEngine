@@ -1,16 +1,16 @@
 import {readFileSync} from "fs";
-import {join, resolve} from "path";
+import {join} from "path";
 import {PROJECT_ASSET_MANIFEST_FILE} from "../src/hosts/web/webProjectAssets";
 import {nodePlatform} from "../src/hosts/terminal";
 import {buildProjectAssetManifest, projectAssetRegistry} from "../src/toolchain/build/projectAssets";
+import {WEB_PROJECT_DIRECTORY} from "../src/toolchain/projectLayout";
 
-const ROOT = resolve(__dirname, "..");
-const DIST = process.env.JSENGINE_VERIFY_DIST;
-const ASSET_MANIFEST_SUFFIX = `/${PROJECT_ASSET_MANIFEST_FILE}`;
+const SERVING_BUILT_SITE = process.env.JSENGINE_VERIFY_DIST !== undefined;
+const PROJECT_FILES = process.env.JSENGINE_VERIFY_FILES!;
 const CHUNK_BYTES = 512 * 1024;
 const CHUNK_DELAY_MS = 5;
 
-const assetManifests = new Map<string, Uint8Array>();
+let assetManifest: Uint8Array | undefined;
 
 function paced(bytes: Uint8Array): ReadableStream<Uint8Array> {
     let offset = 0;
@@ -27,18 +27,16 @@ function paced(bytes: Uint8Array): ReadableStream<Uint8Array> {
     });
 }
 
-async function assetManifest(url: string): Promise<Uint8Array> {
-    const directory = decodeURI(url).slice(0, -ASSET_MANIFEST_SUFFIX.length);
-    const built = assetManifests.get(directory)
-        ?? new TextEncoder().encode(JSON.stringify(buildProjectAssetManifest(ROOT, directory, nodePlatform(), await projectAssetRegistry(join(ROOT, directory)))));
-    assetManifests.set(directory, built);
-    return built;
+async function builtAssetManifest(): Promise<Uint8Array> {
+    assetManifest ??= new TextEncoder().encode(JSON.stringify(buildProjectAssetManifest(PROJECT_FILES, WEB_PROJECT_DIRECTORY, nodePlatform(), await projectAssetRegistry(PROJECT_FILES))));
+    return assetManifest;
 }
 
 async function served(url: string): Promise<Uint8Array | undefined> {
-    if (DIST === undefined && url.endsWith(ASSET_MANIFEST_SUFFIX)) return await assetManifest(url);
+    const path = decodeURI(url);
+    if (!SERVING_BUILT_SITE && path === PROJECT_ASSET_MANIFEST_FILE) return await builtAssetManifest();
     try {
-        return new Uint8Array(readFileSync(join(DIST ?? ROOT, decodeURI(url))));
+        return new Uint8Array(readFileSync(join(PROJECT_FILES, path)));
     } catch {
         return undefined;
     }

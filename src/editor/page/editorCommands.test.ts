@@ -7,7 +7,6 @@ import type {KeyEventLike, RegisteredCommand} from "./commandRegistry";
 import {
     ALREADY_START_SCENE_REASON,
     CLOSE_PROJECT_UNAVAILABLE_REASON,
-    ENTITY_TEMPLATE_REASON,
     LAST_TAB_REASON,
     NO_RECENT_SCENES_REASON,
     PREFAB_START_SCENE_REASON,
@@ -31,6 +30,12 @@ import {shortcutRows} from "./shortcutsDialog";
 import {DEFAULT_GAME_VIEW_OPTIONS, withGameViewOption} from "./gameViewOptions";
 import type {GameViewOptionChoice, GameViewOptions} from "./gameViewOptions";
 import {DEFAULT_SNAP_STEPS, withSnapStep} from "./snapSteps";
+import {entityTemplateProblem} from "./entityTemplates";
+import type {EntityTemplate} from "./entityTemplates";
+import {DEFAULT_HANDLE_MODES} from "./handleModes";
+import type {HandleModes} from "./handleModes";
+import {ALL_PANELS_SHOWN, withPanelToggled} from "./panelSizes";
+import type {PanelVisibility} from "./panelSizes";
 import type {SnapStepChoice} from "./snapSteps";
 
 const FIRST = 3 as Entity;
@@ -41,6 +46,7 @@ const ENEMY_PREFAB = "prefabs/enemy.prefab.json";
 const MAIN_SCENE_ID = 1;
 const LEVEL_SCENE_ID = 2;
 const FAKE_HISTORY = {} as TabHistory;
+const GAME_TYPE_NAMES: ReadonlySet<string> = new Set(["Camera", "LocalPosition", "Sprite", "SpritePattern", "TextSprite", "DirectionalLight", "PointLight", "AmbientLight"]);
 
 interface FakeEditor {
     readonly registry: CommandRegistry;
@@ -73,6 +79,7 @@ interface FakeWorkspace {
     entityKeysFocused: boolean;
     gameViewOptions: GameViewOptions;
     projectSelection: readonly string[];
+    handleModes: HandleModes;
 }
 
 function fakeEditor(closeProject?: () => void): FakeEditor {
@@ -80,8 +87,9 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
     const workspace: FakeWorkspace = {
         mode: "edit", view: "scene", tool: "move", closed: false, selection: [], entityClipboard: undefined,
         worldStoppedError: null, snapSteps: DEFAULT_SNAP_STEPS, openExternally: false, showInFolder: false, undoLabel: undefined, entityKeysFocused: true,
-        gameViewOptions: DEFAULT_GAME_VIEW_OPTIONS, projectSelection: [],
+        gameViewOptions: DEFAULT_GAME_VIEW_OPTIONS, projectSelection: [], handleModes: DEFAULT_HANDLE_MODES,
     };
+    let panels: PanelVisibility = ALL_PANELS_SHOWN;
     let bottomTab: BottomTab = "project";
     let aspect = "free";
     let mounted = false;
@@ -143,6 +151,10 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
             setMode: (mode: string) => calls.push(`setMode ${mode}`),
             setTool: (tool: string) => calls.push(`setTool ${tool}`),
             setSnapStep: (choice: SnapStepChoice) => workspace.snapSteps = withSnapStep(workspace.snapSteps, choice),
+            get handleModes() { return workspace.handleModes; },
+            setHandleModes: (modes: HandleModes) => workspace.handleModes = modes,
+            templateProblem: (template: EntityTemplate) => entityTemplateProblem(template, GAME_TYPE_NAMES),
+            createFromTemplate: (template: EntityTemplate) => calls.push(`createFromTemplate ${template}`),
         },
         scene: {capturesKeys: false},
         hierarchy: {beginRename: (entity: Entity) => calls.push(`beginRename ${entity}`)},
@@ -165,6 +177,12 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
         bottomTab: () => bottomTab,
         showBottomTab: tab => bottomTab = tab,
         resetLayout: () => calls.push("resetLayout"),
+        panelShown: panel => panels[panel],
+        togglePanel: panel => {
+            panels = withPanelToggled(panels, panel);
+            calls.push(`togglePanel ${panel}`);
+        },
+        openPreferences: () => calls.push("openPreferences"),
         gameViewAspect: () => aspect,
         setGameViewAspect: id => aspect = id,
         textSelected: () => false,
@@ -265,8 +283,54 @@ describe("editor menu bar", () => {
         expect(reasonOf("Assets", "Show in Explorer")).toBe(SHOW_IN_EXPLORER_UNAVAILABLE_REASON);
         expect(action(menuNamed(menus, "Assets"), "Create", "Prefab").disabled).toBe(false);
         expect(action(menuNamed(menus, "Assets"), "Create", "Script").disabled).toBe(false);
-        expect(reasonOf("Entity", "Camera")).toBe(ENTITY_TEMPLATE_REASON);
         expect(action(menuNamed(menus, "Entity"), "Create Empty").disabled).toBe(false);
+    });
+
+    test("no menu or palette command is a placeholder any more", () => {
+        expect(fakeEditor().registry.all().filter(command => command.planned).map(command => command.id)).toEqual([]);
+    });
+
+    test("entity templates create through the workspace and are disabled when the game lacks their components", () => {
+        const editor = fakeEditor();
+        expect(action(menuNamed(menuBarItems(editor), "Entity"), "Camera").title).toBe(WAITING_REASON);
+        editor.mount();
+        const entityMenu = menuNamed(menuBarItems(editor), "Entity");
+        for (const label of ["Camera", "Sprite", "Text", "Directional Light", "Point Light", "Ambient Light"]) action(entityMenu, label).run();
+        expect(editor.calls).toEqual(["createFromTemplate camera", "createFromTemplate sprite", "createFromTemplate text", "createFromTemplate directionalLight", "createFromTemplate pointLight", "createFromTemplate ambientLight"]);
+        const mesh = action(entityMenu, "Mesh");
+        expect([mesh.disabled, mesh.title]).toEqual([true, "This game registers no RenderMesh component, so it cannot make a Mesh"]);
+        expect(editor.registry.get("entity.createCamera")?.stateAlone().label).toBe("Create Camera");
+    });
+
+    test("the panel toggles show their panel's visibility and flip it; Reset Layout is the host's", () => {
+        const editor = fakeEditor();
+        const windowMenu = (): MenuItem[] => menuNamed(menuBarItems(editor), "Window");
+        expect(["Hierarchy", "Inspector", "Bottom Panel"].map(label => action(windowMenu(), label).checked)).toEqual([true, true, true]);
+        action(windowMenu(), "Inspector").run();
+        action(windowMenu(), "Bottom Panel").run();
+        expect(["Hierarchy", "Inspector", "Bottom Panel"].map(label => action(windowMenu(), label).checked)).toEqual([true, false, false]);
+        action(windowMenu(), "Bottom Panel").run();
+        expect(action(windowMenu(), "Bottom Panel").checked).toBe(true);
+        action(windowMenu(), "Reset Layout").run();
+        expect(editor.calls).toEqual(["togglePanel inspector", "togglePanel bottom", "togglePanel bottom", "resetLayout"]);
+    });
+
+    test("Preferences… opens before the game connects", () => {
+        const editor = fakeEditor();
+        const preferences = action(menuNamed(menuBarItems(editor), "Edit"), "Preferences…");
+        expect(preferences.disabled).toBe(false);
+        preferences.run();
+        expect(editor.calls).toEqual(["openPreferences"]);
+    });
+
+    test("Pivot/Center and Local/Global flip the workspace's handle modes", () => {
+        const editor = fakeEditor();
+        editor.mount();
+        expect(editor.commands.tools.handlePosition.runAlone()).toBe(true);
+        expect(editor.workspace.handleModes).toEqual({position: "pivot", rotation: "global"});
+        expect(editor.commands.tools.handleRotation.runAlone()).toBe(true);
+        expect(editor.commands.tools.handlePosition.runAlone()).toBe(true);
+        expect(editor.workspace.handleModes).toEqual({position: "center", rotation: "local"});
     });
 
     test("Project Settings… waits for the game, then opens the window", () => {

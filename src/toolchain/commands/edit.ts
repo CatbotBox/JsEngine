@@ -1,6 +1,6 @@
 import {isAbsolute, relative, resolve} from "path";
 import {parseOptions} from "../cliArguments";
-import {withProjectQuery} from "../demoSites";
+import {withProjectQuery} from "../projectSites";
 import {EDITOR_PAGE} from "../build/webDistFiles";
 import {launchWindow} from "../launch/windowLaunch";
 import {hasProjectManifest, projectFolderOf} from "../project";

@@ -11,5 +11,15 @@ export {
 export type {BunLocation, ProjectBuildOutcome, ProjectBuildRequest, ProjectServerOptions, ProjectWorkerBuildReport, ToolchainOutput, ToolchainRunner} from "./projectServer";
 export {SERVER_SENT_EVENT_HEARTBEAT_MS, ServerSentEventChannel, serverSentEventText} from "./serverSentEvents";
 export type {ServerSentEventChannelOptions} from "./serverSentEvents";
-export {DEFAULT_ZOOM_FACTOR, nextZoomFactor, storedZoomFactor, ZOOM_FACTORS, zoomCommandOf, zoomSettingsText} from "./windowZoom";
-export type {ZoomCommand, ZoomKeyInput} from "./windowZoom";
+export {
+    DEFAULT_ZOOM_FACTOR,
+    nearestZoomFactor,
+    nextZoomFactor,
+    storedZoomFactor,
+    WINDOW_ZOOM_PATH,
+    ZOOM_FACTORS,
+    zoomCommandOf,
+    zoomFactorOfText,
+    zoomSettingsText,
+} from "../../editor/project/windowZoom";
+export type {ZoomCommand, ZoomKeyInput} from "../../editor/project/windowZoom";

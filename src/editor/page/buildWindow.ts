@@ -1,6 +1,6 @@
 import type {ProjectTarget} from "../../engine/project/projectTargets";
 import {PACKAGED_TARGET} from "../project/projectServerApi";
-import {BuildWindowModel, buildCommandText, chainText, SITE_WIDE_TARGETS} from "./buildWindowModel";
+import {BuildWindowModel, buildCommandText, chainText} from "./buildWindowModel";
 import type {BuildAction, BuildWindowServices, TargetReportView} from "./buildWindowModel";
 import {openModal} from "./dialogs";
 import type {Modal} from "./dialogs";
@@ -29,8 +29,6 @@ const PACKAGING_TEXT = "Packaging…";
 const WAITING_TEXT = "Waiting…";
 const PACKAGED_TEXT = "Packaged";
 const PACKAGE_FAILED_TEXT = "Packaging failed; see the console";
-const SITE_WIDE_TEXT = "builds every demo site";
-const SITE_WIDE_TITLE = "The web and window builds cover every demo site at once; they take no --project";
 const OUTPUT_HINT = "Output goes to the console panel.";
 const OK_CLASS = "ok";
 const FAILING_CLASS = "failing";
@@ -99,11 +97,6 @@ export class BuildWindow {
             const header = createElement(document, "div", "build-target-header");
             const name = createElement(document, "span", "build-target-name", target);
             header.append(name);
-            if (SITE_WIDE_TARGETS.includes(target)) {
-                const scope = createElement(document, "span", "build-target-scope", SITE_WIDE_TEXT);
-                scope.title = SITE_WIDE_TITLE;
-                header.append(scope);
-            }
             const status = createElement(document, "span", "build-target-status");
             const buildButton = createButton(document, {className: "", text: "Build", title: `Run ${buildCommandText(target)} and check the features its bundles use`, onClick: () => void this.model.build(target)});
             header.append(status, buildButton);

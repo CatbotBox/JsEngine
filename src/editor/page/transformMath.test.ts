@@ -1,10 +1,13 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {AXIS_Z, quaternionFromAxisAngle, rotateVector} from "./editorCameraMath";
+import {AXIS_Z, IDENTITY_QUATERNION, quaternionFromAxisAngle, rotateVector} from "./editorCameraMath";
 import type {Vector3} from "./editorCameraMath";
 import {
     applyMatrix3,
     chainLinear,
     chainRotation,
+    handleAxes,
+    handleAxisRotation,
+    handleOrigin,
     IDENTITY_MATRIX3,
     invertMatrix3,
     localDeltaOf,
@@ -58,5 +61,30 @@ describe("transform maths for gizmos", () => {
         expect(snapToIncrement(-0.13, 0.25)).toBe(-0.25);
         expect(snapVector([1.4, 2.6, -0.6], 1)).toEqual([1, 3, -1]);
         expect(snapToIncrement(0.37, 0)).toBe(0.37);
+    });
+});
+
+describe("handle placement", () => {
+    const quarterTurnZ = quaternionFromAxisAngle(AXIS_Z, QUARTER_TURN);
+    const first = {entity: "first", min: [0, 0, 0] as Vector3, max: [2, 2, 0] as Vector3, pivot: [1, 0, 0] as Vector3, rotation: IDENTITY_QUATERNION};
+    const second = {entity: "second", min: [4, 4, 0] as Vector3, max: [6, 8, 0] as Vector3, pivot: [5, 5, 0] as Vector3, rotation: quarterTurnZ};
+
+    test("Center puts the handles at the selection's bounds centre, Pivot at the primary entity's world position", () => {
+        expect(handleOrigin([first, second], "first", "center")).toEqual([3, 4, 0]);
+        expect(handleOrigin([first, second], "first", "pivot")).toEqual([1, 0, 0]);
+        expect(handleOrigin([first, second], "missing", "pivot")).toEqual([5, 5, 0]);
+        expect(handleOrigin([], undefined, "pivot")).toBeUndefined();
+        expect(handleOrigin([], undefined, "center")).toBeUndefined();
+    });
+
+    test("Global keeps the world axes; along the entity the axes follow the primary's world rotation", () => {
+        expect(handleAxisRotation([first, second], "second", false)).toEqual(IDENTITY_QUATERNION);
+        expect(handleAxisRotation([first, second], "second", true)).toEqual(quarterTurnZ);
+        expect(handleAxisRotation([], undefined, true)).toEqual(IDENTITY_QUATERNION);
+        const axes = handleAxes(quarterTurnZ, 2);
+        expect(axes.length).toBe(2);
+        expectVector(axes[0], [0, 1, 0]);
+        expectVector(axes[1], [-1, 0, 0]);
+        expect(handleAxes(IDENTITY_QUATERNION, 3)).toEqual([[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
     });
 });

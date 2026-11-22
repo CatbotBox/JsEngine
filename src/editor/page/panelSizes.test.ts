@@ -1,5 +1,6 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {
+    ALL_PANELS_SHOWN,
     clampPanelSize,
     clampPanelSizes,
     DEFAULT_PANEL_SIZES,
@@ -9,8 +10,12 @@ import {
     MIN_SIDE_PANEL_WIDTH_PX,
     panelSizesText,
     parsePanelSizes,
+    parsePanelVisibility,
     resizedPanel,
+    shownPanelSizes,
     SPLITTER_THICKNESS_PX,
+    splitterThicknessPx,
+    withPanelToggled,
 } from "./panelSizes";
 
 const ROOMY = {widthPx: 1600, heightPx: 900};
@@ -52,5 +57,35 @@ describe("stored panel sizes", () => {
     test("sizes round-trip through their text", () => {
         const sizes = {hierarchyWidthPx: 280, inspectorWidthPx: 360, bottomHeightPx: 240};
         expect(parsePanelSizes(panelSizesText(sizes))).toEqual(sizes);
+    });
+});
+
+describe("panel visibility", () => {
+    test("a hidden side panel gives its width and splitter to the shown one and keeps its own size for later", () => {
+        const hierarchyHidden = {...ALL_PANELS_SHOWN, hierarchy: false};
+        const wide = clampPanelSizes({hierarchyWidthPx: 300, inspectorWidthPx: 900, bottomHeightPx: 220}, {widthPx: 1000, heightPx: 500}, hierarchyHidden);
+        expect(wide).toEqual({hierarchyWidthPx: 300, inspectorWidthPx: 1000 - SPLITTER_THICKNESS_PX - MIN_CENTER_WIDTH_PX, bottomHeightPx: 220});
+        expect(shownPanelSizes(wide, hierarchyHidden)).toEqual({...wide, hierarchyWidthPx: 0});
+        expect(splitterThicknessPx(hierarchyHidden, "hierarchy")).toBe(0);
+        expect(splitterThicknessPx(hierarchyHidden, "inspector")).toBe(SPLITTER_THICKNESS_PX);
+        const bottomHidden = {...ALL_PANELS_SHOWN, bottom: false};
+        expect(clampPanelSizes({...DEFAULT_PANEL_SIZES, bottomHeightPx: 5000}, ROOMY, bottomHidden).bottomHeightPx).toBe(5000);
+    });
+
+    test("toggling flips one panel and the hidden panels round-trip with the sizes", () => {
+        const hidden = withPanelToggled(withPanelToggled(ALL_PANELS_SHOWN, "inspector"), "bottom");
+        expect(hidden).toEqual({hierarchy: true, inspector: false, bottom: false});
+        expect(withPanelToggled(hidden, "bottom").bottom).toBe(true);
+        const text = panelSizesText(DEFAULT_PANEL_SIZES, hidden);
+        expect(parsePanelVisibility(text)).toEqual(hidden);
+        expect(parsePanelSizes(text)).toEqual(DEFAULT_PANEL_SIZES);
+    });
+
+    test("old or broken storage shows every panel", () => {
+        expect(parsePanelVisibility(null)).toEqual(ALL_PANELS_SHOWN);
+        expect(parsePanelVisibility(`{"hierarchyWidthPx": 300}`)).toEqual(ALL_PANELS_SHOWN);
+        expect(parsePanelVisibility(`{"hidden": "inspector"}`)).toEqual(ALL_PANELS_SHOWN);
+        expect(parsePanelVisibility(`{"hidden": ["inspector", "toolbar"]}`)).toEqual({...ALL_PANELS_SHOWN, inspector: false});
+        expect(parsePanelVisibility("[1]")).toEqual(ALL_PANELS_SHOWN);
     });
 });

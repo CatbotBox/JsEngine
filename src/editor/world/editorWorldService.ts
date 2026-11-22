@@ -29,6 +29,7 @@ import type {
 } from "../../engine/scene";
 import {EDITOR_MESSAGE_TYPE, isEditorRequestMessage, requestIdOfMalformedEditorRequest} from "../editorProtocol";
 import type {
+    EditorComponentValues,
     EditorEvent,
     EditorMode,
     EditorRequest,
@@ -73,7 +74,7 @@ import {
 import {duplicateEntities, setParent} from "./hierarchyEditing";
 import {EditorViews} from "./editorViews";
 import {PrefabLibrary} from "./prefabEditing";
-import {ConsoleForwarder} from "./consoleForwarding";
+import {ConsoleForwarder, errorFrames} from "./consoleForwarding";
 import {exportWorldSnapshot, importedEditSnapshot} from "./editorSnapshots";
 import {
     assignResourceField,
@@ -101,6 +102,7 @@ export interface EditorWorldServiceOptions {
 const SCENE_TEXT_INDENT_SPACES = 2;
 const NO_VALUES: SceneJsonObject = {};
 const NO_ENTITIES: readonly Entity[] = [];
+const NO_COMPONENT_VALUES: EditorComponentValues = {};
 const PLAIN_STOP_TEXT = "The world was stopped";
 const SKIPPED_UNKNOWN_TYPES = "skip";
 const REPORTED_SCHEMA_CHANGES = "report";
@@ -310,8 +312,11 @@ export class EditorWorldService {
                     removeComponentFrom(world, registry, request.entity, request.typeName);
                     return entityDetails(world, registry, request.entity);
                 });
-            case "createEntity":
-                return this.edit([request.parent], () => entityDetails(world, registry, createEditorEntity(world, request.name, request.parent)), created => [created.entity]);
+            case "createEntity": {
+                const components = request.components ?? NO_COMPONENT_VALUES;
+                await this.preload(Object.entries(components).flatMap(([typeName, values]) => assetReferencesOf(registry, typeName, values)));
+                return this.edit([request.parent], () => entityDetails(world, registry, createEditorEntity(world, registry, this.assets, request.name, request.parent, components)), created => [created.entity]);
+            }
             case "destroyEntity":
                 return this.inGameView(() => {
                     const parent = parentOf(world, requireSceneEntity(world, request.entity));
@@ -699,7 +704,8 @@ export class EditorWorldService {
         if (this.stoppedError !== undefined) return;
         this.stoppedError = error === undefined ? PLAIN_STOP_TEXT : errorText(error);
         this.stopTicking();
-        this.postEvent({kind: "worldStopped", error: this.stoppedError});
+        const stack = error instanceof Error ? errorFrames(error) : undefined;
+        this.postEvent(stack === undefined ? {kind: "worldStopped", error: this.stoppedError} : {kind: "worldStopped", error: this.stoppedError, stack});
     }
 
     private clearWorldStop(): void {

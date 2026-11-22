@@ -29,6 +29,7 @@ describe("editor protocol guards", () => {
             {op: "removeComponent", entity: ENTITY, typeName: "Camera"},
             {op: "createEntity"},
             {op: "createEntity", name: "box", parent: ENTITY},
+            {op: "createEntity", name: "Camera", components: {Camera: {}, LocalPosition: {xyz: [0, 0, -10]}}},
             {op: "destroyEntity", entity: ENTITY},
             {op: "setEnabled", entity: ENTITY, enabled: false},
             {op: "saveScene"},
@@ -100,6 +101,8 @@ describe("editor protocol guards", () => {
             {op: "removeComponent", entity: ENTITY},
             {op: "createEntity", name: 5},
             {op: "createEntity", parent: "root"},
+            {op: "createEntity", components: ["Camera"]},
+            {op: "createEntity", components: {Camera: true}},
             {op: "setEnabled", entity: ENTITY, enabled: "yes"},
             {op: "loadScene", sceneText: {}},
             {op: "loadScene", sceneText: "{}", path: 7},
@@ -174,6 +177,7 @@ describe("editor protocol guards", () => {
             {kind: "console", level: "warn", text: "careful", timeMs: 12},
             {kind: "console", level: "error", text: "Error: boom", timeMs: 13, stack: "    at fail (game.js:1:2)"},
             {kind: "worldStopped", error: "boom"},
+            {kind: "worldStopped", error: "boom", stack: "    at tick (game.js:3:4)"},
             {kind: "modeChanged", mode: "play", gameplayTicks: 3, view: "game"},
         ];
         for (const event of events) {
@@ -189,6 +193,7 @@ describe("editor protocol guards", () => {
             {kind: "console", level: "error", text: "x", timeMs: 1, stack: 7},
             {kind: "console", level: "error", text: "x", timeMs: 1, stack: null},
             {kind: "worldStopped"},
+            {kind: "worldStopped", error: "boom", stack: 3},
             {kind: "modeChanged", mode: "play", gameplayTicks: 3},
             {kind: "explode"},
         ];

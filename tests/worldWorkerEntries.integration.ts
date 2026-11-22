@@ -1,5 +1,5 @@
 import {readFileSync} from "fs";
-import {join, resolve} from "path";
+import {dirname, join, resolve} from "path";
 import {connectWorldWorker, STOPPED_STATUS} from "../src/hosts/web";
 import type {CellSurfaceSize, CellWorldDisplay, PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
 import type {CellFrame} from "../src/backends/cells";
@@ -15,7 +15,7 @@ import type {RenderBackendKind} from "../src/engine/rendering/renderBackend";
 import {projectAssetManifestPath} from "../src/hosts/web/webProjectAssets";
 import type {AssetManifestFile, ProjectAssetManifest} from "../src/hosts/web/webProjectAssets";
 import {buildProjectAssetManifest, projectAssetRegistry} from "../src/toolchain/build/projectAssets";
-import {projectSlug, webBundleFile, webWorkerBundle, webWorkerMainFile} from "../src/toolchain/projectLayout";
+import {projectSlug, WEB_PROJECT_DIRECTORY, webBundleFile, webWorkerBundle, webWorkerMainFile} from "../src/toolchain/projectLayout";
 import {DEMO_3D_TUNING_FILE} from "../demo/3d/modelCatalog";
 
 const ROOT = resolve(__dirname, "..");
@@ -78,12 +78,18 @@ interface Demo3dTuningJson {
 
 function workerEntry(directory: string, backend: RenderBackendKind): string {
     if (DIST === undefined) return join(ROOT, directory, webWorkerMainFile(backend));
-    return join(DIST, webBundleFile(webWorkerBundle(projectSlug(directory), backend)));
+    const slug = projectSlug(directory);
+    return join(DIST, slug, webBundleFile(webWorkerBundle(slug, backend)));
+}
+
+function projectFilesFolderOf(entry: string): string {
+    return DIST === undefined ? dirname(dirname(entry)) : dirname(entry);
 }
 
 async function demo3dManifest(): Promise<ProjectAssetManifest> {
-    if (DIST === undefined) return buildProjectAssetManifest(ROOT, DEMO_3D_DIRECTORY, nodePlatform(), await projectAssetRegistry(join(ROOT, DEMO_3D_DIRECTORY)));
-    return JSON.parse(readFileSync(join(DIST, projectAssetManifestPath(DEMO_3D_DIRECTORY)), "utf8")) as ProjectAssetManifest;
+    const folder = join(ROOT, DEMO_3D_DIRECTORY);
+    if (DIST === undefined) return buildProjectAssetManifest(folder, WEB_PROJECT_DIRECTORY, nodePlatform(), await projectAssetRegistry(folder));
+    return JSON.parse(readFileSync(join(DIST, projectSlug(DEMO_3D_DIRECTORY), projectAssetManifestPath(WEB_PROJECT_DIRECTORY)), "utf8")) as ProjectAssetManifest;
 }
 
 function demo3dTuningModels(): readonly TuningModelJson[] {
@@ -275,6 +281,7 @@ class Page {
             env: {
                 ...process.env,
                 JSENGINE_VERIFY_ISOLATED: isolated ? "1" : "0",
+                JSENGINE_VERIFY_FILES: projectFilesFolderOf(entry),
                 ...(DIST === undefined ? {} : {JSENGINE_VERIFY_DIST: DIST}),
             },
         } as WorkerOptions);
@@ -331,7 +338,7 @@ function projectFileUrls(directory: string): string[] {
     const resourcePaths = (manifest.resources ?? []).map(resource => resource.path);
     const scenePaths = manifest.startScene === undefined ? [] : [manifest.startScene];
     const referencedPaths = [...resourcePaths, ...scenePaths].flatMap(path => referencedDataPathsIn(projectFileJson(directory, path)));
-    return [...new Set([...resourcePaths, ...scenePaths, ...referencedPaths])].map(path => encodeURI(`${directory}/${path}`));
+    return [...new Set([...resourcePaths, ...scenePaths, ...referencedPaths])].map(path => encodeURI(path));
 }
 
 function expectProjectFilesFetched(page: Page, label: string, directory: string): void {

@@ -228,6 +228,18 @@ describe("EditorWorldService requests", () => {
         expect(await failureOf(ask(harnessed, {op: "createEntity", parent: 12345 as Entity}))).toBe('Editor request "createEntity" failed: No entity 12345 in this world');
     });
 
+    test("createEntity with initial components decodes them over the defaults, or creates nothing when one is invalid", async () => {
+        const harnessed = editorWorld();
+        const camera = await ask(harnessed, {op: "createEntity", name: "Camera", components: {LocalPosition: {xyz: [0, 0, -10]}, Camera: {farPlaneDistance: 50}}});
+        expect(camera.components.map(component => component.typeName).sort()).toEqual(["Camera", "LocalPosition", "LocalToWorld", "ScreenSize"]);
+        expect(fieldsOf(camera, "LocalPosition")).toEqual({xyz: [0, 0, -10]});
+        expect(fieldsOf(camera, "Camera")).toEqual({nearPlaneDistance: 0.1, farPlaneDistance: 50});
+        const before = (await ask(harnessed, {op: "listEntities"})).entities.length;
+        expect(await failureOf(ask(harnessed, {op: "createEntity", components: {Camera: {}, Missing: {}}}))).toBe('Editor request "createEntity" failed: No component type named "Missing" is registered');
+        expect(await failureOf(ask(harnessed, {op: "createEntity", components: {Camera: {focus: 1}}}))).toBe('Editor request "createEntity" failed: Camera has no field "focus"');
+        expect((await ask(harnessed, {op: "listEntities"})).entities.length).toBe(before);
+    });
+
     test("destroyEntity destroys the descendants found through Children and Parent and unlinks the root from its parent", async () => {
         const handles: Entity[] = [];
         const harnessed = editorWorld(world => {

@@ -20,6 +20,7 @@ import {
     projectBuildCopyPath,
 } from "../project/projectServerApi";
 import type {BuildProjectResult, GenerateProjectReport, OpenProjectResult} from "../project/projectServerApi";
+import {SAMPLE_PROJECTS} from "../project/sampleProjects";
 import type {ServerEventStream} from "../project/serverEvents";
 import {editorViewportFor} from "./editorViewport";
 import {EditorExtensionLoader} from "./editorExtensionLoader";
@@ -29,7 +30,7 @@ import type {GameTargetChoice, WebGpuAvailability} from "./gameTargets";
 import {ProjectRunner} from "./projectRunner";
 import {ProjectServerClient} from "./projectServerClient";
 import {browserStorageOrUndefined, forgetRecentProject, readRecentProjects, rememberRecentProject} from "./recentProjects";
-import {SAMPLE_PROJECTS, StartScreen} from "./startScreen";
+import {StartScreen} from "./startScreen";
 import type {StartScreenAction} from "./startScreen";
 
 export const PROJECT_QUERY_PARAMETER = "project";

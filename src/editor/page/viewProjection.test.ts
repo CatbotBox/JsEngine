@@ -3,6 +3,7 @@ import {identityMat4, orthographicWorldToScreen, perspectiveWorldToScreen} from 
 import {
     amountAlongScreenAxis,
     distanceToSegmentPx,
+    layoutRectOf,
     overlayPointOf,
     overlayScaleOf,
     pointerAngleRadians,
@@ -73,6 +74,14 @@ describe("overlay pixels and screen units", () => {
         expect(scale).toEqual({originLeftPx: 10, originTopPx: 20, pxPerUnitX: 8, pxPerUnitY: 16});
         expect(overlayPointOf(scale, {x: 2, y: 1})).toEqual({x: 26, y: 36});
         expect(screenPointOf(scale, {x: 26, y: 36})).toEqual({x: 2, y: 1});
+    });
+
+    test("a zoomed page's visual rects map back to layout pixels before the overlay scale is taken", () => {
+        const zoom = 2;
+        const zoomed = overlayScaleOf(ORTHOGRAPHIC,
+            layoutRectOf({left: 220, top: 440, width: 320, height: 320}, zoom),
+            layoutRectOf({left: 200, top: 400, width: 600, height: 600}, zoom));
+        expect(zoomed).toEqual(scale);
     });
 
     test("there is no scale before the world reports a screen size", () => {

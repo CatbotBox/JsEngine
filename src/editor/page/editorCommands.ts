@@ -7,11 +7,15 @@ import type {BottomTab} from "./editorPanels";
 import {EDITOR_TOOLS} from "./editorTools";
 import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
+import {ENTITY_TEMPLATE_NAMES} from "./entityTemplates";
+import type {EntityTemplate} from "./entityTemplates";
 import {GAME_VIEW_ASPECTS, gameViewAspectOf} from "./gameViewAspect";
+import {withHandlePositionToggled, withHandleRotationToggled} from "./handleModes";
 import {GAME_VIEW_OPTION_LABELS, GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import type {GameViewOption} from "./gameViewOptions";
 import type {HierarchyView} from "./hierarchyView";
 import {UNPARENT_TARGET} from "./hierarchyDrop";
+import type {LayoutPanel} from "./panelSizes";
 import {normalizeProjectPath, opensInEditor, projectFileKind, ROOT_FOLDER_PATH} from "./projectFiles";
 import type {ProjectFileKind} from "./projectFiles";
 import {LAST_LOADED_SCENE_REASON, PREFAB_TAB_SCENES_REASON} from "./sceneDocuments";
@@ -42,6 +46,10 @@ export interface EditorCommandHost {
 
     resetLayout(): void;
 
+    panelShown(panel: LayoutPanel): boolean;
+
+    togglePanel(panel: LayoutPanel): void;
+
     gameViewAspect(): string;
 
     setGameViewAspect(id: string): void;
@@ -61,6 +69,8 @@ export interface EditorCommandHost {
     buildUnavailableReason(): string | undefined;
 
     openBuildWindow(): void;
+
+    openPreferences(): void;
 }
 
 export interface DataAssetCreation {
@@ -219,11 +229,6 @@ export const SESSION_ENDED_REASON = "The editor session ended";
 export const NOTHING_SELECTED_REASON = "Nothing is selected";
 export const SHOW_IN_EXPLORER_UNAVAILABLE_REASON = "Show in Explorer needs the desktop app; a browser page cannot open the file manager";
 export const NOTHING_SELECTED_IN_PROJECT_REASON = "No files are selected in the Project panel";
-export const ENTITY_TEMPLATE_REASON = "Not built yet: there are no entity templates; use Create Empty, then Add Component";
-export const PREFERENCES_REASON = "Not built yet; the desktop editor zooms with Ctrl+=, Ctrl+- and Ctrl+0";
-export const PANEL_TOGGLE_REASON = "Not built yet: panels cannot be hidden";
-export const HANDLE_POSITION_REASON = "Not built yet: handles sit at the selection's bounds centre (Center); Pivot needs each entity's world pivot from the editor protocol";
-export const HANDLE_ROTATION_REASON = "Not built yet: move handles follow the world axes (Global); Local needs each entity's world rotation from the editor protocol";
 export const CLOSE_PROJECT_UNAVAILABLE_REASON = "This editor page cannot return to the start screen";
 export const STOP_GAME_REASON = "Stop the game first; scenes change only while editing";
 export const NO_RECENT_SCENES_REASON = "No recent scenes";
@@ -263,6 +268,7 @@ const VIEW_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene View", 
 const VIEW_ORDER: readonly EditorView[] = ["scene", "game"];
 const TOOL_LABELS: Readonly<Record<EditorTool, string>> = {hand: "Hand", move: "Move", rotate: "Rotate", scale: "Scale"};
 const TOOL_SHORTCUTS: Readonly<Record<EditorTool, string>> = {hand: "Q", move: "W", rotate: "E", scale: "R"};
+const PANEL_LABELS: Readonly<Record<LayoutPanel, string>> = {hierarchy: "Hierarchy", inspector: "Inspector", bottom: "Bottom Panel"};
 
 function recordOf<K extends string, V>(keys: readonly K[], valueOf: (key: K) => V): Record<K, V> {
     return Object.fromEntries(keys.map(key => [key, valueOf(key)])) as Record<K, V>;
@@ -526,7 +532,7 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
                 return workspace.view === "scene" && workspace.mode !== "play" ? undefined : FRAME_NEEDS_SCENE_VIEW_REASON;
             }),
         }),
-        preferences: registry.addPlanned({id: "edit.preferences", category: EDIT_CATEGORY, label: "Preferences…", reason: PREFERENCES_REASON}),
+        preferences: registry.add({id: "edit.preferences", category: EDIT_CATEGORY, label: "Preferences…", run: () => host.openPreferences()}),
     };
 
     const assets: AssetCommands = {
@@ -595,7 +601,9 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
         }),
     };
 
-    const template = (id: string, label: string): Command<void> => registry.addPlanned({id, category: ENTITY_CATEGORY, label, reason: ENTITY_TEMPLATE_REASON});
+    const template = (id: string, kind: EntityTemplate): Command<void> => action(id, ENTITY_CATEGORY, `Create ${ENTITY_TEMPLATE_NAMES[kind]}`, ({workspace}) => void workspace.createFromTemplate(kind), {
+        disabledReason: whenOpen(({workspace}) => workspace.templateProblem(kind)),
+    });
     const entity: EntityCommands = {
         createEmpty: action("entity.createEmpty", ENTITY_CATEGORY, "Create Empty", ({workspace}) => void workspace.createEmpty(null)),
         createEmptyChild: registry.addTargeted<Entity | undefined>({
@@ -605,13 +613,13 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
                 if (parent !== undefined) void mounted().workspace.createEmpty(parent);
             },
         }),
-        createCamera: template("entity.createCamera", "Create Camera"),
-        createSprite: template("entity.createSprite", "Create Sprite"),
-        createText: template("entity.createText", "Create Text"),
-        createMesh: template("entity.createMesh", "Create Mesh"),
-        createDirectionalLight: template("entity.createDirectionalLight", "Create Directional Light"),
-        createPointLight: template("entity.createPointLight", "Create Point Light"),
-        createAmbientLight: template("entity.createAmbientLight", "Create Ambient Light"),
+        createCamera: template("entity.createCamera", "camera"),
+        createSprite: template("entity.createSprite", "sprite"),
+        createText: template("entity.createText", "text"),
+        createMesh: template("entity.createMesh", "mesh"),
+        createDirectionalLight: template("entity.createDirectionalLight", "directionalLight"),
+        createPointLight: template("entity.createPointLight", "pointLight"),
+        createAmbientLight: template("entity.createAmbientLight", "ambientLight"),
     };
 
     const play: PlayCommands = {
@@ -636,8 +644,8 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             checked: () => host.views()?.workspace.tool === tool,
             yieldsKey: () => host.views()?.scene.capturesKeys === true,
         })),
-        handlePosition: registry.addPlanned({id: "tools.togglePivotCenter", category: TOOLS_CATEGORY, label: "Toggle Pivot/Center", reason: HANDLE_POSITION_REASON}),
-        handleRotation: registry.addPlanned({id: "tools.toggleLocalGlobal", category: TOOLS_CATEGORY, label: "Toggle Local/Global", reason: HANDLE_ROTATION_REASON}),
+        handlePosition: action("tools.togglePivotCenter", TOOLS_CATEGORY, "Toggle Pivot/Center", ({workspace}) => workspace.setHandleModes(withHandlePositionToggled(workspace.handleModes))),
+        handleRotation: action("tools.toggleLocalGlobal", TOOLS_CATEGORY, "Toggle Local/Global", ({workspace}) => workspace.setHandleModes(withHandleRotationToggled(workspace.handleModes))),
         snapStep: registry.addTargeted<SnapStepChoice>({
             id: "tools.snapStep", category: SNAP_CATEGORY, label: "Snap Step",
             labelFor: choice => `${SNAP_KIND_LABELS[choice.kind]} step ${snapStepText(choice)}`,
@@ -667,6 +675,13 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
         })),
     };
 
+    const panelToggle = (id: string, panel: LayoutPanel): Command<void> => registry.add({
+        id,
+        category: WINDOW_CATEGORY,
+        label: PANEL_LABELS[panel],
+        checked: () => host.panelShown(panel),
+        run: () => host.togglePanel(panel),
+    });
     const windowCommands: WindowCommands = {
         bottomTabs: recordOf(BOTTOM_TABS, tab => registry.add({
             id: `window.${tab}`,
@@ -675,9 +690,9 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             checked: () => host.bottomTab() === tab,
             run: () => host.showBottomTab(tab),
         })),
-        toggleHierarchy: registry.addPlanned({id: "window.toggleHierarchy", category: WINDOW_CATEGORY, label: "Hierarchy", reason: PANEL_TOGGLE_REASON}),
-        toggleInspector: registry.addPlanned({id: "window.toggleInspector", category: WINDOW_CATEGORY, label: "Inspector", reason: PANEL_TOGGLE_REASON}),
-        toggleBottomPanel: registry.addPlanned({id: "window.toggleBottomPanel", category: WINDOW_CATEGORY, label: "Bottom Panel", reason: PANEL_TOGGLE_REASON}),
+        toggleHierarchy: panelToggle("window.toggleHierarchy", "hierarchy"),
+        toggleInspector: panelToggle("window.toggleInspector", "inspector"),
+        toggleBottomPanel: panelToggle("window.toggleBottomPanel", "bottom"),
         resetLayout: registry.add({id: "window.resetLayout", category: WINDOW_CATEGORY, label: "Reset Layout", run: () => host.resetLayout()}),
     };
 

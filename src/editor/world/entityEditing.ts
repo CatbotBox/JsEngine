@@ -24,7 +24,7 @@ import type {
     SceneAssetReference,
     SceneJsonObject,
 } from "../../engine/scene";
-import type {EditorFieldEdit, EditorFieldValue} from "../editorProtocol";
+import type {EditorComponentValues, EditorFieldEdit, EditorFieldValue} from "../editorProtocol";
 import {encodeEditorFieldValue, isSceneEntityHandle, parentOf, requireSceneEntity, unregisteredComponentTypes} from "./entityInspection";
 import {linkChild, reparentKeepingLocals, requireNoCycle, subtreeOf, unlinkChild} from "./hierarchyEditing";
 
@@ -40,6 +40,8 @@ interface PreparedEdit {
     readonly field: FieldSchema;
     readonly value: unknown;
 }
+
+const NO_INITIAL_COMPONENTS: EditorComponentValues = {};
 
 function fieldsOf(component: Component): Record<string, unknown> {
     return component as unknown as Record<string, unknown>;
@@ -250,9 +252,29 @@ export function renameEntity(world: World, entity: Entity, name: string | null):
     world.entityManager.setName(entity, name ?? undefined);
 }
 
-export function createEditorEntity(world: World, name: string | undefined, parent: Entity | undefined): Entity {
+function initialComponent(world: World, registry: ComponentSchemaRegistry, assets: SceneAssetLoader, typeName: string, values: SceneJsonObject): Component {
+    const schema = requireFieldsSchema(registry, typeName);
+    if (schema.ctor === Parent) throw new Error("A new entity takes its parent from parent, not from a Parent component");
+    const component = schema.create();
+    decodeValuesOnto(world, registry, assets, schema, component, values, typeName);
+    const missing = missingRequiredEntities(schema, component);
+    if (missing.length > 0) throw new Error(`${typeName} needs ${quotedKeys(missing)} set to an entity in its values`);
+    return component;
+}
+
+export function createEditorEntity(
+    world: World,
+    registry: ComponentSchemaRegistry,
+    assets: SceneAssetLoader,
+    name: string | undefined,
+    parent: Entity | undefined,
+    initial: EditorComponentValues = NO_INITIAL_COMPONENTS,
+): Entity {
     if (parent !== undefined) requireSceneEntity(world, parent);
-    const components: Component[] = [new LocalPosition(), new LocalToWorld()];
+    const requested = Object.entries(initial).map(([typeName, values]) => initialComponent(world, registry, assets, typeName, values));
+    const requestedTypes = new Set(requested.map(component => component.constructor));
+    const defaults = [new LocalPosition(), new LocalToWorld()].filter(component => !requestedTypes.has(component.constructor));
+    const components: Component[] = [...defaults, ...requested];
     if (parent !== undefined) components.push(new Parent(parent));
     const entity = world.entityManager.createEntity(name, components);
     if (parent !== undefined) linkChild(world, entity, parent);

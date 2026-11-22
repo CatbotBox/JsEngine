@@ -1,14 +1,10 @@
+import type {SampleProject} from "../project/sampleProjects";
 import {button, element} from "./domElements";
 import type {RecentProject} from "./recentProjects";
 
 export interface StartScreenAction {
     readonly label: string;
     readonly run: () => void;
-}
-
-export interface SampleProject {
-    readonly label: string;
-    readonly path: string;
 }
 
 export interface StartScreenOptions {
@@ -19,12 +15,6 @@ export interface StartScreenOptions {
     readonly samples: readonly SampleProject[];
     readonly modeNote: string;
 }
-
-export const SAMPLE_PROJECTS: readonly SampleProject[] = [
-    {label: "2D", path: "demo/2d"},
-    {label: "3D", path: "demo/3d"},
-    {label: "Swarm", path: "demo/swarm"},
-];
 
 export class StartScreen {
     private readonly root: HTMLElement;

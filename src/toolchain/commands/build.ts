@@ -2,7 +2,7 @@ import {CliError, EXIT_FAILURE, EXIT_SUCCESS, parseOptions, usageError} from "..
 import type {ParsedOptions} from "../cliArguments";
 import {
     BUNDLE_BASELINE_FILE,
-    buildDemoBundles,
+    buildSampleProjectBundles,
     bundleRecordHeader,
     compareBundles,
     readBundleBaseline,
@@ -21,8 +21,7 @@ import {
 } from "../build/featureDetection";
 import type {BundleFeatureResult, TargetFeatureReport} from "../build/featureDetection";
 import {checkTerminalBuild} from "../build/terminalBuild";
-import {buildWebSite, regenerateDemoSites} from "../build/webBuild";
-import {DEMO_SITES} from "../demoSites";
+import {buildWebSite, regenerateSampleProjects} from "../build/webBuild";
 import {buildWindowSite} from "../launch/windowLaunch";
 import {projectFolderOf} from "../project";
 import {repoRelative} from "../repoPaths";
@@ -49,7 +48,6 @@ const OPTIONS = {
     [UPDATE_BASELINE_OPTION]: {kind: "flag"},
 } as const;
 
-const SITE_TARGETS: readonly Target[] = ["web", "window"];
 const MODULE_LINE_INDENT = "    ";
 const ADDED_MARK = "+ ";
 const REMOVED_MARK = "- ";
@@ -79,10 +77,14 @@ async function finishFeatureCheck(target: RunTarget, jsonReport: boolean, build:
     return report.ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-async function builtWindowFeatures(): Promise<TargetFeatureReport> {
-    const built = await buildWindowSite();
+async function builtWindowFeatures(project: string | undefined): Promise<TargetFeatureReport> {
+    const built = await buildWindowSite(project);
     console.log(`bundled ${repoRelative(built.mainProcess)}`);
     return built.features;
+}
+
+function siteProjectOf(projectOption: string | undefined): string | undefined {
+    return projectOption === undefined ? undefined : projectFolderOf(projectOption);
 }
 
 async function editorReport(projectOption: string | undefined, simulation: EditorSimulation): Promise<ProjectWorkerBuildReport> {
@@ -129,9 +131,9 @@ function bundleFeaturesFailure(features: readonly BundleFeatureResult[]): string
 
 async function bundlesReport(options: ParsedOptions): Promise<CommandResult> {
     const excluded = BUNDLES_REPORT_EXCLUDED_OPTIONS.find(name => options.has(name));
-    if (excluded !== undefined) throw usageError(`--report ${BUNDLES_REPORT} covers every demo, target and backend; drop --${excluded}`);
-    regenerateDemoSites();
-    const bundles = await buildDemoBundles();
+    if (excluded !== undefined) throw usageError(`--report ${BUNDLES_REPORT} covers every sample project, target and backend; drop --${excluded}`);
+    regenerateSampleProjects();
+    const bundles = await buildSampleProjectBundles();
     const records = bundles.map(bundle => bundle.record);
     const features = checkBundleFeatures(bundles.map(bundle => bundle.features));
     const baselineName = repoRelative(BUNDLE_BASELINE_FILE);
@@ -187,17 +189,14 @@ export async function buildCommand(args: readonly string[]): Promise<CommandResu
     if (target === EDITOR_TARGET) return await buildEditor(options.value("project"), editorSimulationOf(options.value("simulate"), requestedBackend), jsonReport);
     backendFor(target, requestedBackend);
     if (requestedBackend !== undefined) throw usageError(`the ${target} build bundles every backend it supports; drop --backend`);
-    if (SITE_TARGETS.includes(target) && options.has("project")) {
-        throw usageError(`the ${target} build covers every demo (${DEMO_SITES.map(site => site.project).join(", ")}); drop --project`);
-    }
     switch (target) {
         case "terminal":
             return await finishFeatureCheck(target, jsonReport, () => checkTerminalBuild(projectFolderOf(options.value("project"))));
         case "web": {
             const prod = options.flag("prod");
-            return await finishFeatureCheck(target, jsonReport, () => buildWebSite({prod, withEditor: !prod || options.flag("with-editor"), target}));
+            return await finishFeatureCheck(target, jsonReport, () => buildWebSite({prod, withEditor: !prod || options.flag("with-editor"), target, project: siteProjectOf(options.value("project"))}));
         }
         case "window":
-            return await finishFeatureCheck(target, jsonReport, builtWindowFeatures);
+            return await finishFeatureCheck(target, jsonReport, () => builtWindowFeatures(siteProjectOf(options.value("project"))));
     }
 }

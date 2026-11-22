@@ -1,5 +1,5 @@
-import {existsSync, readdirSync} from "fs";
-import {join, relative} from "path";
+import {existsSync, mkdirSync, readdirSync, writeFileSync} from "fs";
+import {dirname, join, relative} from "path";
 import {pathToFileURL} from "url";
 import {registerBuiltinImageDecoders} from "../../engine/assets/image/builtinDecoders";
 import type {AssetLoadOptions, FileSource, FileStat} from "../../engine/platform";
@@ -20,10 +20,14 @@ import {SCENE_FILE_SUFFIX} from "../../engine/project/projectManifest";
 import {createProjectSchemaRegistry} from "../../engine/project/projectSchemas";
 import {EDITOR_SCHEMAS} from "../../editor/world/editorSchemas";
 import type {AssetManifestFile, AssetManifestPrefab, ProjectAssetManifest} from "../../hosts/web/webProjectAssets";
+import {CliError} from "../cliArguments";
 import {GENERATED_FOLDER, GENERATED_SCHEMAS_FILE} from "../projectLayout";
-import {compareText} from "../generate/projectSources";
+import {compareText, isInside} from "../generate/projectSources";
+import {REPO_ROOT} from "../repoPaths";
+import {EXTERNAL_ENGINE_IMPORTS, projectBuildDirectory} from "./editorBuild";
 import {isWebProjectDataFile} from "./webDistFiles";
 
+const ASSET_SCHEMAS_BUNDLE_FILE = "assetSchemas.js";
 const WRITABLE = true;
 const BYTES_PER_MB = 1024 * 1024;
 export const ON_DEMAND_PREFAB_BYTES = 16 * BYTES_PER_MB;
@@ -223,8 +227,20 @@ export function buildProjectAssetManifest(
     return new ProjectAssetRecorder(root, projectDirectory, base, registry, onDemandPrefabBytes).manifest();
 }
 
+async function engineSharingSchemasModule(projectFolder: string, schemasModule: string): Promise<string> {
+    if (isInside(REPO_ROOT, projectFolder)) return schemasModule;
+    const result = await Bun.build({entrypoints: [schemasModule], target: "bun", format: "esm", throw: false, plugins: [EXTERNAL_ENGINE_IMPORTS]});
+    if (!result.success) throw new CliError(`bundling ${schemasModule} to find the project's asset references failed:`, result.logs.map(String));
+    const bundled = join(projectBuildDirectory(projectFolder), ASSET_SCHEMAS_BUNDLE_FILE);
+    mkdirSync(dirname(bundled), {recursive: true});
+    writeFileSync(bundled, await result.outputs[0].text());
+    return bundled;
+}
+
 export async function projectAssetRegistry(projectFolder: string): Promise<ComponentSchemaRegistry> {
     const schemasModule = join(projectFolder, GENERATED_SCHEMAS_FILE);
-    const generated = existsSync(schemasModule) ? await import(pathToFileURL(schemasModule).href) as GeneratedSchemasModule : {};
+    const generated = existsSync(schemasModule)
+        ? await import(pathToFileURL(await engineSharingSchemasModule(projectFolder, schemasModule)).href) as GeneratedSchemasModule
+        : {};
     return createProjectSchemaRegistry({hostSchemas: EDITOR_SCHEMAS, schemas: generated.generatedSchemas ?? NO_SCHEMAS});
 }

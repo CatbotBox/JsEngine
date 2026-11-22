@@ -116,13 +116,13 @@ describe("mains generator", () => {
         expectLine(lines, `    await startProject(world, {directory: PROJECT_DIRECTORY, backendSystems: generatedCellsSystems, hostSchemas: generatedCellsSchemas});`);
     });
 
-    test("web mains name the bundles after the project folder and the worker reads the project's site folder", () => {
+    test("web mains name the bundles after the project folder and the worker reads the project files beside its bundle", () => {
         const {folder, output} = generateFixture(MAINS_GENERATOR, {name: "Web Game"});
         const slug = basename(folder).toLowerCase();
         expectLine(linesOf(output, WEB_PAGE_BOOTSTRAP_FILE), `loadRenderBackendScript({cells: "${slug}-cells.js", pixels: "${slug}-pixels.js", gpu: "${slug}-gpu.js"}, {defaultBackend: pageDefaultRenderBackend(document)});`);
         expectLine(linesOf(output, webPageMainFile("pixels")), `startWorldPage("${slug}-pixels.worker.js", "Web Game", pixelCanvasDisplayFromQuery);`);
         const worker = linesOf(output, webWorkerMainFile("pixels"));
-        expectLine(worker, `const PROJECT_DIRECTORY = "${slug}";`);
+        expectLine(worker, `const PROJECT_DIRECTORY = ".";`);
         expectLine(worker, `    installPixelsBackend(world, presenter, generatedPixelsPasses);`);
         expectLine(worker, `    await runProjectInWorker(world, page, files, {directory: PROJECT_DIRECTORY, startProject, backendSystems: generatedPixelsSystems, hostSchemas: generatedPixelsSchemas});`);
     });

@@ -124,7 +124,6 @@ const BUILD_COMMAND = "build";
 const PACKAGE_COMMAND = "package";
 const TARGET_ARGUMENT = "--target";
 const REPORT_JSON_ARGUMENTS: readonly string[] = ["--report", "json"];
-const PROJECT_SCOPED_TARGETS: readonly ProjectTarget[] = ["terminal"];
 const EXIT_SUCCESS = 0;
 const LINE_BREAKS = /\r?\n/;
 const NOT_FOUND_INDEX = -1;
@@ -339,10 +338,9 @@ export async function buildProjectEditorWorker(request: ProjectBuildRequest): Pr
 
 export async function checkProjectTarget(request: ProjectTargetRequest, runToolchain: ToolchainRunner = spawnToolchainCommand): Promise<TargetReportResult> {
     const {target} = request;
-    const projectArguments = PROJECT_SCOPED_TARGETS.includes(target) ? [PROJECT_ARGUMENT, resolve(request.folder)] : [];
     let run: ToolchainOutput;
     try {
-        run = await runToolchain(request.repoRoot, request.bunPath, [BUILD_COMMAND, TARGET_ARGUMENT, target, ...REPORT_JSON_ARGUMENTS, ...projectArguments]);
+        run = await runToolchain(request.repoRoot, request.bunPath, [BUILD_COMMAND, TARGET_ARGUMENT, target, ...REPORT_JSON_ARGUMENTS, PROJECT_ARGUMENT, resolve(request.folder)]);
     } catch (error) {
         return {report: failedTargetReport(target, [`Could not run ${request.bunPath}: ${describeError(error)}`]), output: []};
     }
