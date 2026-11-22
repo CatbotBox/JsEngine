@@ -1,4 +1,5 @@
 import type {Entity} from "../../engine/core";
+import {errorFramesOf} from "../../engine/debugging/errorStack";
 import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import {withoutSceneMembership} from "../../engine/scene";
@@ -289,7 +290,7 @@ export class EditorWorkspace implements UndoContext {
         const now = Date.now();
         if (this.lastError !== undefined && this.lastError.text === text && now - this.lastError.timeMs < ERROR_REPEAT_SUPPRESSION_MS) return;
         this.lastError = {text, timeMs: now};
-        this.notice("error", text);
+        this.notice("error", text, errorFramesOf(error));
     }
 
     public request<R extends EditorRequest>(request: R): Promise<EditorResultOf<R>> {
@@ -458,7 +459,7 @@ export class EditorWorkspace implements UndoContext {
         if (type === undefined) return [];
         const files = this.currentSession.files;
         const paths = filesWithSuffixes(await files.list(), type.fileSuffixes);
-        if (!type.dataAsset) return paths;
+        if (!type.dataAsset) return [...type.builtInPaths, ...paths];
         const typed = await Promise.all(paths.map(async path => {
             try {
                 return dataAssetTypeOf(await files.readText(path)) === assetType ? path : undefined;
@@ -466,7 +467,7 @@ export class EditorWorkspace implements UndoContext {
                 return undefined;
             }
         }));
-        return typed.filter((path): path is string => path !== undefined);
+        return [...type.builtInPaths, ...typed.filter((path): path is string => path !== undefined)];
     }
 
     public openDataAsset(path: string): void {

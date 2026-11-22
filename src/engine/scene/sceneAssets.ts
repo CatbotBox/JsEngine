@@ -4,7 +4,7 @@ import type {FileSource} from "../platform/platform";
 import type {MeshLoadOptions} from "../rendering/3d/mesh";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {parseDataAssetDocument} from "./dataAssetDocument";
-import {PREFAB_ASSET_TYPE_NAME} from "./fieldSchema";
+import {isBuiltInAssetPath, PREFAB_ASSET_TYPE_NAME} from "./fieldSchema";
 import type {FieldSchema, FieldType} from "./fieldSchema";
 import {PrefabAsset} from "./prefabAsset";
 import {isSceneJsonObject, parseSceneDocument} from "./sceneDocument";
@@ -14,9 +14,15 @@ export type SceneAssetKind = string;
 
 export type AssetPreload = (paths: readonly string[]) => Promise<void>;
 
+export const LOAD_ON_DEMAND_FIELD_KEY = "loadOnDemand";
+
+const BOOLEAN_FIELD_KIND = "boolean";
+const LOADED_UP_FRONT = false;
+
 export interface SceneAssetReference {
     readonly kind: SceneAssetKind;
     readonly path: string;
+    readonly loadOnDemand?: boolean;
 }
 
 export interface SceneAssetLoader {
@@ -69,36 +75,45 @@ export function platformSceneAssetLoader(options: MeshLoadOptions, dataAssets?: 
     };
 }
 
-class AssetReferenceCollector {
-    public readonly references: SceneAssetReference[] = [];
-    private readonly seen = new Set<string>();
+function marksLoadOnDemand(fields: readonly FieldSchema[], values: SceneFieldValues): boolean {
+    return values[LOAD_ON_DEMAND_FIELD_KEY] === true && fields.some(field => field.key === LOAD_ON_DEMAND_FIELD_KEY && field.kind === BOOLEAN_FIELD_KIND);
+}
 
-    public collectFields(fields: readonly FieldSchema[], values: SceneFieldValues): void {
-        for (const field of fields) this.collect(field, values[field.key]);
+class AssetReferenceCollector {
+    private readonly byKey = new Map<string, SceneAssetReference>();
+
+    public get references(): SceneAssetReference[] {
+        return [...this.byKey.values()];
     }
 
-    private collect(type: FieldType, json: SceneJsonValue | undefined): void {
+    public collectFields(fields: readonly FieldSchema[], values: SceneFieldValues, loadOnDemand: boolean = LOADED_UP_FRONT): void {
+        const fieldsLoadOnDemand = loadOnDemand || marksLoadOnDemand(fields, values);
+        for (const field of fields) this.collect(field, values[field.key], fieldsLoadOnDemand);
+    }
+
+    private collect(type: FieldType, json: SceneJsonValue | undefined, loadOnDemand: boolean): void {
         if (json === undefined || json === null) return;
         switch (type.kind) {
             case "asset":
-                if (isSceneJsonObject(json) && typeof json.path === "string") this.add(type.assetType, json.path);
+                if (isSceneJsonObject(json) && typeof json.path === "string") this.add(type.assetType, json.path, loadOnDemand);
                 return;
             case "list":
-                if (Array.isArray(json)) for (const element of json) this.collect(type.element, element);
+                if (Array.isArray(json)) for (const element of json) this.collect(type.element, element, loadOnDemand);
                 return;
             case "struct":
-                if (isSceneJsonObject(json)) this.collectFields(type.fields, json);
+                if (isSceneJsonObject(json)) this.collectFields(type.fields, json, loadOnDemand);
                 return;
             default:
                 return;
         }
     }
 
-    private add(kind: SceneAssetKind, path: string): void {
+    private add(kind: SceneAssetKind, path: string, loadOnDemand: boolean): void {
+        if (isBuiltInAssetPath(path)) return;
         const key = cacheKey(kind, path);
-        if (this.seen.has(key)) return;
-        this.seen.add(key);
-        this.references.push({kind, path});
+        const known = this.byKey.get(key);
+        if (known !== undefined && (known.loadOnDemand !== true || loadOnDemand)) return;
+        this.byKey.set(key, loadOnDemand ? {kind, path, loadOnDemand} : {kind, path});
     }
 }
 
@@ -146,16 +161,21 @@ export async function preloadAssetReferences(
     preload: AssetPreload,
 ): Promise<void> {
     const preloaded = new Set<string>();
+    const expanded = new Set<string>();
     let pending = references;
     while (pending.length > 0) {
-        const fresh: SceneAssetReference[] = [];
+        const fresh: string[] = [];
+        const expanding: SceneAssetReference[] = [];
         for (const reference of pending) {
-            if (preloaded.has(reference.path)) continue;
-            preloaded.add(reference.path);
-            fresh.push(reference);
+            if (!preloaded.has(reference.path)) {
+                preloaded.add(reference.path);
+                fresh.push(reference.path);
+            }
+            if (reference.loadOnDemand === true || expanded.has(reference.path)) continue;
+            expanded.add(reference.path);
+            expanding.push(reference);
         }
-        if (fresh.length === 0) return;
-        await preload(fresh.map(reference => reference.path));
-        pending = fresh.flatMap(reference => nestedAssetReferences(reference, registry, files));
+        if (fresh.length > 0) await preload(fresh);
+        pending = expanding.flatMap(reference => nestedAssetReferences(reference, registry, files));
     }
 }

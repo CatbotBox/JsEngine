@@ -30,20 +30,6 @@ export class Bullet extends Component {
     public radiusUnits = 0;
 }
 
-export class Velocity extends Component {
-    public static readonly category = SWARM_CATEGORY;
-
-    public xUnitsPerSecond = 0;
-    public yUnitsPerSecond = 0;
-}
-
-export class Lifetime extends Component {
-    public static readonly category = SWARM_CATEGORY;
-
-    public durationMs = 0;
-    public remainingMs = 0;
-}
-
 export class Spark extends Component {
     public static readonly category = SWARM_CATEGORY;
 }

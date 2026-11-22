@@ -35,7 +35,7 @@ export interface EditorShell {
 
     replaceSession(session: EditorSession, remap: EntityRemap): Promise<void>;
 
-    notice(level: EditorNoticeLevel, text: string): void;
+    notice(level: EditorNoticeLevel, text: string, stack?: string): void;
 
     showTargetLabel(text: string): void;
 

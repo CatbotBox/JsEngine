@@ -6,19 +6,6 @@ import type {Int} from "../../src/engine/scene";
 const DEMO_3D_CATEGORY = "Demo 3D";
 const UNIT_SCALE = 1;
 
-export class FlyCamera extends Component {
-    public static readonly category = DEMO_3D_CATEGORY;
-
-    public yawRad = 0;
-    public pitchRad = 0;
-}
-
-export class EulerAngles extends Component {
-    public static readonly category = DEMO_3D_CATEGORY;
-
-    public radians: Vec3 = Vec3.alloc();
-}
-
 export class ModelGrid extends Component {
     public static readonly category = DEMO_3D_CATEGORY;
 

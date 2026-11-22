@@ -23,10 +23,6 @@ export class PlayerTag extends Component {
     public static readonly category = DEMO_2D_CATEGORY;
 }
 
-export class PanCamera extends Component {
-    public static readonly category = DEMO_2D_CATEGORY;
-}
-
 export class RandomTint extends Component {
     public static readonly category = DEMO_2D_CATEGORY;
 }

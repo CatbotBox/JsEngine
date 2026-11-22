@@ -7,6 +7,7 @@ import {Camera} from "../../../engine/rendering/camera";
 import {Mesh, MeshBuilder} from "../../../engine/rendering/3d/mesh";
 import {Material} from "../../../engine/rendering/3d/material";
 import {RenderMesh} from "../../../engine/rendering/3d/renderMesh";
+import {createUnitCubeMesh} from "../../../engine/rendering/3d/meshAssetType";
 import {FieldOfView} from "../../../engine/rendering/3d/fieldOfView";
 import {MeshRenderSettings} from "../../../engine/rendering/3d/meshRenderSettings";
 import {MeshRenderStats} from "../../../engine/rendering/3d/meshRenderStats";
@@ -29,6 +30,9 @@ const QUAD_LOD_DRAWS = 1;
 const SETTLE_STEPS = 2;
 const FRAME_MS = 16;
 const EXPLICIT_SUPERSAMPLE = 4;
+const CUBE_RGB = 0x996633;
+const BLACK_RGB = 0x000000;
+const CAMERA_INSIDE_CUBE_Z = 0;
 
 function quad(): Mesh {
     const builder = new MeshBuilder();
@@ -99,6 +103,28 @@ describe("MeshPixelPassSystem", () => {
         expect(stats.trianglesDrawn).toBe(2);
         expect(centerRgb()).toBe(QUAD_RGB);
         expect(stats.rasterWorkers).toBe(0);
+    });
+});
+
+function centreRgbOfCubeAt(cubeZ: number): number {
+    const presenter = new MemoryPixelPresenter(SIZE);
+    const world = new World({platform: new MemoryPlatform()});
+    world.resources.insert(new PixelPresenterResource(presenter));
+    const em = world.entityManager;
+    em.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new FieldOfView()]);
+    em.createEntity("cube", [new RenderMesh(createUnitCubeMesh(), CUBE_RGB), new LocalToWorld(), new LocalPosition(0, 0, cubeZ)]);
+    em.createEntity("settings", [new MeshPixelPassSettings()]);
+    world.getOrCreateSystem(MeshPixelPassSystem);
+    for (let step = 0; step < SETTLE_STEPS; step++) world.step(FRAME_MS);
+    const frame = presenter.lastFrame!;
+    const i = ((SIZE.heightPx / 2) * frame.widthPx + SIZE.widthPx / 2) * RGBA_BYTES_PER_PIXEL;
+    return (frame.rgba[i] << RED_SHIFT) | (frame.rgba[i + 1] << GREEN_SHIFT) | frame.rgba[i + 2];
+}
+
+describe("MeshPixelPassSystem with the built-in unit cube", () => {
+    test("draws the cube seen from outside, and culls every face seen from inside, so its faces wind outwards", () => {
+        expect(centreRgbOfCubeAt(QUAD_DISTANCE)).toBe(CUBE_RGB);
+        expect(centreRgbOfCubeAt(CAMERA_INSIDE_CUBE_Z)).toBe(BLACK_RGB);
     });
 });
 

@@ -1,3 +1,4 @@
+import {errorFramesOf} from "../../engine/debugging/errorStack";
 import {installDomInput, keyOf} from "../../hosts/web/domInput";
 import {webGpuUsable} from "../../hosts/web/renderBackendBootstrap";
 import {createEditorShell} from "../page/editorShell";
@@ -17,8 +18,8 @@ import {
     isRebuiltEvent,
     PROJECT_EVENT_BUILD_FAILED,
     PROJECT_EVENT_REBUILT,
-    projectBuildCopyPath,
 } from "../project/projectServerApi";
+import {readPrebuiltProjectCode} from "../project/prebuiltProjectCode";
 import type {BuildProjectResult, GenerateProjectReport, OpenProjectResult} from "../project/projectServerApi";
 import {SAMPLE_PROJECTS} from "../project/sampleProjects";
 import type {ServerEventStream} from "../project/serverEvents";
@@ -72,6 +73,7 @@ interface ProjectLaunch {
     readonly buildWarnings?: readonly string[];
     readonly events?: ServerEventStream;
     readonly editorExtensionsUrl?: string;
+    readonly launchWarnings?: readonly string[];
     readonly generate?: () => Promise<GenerateProjectReport>;
     readonly projectBuild?: ProjectBuildServices;
 }
@@ -95,6 +97,10 @@ async function pageWebGpuAvailability(): Promise<WebGpuAvailability> {
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function scriptUrlOf(bytes: Uint8Array): string {
+    return URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], {type: SCRIPT_TYPE}));
 }
 
 function folderName(path: string): string {
@@ -269,15 +275,14 @@ class EditorStart {
             return;
         }
         const target = this.chooseTarget(parseEditorSettings(await files.readText(EDITOR_SETTINGS_FILE).catch(() => undefined)), validation.manifest);
-        const bundlePath = projectBuildCopyPath(target.gameTarget);
-        const bundle = await files.read(bundlePath).catch(() => undefined);
-        if (bundle === undefined) {
-            const missing = `The code of ${validation.manifest.name} is not bundled for ${gameTargetLabelText(target.gameTarget)} (no ${bundlePath}).`;
+        const code = await readPrebuiltProjectCode(files, validation.manifest, target.gameTarget);
+        if (code.worker === undefined) {
+            const missing = `The code of ${validation.manifest.name} is not bundled for ${gameTargetLabelText(target.gameTarget)} (no ${code.workerPath}).`;
             this.fail(`${validation.manifest.name} cannot run here`, [missing, NOT_BUNDLED]);
             return;
         }
-        const workerUrl = URL.createObjectURL(new Blob([bundle as Uint8Array<ArrayBuffer>], {type: SCRIPT_TYPE}));
-        await this.launch({manifest: validation.manifest, files, workerUrl, target});
+        const editorExtensionsUrl = code.editorExtensions === undefined ? {} : {editorExtensionsUrl: scriptUrlOf(code.editorExtensions)};
+        await this.launch({manifest: validation.manifest, files, workerUrl: scriptUrlOf(code.worker), target, launchWarnings: code.warnings, ...editorExtensionsUrl});
     }
 
     private async launch(launch: ProjectLaunch): Promise<void> {
@@ -340,7 +345,7 @@ class EditorStart {
             try {
                 built = await switching.build(gameTarget);
             } catch (error) {
-                shell.notice("error", `Could not build the game code for ${label}: ${describeError(error)}`);
+                shell.notice("error", `Could not build the game code for ${label}: ${describeError(error)}`, errorFramesOf(error));
                 return;
             }
             if (!isBuildSuccess(built)) {
@@ -365,6 +370,7 @@ class EditorStart {
             if (warnings.length > 0) shell.notice("warn", `${BUILD_WARNINGS_TITLE}\n${text}`);
         };
         showBuildWarnings(launch.buildWarnings ?? []);
+        for (const warning of launch.launchWarnings ?? []) shell.notice("warn", warning);
         const extensions = new EditorExtensionLoader({reportError: text => shell.notice("error", text)});
         let extensionsUrl = launch.editorExtensionsUrl;
         let sessionStarted = false;

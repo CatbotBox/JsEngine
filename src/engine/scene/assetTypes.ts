@@ -23,6 +23,7 @@ export interface AssetType<A = unknown> {
     readonly name: string;
     readonly valueName: string;
     readonly fileSuffixes: readonly string[];
+    readonly builtInPaths?: readonly string[];
     readonly inline?: InlineAssetCodec<A>;
 
     isAsset(value: unknown): value is A;

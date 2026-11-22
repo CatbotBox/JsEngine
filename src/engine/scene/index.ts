@@ -31,6 +31,7 @@ export type {
     StructFieldType,
 } from "./fieldSchema";
 export {categoryOf, DEFAULT_COMPONENT_CATEGORY, fieldAlias, hasEntityFields, isEntityField, refersToEntities} from "./fieldSchema";
+export {BUILT_IN_ASSET_SCHEME, BUILT_IN_MESH_PATHS, builtInAssetPath, isBuiltInAssetPath, UNIT_CUBE_MESH_PATH} from "./fieldSchema";
 export type {Int, Quat, Rgb, TextLines} from "./fieldTypeAliases";
 export {createStructValue, defaultFieldValue} from "./fieldDefaults";
 export {
@@ -162,7 +163,7 @@ export {
     sceneJsonEquals,
 } from "./sceneDocument";
 export type {SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonObject, SceneJsonValue} from "./sceneDocument";
-export {assetReferencesOfFields, platformSceneAssetLoader, preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
+export {assetReferencesOfFields, LOAD_ON_DEMAND_FIELD_KEY, platformSceneAssetLoader, preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
 export type {AssetPreload, DataAssetSource, SceneAssetKind, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
 export {
     applySceneInPlace,

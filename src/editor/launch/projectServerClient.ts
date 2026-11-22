@@ -1,5 +1,5 @@
 import type {ProjectTarget} from "../../engine/project/projectTargets";
-import {HttpProjectFileSystem} from "../project/httpProjectFileSystem";
+import {HttpProjectFileSystem, responseFailure} from "../project/httpProjectFileSystem";
 import type {HttpFetch, HttpRequestInit, HttpResponseLike} from "../project/httpProjectFileSystem";
 import {ServerEventStream} from "../project/serverEvents";
 import type {StreamingFetch} from "../project/serverEvents";
@@ -14,6 +14,7 @@ import {
     PROJECT_GENERATE_ROUTE,
     PROJECT_PACKAGE_ROUTE,
     PROJECT_TARGET_REPORT_ROUTE,
+    projectApiError,
     projectApiUrl,
 } from "../project/projectServerApi";
 import type {
@@ -26,7 +27,6 @@ import type {
     OpenProjectResult,
     PackageResult,
     PickFolderResult,
-    ProjectApiError,
     ProjectCapabilities,
     TargetReportRequest,
     TargetReportResult,
@@ -39,16 +39,6 @@ function isCapabilities(value: unknown): value is ProjectCapabilities {
     if (typeof value !== "object" || value === null) return false;
     const capabilities = value as {build?: unknown, pickFolder?: unknown, browse?: unknown};
     return typeof capabilities.build === "boolean" && typeof capabilities.pickFolder === "boolean" && typeof capabilities.browse === "boolean";
-}
-
-async function errorOf(response: HttpResponseLike): Promise<string> {
-    const text = await response.text().catch(() => "");
-    try {
-        const parsed = JSON.parse(text) as Partial<ProjectApiError>;
-        return typeof parsed.error === "string" ? parsed.error : `HTTP ${response.status}`;
-    } catch {
-        return text.length > 0 ? text : `HTTP ${response.status}`;
-    }
 }
 
 export function browserFetch(): HttpFetch & StreamingFetch {
@@ -140,7 +130,10 @@ export class ProjectServerClient {
 
     private async json<T>(route: string, init: HttpRequestInit): Promise<T> {
         const response = await this.fetch(projectApiUrl(route), init);
-        if (!response.ok) throw new Error(await errorOf(response));
+        if (!response.ok) {
+            const failure = await responseFailure(response);
+            throw projectApiError(failure.message, failure);
+        }
         return JSON.parse(await response.text()) as T;
     }
 }

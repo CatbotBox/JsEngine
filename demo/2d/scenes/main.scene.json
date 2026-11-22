@@ -36,7 +36,10 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "PanCamera": {}
+        "PanCamera": {
+          "stepXUnits": 1,
+          "stepYUnits": 1
+        }
       }
     },
     {

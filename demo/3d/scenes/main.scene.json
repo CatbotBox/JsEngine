@@ -91,7 +91,14 @@
         "RenderBounds": {},
         "FlyCamera": {
           "yawRad": 0,
-          "pitchRad": 0
+          "pitchRad": 0,
+          "moveStepUnits": 0.05,
+          "lookRadPerUnit": 0.03,
+          "pitchMarginRad": 0.01,
+          "fovKeyStep": 1.01,
+          "fovWheelStep": 1.05,
+          "minFovDegrees": 10,
+          "maxFovDegrees": 120
         }
       }
     },

@@ -5,7 +5,7 @@
   "fields": {
     "actions": [
       {
-        "name": "moveForward",
+        "name": "flyCameraForward",
         "keys": [
           "W"
         ],
@@ -13,7 +13,7 @@
         "buttons": []
       },
       {
-        "name": "moveBackward",
+        "name": "flyCameraBackward",
         "keys": [
           "S"
         ],
@@ -21,7 +21,7 @@
         "buttons": []
       },
       {
-        "name": "moveRight",
+        "name": "flyCameraRight",
         "keys": [
           "D"
         ],
@@ -29,7 +29,7 @@
         "buttons": []
       },
       {
-        "name": "moveLeft",
+        "name": "flyCameraLeft",
         "keys": [
           "A"
         ],
@@ -37,7 +37,7 @@
         "buttons": []
       },
       {
-        "name": "moveDown",
+        "name": "flyCameraDown",
         "keys": [
           "Q"
         ],
@@ -45,7 +45,7 @@
         "buttons": []
       },
       {
-        "name": "moveUp",
+        "name": "flyCameraUp",
         "keys": [
           "E"
         ],
@@ -101,7 +101,7 @@
         "buttons": []
       },
       {
-        "name": "zoomIn",
+        "name": "flyCameraZoomIn",
         "keys": [
           "Z"
         ],
@@ -109,7 +109,7 @@
         "buttons": []
       },
       {
-        "name": "zoomOut",
+        "name": "flyCameraZoomOut",
         "keys": [
           "X"
         ],
@@ -181,7 +181,7 @@
         "buttons": []
       },
       {
-        "name": "look",
+        "name": "flyCameraLook",
         "keys": [],
         "chords": [],
         "buttons": [

@@ -4,6 +4,7 @@ export {LocalToWorld} from "./localToWorld"
 export {LocalRotation} from "./localRotation"
 export {LocalScale} from "./localScale"
 export {Children} from "./children"
+export {EulerAngles} from "./eulerAngles"
 
 export {TranslationSystemGroup} from "./translationSystemGroup"
 export {LocalToWorldSystem} from "./localToWorldSystem"

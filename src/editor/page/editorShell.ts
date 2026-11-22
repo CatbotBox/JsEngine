@@ -318,7 +318,7 @@ class EditorShellImplementation implements EditorShell {
     private readonly resizer: PanelResizer;
     private readonly editorCommands: EditorCommands;
     private readonly menuBar: MenuBar;
-    private readonly pendingNotices: {readonly level: EditorNoticeLevel, readonly text: string}[] = [];
+    private readonly pendingNotices: {readonly level: EditorNoticeLevel, readonly text: string, readonly stack: string | undefined}[] = [];
     private readonly focusValues = new WeakMap<Element, string>();
     private mounted: MountedViews | undefined;
     private bottomTab: BottomTab;
@@ -387,7 +387,7 @@ class EditorShellImplementation implements EditorShell {
         workspace.on("document", () => this.commands.changed());
         workspace.on("handles", () => this.commands.changed());
         workspace.on("entities", () => rotations.retainEntities(new Set(workspace.entities.map(summary => summary.entity))));
-        for (const notice of this.pendingNotices.splice(0)) workspace.notice(notice.level, notice.text);
+        for (const notice of this.pendingNotices.splice(0)) workspace.notice(notice.level, notice.text, notice.stack);
         this.stateChanged(workspace);
         await workspace.start();
         await workspace.scenes.openStartScene();
@@ -411,9 +411,9 @@ class EditorShellImplementation implements EditorShell {
         workspace.emit("document");
     }
 
-    public notice(level: EditorNoticeLevel, text: string): void {
-        if (this.mounted === undefined) this.pendingNotices.push({level, text});
-        else this.mounted.workspace.notice(level, text);
+    public notice(level: EditorNoticeLevel, text: string, stack?: string): void {
+        if (this.mounted === undefined) this.pendingNotices.push({level, text, stack});
+        else this.mounted.workspace.notice(level, text, stack);
     }
 
     public showTargetLabel(text: string): void {

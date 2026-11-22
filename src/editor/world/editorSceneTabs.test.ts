@@ -1,4 +1,5 @@
 import {afterEach, describe, expect, test} from "../../engine/testing/harness";
+import {NULL_ENTITY} from "../../engine/core";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene";
 import type {ProjectEntry, ProjectFileChange, ProjectFileSystem} from "../project/projectFileSystem";
@@ -16,6 +17,7 @@ const PREFAB_PATH = "prefabs/enemy.prefab.json";
 const PROJECT_NAME = "Game";
 const EDITED_GUN_XYZ = [4, 0, 0];
 const EDITED_DOOR_XYZ = [7, 0, 0];
+const THROWING_WORLD_SOURCE = "entityInspection.ts:";
 
 const LEVEL_TEXT = JSON.stringify({
     format: SCENE_DOCUMENT_FORMAT,
@@ -351,5 +353,15 @@ describe("editor scene tabs against the world", () => {
         scenes.pathDeleted(LEVEL_PATH);
         expect([scenes.activeTab.main?.path, scenes.activeTab.main?.dirty, scenes.dirty]).toEqual([null, true, true]);
         expect(page.workspace.status.level).toBe("warn");
+    });
+});
+
+describe("editor console against the world", () => {
+    test("a failed request is logged with the stack of the world code that threw", async () => {
+        const page = editorPage();
+        await page.workspace.run(() => page.workspace.request({op: "getEntity", entity: NULL_ENTITY}));
+        const logged = page.workspace.consoleLog.entries.find(entry => entry.level === "error");
+        expect(logged?.text).toBe('Editor request "getEntity" failed: No entity 0 in this world');
+        expect(logged?.stack?.includes(THROWING_WORLD_SOURCE)).toBe(true);
     });
 });

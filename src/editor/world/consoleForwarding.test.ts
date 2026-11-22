@@ -2,7 +2,8 @@ import {consoleOverride} from "../../engine/debugging";
 import {originalConsole} from "../../engine/debugging/originalConsole";
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {EditorConsoleEvent} from "../editorProtocol";
-import {ConsoleForwarder, consoleText, errorFrames} from "./consoleForwarding";
+import {errorFrames} from "../../engine/debugging/errorStack";
+import {ConsoleForwarder, consoleText} from "./consoleForwarding";
 
 const FORWARDING_SOURCES: readonly string[] = ["consoleForwarding.ts:", "consoleOverride.ts:"];
 const FRAME_PREFIX = "    at ";

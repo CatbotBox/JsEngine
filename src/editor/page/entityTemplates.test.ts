@@ -1,4 +1,6 @@
 import {afterEach, describe, expect, test} from "../../engine/testing/harness";
+import {RenderMesh} from "../../engine/rendering/3d/renderMesh";
+import {parseSceneDocument, UNIT_CUBE_MESH_PATH} from "../../engine/scene";
 import {ask, disposeEditorWorlds, editorWorld, fieldsOf} from "../world/editorServiceTestHarness";
 import {
     ENTITY_TEMPLATE_NAMES,
@@ -19,6 +21,7 @@ const EVERY_TYPE = new Set([
 const FLAT: EntityTemplateContext = {knownTypeNames: EVERY_TYPE, perspective: false};
 const PERSPECTIVE: EntityTemplateContext = {knownTypeNames: EVERY_TYPE, perspective: true};
 const SPRITE_ROW = "#".repeat(SPRITE_TEMPLATE_SIZE);
+const UNIT_CUBE_TRIANGLES = 12;
 
 afterEach(() => disposeEditorWorlds());
 
@@ -32,7 +35,7 @@ describe("entity templates", () => {
         expect(entityTemplateRequest("sprite", FLAT).components?.SpritePattern).toEqual({rows: [SPRITE_ROW, SPRITE_ROW, SPRITE_ROW, SPRITE_ROW], palette: [{char: "#", rgb: "#ffffff"}]});
         expect(entityTemplateRequest("text", FLAT).components).toEqual({TextSprite: {image: [TEXT_TEMPLATE_LINE]}});
         expect(Object.keys(entityTemplateRequest("mesh", FLAT).components ?? {})).toEqual(["LocalRotation", "LocalScale", "RenderMesh"]);
-        expect(entityTemplateRequest("mesh", FLAT).components?.RenderMesh.mesh).toBeUndefined();
+        expect(entityTemplateRequest("mesh", FLAT).components?.RenderMesh.mesh).toEqual({path: UNIT_CUBE_MESH_PATH});
         expect(Object.keys(entityTemplateRequest("ambientLight", FLAT).components ?? {})).toEqual(["AmbientLight"]);
     });
 
@@ -65,5 +68,23 @@ describe("entity templates", () => {
         }
         const text = await ask(harnessed, entityTemplateRequest("text", {knownTypeNames, perspective: false}));
         expect(fieldsOf(text, "TextSprite")?.image).toEqual([TEXT_TEMPLATE_LINE]);
+    });
+
+    test("a Mesh holds the built-in unit cube, which saves and reloads by its path without preloading a file", async () => {
+        const harnessed = editorWorld();
+        const {components} = await ask(harnessed, {op: "describeSchemas"});
+        const knownTypeNames = new Set(components.map(schema => schema.typeName));
+        const created = await ask(harnessed, entityTemplateRequest("mesh", {knownTypeNames, perspective: true}));
+        expect(fieldsOf(created, "RenderMesh")?.mesh).toEqual({path: UNIT_CUBE_MESH_PATH});
+        const mesh = harnessed.world.entityManager.getComponent<RenderMesh>(created.entity, RenderMesh)!.mesh;
+        expect([mesh?.sourcePath, mesh?.triangleCount]).toEqual([UNIT_CUBE_MESH_PATH, UNIT_CUBE_TRIANGLES]);
+        const {sceneText} = await ask(harnessed, {op: "saveScene"});
+        const saved = parseSceneDocument(sceneText).entities.find(record => record.name === ENTITY_TEMPLATE_NAMES.mesh);
+        expect(saved?.components.RenderMesh?.mesh).toEqual({path: UNIT_CUBE_MESH_PATH});
+        await ask(harnessed, {op: "loadScene", sceneText});
+        expect(harnessed.preloaded.flat()).toEqual([]);
+        const reloaded = (await ask(harnessed, {op: "listEntities"})).entities.find(summary => summary.name === ENTITY_TEMPLATE_NAMES.mesh);
+        const reloadedDetails = await ask(harnessed, {op: "getEntity", entity: reloaded!.entity});
+        expect(fieldsOf(reloadedDetails, "RenderMesh")?.mesh).toEqual({path: UNIT_CUBE_MESH_PATH});
     });
 });

@@ -23,6 +23,8 @@ const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 const HTTP_METHOD_NOT_ALLOWED = 405;
 const HTTP_CONFLICT = 409;
+const HTTP_INTERNAL_ERROR = 500;
+const SERVER_SOURCE = "projectServer.ts:";
 const TERMINAL: GameTarget = {target: "terminal", backend: "cells"};
 const WINDOW_GPU: GameTarget = {target: "window", backend: "gpu"};
 const BUN_STUB = "bun-stub";
@@ -235,6 +237,18 @@ describe("project server", () => {
         const build = await post(`${id}/build`, {});
         expect(build.status).toBe(HTTP_OK);
         expect(await build.json()).toEqual({errors: ["building project code needs the JsEngine source tree; start the editor from the repository"]});
+    });
+
+    test("an unexpected failure answers with the server's stack, a refused request without one", async () => {
+        const {id} = await opened(folder);
+        fs.mkdirSync(path.join(folder, "taken"));
+        const unexpected = await request(`${id}/file/taken`, {method: "PUT", body: "x"});
+        expect(unexpected.status).toBe(HTTP_INTERNAL_ERROR);
+        const body = await unexpected.json() as {error: unknown, stack: unknown};
+        expect(typeof body.error).toBe("string");
+        expect(typeof body.stack === "string" && body.stack.includes(SERVER_SOURCE)).toBe(true);
+        const refused = await (await request("nope/files")).json() as {error: unknown, stack?: unknown};
+        expect(refused.stack).toBeUndefined();
     });
 
     test("generate reports why it cannot run where building is unavailable, and takes only POST", async () => {

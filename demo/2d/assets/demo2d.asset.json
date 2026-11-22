@@ -13,8 +13,6 @@
     "fadeJitterMs": 5000,
     "playerStepXUnits": 1,
     "playerStepYUnits": 0.5,
-    "cameraStepXUnits": 1,
-    "cameraStepYUnits": 1,
     "hud": {
       "fpsAverageFrames": 10,
       "fpsFormat": "FPS: {fps}",

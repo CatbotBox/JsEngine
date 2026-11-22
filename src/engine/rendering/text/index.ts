@@ -8,3 +8,6 @@ export {
     FONT8X8_BASIC_GLYPH_SIZE_PX,
     FONT8X8_BASIC_PUBLIC_DOMAIN_ROWS,
 } from "./asciiPixelFont";
+export {formatHudLines, formatHudText} from "./hudText";
+export type {HudValues} from "./hudText";
+export {HudLabel} from "./hudLabel";

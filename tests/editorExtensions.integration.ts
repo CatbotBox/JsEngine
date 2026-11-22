@@ -1,11 +1,14 @@
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "fs";
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "fs";
 import {dirname, join, resolve} from "path";
 import {pathToFileURL} from "url";
 import {createProjectServer} from "../src/hosts/desktop";
 import type {ProjectServer} from "../src/hosts/desktop";
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../src/editor/project/editorExtensions";
 import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
-import {isBuildSuccess, projectApiUrl} from "../src/editor/project/projectServerApi";
+import {isBuildSuccess, PROJECT_EDITOR_EXTENSIONS_COPY_PATH, projectApiUrl} from "../src/editor/project/projectServerApi";
+import {readPrebuiltProjectCode} from "../src/editor/project/prebuiltProjectCode";
+import type {ProjectFileReader} from "../src/editor/project/prebuiltProjectCode";
+import type {ProjectManifest} from "../src/engine/project/projectManifest";
 import type {BuildProjectResult, OpenProjectResult} from "../src/editor/project/projectServerApi";
 import {registerEditorExtensionsOf} from "../src/editor/page/editorExtensionSession";
 import {FieldDrawerRegistry} from "../src/editor/page/fieldDrawers";
@@ -23,7 +26,7 @@ const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const QUERY_START = "?";
 
-const MANIFEST = {name: "Extensions fixture", editorExtensions: EXTENSIONS_MODULE};
+const MANIFEST: ProjectManifest = {name: "Extensions fixture", editorExtensions: EXTENSIONS_MODULE};
 const EXTENSIONS_SOURCE = [
     `import type {EditorExtensions} from "@jsengine/editor/project/editorExtensions";`,
     ``,
@@ -43,6 +46,7 @@ function log(message: string): void {
 }
 
 let failures = 0;
+let bundleImports = 0;
 function expect(condition: boolean, label: string): void {
     if (condition) log(`ok   ${label}`);
     else {
@@ -85,15 +89,16 @@ async function verifyEditorExtensions(server: ProjectServer, folder: string): Pr
     const source = await served.text();
     expect(served.status === HTTP_OK && source.includes(EXTENSION_MARKER), `GET ${EDITOR_EXTENSIONS_BUNDLE_FILE} serves the bundled module (${served.status})`);
 
-    const bundleFile = join(FIXTURE_PARENT, `${FIXTURE_PREFIX}bundle-${process.pid}.mjs`);
-    writeFileSync(bundleFile, source);
-    try {
-        const drawers = new FieldDrawerRegistry();
-        const session = await registerEditorExtensionsOf(await import(pathToFileURL(bundleFile).href), drawers);
-        expect(drawers.size === 1 && drawers.drawerFor({kind: "custom", typeName: DRAWN_TYPE_NAME}) !== undefined, "the bundle's registerEditorExtensions registers its field drawer");
-        session.dispose();
-    } finally {
-        rmSync(bundleFile, {force: true});
+    await expectBundleRegistersDrawer(source, "the bundle's registerEditorExtensions registers its field drawer");
+
+    const copied = join(folder, ...PROJECT_EDITOR_EXTENSIONS_COPY_PATH.split("/"));
+    expect(existsSync(copied) && readFileSync(copied, "utf8") === source, `the build copies the extensions bundle into ${PROJECT_EDITOR_EXTENSIONS_COPY_PATH} for a plain-browser folder open`);
+    const prebuilt = await readPrebuiltProjectCode(diskReader(folder), MANIFEST, built.gameTarget);
+    expect(prebuilt.worker !== undefined && prebuilt.warnings.length === 0, `a plain-browser folder open finds the worker and the extensions (${JSON.stringify(prebuilt.warnings)})`);
+    if (prebuilt.editorExtensions !== undefined) {
+        await expectBundleRegistersDrawer(new TextDecoder().decode(prebuilt.editorExtensions), "the extensions a plain-browser folder open reads register their field drawer");
+    } else {
+        expect(false, "a plain-browser folder open reads the extensions bundle");
     }
 
     writeProjectFile(folder, EXTENSIONS_MODULE, BROKEN_EXTENSIONS_SOURCE);
@@ -105,6 +110,24 @@ async function verifyEditorExtensions(server: ProjectServer, folder: string): Pr
     expect(rebuilt.editorExtensionsUrl === undefined, "a broken extensions module leaves no bundle URL");
     expect(rebuilt.warnings.some(warning => warning.includes("did not build, so the editor runs without them")), `the extensions build error is a warning (${JSON.stringify(rebuilt.warnings)})`);
     expect((await serverRequest(server, extensionsRoute)).status === HTTP_NOT_FOUND, `GET ${EDITOR_EXTENSIONS_BUNDLE_FILE} is a 404 once the bundle is gone`);
+    expect(!existsSync(copied), `a build without the extensions bundle removes the stale ${PROJECT_EDITOR_EXTENSIONS_COPY_PATH}`);
+}
+
+function diskReader(folder: string): ProjectFileReader {
+    return {read: async path => new Uint8Array(readFileSync(join(folder, ...path.split("/"))))};
+}
+
+async function expectBundleRegistersDrawer(source: string, label: string): Promise<void> {
+    const bundleFile = join(FIXTURE_PARENT, `${FIXTURE_PREFIX}bundle-${process.pid}-${bundleImports++}.mjs`);
+    writeFileSync(bundleFile, source);
+    try {
+        const drawers = new FieldDrawerRegistry();
+        const session = await registerEditorExtensionsOf(await import(pathToFileURL(bundleFile).href), drawers);
+        expect(drawers.size === 1 && drawers.drawerFor({kind: "custom", typeName: DRAWN_TYPE_NAME}) !== undefined, label);
+        session.dispose();
+    } finally {
+        rmSync(bundleFile, {force: true});
+    }
 }
 
 async function main(): Promise<void> {

@@ -27,10 +27,12 @@ import type {ImageDecoderEntry} from "../../engine/assets/image/decodedImage";
 import * as jpegDecoder from "../../engine/assets/image/jpeg";
 import * as pngDecoder from "../../engine/assets/image/png";
 import * as ppmDecoder from "../../engine/assets/image/ppm";
+import * as cameraControllerSchemas from "../../engine/cameraControllers/schemas";
 import * as coreSchemas from "../../engine/core/schemas";
 import * as inputSchemas from "../../engine/input/schemas";
 import * as randomSchema from "../../engine/math/randomSchema";
 import {RANDOM_SCHEMA_ENTRY} from "../../engine/math/randomSchema";
+import * as motionSchemas from "../../engine/motion/schemas";
 import * as rendering2dSchemas from "../../engine/rendering/2d/schemas";
 import * as lightingSchemas from "../../engine/rendering/3d/lighting/schemas";
 import * as rendering3dSchemas from "../../engine/rendering/3d/schemas";
@@ -82,9 +84,11 @@ interface SourceModule {
 }
 
 const ENGINE_SCHEMA_MODULES: readonly SourceModule[] = [
+    {path: ["engine", "cameraControllers", "schemas"], exports: cameraControllerSchemas},
     {path: ["engine", "core", "schemas"], exports: coreSchemas},
     {path: ["engine", "input", "schemas"], exports: inputSchemas},
     {path: ["engine", "math", "randomSchema"], exports: randomSchema},
+    {path: ["engine", "motion", "schemas"], exports: motionSchemas},
     {path: ["engine", "rendering", "2d", "schemas"], exports: rendering2dSchemas},
     {path: ["engine", "rendering", "3d", "lighting", "schemas"], exports: lightingSchemas},
     {path: ["engine", "rendering", "3d", "schemas"], exports: rendering3dSchemas},

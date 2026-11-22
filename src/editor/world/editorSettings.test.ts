@@ -3,7 +3,7 @@ import {Component, FrameLoopSettings, Resource, UNCAPPED_RENDER_RATE} from "../.
 import type {Entity} from "../../engine/core";
 import {NULL_ENTITY} from "../../engine/core/entity";
 import {LocalPosition} from "../../engine/translation/localPosition";
-import {componentSchema, DATA_ASSET_FORMAT, DATA_ASSET_VERSION, dataAssetsOf, parseSceneDocument, resourceSchema} from "../../engine/scene";
+import {componentSchema, DATA_ASSET_FORMAT, DATA_ASSET_VERSION, dataAssetsOf, parseSceneDocument, resourceSchema, UNIT_CUBE_MESH_PATH} from "../../engine/scene";
 import {ask, disposeEditorWorlds, editorWorld, failureOf} from "./editorServiceTestHarness";
 import type {Harnessed} from "./editorServiceTestHarness";
 
@@ -77,9 +77,9 @@ describe("editor settings and resources", () => {
     test("describeAssetTypes lists every asset type with its suffixes and marks data asset types", async () => {
         const harnessed = settingsWorld();
         const {assetTypes} = await ask(harnessed, {op: "describeAssetTypes"});
-        expect(assetTypes.find(type => type.name === "mesh")).toEqual({name: "mesh", fileSuffixes: [".obj"], dataAsset: false});
-        expect(assetTypes.find(type => type.name === "prefab")).toEqual({name: "prefab", fileSuffixes: [".prefab.json"], dataAsset: false});
-        expect(assetTypes.find(type => type.name === "Tuning")).toEqual({name: "Tuning", fileSuffixes: [".asset.json"], dataAsset: true});
+        expect(assetTypes.find(type => type.name === "mesh")).toEqual({name: "mesh", fileSuffixes: [".obj"], builtInPaths: [UNIT_CUBE_MESH_PATH], dataAsset: false});
+        expect(assetTypes.find(type => type.name === "prefab")).toEqual({name: "prefab", fileSuffixes: [".prefab.json"], builtInPaths: [], dataAsset: false});
+        expect(assetTypes.find(type => type.name === "Tuning")).toEqual({name: "Tuning", fileSuffixes: [".asset.json"], builtInPaths: [], dataAsset: true});
     });
 
     test("getResource encodes the fields and names a missing or unregistered resource", async () => {

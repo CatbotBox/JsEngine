@@ -9,16 +9,6 @@ export class ModelEntry {
     public loadOnDemand = false;
 }
 
-export class CameraControlTuning {
-    public moveStepUnits = 0;
-    public lookRadPerUnit = 0;
-    public pitchMarginRad = 0;
-    public fovKeyStep = UNSCALED;
-    public fovWheelStep = UNSCALED;
-    public minFovDegrees = 0;
-    public maxFovDegrees = 0;
-}
-
 export class ModelControlTuning {
     public rotateStepRad = 0;
     public scaleStep = UNSCALED;
@@ -64,7 +54,6 @@ export class Demo3dHudTuning {
 
 export class Demo3dTuning extends Resource {
     public models: ModelEntry[] = [];
-    public camera = new CameraControlTuning();
     public modelControls = new ModelControlTuning();
     public sunRotateStepRad = 0;
     public lodBiasStepLevels: Int = 0;
