@@ -6,6 +6,7 @@ import type {WorldWorkerScope} from "./worldWorkerPlatform";
 import type {MaybeAnimationFrameHost} from "./animationFrameScheduler";
 import {displayPacing} from "../../engine/platform/framePacing";
 import {connectWorldWorker, displayBackendOf, STOPPED_STATUS, startingStatus, surfaceMismatchMessage} from "./worldWorkerPage";
+import {pixelCanvasDisplayOptionsFromQuery} from "./pixelCanvasDisplay";
 import type {CellWorldDisplay, GpuWorldDisplay, PageTransferable, PixelWorldDisplay, WorldWorker} from "./worldWorkerPage";
 import {
     DEFAULT_RENDER_BACKEND,
@@ -322,6 +323,14 @@ describe("world worker protocol", () => {
         expect(pixelScaleFromQuery("?scale=1.5")).toBeUndefined();
         expect(pixelScaleFromQuery("?scale=big")).toBeUndefined();
         expect(pixelScaleFromQuery("")).toBeUndefined();
+    });
+
+    test("a project's pixel scale applies when ?scale= names none, and ?scale= still wins", () => {
+        const projectScale = 3;
+        expect(pixelCanvasDisplayOptionsFromQuery("", projectScale).devicePixelsPerFramebufferPixel).toBe(projectScale);
+        expect(pixelCanvasDisplayOptionsFromQuery("?scale=big", projectScale).devicePixelsPerFramebufferPixel).toBe(projectScale);
+        expect(pixelCanvasDisplayOptionsFromQuery("?scale=2", projectScale).devicePixelsPerFramebufferPixel).toBe(2);
+        expect(pixelCanvasDisplayOptionsFromQuery("").devicePixelsPerFramebufferPixel).toBeUndefined();
     });
 
     test("?width= and ?height= fix each framebuffer side given in whole pixels within range; others fit the window", () => {

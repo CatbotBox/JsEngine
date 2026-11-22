@@ -1,15 +1,20 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {GameTarget} from "../project/editorSettings";
+import {menuItemsOf} from "../page/commandMenus";
+import {CommandRegistry} from "../page/commandRegistry";
+import {filterPaletteEntries, paletteEntries} from "../page/commandPalette";
 import type {MenuAction, MenuItem, MenuSubmenu} from "../page/popupMenu";
 import {
     backendOverrideFromQuery,
     chooseGameTarget,
     gameTargetLabelText,
-    gameTargetMenuItems,
+    gameTargetName,
     PREFERRED_GAME_TARGET,
+    projectGameTarget,
+    registerGameTargetCommand,
     webGpuAvailability,
 } from "./gameTargets";
-import type {GameTargetMenuOptions} from "./gameTargets";
+import type {GameTargetCommandOptions} from "./gameTargets";
 
 const TERMINAL: GameTarget = {target: "terminal", backend: "cells"};
 const WEB_CELLS: GameTarget = {target: "web", backend: "cells"};
@@ -22,10 +27,11 @@ const UNUSABLE = webGpuAvailability(false);
 const NO_QUERY = "";
 const NO_SERVER = "needs the dev server";
 
-function menu(options: Partial<GameTargetMenuOptions> = {}): {readonly items: MenuItem[], readonly chosen: GameTarget[]} {
+function menu(options: Partial<GameTargetCommandOptions> = {}): {readonly items: MenuItem[], readonly chosen: GameTarget[], readonly registry: CommandRegistry} {
     const chosen: GameTarget[] = [];
-    const items = gameTargetMenuItems({current: WEB_PIXELS, webGpu: USABLE, choose: gameTarget => chosen.push(gameTarget), ...options});
-    return {items, chosen};
+    const registry = new CommandRegistry();
+    const {menuEntries} = registerGameTargetCommand(registry, {current: () => WEB_PIXELS, webGpu: USABLE, choose: gameTarget => chosen.push(gameTarget), ...options});
+    return {items: menuItemsOf(menuEntries), chosen, registry};
 }
 
 function named(items: readonly MenuItem[], label: string): MenuAction | MenuSubmenu {
@@ -58,6 +64,17 @@ describe("game target choice", () => {
         expect(UNUSABLE.unusableReason.includes("WebGPU")).toBe(true);
     });
 
+    test("with nothing remembered a project's first target and its configured backend are preferred, keeping WebGPU where the target leaves it open", () => {
+        expect(projectGameTarget(undefined)).toEqual(PREFERRED_GAME_TARGET);
+        expect(projectGameTarget({web: {}, terminal: {}})).toEqual(WEB_GPU);
+        expect(projectGameTarget({web: {backend: "cells"}})).toEqual(WEB_CELLS);
+        expect(projectGameTarget({terminal: {}})).toEqual(TERMINAL);
+        expect(projectGameTarget({window: {backend: "cells"}})).toEqual(WINDOW_GPU);
+        expect(chooseGameTarget(undefined, NO_QUERY, USABLE, projectGameTarget({terminal: {}}))).toEqual({gameTarget: TERMINAL});
+        expect(chooseGameTarget(WEB_PIXELS, NO_QUERY, USABLE, TERMINAL)).toEqual({gameTarget: WEB_PIXELS});
+        expect(chooseGameTarget(undefined, NO_QUERY, UNUSABLE, WINDOW_GPU)).toEqual({gameTarget: WINDOW_PIXELS});
+    });
+
     test("?backend= overrides the remembered target with that backend on the web target; an unknown value is ignored", () => {
         expect(backendOverrideFromQuery("?backend=cells")).toBe("cells");
         expect(backendOverrideFromQuery("?backend=vulkan")).toBeUndefined();
@@ -75,7 +92,7 @@ describe("game target choice", () => {
 
 describe("game target menu", () => {
     test("Terminal is one item, Web and Window are submenus of their backends, and the current target is checked", () => {
-        const {items} = menu({current: WEB_GPU});
+        const {items} = menu({current: () => WEB_GPU});
         expect(items.map(item => typeof item === "string" ? item : item.label)).toEqual(["Terminal", "Web", "Window"]);
         const web = named(items, "Web");
         const window = named(items, "Window");
@@ -105,5 +122,26 @@ describe("game target menu", () => {
         const {items} = menu({switchUnavailableReason: NO_SERVER});
         expect([action(items, "Terminal").disabled, action(items, "Terminal").title]).toEqual([true, NO_SERVER]);
         expect(action(items, "Web", "Pixels").disabled).toBe(false);
+    });
+});
+
+describe("game target command", () => {
+    test("the palette lists every target by name under Target, with the unavailable ones disabled", () => {
+        const {registry} = menu({webGpu: UNUSABLE});
+        const entries = paletteEntries(registry.all());
+        expect(entries.map(entry => `${entry.category}: ${entry.label}`)).toEqual([
+            "Target: Terminal", "Target: Web (Cells)", "Target: Web (Pixels)", "Target: Web (WebGPU)", "Target: Window (Pixels)", "Target: Window (WebGPU)",
+        ]);
+        expect(filterPaletteEntries(entries, "webgpu").map(entry => [entry.label, entry.enabled])).toEqual([["Web (WebGPU)", false], ["Window (WebGPU)", false]]);
+        expect(gameTargetName(TERMINAL)).toBe("Terminal");
+    });
+
+    test("the menu reads the current target when it is built, so a switch shows on the next open", () => {
+        let current = WEB_PIXELS;
+        const registry = new CommandRegistry();
+        const {menuEntries} = registerGameTargetCommand(registry, {current: () => current, webGpu: USABLE, choose: () => undefined});
+        current = TERMINAL;
+        const items = menuItemsOf(menuEntries);
+        expect([action(items, "Terminal").checked, action(items, "Web", "Pixels").checked, named(items, "Web").checked]).toEqual([true, false, false]);
     });
 });

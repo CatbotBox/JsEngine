@@ -48,6 +48,18 @@ const CAMERA_PAUSED_XYZ = [5, 5, 5];
 const X_COMPONENT = 0;
 const MOVED_PLAYER_XYZ = [4, 2, 0];
 const PREFAB_PATH = "prefabs/cross.prefab.json";
+const ADDED_SCENE_PATH = "scenes/added.scene.json";
+const ADDED_ROOT_NAME = "addedRoot";
+const MADE_IN_ADDED_NAME = "madeInAddedScene";
+const DEMO_2D_PREFAB_PATH = "prefabs/pixel.prefab.json";
+const PREFAB_TAB_ROOT_NAME = "pixel";
+const PREFAB_TAB_EDITED_XYZ = [1, 2, 0];
+const NO_SCENE = 0;
+const ADDED_SCENE_TEXT = JSON.stringify({
+    format: "jsengine-scene",
+    version: 1,
+    entities: [{id: 1, name: ADDED_ROOT_NAME, enabled: true, components: {LocalPosition: {xyz: [0, 0, 0]}}}],
+});
 const OVERRIDDEN_TINT = "#123456";
 const UPDATED_OPACITY = 0.5;
 const HALF = 0.5;
@@ -383,6 +395,70 @@ async function verifyPrefabs(page: EditorPage, label: string, name: string): Pro
     await page.ask({op: "destroyEntity", entity: instance});
 }
 
+function savedNames(sceneText: string): (string | null)[] {
+    return parseSceneDocument(sceneText).entities.map(record => record.name);
+}
+
+async function verifyAdditiveScenes(page: EditorPage, label: string): Promise<void> {
+    const before = await page.ask({op: "listEntities"});
+    const opened = before.activeSceneId;
+    expect(opened !== NO_SCENE && before.scenes.length === 1, `${label}: one scene is open and active before adding one (${JSON.stringify(before.scenes)}, active ${opened})`);
+    const added = await page.ask({op: "loadScene", sceneText: ADDED_SCENE_TEXT, path: ADDED_SCENE_PATH, additive: true});
+    const withAdded = await page.ask({op: "listEntities"});
+    const addedRoot = withAdded.entities.find(entity => entity.name === ADDED_ROOT_NAME);
+    expect(withAdded.entities.length === before.entities.length + 1 && withAdded.scenes.length === 2 && withAdded.activeSceneId === opened,
+        `${label}: an additive load keeps the open scene active and adds its entities beside it (${before.entities.length} -> ${withAdded.entities.length})`);
+    expect(addedRoot?.sceneId === added.sceneId && withAdded.entities.every(entity => entity === addedRoot || entity.sceneId === opened),
+        `${label}: every listed entity reports the scene it belongs to`);
+
+    const activated = await page.ask({op: "setActiveScene", scene: {id: added.sceneId, path: ADDED_SCENE_PATH}});
+    const made = await page.ask({op: "createEntity", name: MADE_IN_ADDED_NAME});
+    const afterCreate = await page.ask({op: "listEntities"});
+    expect(activated.sceneId === added.sceneId && afterCreate.activeSceneId === added.sceneId
+        && afterCreate.entities.find(entity => entity.entity === made.entity)?.sceneId === added.sceneId,
+    `${label}: after Set Active, a new entity lands in the added scene`);
+    expect(sameJson(afterCreate.editedSceneIds, [added.sceneId]), `${label}: only the added scene is marked edited (${JSON.stringify(afterCreate.editedSceneIds)})`);
+
+    const savedAdded = await page.ask({op: "saveScene", scene: {id: added.sceneId, path: ADDED_SCENE_PATH}});
+    const savedOpened = await page.ask({op: "saveScene", scene: {id: opened, path: before.scenes[0].path}});
+    expect(sameJson(savedNames(savedAdded.sceneText), [ADDED_ROOT_NAME, MADE_IN_ADDED_NAME]), `${label}: saving the added scene writes only its entities (${JSON.stringify(savedNames(savedAdded.sceneText))})`);
+    expect(savedNames(savedOpened.sceneText).length === before.entities.length && !savedOpened.sceneText.includes(ADDED_ROOT_NAME),
+        `${label}: saving the open scene leaves the added scene's entities out`);
+    expect((await page.ask({op: "listEntities"})).editedSceneIds.length === 0, `${label}: saving clears the edited marks`);
+
+    const unloaded = await page.ask({op: "unloadScene", sceneId: added.sceneId});
+    const afterUnload = await page.ask({op: "listEntities"});
+    expect(unloaded.activeSceneId === opened && afterUnload.entities.length === before.entities.length && afterUnload.scenes.length === 1,
+        `${label}: unloading the added scene removes exactly its entities and makes the open scene active again`);
+}
+
+async function verifyPrefabTab(page: EditorPage, project: BuiltProject, label: string): Promise<void> {
+    const before = await page.ask({op: "listEntities"});
+    const stash = await page.ask({op: "exportSnapshot"});
+    const prefabText = await project.files.readText(DEMO_2D_PREFAB_PATH);
+    const opened = await page.ask({op: "loadScene", sceneText: prefabText, path: DEMO_2D_PREFAB_PATH});
+    const prefabListing = await page.ask({op: "listEntities"});
+    const root = prefabListing.entities.find(entity => entity.name === PREFAB_TAB_ROOT_NAME);
+    expect(root !== undefined && prefabListing.entities.every(entity => entity.sceneId === opened.sceneId) && prefabListing.activeSceneId === opened.sceneId,
+        `${label}: the prefab opens on its own as the only scene (${prefabListing.entities.length} entities)`);
+    if (root === undefined) return;
+    await page.ask({op: "setField", entity: root.entity, typeName: "LocalPosition", key: "xyz", value: PREFAB_TAB_EDITED_XYZ});
+    expect(sameJson((await page.ask({op: "listEntities"})).editedSceneIds, [opened.sceneId]), `${label}: editing the prefab marks the prefab tab's scene`);
+    const savedPrefab = await page.ask({op: "saveScene", scene: {id: opened.sceneId, path: DEMO_2D_PREFAB_PATH}});
+    expect(sameJson(savedNames(savedPrefab.sceneText), savedNames(prefabText)), `${label}: saving the prefab tab writes the prefab's entities only`);
+
+    const restored = await page.ask({op: "importSnapshot", documentText: stash.documentText, mode: "edit"});
+    const back = await page.ask({op: "listEntities"});
+    const remap = entityRemapOf(stash.entities, restored.entities);
+    expect(restored.entities.length === stash.entities.length && back.entities.length === before.entities.length && back.activeSceneId === before.activeSceneId,
+        `${label}: going back from the prefab tab restores the scene, its entities and its active scene`);
+    expect(before.entities.every(entity => back.entities.some(listed => listed.entity === remap.get(entity.entity) && listed.name === entity.name && listed.sceneId === entity.sceneId)),
+        `${label}: every entity comes back with its name and scene, remapped by record`);
+    const {updated} = await page.ask({op: "updatePrefabInstances", sourcePath: DEMO_2D_PREFAB_PATH, documentText: savedPrefab.sceneText});
+    expect(Array.isArray(updated), `${label}: the restored scene takes the saved prefab (${updated.length} instances updated)`);
+    expect(back.editedSceneIds.length === 0, `${label}: restoring a stashed tab starts with no edited marks`);
+}
+
 async function verifyDomainReload(project: BuiltProject, page: EditorPage, label: string, checkedName: string): Promise<void> {
     const checked = await page.entityNamed(checkedName);
     const checkedXyz = checked === undefined ? undefined : await page.fieldOf(checked.entity, "LocalPosition", "xyz");
@@ -461,6 +537,8 @@ async function verify2d(project: BuiltProject): Promise<void> {
         await verifyUndoOfDestroy(page, label, PLAYER_NAME);
         await verifyPrefabs(page, label, PLAYER_NAME);
         await verifySaveLoad(page, label, PLAYER_NAME);
+        await verifyAdditiveScenes(page, label);
+        await verifyPrefabTab(page, project, label);
         await verifyTuningEdit(page, label, DEMO_2D_TUNING_RESOURCE, DEMO_2D_TUNING_PATH, DEMO_2D_EDITED_TUNING_KEY, DEMO_2D_EDITED_TUNING_VALUE);
         const cross = await page.entityNamed(PLAYER_NAME);
         if (cross !== undefined) await verifySpritePatternEdit(page, label, cross.entity, PLAYER_NAME);

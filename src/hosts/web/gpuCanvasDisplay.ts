@@ -104,6 +104,10 @@ export class GpuCanvasDisplay implements GpuWorldDisplay {
     };
 }
 
-export function gpuCanvasDisplayFromQuery(container: HTMLElement, search: string): GpuCanvasDisplay {
-    return new GpuCanvasDisplay(container, pixelCanvasDisplayOptionsFromQuery(search));
+export function gpuCanvasDisplayFromQuery(container: HTMLElement, search: string, defaultPixelScale?: number): GpuCanvasDisplay {
+    return new GpuCanvasDisplay(container, pixelCanvasDisplayOptionsFromQuery(search, defaultPixelScale));
+}
+
+export function gpuCanvasDisplayScaledBy(pixelScale: number): (container: HTMLElement, search: string) => GpuCanvasDisplay {
+    return (container, search) => gpuCanvasDisplayFromQuery(container, search, pixelScale);
 }

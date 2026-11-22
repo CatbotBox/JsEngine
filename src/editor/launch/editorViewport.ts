@@ -284,14 +284,14 @@ export class GpuEditorViewport implements EditorViewport {
     }
 }
 
-export function editorViewportFor(gameTarget: GameTarget, container: HTMLElement, search: string, visible: boolean): EditorViewport {
+export function editorViewportFor(gameTarget: GameTarget, container: HTMLElement, search: string, visible: boolean, pixelScale?: number): EditorViewport {
     switch (gameTarget.backend) {
         case "cells":
             return new CellEditorViewport(cellCanvasDisplayFromQuery(container, search, visible), gameTarget);
         case "pixels":
-            return new PixelEditorViewport(pixelCanvasDisplayFromQuery(container, search, visible), gameTarget);
+            return new PixelEditorViewport(pixelCanvasDisplayFromQuery(container, search, visible, pixelScale), gameTarget);
         case "gpu": {
-            const options = pixelCanvasDisplayOptionsFromQuery(search);
+            const options = pixelCanvasDisplayOptionsFromQuery(search, pixelScale);
             return new GpuEditorViewport(sessionVisible => new GpuCanvasDisplay(container, options, sessionVisible), gameTarget);
         }
     }

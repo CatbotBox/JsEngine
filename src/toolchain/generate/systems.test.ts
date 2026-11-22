@@ -4,6 +4,7 @@ import {dirname, join, resolve} from "path";
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {GeneratedSource, GeneratorOutput} from "./generatedHeader";
 import {generateProjectSystems, SYSTEMS_GENERATED_HEADER} from "./systems";
+import {SCRIPT_EXTENSION, scriptTemplate} from "../../editor/page/projectTemplates";
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
 const LINE_BREAK = "\r\n";
@@ -133,6 +134,13 @@ export class LooseSystem extends System {
 
 describe("generateProjectSystems discovery", () => {
     const discovery = () => generateFixture(DISCOVERY_FIXTURE);
+
+    test("finds the system in the editor's Create Script template without warnings", () => {
+        const template = scriptTemplate("Spinner");
+        const output = generateFixture({[`scripts/${template.fileStem}${SCRIPT_EXTENSION}`]: template.text});
+        expect(entriesOf(output, SHARED_LIST)).toEqual([template.systemName]);
+        expect(output.warnings).toEqual([]);
+    });
 
     test("lists exported, non-abstract systems and groups by file path then class name, skipping tests", () => {
         expect(entriesOf(discovery(), SHARED_LIST)).toEqual([

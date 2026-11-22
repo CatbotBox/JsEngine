@@ -15,12 +15,15 @@ import type {EditorSettings, GameTarget} from "../../editor/project/editorSettin
 import {
     EDITOR_SETTINGS_UPDATE_METHOD,
     isBuildSuccess,
+    isGenerateProjectReport,
     PROJECT_API_PREFIX,
     PROJECT_EDITOR_SETTINGS_ROUTE,
     PROJECT_EVENT_BUILD_FAILED,
     PROJECT_EVENT_FILES_CHANGED,
     PROJECT_EVENT_REBUILT,
+    PROJECT_GENERATE_ROUTE,
     PROJECT_OPEN_EXTERNALLY_ROUTE,
+    PROJECT_SHOW_IN_FOLDER_ROUTE,
     PROJECT_WORKER_FILE,
     projectBuildCopyPath,
 } from "../../editor/project/projectServerApi";
@@ -28,6 +31,7 @@ import type {
     BrowsedDirectory,
     BrowseResult,
     BuildProjectResult,
+    GenerateProjectReport,
     OpenProjectResult,
     PickFolderResult,
     ProjectCapabilities,
@@ -52,6 +56,7 @@ export interface ProjectServerOptions {
     readonly browse: boolean;
     readonly allowedHostnames?: readonly string[];
     readonly openExternally?: ExternalOpener;
+    readonly showInFolder?: ExternalOpener;
 }
 
 export type ProjectWorkerBuildReport =
@@ -65,10 +70,13 @@ export type ProjectWorkerBuildReport =
     }
     | {readonly ok: false; readonly errors: readonly string[]; readonly generatedFiles: readonly string[]};
 
-export interface ProjectBuildRequest {
+export interface ProjectGenerateRequest {
     readonly repoRoot: string;
     readonly bunPath: string;
     readonly folder: string;
+}
+
+export interface ProjectBuildRequest extends ProjectGenerateRequest {
     readonly gameTarget: GameTarget;
 }
 
@@ -89,6 +97,7 @@ const CHANGE_DEBOUNCE_MS = 200;
 const REBUILD_DEBOUNCE_MS = 250;
 const TOOLCHAIN_CLI: readonly string[] = ["src", "toolchain", "cli.ts"];
 const EDITOR_BUILD_ARGUMENTS: readonly string[] = ["build", "--target", "editor", "--report", "json"];
+const GENERATE_ARGUMENTS: readonly string[] = ["generate", "--report", "json"];
 const PROJECT_ARGUMENT = "--project";
 const SIMULATE_ARGUMENT = "--simulate";
 const BACKEND_ARGUMENT = "--backend";
@@ -115,6 +124,8 @@ const GAME_TARGET_SETTING = "gameTarget";
 const EDITOR_SETTING_KEYS: readonly string[] = [GAME_TARGET_SETTING];
 const EDITOR_SETTINGS_INDENT = 2;
 const TRAILING_LINE_BREAK = "\n";
+const PROJECT_ROOT_PATH = "";
+const SHOW_IN_FOLDER_UNAVAILABLE = "this host cannot show files in their folder; that needs the desktop app";
 
 class HttpError extends Error {
     public constructor(public readonly status: number, message: string) {
@@ -202,17 +213,26 @@ function lastJsonLine(text: string): unknown {
     return undefined;
 }
 
-function runBuildCommand(request: ProjectBuildRequest): Promise<{readonly report: unknown, readonly stderr: string, readonly exitCode: number | null}> {
-    const command = [
-        join(request.repoRoot, ...TOOLCHAIN_CLI),
+interface ToolchainRun {
+    readonly report: unknown;
+    readonly stderr: string;
+    readonly exitCode: number | null;
+}
+
+function runBuildCommand(request: ProjectBuildRequest): Promise<ToolchainRun> {
+    return runToolchainCommand(request.repoRoot, request.bunPath, [
         ...EDITOR_BUILD_ARGUMENTS,
         SIMULATE_ARGUMENT, request.gameTarget.target,
         BACKEND_ARGUMENT, request.gameTarget.backend,
         PROJECT_ARGUMENT, resolve(request.folder),
-    ];
+    ]);
+}
+
+function runToolchainCommand(repoRoot: string, bunPath: string, args: readonly string[]): Promise<ToolchainRun> {
+    const command = [join(repoRoot, ...TOOLCHAIN_CLI), ...args];
     return new Promise((resolveRun, rejectRun) => {
-        const child = spawn(request.bunPath, command, {
-            cwd: request.repoRoot,
+        const child = spawn(bunPath, command, {
+            cwd: repoRoot,
             stdio: ["ignore", "pipe", "pipe"],
             windowsHide: true,
         });
@@ -240,8 +260,20 @@ function isBuildReport(value: unknown): value is ProjectWorkerBuildReport {
     return succeeded || (report.ok === false && isStringArray(report.errors));
 }
 
+export async function generateProjectFiles(request: ProjectGenerateRequest): Promise<GenerateProjectReport> {
+    let run: ToolchainRun;
+    try {
+        run = await runToolchainCommand(request.repoRoot, request.bunPath, [...GENERATE_ARGUMENTS, PROJECT_ARGUMENT, resolve(request.folder)]);
+    } catch (error) {
+        return {ok: false, errors: [`Could not run ${request.bunPath}: ${describeError(error)}`]};
+    }
+    if (isGenerateProjectReport(run.report)) return run.report;
+    const output = run.stderr.trim();
+    return {ok: false, errors: [`jsengine generate exited with ${run.exitCode}${output.length > 0 ? `: ${output}` : " and no report"}`]};
+}
+
 export async function buildProjectEditorWorker(request: ProjectBuildRequest): Promise<ProjectBuildOutcome> {
-    let run: Awaited<ReturnType<typeof runBuildCommand>>;
+    let run: ToolchainRun;
     try {
         run = await runBuildCommand(request);
     } catch (error) {
@@ -336,6 +368,12 @@ function requiredString(body: {readonly [key: string]: unknown}, key: string): s
     return value;
 }
 
+function stringField(body: {readonly [key: string]: unknown}, key: string): string {
+    const value = body[key];
+    if (typeof value !== "string") throw new HttpError(HTTP_BAD_REQUEST, `"${key}" must be a string`);
+    return value;
+}
+
 function parsedObjectOrEmpty(text: string | undefined): {readonly [key: string]: unknown} {
     if (text === undefined) return {};
     try {
@@ -383,7 +421,7 @@ export class ProjectServer {
 
     public capabilities(): ProjectCapabilities {
         const reason = this.buildUnavailableReason();
-        const base = {build: reason === undefined, pickFolder: this.options.pickFolder !== undefined, browse: this.options.browse};
+        const base = {build: reason === undefined, pickFolder: this.options.pickFolder !== undefined, browse: this.options.browse, showInFolder: this.options.showInFolder !== undefined};
         return reason === undefined ? base : {...base, buildUnavailableReason: reason};
     }
 
@@ -448,9 +486,16 @@ export class ProjectServer {
             case "build":
                 requireMethod(request, "POST");
                 return json(await this.build(project, await requestedGameTarget(request)));
+            case PROJECT_GENERATE_ROUTE:
+                requireMethod(request, "POST");
+                return json(await this.generate(project));
             case PROJECT_OPEN_EXTERNALLY_ROUTE:
                 requireMethod(request, "POST");
                 await this.openExternally(project, requiredString(await jsonBody(request), "path"));
+                return json({});
+            case PROJECT_SHOW_IN_FOLDER_ROUTE:
+                requireMethod(request, "POST");
+                await this.showInFolder(project, stringField(await jsonBody(request), "path"));
                 return json({});
             case PROJECT_EDITOR_SETTINGS_ROUTE:
                 requireMethod(request, "GET", EDITOR_SETTINGS_UPDATE_METHOD);
@@ -537,6 +582,14 @@ export class ProjectServer {
         const info = await stat(absolute).catch(() => undefined);
         if (info === undefined || !info.isFile()) throw new HttpError(HTTP_NOT_FOUND, `${path} is not a file in the project`);
         await (this.options.openExternally ?? openWithExternalEditor)(absolute);
+    }
+
+    private async showInFolder(project: OpenProject, path: string): Promise<void> {
+        const show = this.options.showInFolder;
+        if (show === undefined) throw new HttpError(HTTP_NOT_FOUND, SHOW_IN_FOLDER_UNAVAILABLE);
+        const absolute = path === PROJECT_ROOT_PATH ? project.folder : await this.confinedPath(project, path);
+        if (!await pathExists(absolute)) throw new HttpError(HTTP_NOT_FOUND, `${path} does not exist in the project`);
+        await show(absolute);
     }
 
     private async editorSettingsText(project: OpenProject): Promise<string | undefined> {
@@ -687,6 +740,20 @@ export class ProjectServer {
         const run = project.buildChain.then(() => this.runBuild(project, chosen));
         project.buildChain = run.catch(() => undefined);
         return run;
+    }
+
+    private generate(project: OpenProject): Promise<GenerateProjectReport> {
+        const run = project.buildChain.then(() => this.runGenerate(project));
+        project.buildChain = run.catch(() => undefined);
+        return run;
+    }
+
+    private async runGenerate(project: OpenProject): Promise<GenerateProjectReport> {
+        const repoRoot = this.options.repoRoot;
+        const bun = this.options.bun;
+        const unavailable = this.buildUnavailableReason();
+        if (unavailable !== undefined || repoRoot === undefined || !("path" in bun)) return {ok: false, errors: [unavailable ?? "generating is unavailable"]};
+        return await generateProjectFiles({repoRoot, bunPath: bun.path, folder: project.folder});
     }
 
     private async rememberedGameTarget(project: OpenProject): Promise<GameTarget> {

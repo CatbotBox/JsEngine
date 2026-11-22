@@ -1,5 +1,6 @@
 import {join, resolve} from "path";
 import type {RenderBackendKind} from "../engine/rendering/renderBackend";
+import {BACKEND_QUERY_PARAMETER, PIXEL_SCALE_QUERY_PARAMETER} from "../hosts/web/worldWorkerProtocol";
 import {usageError} from "./cliArguments";
 import {displayPath} from "./project";
 import {REPO_ROOT} from "./repoPaths";
@@ -16,7 +17,6 @@ export const DEMO_SITES: readonly DemoSite[] = [
     {project: "demo/swarm", page: "swarm.html", title: "JsEngine Swarm"},
 ];
 
-const BACKEND_QUERY_PARAMETER = "backend";
 const PROJECT_QUERY_PARAMETER = "project";
 
 function folderKey(folder: string): string {
@@ -35,8 +35,9 @@ export function demoSiteOf(projectFolder: string): DemoSite {
     throw usageError(`${displayPath(projectFolder)} has no web page; the web and window targets run ${DEMO_SITES.map(each => each.project).join(", ")}`);
 }
 
-export function demoSitePath(site: DemoSite, backend: RenderBackendKind): string {
-    return `${site.page}?${BACKEND_QUERY_PARAMETER}=${backend}`;
+export function demoSitePath(site: DemoSite, backend: RenderBackendKind, pixelScale?: number): string {
+    const scale = pixelScale === undefined ? "" : `&${PIXEL_SCALE_QUERY_PARAMETER}=${pixelScale}`;
+    return `${site.page}?${BACKEND_QUERY_PARAMETER}=${backend}${scale}`;
 }
 
 export function withProjectQuery(sitePath: string, projectPath: string | undefined): string {

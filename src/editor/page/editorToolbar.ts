@@ -1,16 +1,34 @@
 import type {SceneLoadReport, SceneSaveReport, SkippedComponentType} from "../../engine/scene";
 import type {EditorMode, EditorPlayState, LoadSceneResult} from "../editorProtocol";
-import {createButton, createElement} from "./dom";
+import {commandButton, dropdownButton} from "./commandButtons";
+import type {MenuEntry} from "./commandMenus";
+import {createElement} from "./dom";
+import type {EditorCommands} from "./editorCommands";
+import {gameViewAspectMenu, snapMenu} from "./editorMenus";
 import {EDITOR_TOOLS} from "./editorTools";
 import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
+import {GAME_VIEW_OPTIONS} from "./gameViewOptions";
+import type {GameViewOption} from "./gameViewOptions";
 
 export const SCENE_FILE_NAME = "scene.json";
 export const MAX_LISTED_REPORT_PATHS = 3;
 
 const MODE_LABELS: Readonly<Record<EditorMode, string>> = {edit: "Editing", play: "Playing", paused: "Paused"};
-const TOOL_LABELS: Readonly<Record<EditorTool, string>> = {hand: "Hand", move: "Move", rotate: "Rotate", scale: "Scale"};
-const TOOL_SHORTCUTS: Readonly<Record<EditorTool, string>> = {hand: "Q", move: "W", rotate: "E", scale: "R"};
+const CENTER_HANDLE_TEXT = "Center";
+const GLOBAL_HANDLE_TEXT = "Global";
+const SNAP_TEXT = "Snap";
+const SNAP_TITLE = "Ctrl snaps while dragging a handle; choose the move, rotate and scale steps";
+const PLAY_HINT = "press again to stop and restore the scene";
+const PAUSE_HINT = "pause or resume gameplay";
+const STEP_HINT = "run one gameplay tick";
+const TARGET_TITLE = "The target the Scene and Game views simulate, both through one renderer (?backend= in the page address overrides it when the editor opens)";
+const ASPECT_TITLE = "The Game view's aspect ratio";
+const GAME_VIEW_OPTION_BUTTON_TEXT: Readonly<Record<GameViewOption, string>> = {maximizeOnPlay: "Maximize", stats: "Stats"};
+const GAME_VIEW_OPTION_HINTS: Readonly<Record<GameViewOption, string>> = {
+    maximizeOnPlay: "hide the other panels while the game plays",
+    stats: "show ticks per second, tick time, entity count and viewport size over the Game view",
+};
 const TOOL_HINTS: Readonly<Record<EditorTool, string>> = {
     hand: "Drag to pan the Scene view",
     move: "Drag the selection or its axis handles to move it (Ctrl snaps)",
@@ -21,6 +39,7 @@ const ERROR_CLASS = "error";
 const WARNING_CLASS = "warn";
 const DIRTY_MARK = " *";
 const TITLE_SEPARATOR = " - ";
+const NOT_SAVED_TITLE = "Not saved yet";
 
 interface CountedPhrase {
     readonly one: string;
@@ -82,11 +101,64 @@ export function editorTitleText(projectName: string, documentName: string, dirty
     return projectName.length === 0 ? document : `${projectName}${TITLE_SEPARATOR}${document}`;
 }
 
-export class ToolbarView {
-    private readonly play: HTMLButtonElement;
-    private readonly pause: HTMLButtonElement;
-    private readonly stepButton: HTMLButtonElement;
-    private readonly toolButtons = new Map<EditorTool, HTMLButtonElement>();
+export interface ToolbarOptions {
+    gameViewAspectLabel(): string;
+
+    gameTargetLabel(): string;
+
+    gameTargetMenu(): readonly MenuEntry[] | undefined;
+}
+
+function toolbarGroup(document: Document, className: string, ariaLabel: string, controls: readonly HTMLElement[]): HTMLElement {
+    const group = createElement(document, "div", `toolbar-group ${className}`);
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", ariaLabel);
+    group.append(...controls);
+    return group;
+}
+
+export function buildToolbar(container: HTMLElement, commands: EditorCommands, options: ToolbarOptions): void {
+    const document = container.ownerDocument;
+    const registry = commands.registry;
+    const tools = EDITOR_TOOLS.map(tool => commandButton(document, registry, commands.tools.tools[tool], {className: `toolbar-tool tool-${tool}`, hint: TOOL_HINTS[tool]}));
+    const handles = [
+        commandButton(document, registry, commands.tools.handlePosition, {className: "toolbar-handle-position", text: CENTER_HANDLE_TEXT}),
+        commandButton(document, registry, commands.tools.handleRotation, {className: "toolbar-handle-rotation", text: GLOBAL_HANDLE_TEXT}),
+    ];
+    const snap = dropdownButton(document, registry, {className: "toolbar-snap", title: SNAP_TITLE, text: () => SNAP_TEXT, entries: () => snapMenu(commands)});
+    const playback = [
+        commandButton(document, registry, commands.play.play, {className: "toolbar-play", hint: PLAY_HINT}),
+        commandButton(document, registry, commands.play.pause, {className: "toolbar-pause", hint: PAUSE_HINT}),
+        commandButton(document, registry, commands.play.step, {className: "toolbar-step", hint: STEP_HINT}),
+    ];
+    const target = dropdownButton(document, registry, {
+        className: "toolbar-target",
+        title: TARGET_TITLE,
+        text: () => options.gameTargetLabel(),
+        entries: () => options.gameTargetMenu() ?? [],
+        hidden: () => options.gameTargetMenu() === undefined,
+    });
+    const aspect = dropdownButton(document, registry, {className: "toolbar-aspect", title: ASPECT_TITLE, text: () => options.gameViewAspectLabel(), entries: () => gameViewAspectMenu(commands)});
+    const gameViewToggles = GAME_VIEW_OPTIONS.map(option => commandButton(document, registry, commands.view.gameViewOptions[option], {
+        className: `toolbar-game-option game-option-${option}`,
+        text: GAME_VIEW_OPTION_BUTTON_TEXT[option],
+        hint: GAME_VIEW_OPTION_HINTS[option],
+    }));
+
+    const left = createElement(document, "div", "toolbar-section toolbar-left");
+    left.append(
+        toolbarGroup(document, "toolbar-tools", "Scene tools", tools),
+        toolbarGroup(document, "toolbar-handles", "Handle position and rotation", handles),
+        toolbarGroup(document, "toolbar-snapping", "Snapping", [snap]),
+    );
+    const center = createElement(document, "div", "toolbar-section toolbar-center");
+    center.append(toolbarGroup(document, "toolbar-playback", "Play controls", playback));
+    const right = createElement(document, "div", "toolbar-section toolbar-right");
+    right.append(toolbarGroup(document, "toolbar-game", "Game target and view", [target, aspect, ...gameViewToggles]));
+    container.replaceChildren(left, center, right);
+}
+
+export class EditorStatusView {
     private readonly title: HTMLElement;
     private readonly mode: HTMLElement;
     private readonly stopped: HTMLElement;
@@ -94,29 +166,6 @@ export class ToolbarView {
 
     public constructor(container: HTMLElement, private readonly workspace: EditorWorkspace) {
         const document = container.ownerDocument;
-        this.play = createButton(document, {className: "toolbar-play", text: "Play", title: "Play the scene (Ctrl+P); press again to stop and restore it", onClick: () => this.togglePlay()});
-        this.pause = createButton(document, {className: "toolbar-pause", text: "Pause", title: "Pause or resume gameplay", onClick: () => this.togglePause()});
-        this.stepButton = createButton(document, {className: "toolbar-step", text: "Step", title: "Run one gameplay tick", onClick: () => void workspace.step()});
-        const playback = createElement(document, "div", "toolbar-group");
-        playback.append(this.play, this.pause, this.stepButton);
-
-        const tools = createElement(document, "div", "toolbar-group toolbar-tools");
-        tools.setAttribute("role", "group");
-        tools.setAttribute("aria-label", "Scene tools");
-        for (const tool of EDITOR_TOOLS) {
-            const button = createButton(document, {
-                className: `toolbar-tool tool-${tool}`,
-                text: TOOL_LABELS[tool],
-                title: `${TOOL_LABELS[tool]} (${TOOL_SHORTCUTS[tool]}): ${TOOL_HINTS[tool]}`,
-                onClick: () => workspace.setTool(tool),
-            });
-            this.toolButtons.set(tool, button);
-            tools.append(button);
-        }
-
-        const file = createElement(document, "div", "toolbar-group");
-        file.append(createButton(document, {className: "toolbar-save", text: "Save", title: "Save the scene (Ctrl+S)", onClick: () => void workspace.saveDocument()}));
-
         this.title = createElement(document, "span", "toolbar-title");
         this.mode = createElement(document, "span", "toolbar-mode");
         this.stopped = createElement(document, "span", "toolbar-stopped");
@@ -124,38 +173,19 @@ export class ToolbarView {
         this.status = createElement(document, "output", "toolbar-status");
         this.status.setAttribute("role", "status");
         this.status.setAttribute("aria-live", "polite");
-        container.replaceChildren(playback, tools, file, this.title, this.mode, this.stopped, this.status);
+        container.replaceChildren(this.title, this.status, this.mode, this.stopped);
 
         workspace.on("state", () => this.showState());
         workspace.on("document", () => this.showTitle());
         workspace.on("status", () => this.showStatus());
         this.showState();
         this.showTitle();
-    }
-
-    private togglePlay(): void {
-        void this.workspace.setMode(this.workspace.mode === "edit" ? "play" : "edit");
-    }
-
-    private togglePause(): void {
-        void this.workspace.setMode(this.workspace.mode === "paused" ? "play" : "paused");
+        this.showStatus();
     }
 
     private showState(): void {
-        const {mode, gameplayTicks, worldStoppedError, closed} = this.workspace;
+        const {mode, gameplayTicks, worldStoppedError} = this.workspace;
         const stopped = worldStoppedError !== null;
-        this.play.textContent = mode === "edit" ? "Play" : "Stop";
-        this.play.classList.toggle("active", mode !== "edit");
-        this.play.disabled = closed || (mode === "edit" && stopped);
-        this.pause.classList.toggle("active", mode === "paused");
-        this.pause.setAttribute("aria-pressed", String(mode === "paused"));
-        this.pause.disabled = closed || stopped;
-        this.stepButton.disabled = closed || stopped;
-        for (const [tool, button] of this.toolButtons) {
-            const active = tool === this.workspace.tool;
-            button.classList.toggle("active", active);
-            button.setAttribute("aria-pressed", String(active));
-        }
         this.mode.textContent = playStateText({mode, gameplayTicks});
         this.mode.dataset.mode = mode;
         this.stopped.hidden = !stopped;
@@ -164,9 +194,11 @@ export class ToolbarView {
     }
 
     private showTitle(): void {
-        const text = editorTitleText(this.workspace.session.project.name, this.workspace.documentName, this.workspace.dirty);
+        const scenes = this.workspace.scenes;
+        const tab = scenes.activeTab;
+        const text = editorTitleText(this.workspace.session.project.name, tab.name, tab.dirty);
         this.title.textContent = text;
-        this.title.title = this.workspace.documentPath ?? "Not saved yet";
+        this.title.title = scenes.activeEntry()?.path ?? NOT_SAVED_TITLE;
         this.title.ownerDocument.title = text;
     }
 

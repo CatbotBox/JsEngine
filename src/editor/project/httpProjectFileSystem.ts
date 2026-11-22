@@ -1,7 +1,7 @@
 import type {ProjectEntry, ProjectFileChange, ProjectFileSystem} from "./projectFileSystem";
 import {requireProjectRelativePath} from "../../engine/project/projectPaths";
-import {isFilesChangedEvent, PROJECT_EVENT_FILES_CHANGED, PROJECT_OPEN_EXTERNALLY_ROUTE, projectApiUrl, projectFileRoute} from "./projectServerApi";
-import type {MakeDirectoryRequest, OpenExternallyRequest, ProjectApiError, RenameRequest} from "./projectServerApi";
+import {isFilesChangedEvent, PROJECT_EVENT_FILES_CHANGED, PROJECT_OPEN_EXTERNALLY_ROUTE, PROJECT_SHOW_IN_FOLDER_ROUTE, projectApiUrl, projectFileRoute} from "./projectServerApi";
+import type {MakeDirectoryRequest, OpenExternallyRequest, ProjectApiError, RenameRequest, ShowInFolderRequest} from "./projectServerApi";
 
 export interface HttpRequestInit {
     readonly method?: string;
@@ -29,8 +29,10 @@ export interface HttpProjectFileSystemOptions {
     readonly rootLabel: string;
     readonly fetch: HttpFetch;
     readonly events: ProjectEventSource;
+    readonly showInFolder?: boolean;
 }
 
+const PROJECT_ROOT_PATH = "";
 const JSON_HEADERS: Readonly<Record<string, string>> = {"Content-Type": "application/json"};
 const BINARY_HEADERS: Readonly<Record<string, string>> = {"Content-Type": "application/octet-stream"};
 const NO_STORE: RequestCache = "no-store";
@@ -51,12 +53,14 @@ export class HttpProjectFileSystem implements ProjectFileSystem {
     private readonly fetch: HttpFetch;
     private readonly events: ProjectEventSource;
     private readonly base: string;
+    public readonly showInFolder?: (path: string) => Promise<void>;
 
     public constructor(options: HttpProjectFileSystemOptions) {
         this.rootLabel = options.rootLabel;
         this.fetch = options.fetch;
         this.events = options.events;
         this.base = projectApiUrl(`${encodeURIComponent(options.projectId)}/`);
+        if (options.showInFolder === true) this.showInFolder = path => this.requestShowInFolder(path);
     }
 
     public async list(): Promise<readonly ProjectEntry[]> {
@@ -94,6 +98,11 @@ export class HttpProjectFileSystem implements ProjectFileSystem {
     public async openExternally(path: string): Promise<void> {
         const body: OpenExternallyRequest = {path: requireProjectRelativePath(path)};
         await this.request(`open ${path} in an external editor`, PROJECT_OPEN_EXTERNALLY_ROUTE, {method: "POST", body: JSON.stringify(body), headers: JSON_HEADERS});
+    }
+
+    private async requestShowInFolder(path: string): Promise<void> {
+        const body: ShowInFolderRequest = {path: path === PROJECT_ROOT_PATH ? PROJECT_ROOT_PATH : requireProjectRelativePath(path)};
+        await this.request(`show ${path === PROJECT_ROOT_PATH ? "the project folder" : path} in its folder`, PROJECT_SHOW_IN_FOLDER_ROUTE, {method: "POST", body: JSON.stringify(body), headers: JSON_HEADERS});
     }
 
     public onChange(listener: (change: ProjectFileChange) => void): () => void {

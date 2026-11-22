@@ -1,28 +1,45 @@
 import type {Entity} from "../../engine/core";
 import type {EditorView} from "../editorProtocol";
+import {showChoicePopup} from "./choicePopup";
+import {showCommandMenu} from "./commandMenus";
+import type {MenuEntry} from "./commandMenus";
+import {closeCommandPalette, isCommandPaletteOpen, showCommandPalette} from "./commandPalette";
+import {CommandRegistry, keyChordOf} from "./commandRegistry";
+import type {RegisteredCommand} from "./commandRegistry";
 import {ConsoleView} from "./consoleView";
 import {DataAssetsView, DIRTY_MARKER} from "./dataAssetsView";
-import {capturePointer, createButton, createElement, hasCommandModifier, isTextEntryElement, readStorage, writeStorage} from "./dom";
+import {capturePointer, createButton, createElement, isTextEntryElement, readStorage, writeStorage} from "./dom";
+import {registerEditorCommands} from "./editorCommands";
+import type {EditorCommandHost, EditorCommands} from "./editorCommands";
+import {editorMenuBar, FILE_MENU_LABEL} from "./editorMenus";
+import {BOTTOM_TAB_LABELS, BOTTOM_TABS, DEFAULT_BOTTOM_TAB} from "./editorPanels";
+import type {BottomTab} from "./editorPanels";
 import type {EditorNoticeLevel, EditorSession, EditorShell, EntityRemap} from "./editorSession";
-import {ToolbarView} from "./editorToolbar";
-import {TOOL_SHORTCUT_KEYS} from "./editorTools";
+import {buildToolbar, EditorStatusView} from "./editorToolbar";
 import {EditorWorkspace} from "./editorWorkspace";
+import {fittedAspectRect, GAME_VIEW_ASPECT_STORAGE_KEY, gameViewAspectOf} from "./gameViewAspect";
+import {isLayoutMaximized} from "./gameViewOptions";
+import {GameStatsOverlay} from "./gameStatsOverlay";
 import {HierarchyView} from "./hierarchyView";
+import type {Key} from "../../engine/input/key";
+import type {GenerateProjectReport} from "../project/projectServerApi";
 import {InspectorView} from "./inspectorView";
-import {clampPanelSizes, PANEL_SIZES_STORAGE_KEY, panelSizesText, parsePanelSizes, resizedPanel} from "./panelSizes";
+import {MenuBar} from "./menuBar";
+import {clampPanelSizes, DEFAULT_PANEL_SIZES, PANEL_SIZES_STORAGE_KEY, panelSizesText, parsePanelSizes, resizedPanel} from "./panelSizes";
 import type {AvailableArea, PanelSizeKey, PanelSizes} from "./panelSizes";
+import {sceneAndPrefabPaths} from "./projectFiles";
+import {ProjectSettingsWindow} from "./projectSettingsWindow";
 import {ProjectView} from "./projectView";
 import {RotationEulerCache} from "./rotationEulerCache";
+import {SceneTabsView} from "./sceneTabsView";
 import {SceneView} from "./sceneView";
 import {SettingsView} from "./settingsView";
+import {showKeyboardShortcuts} from "./shortcutsDialog";
 
 export const EDITOR_VIEWPORT_ID = "viewport";
 export const BOTTOM_TAB_STORAGE_KEY = "jsengine.editor.bottomTab";
+export const UNSAVED_CHANGES_PROMPT = "A scene, a data asset or the project settings have unsaved changes.";
 
-type BottomTab = "project" | "console" | "settings" | "assets";
-
-const BOTTOM_TABS: readonly BottomTab[] = ["project", "console", "settings", "assets"];
-const BOTTOM_TAB_LABELS: Readonly<Record<BottomTab, string>> = {project: "Project", console: "Console", settings: "Settings", assets: "Data Assets"};
 const VIEW_TAB_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene", game: "Game"};
 const VIEW_TABS: readonly EditorView[] = ["scene", "game"];
 const GAME_VIEW: EditorView = "game";
@@ -34,21 +51,34 @@ const CSS_VARIABLES: Readonly<Record<PanelSizeKey, string>> = {
 const CONNECTING_TEXT = "Waiting for the game…";
 const ACTIVE_CLASS = "active";
 const DRAGGING_CLASS = "resizing";
+const ASPECT_FRAMED_CLASS = "aspect-framed";
+const MAXIMIZED_CLASS = "maximized";
 const SCENE_PLAY_HINT = "The Scene view is not available while the game plays; pause first";
-const TARGET_LABEL_CLASS = "view-tabs-target";
-const TARGET_HINT = "The target the Scene and Game views simulate, both through one renderer; right-click the Game tab to change it (?backend= in the page address overrides it when the editor opens)";
 const GAME_TAB_MENU_HINT = "; right-click it to pick the target the Scene and Game views simulate";
+const NO_TARGET_LABEL = "";
+const FRAME_STYLE_PROPERTIES: readonly string[] = ["inset", "left", "top", "width", "height"];
+const FRAME_INSET = "auto";
+const PIXELS = "px";
+const OPEN_SCENE_LABEL = "Open scene";
+const OPEN_SCENE_PLACEHOLDER = "Search scenes and prefabs";
+const NO_SCENES_TEXT = "No scenes or prefabs in the project";
 
 export interface EditorShellOptions {
     readonly targetLabel?: string;
-    readonly onGameTabMenu?: (clientX: number, clientY: number) => void;
+    readonly closeProject?: () => void;
+    readonly generate?: () => Promise<GenerateProjectReport>;
+    readonly keyOfEvent?: (event: KeyboardEvent) => Key | undefined;
 }
 
 interface ShellLayout {
     readonly root: HTMLElement;
+    readonly menuRow: HTMLElement;
+    readonly menuStatus: HTMLElement;
     readonly toolbar: HTMLElement;
     readonly hierarchy: HTMLElement;
     readonly center: HTMLElement;
+    readonly sceneTabs: HTMLElement;
+    readonly prefabBreadcrumb: HTMLElement;
     readonly viewTabs: HTMLElement;
     readonly stage: HTMLElement;
     readonly viewport: HTMLElement;
@@ -82,9 +112,19 @@ function panel(document: Document, tag: keyof HTMLElementTagNameMap, className: 
 function buildLayout(body: HTMLElement): ShellLayout {
     const document = body.ownerDocument;
     const root = createElement(document, "div", "editor");
-    const toolbar = panel(document, "header", "editor-toolbar", "Toolbar");
+    const menuRow = panel(document, "header", "editor-menubar", "Menu bar and status");
+    const menuStatus = createElement(document, "div", "menu-status");
+    menuRow.append(menuStatus);
+    const toolbar = panel(document, "div", "editor-toolbar", "Toolbar");
+    toolbar.setAttribute("role", "toolbar");
     const hierarchy = panel(document, "nav", "editor-hierarchy editor-panel", "Hierarchy");
     const center = panel(document, "section", "editor-center", "Views");
+    const sceneTabs = createElement(document, "div", "editor-tabs scene-tabs");
+    sceneTabs.setAttribute("role", "tablist");
+    sceneTabs.setAttribute("aria-label", "Open scenes and prefabs");
+    const prefabBreadcrumb = createElement(document, "nav", "prefab-breadcrumb");
+    prefabBreadcrumb.setAttribute("aria-label", "Prefab breadcrumb");
+    prefabBreadcrumb.hidden = true;
     const viewTabs = createElement(document, "div", "editor-tabs view-tabs");
     viewTabs.setAttribute("role", "tablist");
     const stage = createElement(document, "div", "editor-stage");
@@ -92,7 +132,7 @@ function buildLayout(body: HTMLElement): ShellLayout {
     viewport.id = EDITOR_VIEWPORT_ID;
     const overlay = createElement(document, "canvas", "scene-overlay");
     stage.append(viewport, overlay);
-    center.append(viewTabs, stage);
+    center.append(sceneTabs, prefabBreadcrumb, viewTabs, stage);
     const inspector = panel(document, "aside", "editor-inspector editor-panel", "Inspector");
     const bottom = panel(document, "section", "editor-bottom", "Project, Console, Settings and Data Assets");
     const bottomTabs = createElement(document, "div", "editor-tabs bottom-tabs");
@@ -109,10 +149,13 @@ function buildLayout(body: HTMLElement): ShellLayout {
         splitter.setAttribute("aria-orientation", key === "bottomHeightPx" ? "horizontal" : "vertical");
         splitters.set(key, splitter);
     }
-    root.append(toolbar, hierarchy, splitters.get("hierarchyWidthPx")!, center, splitters.get("inspectorWidthPx")!, inspector, splitters.get("bottomHeightPx")!, bottom);
+    root.append(menuRow, toolbar, hierarchy, splitters.get("hierarchyWidthPx")!, center, splitters.get("inspectorWidthPx")!, inspector, splitters.get("bottomHeightPx")!, bottom);
     for (const element of [hierarchy, inspector, projectPanel, settingsPanel, assetsPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
     body.append(root);
-    return {root, toolbar, hierarchy, center, viewTabs, stage, viewport, overlay, inspector, bottom, bottomTabs, projectPanel, consolePanel, settingsPanel, assetsPanel, splitters};
+    return {
+        root, menuRow, menuStatus, toolbar, hierarchy, center, sceneTabs, prefabBreadcrumb, viewTabs, stage, viewport, overlay, inspector, bottom, bottomTabs,
+        projectPanel, consolePanel, settingsPanel, assetsPanel, splitters,
+    };
 }
 
 class PanelResizer {
@@ -125,10 +168,15 @@ class PanelResizer {
         window?.addEventListener("resize", () => this.apply(this.clamped(this.sizes)));
     }
 
+    public reset(): void {
+        this.apply(this.clamped(DEFAULT_PANEL_SIZES));
+        writeStorage(this.window, PANEL_SIZES_STORAGE_KEY, panelSizesText(this.sizes));
+    }
+
     private area(): AvailableArea {
         const bounds = this.layout.root.getBoundingClientRect();
-        const toolbarHeight = this.layout.toolbar.getBoundingClientRect().height;
-        return {widthPx: bounds.width, heightPx: bounds.height - toolbarHeight};
+        const barsHeight = this.layout.menuRow.getBoundingClientRect().height + this.layout.toolbar.getBoundingClientRect().height;
+        return {widthPx: bounds.width, heightPx: bounds.height - barsHeight};
     }
 
     private clamped(sizes: PanelSizes): PanelSizes {
@@ -170,14 +218,14 @@ class PanelResizer {
     }
 }
 
-function observeViewportSize(viewport: HTMLElement): void {
-    const window = viewport.ownerDocument.defaultView;
+function onSizeChange(element: HTMLElement, changed: () => void): void {
+    const window = element.ownerDocument.defaultView;
     if (window === null || typeof window.ResizeObserver !== "function") return;
     let width = -1;
     let height = -1;
     let scheduled = false;
     new window.ResizeObserver(() => {
-        const bounds = viewport.getBoundingClientRect();
+        const bounds = element.getBoundingClientRect();
         if (bounds.width === width && bounds.height === height) return;
         width = bounds.width;
         height = bounds.height;
@@ -185,33 +233,59 @@ function observeViewportSize(viewport: HTMLElement): void {
         scheduled = true;
         window.requestAnimationFrame(() => {
             scheduled = false;
-            window.dispatchEvent(new window.Event("resize"));
+            changed();
         });
-    }).observe(viewport);
+    }).observe(element);
+}
+
+function observeViewportSize(viewport: HTMLElement): void {
+    const window = viewport.ownerDocument.defaultView;
+    onSizeChange(viewport, () => window?.dispatchEvent(new window.Event("resize")));
 }
 
 class EditorShellImplementation implements EditorShell {
     public readonly viewport: HTMLElement;
+    public readonly commands = new CommandRegistry();
     private readonly document: Document;
     private readonly layout: ShellLayout;
+    private readonly resizer: PanelResizer;
+    private readonly editorCommands: EditorCommands;
+    private readonly menuBar: MenuBar;
     private readonly pendingNotices: {readonly level: EditorNoticeLevel, readonly text: string}[] = [];
     private readonly focusValues = new WeakMap<Element, string>();
     private mounted: MountedViews | undefined;
     private bottomTab: BottomTab;
+    private gameViewAspectId: string;
+    private targetLabel: string;
+    private gameTargetMenu: readonly MenuEntry[] | undefined;
+    private projectSettings: ProjectSettingsWindow | undefined;
     private readonly bottomTabButtons = new Map<BottomTab, HTMLButtonElement>();
     private readonly viewTabButtons = new Map<EditorView, HTMLButtonElement>();
-    private targetLabel: HTMLElement | undefined;
 
     public constructor(body: HTMLElement, private readonly options: EditorShellOptions) {
         this.document = body.ownerDocument;
+        const window = this.document.defaultView;
         this.layout = buildLayout(body);
         this.viewport = this.layout.viewport;
-        new PanelResizer(this.layout, this.document.defaultView);
+        this.resizer = new PanelResizer(this.layout, window);
         observeViewportSize(this.viewport);
-        const stored = readStorage(this.document.defaultView, BOTTOM_TAB_STORAGE_KEY);
-        this.bottomTab = BOTTOM_TABS.find(tab => tab === stored) ?? "project";
+        onSizeChange(this.layout.stage, () => this.applyGameViewAspect());
+        const stored = readStorage(window, BOTTOM_TAB_STORAGE_KEY);
+        this.bottomTab = BOTTOM_TABS.find(tab => tab === stored) ?? DEFAULT_BOTTOM_TAB;
+        this.gameViewAspectId = gameViewAspectOf(readStorage(window, GAME_VIEW_ASPECT_STORAGE_KEY)).id;
+        this.targetLabel = options.targetLabel ?? NO_TARGET_LABEL;
+        this.editorCommands = registerEditorCommands(this.commands, this.commandHost());
+        this.menuBar = new MenuBar(this.document, editorMenuBar(this.editorCommands));
+        this.layout.menuRow.prepend(this.menuBar.element);
+        buildToolbar(this.layout.toolbar, this.editorCommands, {
+            gameViewAspectLabel: () => gameViewAspectOf(this.gameViewAspectId).label,
+            gameTargetLabel: () => this.targetLabel,
+            gameTargetMenu: () => this.gameTargetMenu,
+        });
         this.buildTabs();
         this.showBottomTab(this.bottomTab);
+        this.installKeyboard();
+        this.installUnloadGuard();
     }
 
     public async mount(session: EditorSession): Promise<void> {
@@ -221,13 +295,15 @@ class EditorShellImplementation implements EditorShell {
         }
         const workspace = new EditorWorkspace(session, this.document);
         const rotations = new RotationEulerCache();
-        new ToolbarView(this.layout.toolbar, workspace);
-        const hierarchy = new HierarchyView(this.layout.hierarchy, workspace);
-        new InspectorView(this.layout.inspector, workspace, rotations);
-        const project = new ProjectView(this.layout.projectPanel, workspace);
+        new EditorStatusView(this.layout.menuStatus, workspace);
+        new SceneTabsView(this.layout.sceneTabs, this.layout.prefabBreadcrumb, workspace, this.editorCommands);
+        const hierarchy = new HierarchyView(this.layout.hierarchy, workspace, this.editorCommands);
+        new InspectorView(this.layout.inspector, workspace, rotations, this.editorCommands);
+        const project = new ProjectView(this.layout.projectPanel, workspace, this.editorCommands, {rebuildsOnCodeChange: this.options.generate !== undefined});
         const consoleView = new ConsoleView(this.layout.consolePanel, workspace);
         consoleView.onCountsChanged(() => this.showConsoleBadge(workspace));
         const scene = new SceneView(this.layout.stage, this.viewport, this.layout.overlay, workspace);
+        this.layout.stage.append(new GameStatsOverlay(this.document, workspace, this.viewport, () => this.targetLabel).element);
         const settings = new SettingsView(this.layout.settingsPanel, workspace, rotations);
         const dataAssets = new DataAssetsView(this.layout.assetsPanel, workspace, rotations);
         this.mounted = {workspace, scene, hierarchy, project, settings, dataAssets, rotations};
@@ -235,14 +311,13 @@ class EditorShellImplementation implements EditorShell {
         dataAssets.setVisible(this.bottomTab === "assets");
         dataAssets.onDirtyChanged(() => this.showDataAssetsTitle(dataAssets));
         workspace.on("openDataAsset", () => this.showBottomTab("assets"));
-        workspace.on("state", () => this.showViewTabs(workspace));
+        workspace.on("state", () => this.stateChanged(workspace));
+        workspace.on("document", () => this.commands.changed());
         workspace.on("entities", () => rotations.retainEntities(new Set(workspace.entities.map(summary => summary.entity))));
-        this.installKeyboard();
         for (const notice of this.pendingNotices.splice(0)) workspace.notice(notice.level, notice.text);
-        this.showViewTabs(workspace);
+        this.stateChanged(workspace);
         await workspace.start();
-        const startScene = session.project.startScene;
-        if (startScene !== null) await workspace.loadDocument(startScene);
+        await workspace.scenes.openStartScene();
     }
 
     public async replaceSession(session: EditorSession, remap: EntityRemap): Promise<void> {
@@ -269,12 +344,37 @@ class EditorShellImplementation implements EditorShell {
     }
 
     public showTargetLabel(text: string): void {
-        if (this.targetLabel !== undefined) this.targetLabel.textContent = text;
+        this.targetLabel = text;
+        this.commands.changed();
+    }
+
+    public setGameTargetMenu(entries: readonly MenuEntry[]): void {
+        this.gameTargetMenu = entries;
+        this.refreshViewTabTitles();
+        this.commands.changed();
+    }
+
+    private commandHost(): EditorCommandHost {
+        return {
+            closeProject: this.options.closeProject,
+            views: () => this.mounted,
+            bottomTab: () => this.bottomTab,
+            showBottomTab: tab => this.showBottomTab(tab),
+            resetLayout: () => this.resetLayout(),
+            gameViewAspect: () => this.gameViewAspectId,
+            setGameViewAspect: id => this.setGameViewAspect(id),
+            textSelected: () => this.document.getSelection()?.isCollapsed === false,
+            entityKeysFocused: () => this.entityKeysFocused(),
+            toggleCommandPalette: () => this.toggleCommandPalette(),
+            showKeyboardShortcuts: () => showKeyboardShortcuts(this.document, this.commands.all()),
+            openSceneChooser: () => this.openSceneChooser(),
+            openProjectSettings: () => this.openProjectSettings(),
+        };
     }
 
     private viewTabTitle(view: EditorView): string {
         const shown = `Show the ${VIEW_TAB_LABELS[view]} view`;
-        return view === GAME_VIEW && this.options.onGameTabMenu !== undefined ? shown + GAME_TAB_MENU_HINT : shown;
+        return view === GAME_VIEW && this.gameTargetMenu !== undefined ? shown + GAME_TAB_MENU_HINT : shown;
     }
 
     private buildTabs(): void {
@@ -285,21 +385,16 @@ class EditorShellImplementation implements EditorShell {
                 if (workspace !== undefined && workspace.view !== view) void workspace.setView(view);
             }});
             button.setAttribute("role", "tab");
-            const onGameTabMenu = this.options.onGameTabMenu;
-            if (view === GAME_VIEW && onGameTabMenu !== undefined) {
+            if (view === GAME_VIEW) {
                 button.addEventListener("contextmenu", event => {
+                    const menu = this.gameTargetMenu;
+                    if (menu === undefined) return;
                     event.preventDefault();
-                    onGameTabMenu(event.clientX, event.clientY);
+                    showCommandMenu(document, event.clientX, event.clientY, menu);
                 });
             }
             this.viewTabButtons.set(view, button);
             this.layout.viewTabs.append(button);
-        }
-        const targetLabel = this.options.targetLabel;
-        if (targetLabel !== undefined) {
-            this.targetLabel = createElement(document, "span", TARGET_LABEL_CLASS, targetLabel);
-            this.targetLabel.title = TARGET_HINT;
-            this.layout.viewTabs.append(this.targetLabel);
         }
         for (const tab of BOTTOM_TABS) {
             const button = createButton(document, {className: "editor-tab", text: BOTTOM_TAB_LABELS[tab], title: `Show the ${BOTTOM_TAB_LABELS[tab]}`, onClick: () => this.showBottomTab(tab)});
@@ -322,6 +417,28 @@ class EditorShellImplementation implements EditorShell {
         this.layout.assetsPanel.hidden = tab !== "assets";
         this.mounted?.settings.setVisible(tab === "settings");
         this.mounted?.dataAssets.setVisible(tab === "assets");
+        this.commands.changed();
+    }
+
+    private resetLayout(): void {
+        this.resizer.reset();
+        this.showBottomTab(DEFAULT_BOTTOM_TAB);
+    }
+
+    private stateChanged(workspace: EditorWorkspace): void {
+        this.layout.toolbar.dataset.mode = workspace.mode;
+        this.layout.root.classList.toggle(MAXIMIZED_CLASS, isLayoutMaximized(workspace.gameViewOptions, workspace.mode));
+        this.showViewTabs(workspace);
+        this.commands.changed();
+    }
+
+    private refreshViewTabTitles(): void {
+        const workspace = this.mounted?.workspace;
+        if (workspace !== undefined) {
+            this.showViewTabs(workspace);
+            return;
+        }
+        for (const [view, button] of this.viewTabButtons) button.title = this.viewTabTitle(view);
     }
 
     private showViewTabs(workspace: EditorWorkspace): void {
@@ -334,6 +451,75 @@ class EditorShellImplementation implements EditorShell {
             button.title = unavailable ? SCENE_PLAY_HINT : this.viewTabTitle(view);
         }
         this.layout.stage.dataset.view = workspace.view;
+        this.applyGameViewAspect();
+    }
+
+    private setGameViewAspect(id: string): void {
+        this.gameViewAspectId = gameViewAspectOf(id).id;
+        writeStorage(this.document.defaultView, GAME_VIEW_ASPECT_STORAGE_KEY, this.gameViewAspectId);
+        this.applyGameViewAspect();
+        this.commands.changed();
+    }
+
+    private applyGameViewAspect(): void {
+        const widthToHeight = gameViewAspectOf(this.gameViewAspectId).widthToHeight;
+        const stage = this.layout.stage;
+        const style = this.viewport.style;
+        const framed = stage.dataset.view === GAME_VIEW && widthToHeight !== undefined;
+        stage.classList.toggle(ASPECT_FRAMED_CLASS, framed);
+        if (!framed) {
+            for (const property of FRAME_STYLE_PROPERTIES) style.removeProperty(property);
+            return;
+        }
+        const bounds = stage.getBoundingClientRect();
+        const frame = fittedAspectRect(bounds.width, bounds.height, widthToHeight);
+        style.setProperty("inset", FRAME_INSET);
+        style.setProperty("left", `${frame.left}${PIXELS}`);
+        style.setProperty("top", `${frame.top}${PIXELS}`);
+        style.setProperty("width", `${frame.width}${PIXELS}`);
+        style.setProperty("height", `${frame.height}${PIXELS}`);
+    }
+
+    private toggleCommandPalette(): void {
+        if (isCommandPaletteOpen(this.document)) closeCommandPalette(this.document);
+        else showCommandPalette(this.document, this.commands);
+    }
+
+    private openSceneChooser(): void {
+        const workspace = this.mounted?.workspace;
+        if (workspace === undefined) return;
+        const anchor = this.menuBar.buttonOf(FILE_MENU_LABEL) ?? this.layout.menuRow;
+        showChoicePopup(this.document, anchor, {
+            ariaLabel: OPEN_SCENE_LABEL,
+            searchPlaceholder: OPEN_SCENE_PLACEHOLDER,
+            emptyText: NO_SCENES_TEXT,
+            loadChoices: async () => sceneAndPrefabPaths(await workspace.session.files.list()).map(path => ({label: path, value: path})),
+            choose: path => void workspace.scenes.open(path),
+        });
+    }
+
+    private openProjectSettings(): void {
+        const workspace = this.mounted?.workspace;
+        if (workspace === undefined) return;
+        if (this.projectSettings !== undefined) {
+            this.projectSettings.focus();
+            return;
+        }
+        const generate = this.options.generate;
+        this.projectSettings = ProjectSettingsWindow.open({
+            document: this.document,
+            services: {
+                files: () => workspace.session.files,
+                report: (level, text) => workspace.notice(level, text),
+                manifestSaved: () => workspace.scenes.manifestChanged(),
+                ...(generate === undefined ? {} : {generate}),
+            },
+            typeNames: () => [...workspace.schemas.keys(), ...workspace.resourceSchemas.keys()].sort((a, b) => a.localeCompare(b)),
+            ...(this.options.keyOfEvent === undefined ? {} : {keyOfEvent: this.options.keyOfEvent}),
+            onFilesChanged: listener => workspace.session.files.onChange(listener),
+        }, () => {
+            this.projectSettings = undefined;
+        });
     }
 
     private showDataAssetsTitle(dataAssets: DataAssetsView): void {
@@ -350,6 +536,19 @@ class EditorShellImplementation implements EditorShell {
         button.classList.toggle("has-errors", counts.error > 0);
     }
 
+    private hasUnsavedChanges(): boolean {
+        const mounted = this.mounted;
+        return mounted !== undefined && (mounted.workspace.scenes.dirty || mounted.dataAssets.dirty || this.projectSettings?.dirty === true);
+    }
+
+    private installUnloadGuard(): void {
+        this.document.defaultView?.addEventListener("beforeunload", event => {
+            if (!this.hasUnsavedChanges()) return;
+            event.preventDefault();
+            event.returnValue = UNSAVED_CHANGES_PROMPT;
+        });
+    }
+
     private installKeyboard(): void {
         const document = this.document;
         document.addEventListener("focusin", event => {
@@ -359,85 +558,36 @@ class EditorShellImplementation implements EditorShell {
         document.addEventListener("keydown", event => this.onKeyDown(event));
     }
 
+    private entityKeysFocused(): boolean {
+        const active = this.document.activeElement;
+        return active === null || active === this.document.body || active === this.layout.overlay || this.layout.hierarchy.contains(active);
+    }
+
     private hasTextEdits(element: Element): boolean {
         if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return false;
         return this.focusValues.get(element) !== element.value;
     }
 
     private onKeyDown(event: KeyboardEvent): void {
-        const mounted = this.mounted;
-        if (mounted === undefined || event.defaultPrevented) return;
-        const {workspace, scene, hierarchy, dataAssets} = mounted;
+        if (event.defaultPrevented) return;
         const active = this.document.activeElement;
         if (active !== null && this.viewport.contains(active)) return;
-        const command = hasCommandModifier(event);
-        const key = event.key.toLowerCase();
-        const inText = isTextEntryElement(active);
-        if (command && key === "s") {
-            event.preventDefault();
-            if (dataAssets.hasFocus()) void dataAssets.save();
-            else void workspace.saveDocument();
-            return;
-        }
-        if (command && (key === "z" || key === "y")) {
-            if (inText && active !== null && this.hasTextEdits(active)) return;
-            event.preventDefault();
-            if (inText && active instanceof HTMLElement) active.blur();
-            const redo = key === "y" || event.shiftKey;
-            void (redo ? workspace.redoLast() : workspace.undoLast());
-            return;
-        }
-        if (inText || event.altKey) return;
-        const selection = workspace.selection;
-        if (command) {
-            const handled = this.commandShortcut(key, workspace, selection);
-            if (handled) event.preventDefault();
-            return;
-        }
-        switch (event.key) {
-            case "Delete":
-                if (selection.length === 0) return;
-                event.preventDefault();
-                void workspace.destroy(selection);
-                return;
-            case "F2": {
-                const primary = workspace.primary;
-                if (primary === undefined) return;
-                event.preventDefault();
-                hierarchy.beginRename(primary);
-                return;
-            }
-        }
-        if (key === "f" && !event.shiftKey) {
-            event.preventDefault();
-            void scene.focusSelection();
-            return;
-        }
-        const tool = TOOL_SHORTCUT_KEYS[key];
-        if (tool !== undefined && !scene.capturesKeys && !event.shiftKey) {
-            event.preventDefault();
-            workspace.setTool(tool);
-        }
+        const resolution = this.commands.resolveKey(keyChordOf(event), {
+            inTextEntry: isTextEntryElement(active),
+            textEdited: active !== null && this.hasTextEdits(active),
+        });
+        if (resolution.kind !== "bound") return;
+        event.preventDefault();
+        if (resolution.leavesTextEntry && active instanceof HTMLElement) active.blur();
+        if (resolution.command.runAlone() || event.repeat || !resolution.command.explainsWhenDisabled()) return;
+        this.explainUnavailable(resolution.command);
     }
 
-    private commandShortcut(key: string, workspace: EditorWorkspace, selection: readonly Entity[]): boolean {
-        switch (key) {
-            case "d":
-                if (selection.length > 0) void workspace.duplicate(selection);
-                return true;
-            case "c":
-                if (this.document.getSelection()?.isCollapsed === false) return false;
-                if (selection.length > 0) void workspace.copy(selection);
-                return true;
-            case "v":
-                void workspace.paste();
-                return true;
-            case "p":
-                void workspace.setMode(workspace.mode === "edit" ? "play" : "edit");
-                return true;
-            default:
-                return false;
-        }
+    private explainUnavailable(command: RegisteredCommand): void {
+        const state = command.stateAlone();
+        const workspace = this.mounted?.workspace;
+        if (workspace === undefined || workspace.closed || state.reason === undefined) return;
+        workspace.notice(state.planned ? "info" : "warn", `${state.label}: ${state.reason}`);
     }
 }
 

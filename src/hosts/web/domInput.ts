@@ -110,7 +110,7 @@ function keyOfCode(code: string): Key | undefined {
     return keyForCharacter((match[1] ?? match[2]).toLowerCase())?.key;
 }
 
-function keyOf(event: DomKeyboardEvent): Key | undefined {
+export function keyOf(event: Pick<DomKeyboardEvent, "key" | "code">): Key | undefined {
     return NAMED_KEYS.get(event.key) ?? keyForCharacter(event.key)?.key ?? keyOfCode(event.code);
 }
 

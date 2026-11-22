@@ -1,8 +1,4 @@
 import type {DecodedImage} from "../../engine/assets/image/decodedImage";
-import {inflate} from "../../engine/assets/image/inflate";
-import {decodeJpeg} from "../../engine/assets/image/jpeg";
-import {decodePng} from "../../engine/assets/image/png";
-import {decodePpm} from "../../engine/assets/image/ppm";
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {groupOutline, outlineCode} from "./codeOutline";
@@ -10,7 +6,8 @@ import type {OutlineGroup, OutlineSymbol} from "./codeOutline";
 import {createElement, errorText} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
 import {documentRootCount} from "./prefabInstancePaths";
-import {baseNameOf, extensionOf, PROJECT_FILE_KIND_TITLES, projectFileKind} from "./projectFiles";
+import {baseNameOf, PROJECT_FILE_KIND_TITLES, projectFileKind} from "./projectFiles";
+import {canDecodeProjectImage, decodeProjectImage} from "./projectImages";
 import type {ProjectFileKind} from "./projectFiles";
 
 type Fact = readonly [label: string, value: string];
@@ -22,12 +19,6 @@ interface PreviewContent {
 
 export const EXTERNAL_EDITOR_UNAVAILABLE_TEXT = "Opening files in an external editor needs the desktop app or the dev server";
 
-const IMAGE_DECODERS: Readonly<Record<string, (bytes: Uint8Array) => DecodedImage>> = {
-    ".png": bytes => decodePng(bytes, {inflate}),
-    ".jpg": decodeJpeg,
-    ".jpeg": decodeJpeg,
-    ".ppm": decodePpm,
-};
 const TEXT_EXCERPT_KINDS: ReadonlySet<ProjectFileKind> = new Set(["mesh", "dataAsset", "other"]);
 const BYTES_PER_KILOBYTE = 1024;
 const SIZE_UNITS: readonly string[] = ["KB", "MB", "GB"];
@@ -151,9 +142,9 @@ export class ProjectFilePreview {
         switch (kind) {
             case "image": {
                 if (entry.size > MAX_IMAGE_PREVIEW_BYTES) return {facts: [], body: [createElement(document, "p", "project-preview-empty", tooLargeText(MAX_IMAGE_PREVIEW_BYTES))]};
-                const decode = IMAGE_DECODERS[extensionOf(entry.path).toLowerCase()];
-                if (decode === undefined) return {facts: [], body: []};
-                const image = decode(await files.read(entry.path));
+                if (!canDecodeProjectImage(entry.path)) return {facts: [], body: []};
+                const image = decodeProjectImage(entry.path, await files.read(entry.path));
+                if (image === undefined) return {facts: [], body: []};
                 return {facts: [["Dimensions", `${image.width} × ${image.height}`]], body: [this.imageCanvas(document, image)]};
             }
             case "code": {

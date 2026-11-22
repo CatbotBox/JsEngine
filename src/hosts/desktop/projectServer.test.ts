@@ -128,6 +128,28 @@ describe("project server", () => {
         expect(openedExternally.length).toBe(1);
     });
 
+    test("show-in-folder is a capability only a host with a file manager hook has", async () => {
+        expect((await (await request("capabilities")).json()).showInFolder).toBe(false);
+        const {id} = await opened(folder);
+        expect((await post(`${id}/show-in-folder`, {path: ""})).status).toBe(HTTP_NOT_FOUND);
+        server.close();
+        const shown: string[] = [];
+        server = createProjectServer({bun: {unavailableReason: "no bun in tests"}, browse: false, allowedHostnames: ["localhost"], showInFolder: async absolutePath => {
+            shown.push(absolutePath);
+        }});
+        expect((await (await request("capabilities")).json()).showInFolder).toBe(true);
+        const reopened = await opened(folder);
+        await request(`${reopened.id}/file/art/a.png`, {method: "PUT", body: "png"});
+        expect((await post(`${reopened.id}/show-in-folder`, {path: "art/a.png"})).status).toBe(HTTP_OK);
+        expect((await post(`${reopened.id}/show-in-folder`, {path: "art"})).status).toBe(HTTP_OK);
+        expect((await post(`${reopened.id}/show-in-folder`, {path: ""})).status).toBe(HTTP_OK);
+        expect((await post(`${reopened.id}/show-in-folder`, {path: "art/missing.png"})).status).toBe(HTTP_NOT_FOUND);
+        expect((await post(`${reopened.id}/show-in-folder`, {path: "../escape"})).status).toBe(HTTP_BAD_REQUEST);
+        expect((await post(`${reopened.id}/show-in-folder`, {})).status).toBe(HTTP_BAD_REQUEST);
+        const root = fs.realpathSync(folder);
+        expect(shown.map(shownPath => fs.realpathSync(shownPath))).toEqual([path.join(root, "art", "a.png"), path.join(root, "art"), root]);
+    });
+
     test("a link pointing outside the folder is not followed", async () => {
         const outside = fs.mkdtempSync(path.join(os.tmpdir(), "jsengine-outside-"));
         try {
@@ -166,6 +188,14 @@ describe("project server", () => {
         const build = await post(`${id}/build`, {});
         expect(build.status).toBe(HTTP_OK);
         expect(await build.json()).toEqual({errors: ["building project code needs the JsEngine source tree; start the editor from the repository"]});
+    });
+
+    test("generate reports why it cannot run where building is unavailable, and takes only POST", async () => {
+        const {id} = await opened(folder);
+        const generated = await post(`${id}/generate`, {});
+        expect(generated.status).toBe(HTTP_OK);
+        expect(await generated.json()).toEqual({ok: false, errors: ["building project code needs the JsEngine source tree; start the editor from the repository"]});
+        expect((await request(`${id}/generate`)).status).toBe(HTTP_METHOD_NOT_ALLOWED);
     });
 
     test("editor settings read as nothing until saved, then live in .jsengine/editor.json beside the keys they do not own", async () => {

@@ -2,6 +2,7 @@ import type {Entity} from "../../engine/core";
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
 import type {EditorComponentDescription, EditorEntityDetails, EditorFieldDescription} from "../editorProtocol";
 import {AddComponentPopup, requiredEntityFields} from "./addComponentPopup";
+import {isHiddenComponent} from "./componentVisibility";
 import {createButton, createElement, isFocusWithin} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
 import {fieldLabelElement} from "./fieldEditorBase";
@@ -12,9 +13,10 @@ import {entityLabel} from "./fieldValueText";
 import {fieldValuesOf, missingInSome, sharedBoolean, sharedComponents} from "./multiSelection";
 import type {SharedComponent} from "./multiSelection";
 import {isComponentOverridden, overriddenFieldKeys, pathWithinInstance} from "./prefabInstancePaths";
-import {showPopupMenu} from "./popupMenu";
+import {showCommandMenu} from "./commandMenus";
+import type {EditorCommands} from "./editorCommands";
+import {componentMenu} from "./editorMenus";
 import {ProjectFilePreview} from "./projectPreview";
-import type {MenuItem} from "./popupMenu";
 import {MAX_INSPECTED_ENTITIES} from "./editorRefresh";
 import type {RotationEulerCache} from "./rotationEulerCache";
 import {entityValueShapeOf} from "./undoStack";
@@ -123,19 +125,9 @@ class ComponentView {
     }
 
     private openMenu(event: MouseEvent): void {
-        const workspace = this.inspector.workspace;
-        const typeName = this.typeName;
-        const first = this.shared?.perEntity[0];
         const resettable = this.schema !== undefined && requiredEntityFields(this.schema).length === 0;
-        const clipboard = workspace.componentClipboard;
-        const items: MenuItem[] = [
-            {label: "Reset", disabled: !resettable, run: () => void workspace.resetComponent(this.entities, typeName)},
-            {label: "Remove Component", run: () => void workspace.removeComponent(this.entities, typeName)},
-            "separator",
-            {label: "Copy Component Values", disabled: first === undefined, run: () => first !== undefined && workspace.copyComponentValues(first)},
-            {label: "Paste Component Values", disabled: clipboard?.typeName !== typeName, run: () => void workspace.pasteComponentValues(this.entities, typeName)},
-        ];
-        showPopupMenu(this.inspector.document, event.clientX, event.clientY, items);
+        const target = {entities: this.entities, typeName: this.typeName, first: this.shared?.perEntity[0], resettable};
+        showCommandMenu(this.inspector.document, event.clientX, event.clientY, componentMenu(this.inspector.commands, target));
     }
 }
 
@@ -162,7 +154,7 @@ export class InspectorView {
     private popupClosedAtMs = Number.NEGATIVE_INFINITY;
     private readonly filePreview: ProjectFilePreview;
 
-    public constructor(private readonly container: HTMLElement, public readonly workspace: EditorWorkspace, public readonly rotations: RotationEulerCache) {
+    public constructor(private readonly container: HTMLElement, public readonly workspace: EditorWorkspace, public readonly rotations: RotationEulerCache, public readonly commands: EditorCommands) {
         const document = container.ownerDocument;
         this.document = document;
         this.fieldServices = workspaceFieldServices(workspace, rotations);
@@ -189,7 +181,7 @@ export class InspectorView {
         this.prefabLabel = createElement(document, "span", "prefab-label");
         this.prefabBar.append(
             this.prefabLabel,
-            createButton(document, {className: "", text: "Open", title: "Open the prefab file for editing", onClick: () => this.withPrefab(path => void workspace.openDocument(path))}),
+            createButton(document, {className: "", text: "Open", title: "Open the prefab file for editing", onClick: () => this.withPrefab(path => void workspace.scenes.openPrefab(path))}),
             createButton(document, {className: "", text: "Select", title: "Show the prefab file in the Project view", onClick: () => this.withPrefab(path => workspace.reveal(path))}),
             createButton(document, {className: "", text: "Apply", title: "Write this instance's overrides into the prefab file and update every instance", onClick: () => this.withPrefabRoot(root => void workspace.applyPrefab(root))}),
             createButton(document, {className: "", text: "Revert", title: "Discard this instance's overrides", onClick: () => this.withPrefabRoot(root => void workspace.revertPrefab(root))}),
@@ -306,7 +298,7 @@ export class InspectorView {
     }
 
     private showComponents(inspected: InspectedSelection): void {
-        const shared = sharedComponents(inspected.details);
+        const shared = sharedComponents(inspected.details).filter(component => !isHiddenComponent(this.workspace.schemas.get(component.typeName)));
         const present = new Set(shared.map(component => component.typeName));
         for (const [typeName, view] of this.views) {
             if (present.has(typeName)) continue;

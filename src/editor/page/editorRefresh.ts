@@ -1,5 +1,5 @@
 import type {Entity} from "../../engine/core";
-import type {EditorEntityDetails, EditorEntitySummary, EditorMode, EditorRequest, EditorResultOf, PrefabOverridesResult} from "../editorProtocol";
+import type {EditorEntityDetails, EditorMode, EditorRequest, EditorResultOf, ListEntitiesResult, PrefabOverridesResult} from "../editorProtocol";
 import {EditorClientClosedError, EditorRequestError} from "./editorClient";
 import type {EditorRequester} from "./undoStack";
 
@@ -16,7 +16,7 @@ export interface EditorRefreshTarget {
 
     instanceRootOf(entity: Entity): Entity | undefined;
 
-    showEntities(entities: readonly EditorEntitySummary[]): void;
+    showListing(listing: ListEntitiesResult): void;
 
     showSelectionDetails(selection: SelectionDetails): void;
 
@@ -129,9 +129,9 @@ export class EditorRefresh {
         if (this.stopped) return;
         const generation = this.editsStarted;
         try {
-            const {entities} = await this.target.client().request({op: "listEntities"});
+            const listing = await this.target.client().request({op: "listEntities"});
             if (!this.isCurrent(generation)) return;
-            this.target.showEntities(entities);
+            this.target.showListing(listing);
         } catch (error) {
             this.fail(error);
         }

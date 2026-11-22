@@ -1,7 +1,8 @@
 import type {Entity} from "../../engine/core";
 import {isSceneJsonObject} from "../../engine/scene/sceneDocument";
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
-import type {EditorFieldEdit, EditorFieldTypeDescription, EditorRequest, EditorResultOf} from "../editorProtocol";
+import type {EditorFieldEdit, EditorFieldTypeDescription, EditorRequest, EditorResultOf, EditorSceneRef, InstantiateEntitiesRequest} from "../editorProtocol";
+import type {ProjectFileOperations} from "./fileUndo";
 import {planRestore} from "./hierarchyDrop";
 import type {MovePlan, ReadonlySiblingLists, SiblingKey, SiblingLists} from "./hierarchyDrop";
 
@@ -169,6 +170,7 @@ export function jsonOfStoredValues(values: StoredValues): SceneJsonObject {
 export interface UndoContext {
     readonly client: EditorRequester;
     readonly refs: EntityRefs;
+    readonly files: ProjectFileOperations;
 }
 
 export interface UndoCommand {
@@ -303,6 +305,7 @@ export interface RecordedSubtree {
     readonly documentText: string;
     readonly parent: EntityRef | null;
     readonly siblingIndex: number;
+    readonly scene?: EditorSceneRef;
 }
 
 export interface SubtreeRecord {
@@ -311,16 +314,18 @@ export interface SubtreeRecord {
     readonly documentText: string;
     readonly parent: Entity | null;
     readonly siblingIndex: number;
+    readonly scene?: EditorSceneRef;
 }
 
 export function recordSubtree(refs: EntityRefs, record: SubtreeRecord): RecordedSubtree {
-    return {
+    const recorded: RecordedSubtree = {
         root: refs.refOf(record.root),
         entities: record.entitiesInCreationOrder.map(entity => refs.refOf(entity)),
         documentText: record.documentText,
         parent: record.parent === null ? null : refs.refOf(record.parent),
         siblingIndex: record.siblingIndex,
     };
+    return record.scene === undefined ? recorded : {...recorded, scene: record.scene};
 }
 
 export class ExistenceCommand implements UndoCommand {
@@ -347,7 +352,10 @@ export class ExistenceCommand implements UndoCommand {
         const ordered = [...this.subtrees].sort((a, b) => a.siblingIndex - b.siblingIndex);
         for (const subtree of ordered) {
             const parent = subtree.parent === null ? null : handleOf(subtree.parent);
-            const created = await context.client.request({op: "instantiateEntities", documentText: subtree.documentText, parent, siblingIndex: subtree.siblingIndex});
+            const request: InstantiateEntitiesRequest = parent === null && subtree.scene !== undefined
+                ? {op: "instantiateEntities", documentText: subtree.documentText, parent, siblingIndex: subtree.siblingIndex, scene: subtree.scene}
+                : {op: "instantiateEntities", documentText: subtree.documentText, parent, siblingIndex: subtree.siblingIndex};
+            const created = await context.client.request(request);
             if (created.entities.length === subtree.entities.length) {
                 subtree.entities.forEach((ref, index) => context.refs.rebind(ref, created.entities[index]));
                 continue;

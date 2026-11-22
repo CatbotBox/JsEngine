@@ -4,6 +4,7 @@ import {isCellFrame} from "../../backends/cells/cellFrame";
 import type {CellFrame} from "../../backends/cells/cellFrame";
 import {isPixelFrame} from "../../backends/pixels/pixelFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
+import {PIXEL_SCALE_LIMITS} from "../../engine/rendering/pixelScale";
 import {isRenderBackendKind} from "../../engine/rendering/renderBackend";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 
@@ -153,8 +154,11 @@ export function requestedRasterWorkersFromQuery(search: string): number | undefi
     return wholeNumberFromQuery(search, "threads", 0, Number.POSITIVE_INFINITY);
 }
 
+export const BACKEND_QUERY_PARAMETER = "backend";
+export const PIXEL_SCALE_QUERY_PARAMETER = "scale";
+
 export function renderBackendFromQuery(search: string, defaultBackend: RenderBackendKind = DEFAULT_RENDER_BACKEND): RenderBackendKind {
-    const value = new URLSearchParams(search).get("backend")?.trim();
+    const value = new URLSearchParams(search).get(BACKEND_QUERY_PARAMETER)?.trim();
     return isRenderBackendKind(value) ? value : defaultBackend;
 }
 
@@ -174,10 +178,10 @@ export function fixedTerminalSizeFromQuery(search: string): FixedTerminalSize {
     };
 }
 
-export const PIXEL_SCALE_LIMITS = {min: 1, max: 16} as const;
+export {PIXEL_SCALE_LIMITS};
 
 export function pixelScaleFromQuery(search: string): number | undefined {
-    return wholeNumberFromQuery(search, "scale", PIXEL_SCALE_LIMITS.min, PIXEL_SCALE_LIMITS.max);
+    return wholeNumberFromQuery(search, PIXEL_SCALE_QUERY_PARAMETER, PIXEL_SCALE_LIMITS.min, PIXEL_SCALE_LIMITS.max);
 }
 
 export interface FixedFramebufferSize {

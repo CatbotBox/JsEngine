@@ -3,15 +3,20 @@ import type {ProjectEntry} from "../project/projectFileSystem";
 import {
     baseNameOf,
     buildProjectTree,
+    duplicatePath,
+    duplicatePaths,
     extensionOf,
     fileNameProblem,
     findFolder,
     isAncestorFolder,
     joinProjectPath,
     normalizeProjectPath,
+    opensInEditor,
     parentFolderOf,
     projectFileKind,
+    projectFolderPaths,
     renamedPath,
+    sceneAndPrefabPaths,
     stemOf,
     uniqueChildPath,
 } from "./projectFiles";
@@ -105,5 +110,45 @@ describe("project tree", () => {
     test("files sit in their own folder", () => {
         expect(tree.files.map(entry => entry.path)).toEqual(["jsengine.project.json"]);
         expect(findFolder(tree, "art")!.files.map(entry => entry.path)).toEqual(["art/a.png"]);
+    });
+});
+
+describe("documents the editor opens", () => {
+    test("Open Scene lists scenes and prefabs only, sorted, with normalised paths", () => {
+        const entries = [file("scenes/b.scene.json"), folder("scenes"), file("./prefabs\\ship.prefab.json"), file("a.scene.json"), file("tuning.asset.json"), file("game.ts")];
+        expect(sceneAndPrefabPaths(entries)).toEqual(["a.scene.json", "prefabs/ship.prefab.json", "scenes/b.scene.json"]);
+    });
+
+    test("scenes, prefabs and data assets open in the editor; other files open elsewhere", () => {
+        expect((["scene", "prefab", "dataAsset", "mesh", "image", "code", "other"] as const).map(opensInEditor)).toEqual([true, true, true, false, false, false, false]);
+    });
+});
+
+describe("save folders", () => {
+    test("every folder that holds something is offered, the root first, with the extra folders and their parents", () => {
+        const entries = [file("jsengine.project.json"), folder("art"), file("scenes/levels/a.scene.json"), file("./prefabs/ship.prefab.json")];
+        expect(projectFolderPaths(entries)).toEqual(["", "art", "prefabs", "scenes", "scenes/levels"]);
+        expect(projectFolderPaths([], ["scenes/new"])).toEqual(["", "scenes", "scenes/new"]);
+    });
+});
+
+describe("duplicate names", () => {
+    test("a duplicate gets the first free number after the name, keeping compound extensions", () => {
+        const existing = new Set(["art/ship.png", "art/ship 1.png", "scenes/main.scene.json"]);
+        expect(duplicatePath(existing, "art/ship.png", false)).toBe("art/ship 2.png");
+        expect(duplicatePath(existing, "scenes/main.scene.json", false)).toBe("scenes/main 1.scene.json");
+        expect(duplicatePath(existing, "README", false)).toBe("README 1");
+    });
+
+    test("duplicating a numbered copy counts on from the unnumbered name instead of nesting numbers", () => {
+        const existing = new Set(["ship.png", "ship 1.png", "ship 2.png"]);
+        expect(duplicatePath(existing, "ship 1.png", false)).toBe("ship 3.png");
+        expect(duplicatePath(new Set(["7.png"]), "7.png", false)).toBe("7 1.png");
+    });
+
+    test("folders keep dots in their names, and a batch never hands out the same name twice", () => {
+        expect(duplicatePath(new Set(["v1.2"]), "v1.2", true)).toBe("v1.2 1");
+        const targets = duplicatePaths(new Set(["a.png", "art"]), [{path: "a.png", kind: "image"}, {path: "a 1.png", kind: "image"}, {path: "art", kind: "folder"}]);
+        expect(targets).toEqual(["a 1.png", "a 2.png", "art 1"]);
     });
 });

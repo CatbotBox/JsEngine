@@ -7,7 +7,7 @@ import {
     describeSchemaChange,
     deserializeInto,
     encodeDataAssetFields,
-    parentEntityOf,
+    NO_SCENE_ID,
     parseSceneDocument,
     sceneAssetPaths,
     SceneManager,
@@ -35,6 +35,7 @@ import type {
     EditorRequestMessage,
     EditorResponseMessage,
     EditorResult,
+    EditorSceneRef,
     EditorServiceState,
     EditorView,
     EditorWorldMessage,
@@ -43,15 +44,19 @@ import type {
     ImportSnapshotResult,
     InstantiateEntitiesRequest,
     InstantiateEntitiesResult,
+    ListEntitiesResult,
     LoadSceneRequest,
     LoadSceneResult,
     ReloadDataAssetResult,
     SaveSceneResult,
+    SetActiveSceneResult,
     SetFieldResult,
     SetResourceFieldRequest,
+    UnloadSceneResult,
 } from "../editorProtocol";
 import {GameplaySystemGate, GameplayTickCounterSystem} from "./gameplaySystemGate";
-import {describeSchemas, entitiesInCreationOrder, entityDetails, listEntities, parentOf, requireSceneEntity} from "./entityInspection";
+import {describeSchemas, entitiesInCreationOrder, entityDetails, entitySummaries, parentOf, requireSceneEntity, sceneRoots} from "./entityInspection";
+import {SceneMembership, serializeSceneRoots} from "./sceneMembership";
 import {
     addComponentTo,
     assetReferencesOf,
@@ -100,6 +105,7 @@ const PLAIN_STOP_TEXT = "The world was stopped";
 const SKIPPED_UNKNOWN_TYPES = "skip";
 const REPORTED_SCHEMA_CHANGES = "report";
 const OPENED_SCENE_MODE = "single";
+const ADDED_SCENE_MODE = "additive";
 const OPENED_SCENE_PERSISTENT_ENTITIES = "destroy";
 const NO_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [];
 
@@ -129,12 +135,16 @@ export class EditorWorldService {
     private viewBeforePlay: EditorView | undefined;
     private ticker: ReturnType<typeof setInterval> | undefined;
     private lastPlayTickMs = 0;
+    private tickCount = 0;
+    private tickMsTotal = 0;
     private pendingRequests: Promise<void> = Promise.resolve();
     private attached = true;
     private stoppedError: string | undefined;
     private readonly gate: GameplaySystemGate;
     private readonly tickCounter: GameplayTickCounterSystem;
     private readonly scenes: SceneManager;
+    private readonly membership: SceneMembership;
+    private readonly editedScenes = new Set<number>();
     private readonly assets: SceneAssetLoader;
     private readonly views: EditorViews;
     private readonly prefabs: PrefabLibrary;
@@ -151,6 +161,7 @@ export class EditorWorldService {
         this.gate = new GameplaySystemGate(world, options.gameplaySystems ?? NO_GAMEPLAY_SYSTEMS);
         this.tickCounter = world.getOrCreateSystem(GameplayTickCounterSystem);
         this.scenes = options.scenes ?? editorSceneManager(world, registry, options.preloadAssets);
+        this.membership = new SceneMembership(world, this.scenes);
         this.assets = this.scenes.assets;
         this.views = new EditorViews(world);
         this.prefabs = new PrefabLibrary(world, registry, this.assets);
@@ -236,10 +247,31 @@ export class EditorWorldService {
 
     private edit<T>(touched: readonly (Entity | undefined)[], action: () => T, touchedAfter: (result: T) => readonly (Entity | undefined)[] = () => NO_ENTITIES): T {
         return this.inGameView(() => {
+            const scenesBefore = this.scenesOf(touched);
             const result = action();
-            this.prefabs.refreshAround(liveOnly(this.world, [...touched, ...touchedAfter(result)]));
+            const after = liveOnly(this.world, [...touched, ...touchedAfter(result)]);
+            this.prefabs.refreshAround(after);
+            this.markScenesEdited([...scenesBefore, ...this.scenesOf(after)]);
             return result;
         });
+    }
+
+    private recordsSceneEdits(): boolean {
+        return this._mode === "edit";
+    }
+
+    private scenesOf(entities: readonly (Entity | undefined)[]): number[] {
+        if (!this.recordsSceneEdits()) return [];
+        return liveOnly(this.world, entities).map(entity => this.membership.sceneIdOf(entity));
+    }
+
+    private markScenesEdited(sceneIds: readonly number[]): void {
+        if (!this.recordsSceneEdits()) return;
+        for (const sceneId of sceneIds) this.editedScenes.add(sceneId);
+    }
+
+    private requireEditing(action: string): void {
+        if (this._mode !== "edit") throw new Error(`Cannot ${action} while the game runs; stop it first`);
     }
 
     private async preload(references: readonly SceneAssetReference[]): Promise<void> {
@@ -256,7 +288,7 @@ export class EditorWorldService {
             case "describeSchemas":
                 return this.inGameView(() => describeSchemas(world, registry));
             case "listEntities":
-                return this.inGameView(() => listEntities(world, registry));
+                return this.inGameView(() => this.listEntities());
             case "getEntity":
                 return this.inGameView(() => entityDetails(world, registry, request.entity));
             case "setField":
@@ -279,11 +311,14 @@ export class EditorWorldService {
                     return entityDetails(world, registry, request.entity);
                 });
             case "createEntity":
-                return this.edit([request.parent], () => entityDetails(world, registry, createEditorEntity(world, request.name, request.parent)));
+                return this.edit([request.parent], () => entityDetails(world, registry, createEditorEntity(world, request.name, request.parent)), created => [created.entity]);
             case "destroyEntity":
                 return this.inGameView(() => {
                     const parent = parentOf(world, requireSceneEntity(world, request.entity));
-                    return this.edit([parent], () => ({destroyed: destroyWithDescendants(world, request.entity)}));
+                    const scenes = this.scenesOf([request.entity]);
+                    const destroyed = this.edit([parent], () => ({destroyed: destroyWithDescendants(world, request.entity)}));
+                    this.markScenesEdited(scenes);
+                    return destroyed;
                 });
             case "setEnabled":
                 return this.edit([request.entity], () => {
@@ -298,8 +333,10 @@ export class EditorWorldService {
             case "setParent":
                 return this.inGameView(() => {
                     const previous = parentOf(world, requireSceneEntity(world, request.entity));
+                    const sceneBefore = this.membership.rootSceneOf(request.entity);
                     return this.edit([previous, request.parent ?? undefined, request.entity], () => {
                         setParent(world, request.entity, request.parent, request.siblingIndex);
+                        if (request.parent === null) this.membership.placeRoot(request.entity, sceneBefore);
                         return entityDetails(world, registry, request.entity);
                     });
                 });
@@ -318,9 +355,18 @@ export class EditorWorldService {
             case "getPrefabOverrides":
                 return this.inGameView(() => this.prefabs.overridesOf(request.entity));
             case "revertPrefabInstance":
-                return this.inGameView(() => this.prefabs.revert(request.entity, request.paths));
+                return this.inGameView(() => {
+                    const scenes = this.scenesOf([request.entity]);
+                    const reverted = this.prefabs.revert(request.entity, request.paths);
+                    this.markScenesEdited(scenes);
+                    return reverted;
+                });
             case "applyPrefabInstance":
-                return this.inGameView(() => ({documentText: documentText(this.prefabs.apply(request.entity))}));
+                return this.inGameView(() => {
+                    const applied = {documentText: documentText(this.prefabs.apply(request.entity))};
+                    this.markScenesEdited(this.scenesOf([request.entity]));
+                    return applied;
+                });
             case "updatePrefabInstances": {
                 const document = parseSceneDocument(request.documentText);
                 await this.preloadDocument(document);
@@ -344,9 +390,13 @@ export class EditorWorldService {
             case "getViewInfo":
                 return this.inGameView(() => this.views.viewInfo(request.view, request.entities ?? NO_ENTITIES));
             case "saveScene":
-                return this.inGameView(() => this.saveScene());
+                return this.inGameView(() => this.saveScene(request.scene));
             case "loadScene":
                 return await this.loadScene(request);
+            case "unloadScene":
+                return this.inGameView(() => this.unloadScene(request.sceneId));
+            case "setActiveScene":
+                return this.inGameView(() => this.setActiveScene(request.scene));
             case "exportSnapshot":
                 return this.inGameView(() => this.exportSnapshot());
             case "importSnapshot":
@@ -357,6 +407,8 @@ export class EditorWorldService {
                 return this.inGameView(() => this.changeMode(() => this.step()));
             case "describeAssetTypes":
                 return describeAssetTypes(registry);
+            case "getTickStats":
+                return {ticks: this.tickCount, tickMsTotal: this.tickMsTotal, timeMs: performance.now()};
             case "listSettings":
                 return this.inGameView(() => listSettings(world, registry));
             case "getResource":
@@ -411,7 +463,7 @@ export class EditorWorldService {
         return this.inGameView(() => {
             const parent = request.parent ?? null;
             if (parent !== null) requireSceneEntity(this.world, parent);
-            return this.edit([parent ?? undefined], () => {
+            const instantiated = this.edit([parent ?? undefined], () => {
                 const created = request.prefabSourcePath !== undefined
                     ? this.prefabs.instantiate(document, request.prefabSourcePath, parent, request.siblingIndex)
                     : instantiateDocument(this.world, this.registry, document, {
@@ -421,15 +473,70 @@ export class EditorWorldService {
                         unknownComponentTypes: SKIPPED_UNKNOWN_TYPES,
                         schemaChanges: REPORTED_SCHEMA_CHANGES,
                     });
+                if (parent === null && request.scene !== undefined) for (const root of created.roots) this.membership.placeRoot(root, request.scene);
                 return {roots: created.roots, entities: created.entities, report: created.report};
             });
+            this.markScenesEdited(this.scenesOf(instantiated.roots));
+            return instantiated;
         });
     }
 
-    private saveScene(): SaveSceneResult {
+    private listEntities(): ListEntitiesResult {
+        return {
+            entities: entitySummaries(this.world, this.registry, this.membership.sceneLookup()),
+            scenes: this.membership.loadedScenes(),
+            activeSceneId: this.membership.activeSceneId(),
+            editedSceneIds: [...this.editedScenes],
+        };
+    }
+
+    private savedDocument(document: SceneDocument): string {
+        return documentText(withoutDataAssetResources(this.world, this.registry, withoutSceneMembership(document)));
+    }
+
+    private saveWorld(sceneId: number): SaveSceneResult {
         const saved = serializeWorld(this.world, this.registry);
-        const document = withoutDataAssetResources(this.world, this.registry, withoutSceneMembership(saved.document));
-        return {sceneText: documentText(document), report: saved.report};
+        return {sceneText: this.savedDocument(saved.document), report: saved.report, sceneId};
+    }
+
+    private saveScene(scene: EditorSceneRef | undefined): SaveSceneResult {
+        if (scene === undefined) return this.saveWorld(this.membership.activeSceneId());
+        const sceneId = this.savedSceneId(scene);
+        this.editedScenes.delete(scene.id);
+        this.editedScenes.delete(sceneId);
+        const roots = this.membership.memberRoots(sceneId);
+        if (roots.length === sceneRoots(this.world).length) return this.saveWorld(sceneId);
+        const saved = serializeSceneRoots(this.world, this.registry, roots, sceneId === this.membership.activeSceneId());
+        return {sceneText: this.savedDocument(saved.document), report: saved.report, sceneId};
+    }
+
+    private savedSceneId(scene: EditorSceneRef): number {
+        const path = scene.path ?? undefined;
+        const loaded = this.membership.loadedScene(scene.id);
+        if (loaded !== undefined) {
+            if (loaded.path !== path) this.membership.renameScene(loaded.id, path);
+            return loaded.id;
+        }
+        const holdsUnsavedRoots = scene.id === NO_SCENE_ID && this.scenes.active() === undefined && this.membership.untaggedRoots().length > 0;
+        return holdsUnsavedRoots ? this.membership.createActiveScene(path).id : scene.id;
+    }
+
+    private unloadScene(sceneId: number): UnloadSceneResult {
+        this.requireEditing("unload a scene");
+        this.membership.adoptUntaggedRoots();
+        const loaded = this.membership.loadedScene(sceneId);
+        if (loaded !== undefined) this.scenes.unload(loaded);
+        this.editedScenes.delete(sceneId);
+        return {activeSceneId: this.membership.activeSceneId()};
+    }
+
+    private setActiveScene(scene: EditorSceneRef): SetActiveSceneResult {
+        this.requireEditing("change the active scene");
+        this.membership.adoptUntaggedRoots();
+        const loaded = this.membership.loadedScene(scene.id);
+        if (loaded === undefined) return {sceneId: this.membership.createActiveScene(scene.path ?? undefined).id};
+        this.scenes.setActive(loaded);
+        return {sceneId: loaded.id};
     }
 
     private exportSnapshot(): ExportSnapshotResult {
@@ -452,13 +559,16 @@ export class EditorWorldService {
         });
 // Old entities go only after the new document loaded, so a bad document leaves the scene as it was.
         destroyAllEntities(this.world, previous);
+        this.editedScenes.clear();
         this.clearWorldStop();
         return loaded;
     }
 
     private async loadScene(request: LoadSceneRequest): Promise<LoadSceneResult> {
         const document = parseSceneDocument(request.sceneText);
+        if (request.additive === true) this.requireEditing("add a scene");
         await this.preloadDocument(document);
+        if (request.additive === true) return this.inGameView(() => this.addScene(document, request.path));
         return this.inGameView(() => this.changeMode(() => {
             this.abandonPlay();
             const loaded = this.scenes.loadDocument(document, {
@@ -466,9 +576,17 @@ export class EditorWorldService {
                 persistentEntities: OPENED_SCENE_PERSISTENT_ENTITIES,
                 path: request.path,
             });
+            this.editedScenes.clear();
             this.clearWorldStop();
-            return {entityCount: loaded.entities.length, report: loaded.report};
+            return {entityCount: loaded.entities.length, report: loaded.report, sceneId: loaded.handle.id};
         }));
+    }
+
+    private addScene(document: SceneDocument, path: string | undefined): LoadSceneResult {
+        this.requireEditing("add a scene");
+        this.membership.adoptUntaggedRoots();
+        const loaded = this.scenes.loadDocument(document, {mode: ADDED_SCENE_MODE, path});
+        return {entityCount: loaded.entities.length, report: loaded.report, sceneId: loaded.handle.id};
     }
 
     private async importSnapshot(request: ImportSnapshotRequest): Promise<ImportSnapshotResult> {
@@ -521,17 +639,9 @@ export class EditorWorldService {
         }
     }
 
-    private moveUnownedRootsToActiveScene(): void {
-        const active = this.scenes.active();
-        if (active === undefined) return;
-        for (const entity of entitiesInCreationOrder(this.world)) {
-            if (parentEntityOf(this.world, entity) === undefined && this.scenes.sceneOf(entity) === undefined) this.scenes.moveToScene(entity, active);
-        }
-    }
-
     private leaveEditMode(): void {
         if (this._mode !== "edit") return;
-        this.moveUnownedRootsToActiveScene();
+        this.membership.adoptUntaggedRoots();
         this.snapshot = serializeWorld(this.world, this.registry);
         this.viewBeforePlay = this.views.view;
     }
@@ -616,6 +726,7 @@ export class EditorWorldService {
     private tick(): void {
         if (this.stoppedError !== undefined) return;
         const playing = this._mode === "play";
+        const startedMs = performance.now();
         try {
             this.views.apply();
             if (playing) {
@@ -628,6 +739,8 @@ export class EditorWorldService {
                 this.gate.suspend();
                 this.world.step();
             }
+            this.tickCount++;
+            this.tickMsTotal += performance.now() - startedMs;
         } catch (error) {
             console.error(`Editor: the ${this._mode} tick failed, so the editor stopped ticking the world: ${errorText(error)}`);
             this.worldStopped(error);
