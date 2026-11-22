@@ -4,6 +4,7 @@ import {readFile, writeFile} from "fs/promises";
 import {join} from "path";
 import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "./webDistFiles";
 import {createProjectServer, locateBun} from "./projectServer";
+import {renderBackendMatches, requestedRenderBackend} from "./smokeBackend";
 import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../../editor/project/windowZoom";
 
 const SCHEME = "app";
@@ -127,8 +128,10 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     if (screenshotPath !== undefined) await writeFile(screenshotPath, image.toPNG());
     const drawnPixels = drawnPixelCount(image.toBitmap());
     const editorReady = editorState === undefined || editorState === EDITOR_READY_STATE;
-    const passed = report.crossOriginIsolated && report.canvas && editorReady && drawnPixels >= MIN_DRAWN_PIXELS && pageErrors.length === 0;
-    console.log(JSON.stringify({page, ...report, editorState, drawnPixels, pageErrors, passed}));
+    const requestedBackend = requestedRenderBackend(page);
+    const backendMatches = renderBackendMatches(requestedBackend, report.renderBackend);
+    const passed = report.crossOriginIsolated && report.canvas && editorReady && backendMatches && drawnPixels >= MIN_DRAWN_PIXELS && pageErrors.length === 0;
+    console.log(JSON.stringify({page, ...report, requestedBackend, editorState, drawnPixels, pageErrors, passed}));
     app.exit(passed ? 0 : 1);
 }
 
