@@ -18,6 +18,7 @@ import {PARENT_COMPONENT_NAME, withoutDetachedParents} from "./sceneSerializatio
 import type {UnknownComponentTypePolicy} from "./sceneSerialization";
 import {DEFAULT_SCHEMA_CHANGE_POLICY} from "./schemaChanges";
 import type {SchemaChangePolicy} from "./schemaChanges";
+import {unregisteredTypeMessage} from "./unregisteredType";
 
 export interface PrefabSpawnerSettings {
     readonly unknownComponentTypes?: UnknownComponentTypePolicy;
@@ -224,8 +225,8 @@ class PrefabCompiler {
         for (const componentName of Object.keys(record.components)) {
             const schema = this.registry.byName(componentName);
             if (schema === undefined) {
-                if (this.unknownComponentTypes === "skip") continue;
-                throw new Error(`${this.label(index, componentName)}: the component type "${componentName}" is not registered`);
+                if (this.unknownComponentTypes === "skip" || this.registry.isOtherBackendTypeName(componentName)) continue;
+                throw new Error(`${this.label(index, componentName)}: ${unregisteredTypeMessage("component", componentName)}`);
             }
             if (schema.persistence === "implied") continue;
             const template = new ComponentTemplate(schema, this.fieldTemplates(schema, record.components[componentName], this.label(index, componentName)));

@@ -1,16 +1,26 @@
 import * as ts from "typescript";
 import {PROJECT_MANIFEST_FILE, SCHEMAS_MANIFEST_KEY} from "../../engine/project/projectManifest";
+import {RENDER_BACKEND_KINDS} from "../../engine/rendering/renderBackend";
+import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 import {ENGINE_ASSET_TYPES} from "../../engine/scene/assetTypes";
 import {STATIC_SCHEMA_KEY} from "../../engine/scene/fieldSchema";
-import {GENERATED_SCHEMAS_EXPORT, GENERATED_SCHEMAS_FILE} from "../projectLayout";
+import {
+    GENERATED_SCHEMAS_EXPORT,
+    GENERATED_SCHEMAS_FILE,
+    generatedBackendSchemasExport,
+    generatedBackendSchemasFile,
+} from "../projectLayout";
+import type {CatalogSchema, SourceExport} from "./engineCatalog";
 import {generatedFileHeader} from "./generatedHeader";
-import type {ProjectGenerator} from "./generatedHeader";
+import type {GeneratedSource, ProjectGenerator} from "./generatedHeader";
 import {ImportTable} from "./generatedImports";
 import {compareText, DEFAULT_EXPORT_NAME, isInside, ProjectSources, SOURCE_EXTENSION_PATTERN} from "./projectSources";
 import type {ExportReference} from "./projectSources";
+import {projectReachability} from "./reachability";
+import type {ProjectReachability, ProjectSchemaSummary} from "./reachability";
 
 export const SCHEMAS_GENERATOR_NAME = "schemas";
-export const SCHEMAS_GENERATOR_VERSION = 2;
+export const SCHEMAS_GENERATOR_VERSION = 3;
 export const GENERATED_HEADER = generatedFileHeader(SCHEMAS_GENERATOR_NAME, SCHEMAS_GENERATOR_VERSION);
 export const UNSUPPORTED_TYPE_WARNING = "unsupported type";
 export const RECURSIVE_TYPE_WARNING = "recursive type";
@@ -28,7 +38,7 @@ const ENGINE_SCENE_MODULE = "scene";
 const PRIVATE_NAME_PREFIX = "_";
 const ARRAY_ELEMENT_SUFFIX = "[]";
 const SCHEMA_ENTRY_TYPE = "SchemaEntry";
-const RESERVED_LOCAL_NAMES: ReadonlySet<string> = new Set([SCHEMA_ENTRY_TYPE, GENERATED_SCHEMAS_EXPORT]);
+const OTHER_BACKEND_TYPES_KIND = "otherBackendTypes";
 const ENGINE_COMPONENT_CLASS = "Component";
 const ENGINE_RESOURCE_CLASS = "Resource";
 const ENGINE_FIELD_ALIAS_TYPE = "FieldAlias";
@@ -85,6 +95,13 @@ interface FieldTyping {
 interface GeneratedSchema {
     readonly schemaClass: SchemaClass;
     readonly fields: readonly GeneratedField[];
+}
+
+export interface ProjectSchemaAnalysis {
+    readonly typings: readonly FieldTyping[];
+    readonly schemas: readonly GeneratedSchema[];
+    readonly warnings: readonly string[];
+    readonly summary: ProjectSchemaSummary;
 }
 
 export interface GenerateProjectSchemasOptions {
@@ -220,7 +237,7 @@ class SchemaGenerator {
         this.program = sources.program;
     }
 
-    public generate(files: readonly string[], exclude: readonly string[]): GeneratedProjectSchemas {
+    public analyze(files: readonly string[], exclude: readonly string[]): ProjectSchemaAnalysis {
         const schemaClasses = this.uniqueByName(files.flatMap(file => this.schemaClassesIn(file)), schemaClass => schemaClass.className);
         const fieldTypings = this.uniqueByName(files.flatMap(file => this.fieldTypingsIn(file)), typing => typing.typeName);
         const excluded = new Set(exclude);
@@ -236,7 +253,7 @@ class SchemaGenerator {
             if (!matched.has(name)) this.warn(`${SCHEMAS_MANIFEST_KEY}.exclude: "${name}" ${UNMATCHED_EXCLUDE_WARNING}; remove it from ${PROJECT_MANIFEST_FILE}`);
         }
         const schemas = keptClasses.map(schemaClass => ({schemaClass, fields: schemaClass.hasOwnSchema ? [] : this.schemaFields(schemaClass)}));
-        return {source: this.render(keptTypings, schemas), warnings: this.warnings};
+        return {typings: keptTypings, schemas, warnings: this.warnings, summary: summaryOf(schemas)};
     }
 
     private warn(message: string): void {
@@ -640,28 +657,78 @@ class SchemaGenerator {
         return {...struct, ...(typeName !== undefined ? {typeName} : {}), ...(classInfo !== undefined ? {create: classInfo.create} : {})};
     }
 
-    private moduleSpecifier(target: string): string {
-        return this.sources.importSpecifier(GENERATED_SCHEMAS_FILE, target);
-    }
+}
 
-    private render(typings: readonly FieldTyping[], schemas: readonly GeneratedSchema[]): string {
-        const imports = new ImportTable(reference => this.moduleSpecifier(reference.fileName.replace(SOURCE_EXTENSION_PATTERN, "")), RESERVED_LOCAL_NAMES);
-        for (const typing of typings) imports.add(typing.reference);
-        for (const schema of schemas) imports.add(schema.schemaClass.reference);
-        for (const schema of schemas) for (const field of schema.fields) collectClassReferences(field, imports);
-        const engineScene = this.moduleSpecifier(this.sources.engineModule(ENGINE_SCENE_MODULE));
-        const declaration = `export const ${GENERATED_SCHEMAS_EXPORT}: readonly ${SCHEMA_ENTRY_TYPE}[] = [`;
-        const entries = [...typings.map(typing => renderFieldTyping(typing, imports)), ...schemas.map(schema => renderEntry(schema, imports))];
-        const list = entries.length === 0 ? [`${declaration}];`] : [declaration, ...entries, "];"];
-        const lines = [
-            GENERATED_HEADER,
-            `import type {${SCHEMA_ENTRY_TYPE}} from ${JSON.stringify(engineScene)};`,
-            ...imports.importLines(),
-            "",
-            ...list,
-        ];
-        return lines.join(LINE_BREAK) + LINE_BREAK;
-    }
+function collectAssetKinds(type: GeneratedType, kinds: Set<string>): void {
+    if (type.kind === "asset") kinds.add(type.assetType);
+    if (type.kind === "list") collectAssetKinds(type.element, kinds);
+    if (type.kind === "struct") for (const field of type.fields) collectAssetKinds(field, kinds);
+}
+
+function summaryOf(schemas: readonly GeneratedSchema[]): ProjectSchemaSummary {
+    const assetKinds = new Set<string>();
+    for (const schema of schemas) for (const field of schema.fields) collectAssetKinds(field, assetKinds);
+    return {
+        typeNames: schemas.map(schema => schema.schemaClass.className),
+        assetKinds: [...assetKinds],
+        hasOwnSchemaClasses: schemas.some(schema => schema.schemaClass.hasOwnSchema),
+    };
+}
+
+function sourceReference(sources: ProjectSources, source: SourceExport): ExportReference {
+    return {fileName: sources.sourceModule(...source.path), exportName: source.name};
+}
+
+function importTableFor(sources: ProjectSources, file: string, exportName: string): ImportTable {
+    return new ImportTable(reference => sources.importSpecifier(file, reference.fileName.replace(SOURCE_EXTENSION_PATTERN, "")), [SCHEMA_ENTRY_TYPE, exportName]);
+}
+
+function schemaListText(sources: ProjectSources, file: string, exportName: string, imports: ImportTable, entries: readonly string[]): string {
+    const engineScene = sources.importSpecifier(file, sources.engineModule(ENGINE_SCENE_MODULE));
+    const declaration = `export const ${exportName}: readonly ${SCHEMA_ENTRY_TYPE}[] = [`;
+    const list = entries.length === 0 ? [`${declaration}];`] : [declaration, ...entries, "];"];
+    const lines = [
+        GENERATED_HEADER,
+        `import type {${SCHEMA_ENTRY_TYPE}} from ${JSON.stringify(engineScene)};`,
+        ...imports.importLines(),
+        "",
+        ...list,
+    ];
+    return lines.join(LINE_BREAK) + LINE_BREAK;
+}
+
+function catalogEntryLines(sources: ProjectSources, schemas: readonly CatalogSchema[], imports: ImportTable): string[] {
+    const references = schemas.map(schema => sourceReference(sources, schema.source));
+    for (const reference of references) imports.add(reference);
+    return references.map(reference => `${INDENT}${imports.localName(reference)},`);
+}
+
+function renderProjectSchemas(sources: ProjectSources, analysis: ProjectSchemaAnalysis, engineSchemas: readonly CatalogSchema[]): string {
+    const imports = importTableFor(sources, GENERATED_SCHEMAS_FILE, GENERATED_SCHEMAS_EXPORT);
+    const engineEntries = catalogEntryLines(sources, engineSchemas, imports);
+    for (const typing of analysis.typings) imports.add(typing.reference);
+    for (const schema of analysis.schemas) imports.add(schema.schemaClass.reference);
+    for (const schema of analysis.schemas) for (const field of schema.fields) collectClassReferences(field, imports);
+    const entries = [
+        ...engineEntries,
+        ...analysis.typings.map(typing => renderFieldTyping(typing, imports)),
+        ...analysis.schemas.map(schema => renderEntry(schema, imports)),
+    ];
+    return schemaListText(sources, GENERATED_SCHEMAS_FILE, GENERATED_SCHEMAS_EXPORT, imports, entries);
+}
+
+function renderOtherBackendTypes(names: readonly string[]): string[] {
+    if (names.length === 0) return [];
+    const list = `[${names.map(name => JSON.stringify(name)).join(", ")}]`;
+    return [`${INDENT}${renderObject([["kind", JSON.stringify(OTHER_BACKEND_TYPES_KIND)], ["names", list]])},`];
+}
+
+function renderBackendSchemas(sources: ProjectSources, reachability: ProjectReachability, kind: RenderBackendKind): GeneratedSource {
+    const file = generatedBackendSchemasFile(kind);
+    const exportName = generatedBackendSchemasExport(kind);
+    const imports = importTableFor(sources, file, exportName);
+    const entries = [...catalogEntryLines(sources, reachability.hostSchemas(kind), imports), ...renderOtherBackendTypes(reachability.otherBackendTypeNames(kind))];
+    return {file, source: schemaListText(sources, file, exportName, imports, entries)};
 }
 
 function collectClassReferences(type: GeneratedType, imports: ImportTable): void {
@@ -727,20 +794,40 @@ function renderEntry(schema: GeneratedSchema, imports: ImportTable): string {
     return `${INDENT}${renderObject(entries)},`;
 }
 
-export function generateProjectSchemas(projectFolder: string, options: GenerateProjectSchemasOptions): GeneratedProjectSchemas {
-    return schemasOf(ProjectSources.read(projectFolder, options.repoRoot), options.exclude ?? NO_EXCLUDED_NAMES);
+const analysesBySources = new WeakMap<ProjectSources, ProjectSchemaAnalysis>();
+
+export function projectSchemaAnalysis(sources: ProjectSources): ProjectSchemaAnalysis {
+    const known = analysesBySources.get(sources);
+    if (known !== undefined) return known;
+    const analysis = new SchemaGenerator(sources).analyze(sources.files, sources.manifest?.schemas?.exclude ?? NO_EXCLUDED_NAMES);
+    analysesBySources.set(sources, analysis);
+    return analysis;
 }
 
-function schemasOf(sources: ProjectSources, exclude: readonly string[]): GeneratedProjectSchemas {
-    return new SchemaGenerator(sources).generate(sources.files, exclude);
+export function projectReachabilityOf(sources: ProjectSources): ProjectReachability {
+    return projectReachability(sources, projectSchemaAnalysis(sources).summary);
+}
+
+export function generateProjectSchemas(projectFolder: string, options: GenerateProjectSchemasOptions): GeneratedProjectSchemas {
+    const sources = ProjectSources.read(projectFolder, options.repoRoot);
+    const analysis = new SchemaGenerator(sources).analyze(sources.files, options.exclude ?? NO_EXCLUDED_NAMES);
+    const reachability = projectReachability(sources, analysis.summary);
+    return {source: renderProjectSchemas(sources, analysis, reachability.engineSchemas), warnings: [...analysis.warnings, ...reachability.warnings]};
 }
 
 export const SCHEMAS_GENERATOR: ProjectGenerator = {
     name: SCHEMAS_GENERATOR_NAME,
     version: SCHEMAS_GENERATOR_VERSION,
-    files: [GENERATED_SCHEMAS_FILE],
+    files: [GENERATED_SCHEMAS_FILE, ...RENDER_BACKEND_KINDS.map(generatedBackendSchemasFile)],
     generate: sources => {
-        const {source, warnings} = schemasOf(sources, sources.manifest?.schemas?.exclude ?? NO_EXCLUDED_NAMES);
-        return {sources: [{file: GENERATED_SCHEMAS_FILE, source}], warnings};
+        const analysis = projectSchemaAnalysis(sources);
+        const reachability = projectReachabilityOf(sources);
+        return {
+            sources: [
+                {file: GENERATED_SCHEMAS_FILE, source: renderProjectSchemas(sources, analysis, reachability.engineSchemas)},
+                ...RENDER_BACKEND_KINDS.map(kind => renderBackendSchemas(sources, reachability, kind)),
+            ],
+            warnings: [...analysis.warnings, ...reachability.warnings],
+        };
     },
 };

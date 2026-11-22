@@ -1,16 +1,15 @@
+import {registerBuiltinImageDecoders} from "../../engine/assets/image/builtinDecoders";
 import {App} from "../../engine/core";
 import type {DebugWorld, System, SystemCtor} from "../../engine/core";
 import type {Platform} from "../../engine/platform/platform";
 import {Mesh} from "../../engine/rendering/3d/mesh";
-import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
-import {installPixelsBackend} from "../../backends/pixels/pixelsBackend";
-import {PIXELS_STANDARD_PASSES} from "../../backends/pixels/pixelsStandardPasses";
-import {installGpuBackend} from "../../backends/gpu/gpuBackend";
-import {GPU_STANDARD_PASSES} from "../../backends/gpu/gpuStandardPasses";
 import {Input} from "../../engine/input";
+import {TerminalInput} from "../../hosts/terminalInput/terminalInput";
+import type {KeyReporting} from "../../hosts/terminalInput/terminalInput";
 import {PageConnection} from "../../hosts/web/worldWorkerPlatform";
 import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
-import {gpuCanvasPresenter, requestGpuDevice} from "../../hosts/web/gpuWorldDevice";
+import {TerminalInputChannel} from "./terminalInputChannel";
+import {EDITOR_SCHEMAS} from "../world/editorSchemas";
 import {attachEditorWorldService} from "../world/editorWorldService";
 import type {EditorServiceScope} from "../world/editorWorldService";
 import {ProjectFileSource} from "../project/projectFileSource";
@@ -28,15 +27,17 @@ type SystemList = readonly SystemCtor<System>[];
 
 export interface ProjectSystemLists {
     readonly shared: SystemList;
-    readonly backends: Readonly<Record<RenderBackendKind, SystemList>>;
+    readonly backend: SystemList;
 }
+
+export type EditorBackendInstaller = (world: DebugWorld, page: PageConnection) => Promise<void>;
 
 const MESH_EXTENSION = ".obj";
 const BYTES_PER_MB = 1024 * 1024;
 const MB_DECIMALS = 1;
-const GPU_BACKEND: RenderBackendKind = "gpu";
-const PIXELS_BACKEND: RenderBackendKind = "pixels";
 const SKIPPED_UNKNOWN_TYPES = "skip";
+const TERMINAL_MOUSE_REPORTING = true;
+const TERMINAL_KEY_REPORTING: KeyReporting = "legacy";
 const REPORTED_SCHEMA_CHANGES = "report";
 
 function describeError(error: unknown): string {
@@ -95,28 +96,35 @@ export async function preloadProjectAssets(files: ProjectFileSource, platform: P
     }
 }
 
-async function installRenderBackend(world: DebugWorld, page: PageConnection): Promise<RenderBackendKind> {
-    if (page.renderBackend() !== GPU_BACKEND) {
-        installPixelsBackend(world, page.pixelPresenter(), PIXELS_STANDARD_PASSES);
-        return PIXELS_BACKEND;
-    }
-    const gpu = await requestGpuDevice(page);
-    installGpuBackend(world, gpu, gpuCanvasPresenter(page, gpu), GPU_STANDARD_PASSES);
-    return GPU_BACKEND;
-}
-
-async function startProjectWorld(scope: ProjectEditorWorkerScope, page: PageConnection, files: ProjectFileSource, startProject: StartProject, systemLists: ProjectSystemLists): Promise<void> {
+async function startProjectWorld(
+    scope: ProjectEditorWorkerScope,
+    page: PageConnection,
+    files: ProjectFileSource,
+    startProject: StartProject,
+    systemLists: ProjectSystemLists,
+    installBackend: EditorBackendInstaller,
+): Promise<void> {
+    registerBuiltinImageDecoders();
     const world = new App({platform: page.platform}).createDebugWorld();
-    const backend = await installRenderBackend(world, page);
-    const backendSystems = systemLists.backends[backend];
+    await installBackend(world, page);
+    const backendSystems = systemLists.backend;
     await files.whenListed();
-    page.connectInput(world.resources.getOrCreate(Input));
+    const input = world.resources.getOrCreate(Input);
+    page.connectInput(input);
+    new TerminalInput({
+        terminal: new TerminalInputChannel(scope),
+        platform: page.platform,
+        sink: input,
+        mouse: TERMINAL_MOUSE_REPORTING,
+        keyReporting: TERMINAL_KEY_REPORTING,
+    }).start();
     const assetFiles = new SetupStatusAssetFiles(files, page);
     const preloadAssets = (paths: readonly string[]) => preloadProjectAssets(files, world.platform, paths);
     const game = await startProject(world, {
         files: assetFiles,
         preload: preloadAssets,
         backendSystems,
+        hostSchemas: EDITOR_SCHEMAS,
         unknownComponentTypes: SKIPPED_UNKNOWN_TYPES,
         schemaChanges: REPORTED_SCHEMA_CHANGES,
     });
@@ -129,12 +137,12 @@ async function startProjectWorld(scope: ProjectEditorWorkerScope, page: PageConn
     });
 }
 
-export function runProjectEditorWorker(startProject: StartProject, systemLists: ProjectSystemLists): void {
+export function runProjectEditorWorker(startProject: StartProject, systemLists: ProjectSystemLists, installBackend: EditorBackendInstaller): void {
     const scope = globalThis as unknown as ProjectEditorWorkerScope;
     const files = new ProjectFileSource(scope);
     void PageConnection.open(scope, files).then(async page => {
         try {
-            await startProjectWorld(scope, page, files, startProject, systemLists);
+            await startProjectWorld(scope, page, files, startProject, systemLists, installBackend);
         } catch (error) {
             console.error(error);
             page.fail(error);

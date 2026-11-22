@@ -1,14 +1,18 @@
 import {createElement} from "./dom";
 
-export interface MenuAction {
+interface MenuEntry {
     readonly label: string;
+    readonly checked?: boolean;
+    readonly title?: string;
+}
+
+export interface MenuAction extends MenuEntry {
     readonly shortcut?: string;
     readonly disabled?: boolean;
     readonly run: () => void;
 }
 
-export interface MenuSubmenu {
-    readonly label: string;
+export interface MenuSubmenu extends MenuEntry {
     readonly items: readonly MenuItem[];
 }
 
@@ -18,6 +22,10 @@ export type MenuItem = MenuAction | MenuSubmenu | typeof MENU_SEPARATOR;
 
 const VIEWPORT_MARGIN_PX = 4;
 const SUBMENU_ARROW = "▸";
+const CHECK_MARK = "✓";
+const UNCHECKED_MARK = "";
+const MENU_ITEM_ROLE = "menuitem";
+const CHECKABLE_ROLE = "menuitemradio";
 
 function isSubmenu(item: MenuAction | MenuSubmenu): item is MenuSubmenu {
     return "items" in item;
@@ -56,7 +64,12 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
         }
         const entry = createElement(document, "button", "popup-menu-item");
         entry.type = "button";
-        entry.setAttribute("role", "menuitem");
+        entry.setAttribute("role", item.checked === undefined ? MENU_ITEM_ROLE : CHECKABLE_ROLE);
+        if (item.checked !== undefined) {
+            entry.setAttribute("aria-checked", String(item.checked));
+            entry.append(createElement(document, "span", "popup-menu-check", item.checked ? CHECK_MARK : UNCHECKED_MARK));
+        }
+        if (item.title !== undefined) entry.title = item.title;
         entry.append(createElement(document, "span", "popup-menu-label", item.label));
         if (isSubmenu(item)) {
             entry.disabled = item.items.length === 0;

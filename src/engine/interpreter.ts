@@ -1,21 +1,20 @@
-﻿export type SupportedInterpreters =
+﻿import {optionalFeature} from "./platform/platform";
+
+export type SupportedInterpreters =
     "Node" |
     "Bun" |
     "Browser" |
     "Unknown"
 
-const versions = typeof process !== "undefined" ? process.versions : undefined;
-
-let interpreter: SupportedInterpreters
-if (versions?.bun) {
-    interpreter = "Bun";
-} else if (versions?.node) {
-    interpreter = "Node";
-} else if (typeof navigator !== "undefined") {
-    interpreter = "Browser";
-} else {
+export function currentInterpreter(): SupportedInterpreters {
+    const nodeCompatible = optionalFeature("node", (): SupportedInterpreters | undefined => {
+        const versions = typeof process !== "undefined" ? process.versions : undefined;
+        if (versions?.bun) return "Bun";
+        if (versions?.node) return "Node";
+        return undefined;
+    });
+    if (nodeCompatible !== undefined) return nodeCompatible;
+    if (optionalFeature("dom", () => typeof navigator !== "undefined") === true) return "Browser";
     console.warn("Running in an unknown environment");
-    interpreter = "Unknown"
+    return "Unknown";
 }
-
-export const CurrentInterpreter: SupportedInterpreters = interpreter;

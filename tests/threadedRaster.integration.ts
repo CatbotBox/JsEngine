@@ -1,4 +1,5 @@
 ﻿import {existsSync} from "fs";
+import {registerBuiltinImageDecoders} from "../src/engine/assets/image/builtinDecoders";
 import {MeshRasterizer, RasterWorkerPool} from "../src/engine/rendering/3d/software";
 import {CellResolveTarget} from "../src/backends/cells/3d/cellResolveTarget";
 import {ScreenBuffer} from "../src/backends/cells/cellGrid";
@@ -15,6 +16,8 @@ import {browserWorkerFactory} from "../src/hosts/web";
 import {AnsiCellEncoder, nodePlatform} from "../src/hosts/terminal";
 import type {WorkerFactory} from "../src/engine/platform";
 import {WHITE_RGB, PACKED_RGB_MASK} from "../src/engine/rendering/packedRgb";
+
+registerBuiltinImageDecoders();
 
 const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
 const WORKERS = 3;

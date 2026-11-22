@@ -1,4 +1,5 @@
 import {describe, expect, test} from "../testing/harness";
+import {registerBuiltinImageDecoders} from "../assets/image/builtinDecoders";
 import {MemoryPlatform} from "../testing/memoryPlatform";
 import {NULL_ENTITY, Resource, World} from "../core";
 import type {Entity} from "../core";
@@ -57,6 +58,8 @@ function document(entities: SceneDocument["entities"], resources?: SceneDocument
     if (resources !== undefined) result.resources = resources;
     return result;
 }
+
+registerBuiltinImageDecoders();
 
 describe("scene resources", () => {
     test("registered resources that exist are saved with entity references as scene ids; absent and unregistered ones are not", () => {

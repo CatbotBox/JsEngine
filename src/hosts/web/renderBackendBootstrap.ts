@@ -49,6 +49,7 @@ export function chooseRenderBackend(requested: RenderBackendKind, {gpuScript, we
 }
 
 export async function webGpuUsable(nav: WebGpuNavigator, canvas: OffscreenTransferCanvas): Promise<boolean> {
+    if (typeof JSENGINE_HAS_GPU !== "undefined" && !JSENGINE_HAS_GPU) return false;
     try {
         if (typeof canvas.transferControlToOffscreen !== "function") return false;
         const gpu = nav.gpu;

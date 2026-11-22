@@ -1,6 +1,7 @@
 import type {System, SystemCtor, World} from "../../engine/core";
 import {Input} from "../../engine/input";
 import type {StartProject} from "../../engine/project/startGame";
+import type {SchemaEntry} from "../../engine/scene/schemaEntries";
 import type {PreloadedFileSource} from "./preloadedFileSource";
 import {projectFilePreload} from "./projectFilePreload";
 import {WebProjectAssetFiles} from "./webProjectAssets";
@@ -10,6 +11,7 @@ export interface WorkerProject {
     readonly directory: string;
     readonly startProject: StartProject;
     readonly backendSystems: readonly SystemCtor<System>[];
+    readonly hostSchemas: readonly SchemaEntry[];
 }
 
 export async function runProjectInWorker(world: World, page: PageConnection, files: PreloadedFileSource, project: WorkerProject): Promise<void> {
@@ -20,6 +22,7 @@ export async function runProjectInWorker(world: World, page: PageConnection, fil
         preload: projectFilePreload(files, project.directory),
         files: assets,
         backendSystems: project.backendSystems,
+        hostSchemas: project.hostSchemas,
     });
     await assets.whenIdle();
     assets.stopReporting();

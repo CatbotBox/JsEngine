@@ -57,14 +57,19 @@ export {ComponentSchemaRegistry, STATIC_SCHEMA_KEY} from "./componentSchemaRegis
 export type {GeneratedComponentOptions} from "./componentSchemaRegistry";
 export {registerSchemaEntries} from "./schemaEntries";
 export type {
+    AssetTypeEntry,
     ComponentClassEntry,
+    ComponentSchemaEntry,
     FieldAliasEntry,
     FieldTypeEntry,
     GeneratedComponentEntry,
     GeneratedResourceEntry,
+    OtherBackendTypesEntry,
     ResourceClassEntry,
+    ResourceSchemaEntry,
     SchemaEntry,
 } from "./schemaEntries";
+export {SCENE_MANAGER_SCHEMAS} from "./schemas";
 export {
     ENGINE_ASSET_TYPES,
     MESH_ASSET_TYPE,
@@ -96,9 +101,10 @@ export type {DataAssetReloaded, DataAssetSchemaChanges, DataAssetsSettings} from
 export {DEFAULT_SCHEMA_CHANGE_POLICY, describeSchemaChange, SchemaChangeCollector} from "./schemaChanges";
 export {
     ENGINE_COMPONENT_CATEGORIES,
+    ENGINE_SCHEMAS,
     registerEngineComponentSchemas,
-    SPRITE_PATTERN_COLOR_FIELD_TYPE,
     SPRITE_PATTERN_COLOR_TYPE_NAME,
+    spritePatternColorFieldType,
 } from "./engineComponentSchemas";
 export {
     INPUT_MAP_ACTION_FIELD_TYPE,

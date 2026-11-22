@@ -25,6 +25,7 @@ const BOTTOM_TABS: readonly BottomTab[] = ["project", "console", "settings", "as
 const BOTTOM_TAB_LABELS: Readonly<Record<BottomTab, string>> = {project: "Project", console: "Console", settings: "Settings", assets: "Data Assets"};
 const VIEW_TAB_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene", game: "Game"};
 const VIEW_TABS: readonly EditorView[] = ["scene", "game"];
+const GAME_VIEW: EditorView = "game";
 const CSS_VARIABLES: Readonly<Record<PanelSizeKey, string>> = {
     hierarchyWidthPx: "--hierarchy-width",
     inspectorWidthPx: "--inspector-width",
@@ -34,11 +35,13 @@ const CONNECTING_TEXT = "Waiting for the game…";
 const ACTIVE_CLASS = "active";
 const DRAGGING_CLASS = "resizing";
 const SCENE_PLAY_HINT = "The Scene view is not available while the game plays; pause first";
-const RENDER_BACKEND_CLASS = "view-tabs-renderer";
-const RENDER_BACKEND_HINT = "The renderer that draws the Scene and Game views; pick it with ?backend= in the page address";
+const TARGET_LABEL_CLASS = "view-tabs-target";
+const TARGET_HINT = "The target the Scene and Game views simulate, both through one renderer; right-click the Game tab to change it (?backend= in the page address overrides it when the editor opens)";
+const GAME_TAB_MENU_HINT = "; right-click it to pick the target the Scene and Game views simulate";
 
 export interface EditorShellOptions {
-    readonly renderBackendLabel?: string;
+    readonly targetLabel?: string;
+    readonly onGameTabMenu?: (clientX: number, clientY: number) => void;
 }
 
 interface ShellLayout {
@@ -197,6 +200,7 @@ class EditorShellImplementation implements EditorShell {
     private bottomTab: BottomTab;
     private readonly bottomTabButtons = new Map<BottomTab, HTMLButtonElement>();
     private readonly viewTabButtons = new Map<EditorView, HTMLButtonElement>();
+    private targetLabel: HTMLElement | undefined;
 
     public constructor(body: HTMLElement, private readonly options: EditorShellOptions) {
         this.document = body.ownerDocument;
@@ -264,22 +268,38 @@ class EditorShellImplementation implements EditorShell {
         else this.mounted.workspace.notice(level, text);
     }
 
+    public showTargetLabel(text: string): void {
+        if (this.targetLabel !== undefined) this.targetLabel.textContent = text;
+    }
+
+    private viewTabTitle(view: EditorView): string {
+        const shown = `Show the ${VIEW_TAB_LABELS[view]} view`;
+        return view === GAME_VIEW && this.options.onGameTabMenu !== undefined ? shown + GAME_TAB_MENU_HINT : shown;
+    }
+
     private buildTabs(): void {
         const document = this.document;
         for (const view of VIEW_TABS) {
-            const button = createButton(document, {className: "editor-tab", text: VIEW_TAB_LABELS[view], title: `Show the ${VIEW_TAB_LABELS[view]} view`, onClick: () => {
+            const button = createButton(document, {className: "editor-tab", text: VIEW_TAB_LABELS[view], title: this.viewTabTitle(view), onClick: () => {
                 const workspace = this.mounted?.workspace;
                 if (workspace !== undefined && workspace.view !== view) void workspace.setView(view);
             }});
             button.setAttribute("role", "tab");
+            const onGameTabMenu = this.options.onGameTabMenu;
+            if (view === GAME_VIEW && onGameTabMenu !== undefined) {
+                button.addEventListener("contextmenu", event => {
+                    event.preventDefault();
+                    onGameTabMenu(event.clientX, event.clientY);
+                });
+            }
             this.viewTabButtons.set(view, button);
             this.layout.viewTabs.append(button);
         }
-        const renderBackendLabel = this.options.renderBackendLabel;
-        if (renderBackendLabel !== undefined) {
-            const label = createElement(document, "span", RENDER_BACKEND_CLASS, renderBackendLabel);
-            label.title = RENDER_BACKEND_HINT;
-            this.layout.viewTabs.append(label);
+        const targetLabel = this.options.targetLabel;
+        if (targetLabel !== undefined) {
+            this.targetLabel = createElement(document, "span", TARGET_LABEL_CLASS, targetLabel);
+            this.targetLabel.title = TARGET_HINT;
+            this.layout.viewTabs.append(this.targetLabel);
         }
         for (const tab of BOTTOM_TABS) {
             const button = createButton(document, {className: "editor-tab", text: BOTTOM_TAB_LABELS[tab], title: `Show the ${BOTTOM_TAB_LABELS[tab]}`, onClick: () => this.showBottomTab(tab)});
@@ -311,7 +331,7 @@ class EditorShellImplementation implements EditorShell {
             button.setAttribute("aria-selected", String(active));
             const unavailable = view === "scene" && workspace.mode === "play";
             button.disabled = unavailable || workspace.closed;
-            button.title = unavailable ? SCENE_PLAY_HINT : `Show the ${VIEW_TAB_LABELS[view]} view`;
+            button.title = unavailable ? SCENE_PLAY_HINT : this.viewTabTitle(view);
         }
         this.layout.stage.dataset.view = workspace.view;
     }

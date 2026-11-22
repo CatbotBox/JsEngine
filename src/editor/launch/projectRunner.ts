@@ -3,8 +3,12 @@ import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
 import {describeSchemaChange} from "../../engine/scene/schemaChanges";
 import type {SceneLoadReport} from "../../engine/scene/sceneSerialization";
 import type {EditorNoticeLevel, EditorProject, EditorSession, EditorShell, EntityRemap} from "../page/editorSession";
+import type {CellArea} from "../../hosts/web/domInput";
+import {sameGameTarget} from "../project/editorSettings";
+import type {GameTarget} from "../project/editorSettings";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import type {EditorViewport} from "./editorViewport";
+import {gameTargetLabelText} from "./gameTargets";
 import {ProjectWorkerSession} from "./projectWorkerSession";
 import type {SessionVisibility} from "./projectWorkerSession";
 
@@ -15,9 +19,16 @@ export interface ReloadNotice {
     readonly text: string;
 }
 
+export interface WorkerBuild {
+    readonly workerUrl: string;
+    readonly gameTarget: GameTarget;
+}
+
 export interface ProjectRunnerOptions {
     readonly shell: EditorShell;
     readonly viewport: EditorViewport;
+    readonly createHiddenViewport: (gameTarget: GameTarget) => EditorViewport;
+    readonly onTargetChanged: (gameTarget: GameTarget) => void;
     readonly files: ProjectFileSystem;
     readonly project: EditorProject;
     readonly search: string;
@@ -27,6 +38,7 @@ export interface ProjectRunnerOptions {
 
 const VISIBLE: SessionVisibility = {visible: true};
 const HIDDEN: SessionVisibility = {visible: false};
+const RELOADED_SUMMARY = "Reloaded the game code";
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -43,8 +55,12 @@ function listed(names: readonly string[]): string {
     return names.join(", ");
 }
 
-export function reloadNotices(report: SceneLoadReport, entityCount: number): ReloadNotice[] {
-    const notices: ReloadNotice[] = [{level: "info", text: `Reloaded the game code (${entityCount} entities carried over)`}];
+export function switchedTargetSummary(gameTarget: GameTarget): string {
+    return `Switched to ${gameTargetLabelText(gameTarget)}`;
+}
+
+export function reloadNotices(report: SceneLoadReport, entityCount: number, summary: string = RELOADED_SUMMARY): ReloadNotice[] {
+    const notices: ReloadNotice[] = [{level: "info", text: `${summary} (${entityCount} entities carried over)`}];
     for (const change of report.changedSchemas) notices.push({level: "warn", text: describeSchemaChange(change)});
     for (const skipped of report.skippedComponentTypes) {
         notices.push({level: "warn", text: `${skipped.typeName} was dropped from ${skipped.entityCount} entities: it has no registered schema in the new code`});
@@ -72,20 +88,34 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, what: string): P
 
 export class ProjectRunner {
     public readonly input: InputEventSink = {
-        enqueue: (event: InputEvent) => this.current?.page.input.enqueue(event),
+        enqueue: (event: InputEvent) => this.current?.input.enqueue(event),
     };
 
     private current: ProjectWorkerSession | undefined;
+    private viewport: EditorViewport;
     private mounted = false;
     private reloading = false;
-    private queuedWorkerUrl: string | undefined;
+    private queuedBuild: WorkerBuild | undefined;
     private stopped = false;
 
     public constructor(private readonly options: ProjectRunnerOptions) {
+        this.viewport = options.viewport;
+    }
+
+    public get gameTarget(): GameTarget {
+        return this.viewport.gameTarget;
+    }
+
+    public cellArea(): CellArea {
+        return this.viewport.cellArea();
+    }
+
+    public showError(text: string): void {
+        this.viewport.showError(text);
     }
 
     public async start(workerUrl: string): Promise<void> {
-        const session = await this.startSession(workerUrl, VISIBLE);
+        const session = await this.startSession(workerUrl, this.viewport, VISIBLE);
         this.current = session;
         await this.options.shell.mount(this.editorSession(session));
         this.mounted = true;
@@ -93,23 +123,23 @@ export class ProjectRunner {
         this.runQueuedReload();
     }
 
-    public reload(workerUrl: string): void {
+    public reload(build: WorkerBuild): void {
         if (this.stopped) return;
         if (!this.mounted || this.reloading) {
-            this.queuedWorkerUrl = workerUrl;
+            this.queuedBuild = build;
             return;
         }
-        void this.performReload(workerUrl);
+        void this.performReload(build);
     }
 
     public exit(): void {
         this.current?.exit();
     }
 
-    private startSession(workerUrl: string, visibility: SessionVisibility): Promise<ProjectWorkerSession> {
+    private startSession(workerUrl: string, viewport: EditorViewport, visibility: SessionVisibility): Promise<ProjectWorkerSession> {
         return ProjectWorkerSession.start({
             workerUrl,
-            viewport: this.options.viewport,
+            viewport,
             files: this.options.files,
             name: this.options.project.name,
             search: this.options.search,
@@ -129,15 +159,18 @@ export class ProjectRunner {
         this.options.shell.notice(level, text);
     }
 
-    private async performReload(workerUrl: string): Promise<void> {
+    private async performReload(build: WorkerBuild): Promise<void> {
         const previous = this.current;
         if (previous === undefined) return;
         this.reloading = true;
+        const previousViewport = this.viewport;
+        const switching = !sameGameTarget(build.gameTarget, previousViewport.gameTarget);
+        const viewport = switching ? this.options.createHiddenViewport(build.gameTarget) : previousViewport;
         let next: ProjectWorkerSession | undefined;
         try {
-            this.notice("info", "Reloading the game code...");
+            this.notice("info", switching ? `Switching to ${gameTargetLabelText(build.gameTarget)}...` : "Reloading the game code...");
             const exported = await previous.client.request({op: "exportSnapshot"});
-            next = await withTimeout(this.startSession(workerUrl, HIDDEN), RELOAD_WORKER_START_TIMEOUT_MS, "The rebuilt game");
+            next = await withTimeout(this.startSession(build.workerUrl, viewport, HIDDEN), RELOAD_WORKER_START_TIMEOUT_MS, "The rebuilt game");
             const imported = await next.client.request({
                 op: "importSnapshot",
                 documentText: exported.documentText,
@@ -152,10 +185,18 @@ export class ProjectRunner {
             next.show();
             this.current = next;
             previous.dispose();
-            for (const notice of reloadNotices(imported.report, imported.entities.length)) this.notice(notice.level, notice.text);
+            if (switching) {
+                this.viewport = viewport;
+                previousViewport.dispose();
+                this.options.onTargetChanged(viewport.gameTarget);
+            }
+            const summary = switching ? switchedTargetSummary(viewport.gameTarget) : RELOADED_SUMMARY;
+            for (const notice of reloadNotices(imported.report, imported.entities.length, summary)) this.notice(notice.level, notice.text);
         } catch (error) {
             if (next !== undefined && this.current !== next) next.dispose();
-            this.notice("error", `Hot reload failed, the previous game code keeps running: ${describeError(error)}`);
+            if (viewport !== this.viewport) viewport.dispose();
+            const failure = switching ? `Switching to ${gameTargetLabelText(build.gameTarget)} failed` : "Hot reload failed";
+            this.notice("error", `${failure}, the previous game code keeps running: ${describeError(error)}`);
         } finally {
             this.reloading = false;
             this.runQueuedReload();
@@ -163,9 +204,9 @@ export class ProjectRunner {
     }
 
     private runQueuedReload(): void {
-        const queued = this.queuedWorkerUrl;
+        const queued = this.queuedBuild;
         if (queued === undefined) return;
-        this.queuedWorkerUrl = undefined;
+        this.queuedBuild = undefined;
         this.reload(queued);
     }
 }

@@ -7,9 +7,11 @@ import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensio
 import type {ProjectWorkerBuildReport} from "../../hosts/desktop";
 import {CliError} from "../cliArguments";
 import {PROJECT_GENERATED_FILES, writeGeneratedFiles} from "../generate/generatedFiles";
-import {DEFAULT_ENTRY_FILE, EDITOR_WORKER_MAIN_FILE, ENGINE_IMPORT_PREFIX, GENERATED_FOLDER, START_PROJECT_EXPORT} from "../projectLayout";
+import {DEFAULT_ENTRY_FILE, editorWorkerMainFile, ENGINE_IMPORT_PREFIX, GENERATED_FOLDER, START_PROJECT_EXPORT} from "../projectLayout";
 import {readProjectManifest} from "../project";
 import {EDITOR_PROJECTS_DIST, REPO_ROOT, slashed, SOURCE_ROOT} from "../repoPaths";
+import {featureDefines} from "../targets";
+import type {EditorSimulation} from "../targets";
 
 export interface EditorBuildError {
     readonly message: string;
@@ -31,7 +33,11 @@ const MISSING_EXPORT = /No matching export in "(.+?)" for import "(.+?)"/;
 const LINE_BREAK = "\n";
 const PARENT_SEGMENT = "..";
 const FOLDER_HASH_HEX_DIGITS = 16;
-const BUNDLE_FILE = "editor.worker.js";
+const NO_DEFINES: Readonly<Record<string, string>> = {};
+
+export function editorWorkerBundleFile(simulation: EditorSimulation): string {
+    return `editor.${simulation.target}-${simulation.backend}.worker.js`;
+}
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -61,7 +67,7 @@ function engineImportPath(specifier: string): string | undefined {
     return RESOLVE_SUFFIXES.map(suffix => base + suffix).find(isFile);
 }
 
-const ENGINE_IMPORTS: BunPlugin = {
+export const ENGINE_IMPORTS: BunPlugin = {
     name: "jsengine-imports",
     setup(build) {
         build.onResolve({filter: ENGINE_IMPORT_FILTER}, args => {
@@ -101,7 +107,7 @@ function describeExtensionError(projectFolder: string, error: EditorBuildError):
     return `${projectDisplayPath(projectFolder, error.file)}:${error.line ?? 0}:${error.column ?? 0}: ${error.message}`;
 }
 
-async function bundle(entryModule: string, outFile: string): Promise<BundleResult> {
+async function bundle(entryModule: string, outFile: string, define: Readonly<Record<string, string>> = NO_DEFINES): Promise<BundleResult> {
     const config = {
         entrypoints: [entryModule],
         target: "browser",
@@ -109,6 +115,7 @@ async function bundle(entryModule: string, outFile: string): Promise<BundleResul
         sourcemap: "inline",
         metafile: true,
         throw: false,
+        define,
         plugins: [ENGINE_IMPORTS],
     };
     const result = await Bun.build(config as BuildConfig) as MetafileBuildOutput;
@@ -157,7 +164,7 @@ export function describeBuildErrors(errors: readonly EditorBuildError[], paths: 
     return described.length > 0 ? described : ["bun build failed without reporting an error"];
 }
 
-export async function buildEditorWorker(projectFolder: string): Promise<ProjectWorkerBuildReport> {
+export async function buildEditorWorker(projectFolder: string, simulation: EditorSimulation): Promise<ProjectWorkerBuildReport> {
     const folder = resolve(projectFolder);
     const generatedFiles = PROJECT_GENERATED_FILES;
     let manifest: ProjectManifest;
@@ -169,15 +176,15 @@ export async function buildEditorWorker(projectFolder: string): Promise<ProjectW
     }
     const directory = projectBuildDirectory(folder);
     mkdirSync(directory, {recursive: true});
-    const editorMain = join(folder, EDITOR_WORKER_MAIN_FILE);
-    const bundlePath = join(directory, BUNDLE_FILE);
+    const editorMain = join(folder, editorWorkerMainFile(simulation.backend));
+    const bundlePath = join(directory, editorWorkerBundleFile(simulation));
     let warnings: readonly string[];
     try {
         warnings = writeGeneratedFiles(folder).warnings;
     } catch (error) {
         return {ok: false, errors: [`Could not generate the files in ${GENERATED_FOLDER}/: ${describeError(error)}`], generatedFiles};
     }
-    const worker = await bundle(editorMain, bundlePath);
+    const worker = await bundle(editorMain, bundlePath, featureDefines(simulation.target));
     if (!worker.ok) return {ok: false, errors: describeBuildErrors(worker.errors, {folder, entry: manifest.entry ?? DEFAULT_ENTRY_FILE, editorMain}), generatedFiles};
     if (manifest.editorExtensions === undefined) return {ok: true, bundlePath, inputs: worker.inputs, warnings, generatedFiles};
     const extensionsPath = join(directory, EDITOR_EXTENSIONS_BUNDLE_FILE);

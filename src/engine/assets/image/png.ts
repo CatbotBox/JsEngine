@@ -1,4 +1,4 @@
-import {DecodedImage, registerImageDecoder} from "./decodedImage";
+import type {DecodedImage, ImageDecoderEntry} from "./decodedImage";
 import type {AssetLoadOptions} from "../../platform";
 
 export const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -89,7 +89,7 @@ export function encodePng(width: number, height: number, rgba: Uint8Array, defla
     ]);
 }
 
-registerImageDecoder(".png", decodePng);
+export const PNG_IMAGE_DECODER: ImageDecoderEntry = {extensions: [".png"], decode: decodePng};
 
 interface PngHeader {
     width: number;

@@ -3,7 +3,9 @@ import {makeEntityHandle, NULL_ENTITY} from "../core/entity";
 import {Vec2, Vec3} from "../math/types/vec";
 import {ShaderSource} from "../rendering/shaderSource";
 import {TextColor} from "../rendering/textColor";
+import type {MeshLoadOptions} from "../rendering/3d/mesh";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
+import {registerEngineComponentSchemas} from "./engineComponentSchemas";
 import {structFields} from "./componentSchemaBuilder";
 import {createStructValue, defaultFieldValue} from "./fieldDefaults";
 import type {FieldSchema, FieldType, FieldTypeDefinition} from "./fieldSchema";
@@ -22,6 +24,13 @@ const EMPTY_PREFAB: SceneDocument = {format: SCENE_DOCUMENT_FORMAT, version: SCE
 const SHADER_PATH = "shaders/glow.wgsl";
 const SHADER_CODE = "fn surface(input: SurfaceInput) -> vec4f { return input.lit; }";
 const KEYFRAME_SEPARATOR = " ";
+const ENGINE_REGISTRY = engineRegistry();
+
+function engineRegistry(): ComponentSchemaRegistry {
+    const registry = new ComponentSchemaRegistry();
+    registerEngineComponentSchemas(registry);
+    return registry;
+}
 
 class Range {
     public min = 0;
@@ -71,7 +80,7 @@ function encodeContext(registry?: ComponentSchemaRegistry): FieldEncodeContext {
         sceneIdOf: entity => entity === KNOWN_ENTITY ? KNOWN_SCENE_ID : undefined,
         reportDanglingEntity: () => undefined,
         reportUnsavedAsset: () => undefined,
-        fieldTypes: registry,
+        fieldTypes: registry ?? ENGINE_REGISTRY,
     };
 }
 
@@ -79,7 +88,7 @@ function decodeContext(registry?: ComponentSchemaRegistry, assets?: SceneAssetLo
     return {
         entityOf: sceneId => sceneId === KNOWN_SCENE_ID ? KNOWN_ENTITY : undefined,
         reportDanglingEntity: () => undefined,
-        fieldTypes: registry,
+        fieldTypes: registry ?? ENGINE_REGISTRY,
         assets,
     };
 }
@@ -95,11 +104,11 @@ function decode(type: FieldType, json: SceneJsonValue, registry?: ComponentSchem
 function recordingLoader(requested: string[]): SceneAssetLoader {
     const prefab = new PrefabAsset(PREFAB_PATH, EMPTY_PREFAB);
     return {
-        loadMesh: path => {
-            throw new Error(`no mesh ${path}`);
+        get loadOptions(): MeshLoadOptions {
+            throw new Error("no files");
         },
-        loadSpriteImage: path => {
-            throw new Error(`no image ${path}`);
+        loadCached: (kind, path) => {
+            throw new Error(`no ${kind} ${path}`);
         },
         loadPrefab: path => {
             requested.push(path);

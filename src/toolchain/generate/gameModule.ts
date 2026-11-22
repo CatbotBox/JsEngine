@@ -1,30 +1,20 @@
 import type {ProjectResourceBinding} from "../../engine/project/projectManifest";
-import {RENDER_BACKEND_KINDS} from "../../engine/rendering/renderBackend";
-import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 import {GENERATED_GAME_FILE, GENERATED_SCHEMAS_EXPORT, GENERATED_SCHEMAS_FILE, GENERATED_SYSTEMS_EXPORT, GENERATED_SYSTEMS_FILE, START_PROJECT_EXPORT} from "../projectLayout";
+import type {CatalogImageDecoder} from "./engineCatalog";
 import {generatedFileHeader} from "./generatedHeader";
 import type {GeneratorOutput, ProjectGenerator} from "./generatedHeader";
 import {GENERATED_INDENT, generatedText, importLines} from "./generatedModule";
 import type {ModuleImport} from "./generatedModule";
 import type {ProjectSources} from "./projectSources";
+import {projectReachabilityOf} from "./schemas";
 
 export const GAME_GENERATOR_NAME = "game";
-export const GAME_GENERATOR_VERSION = 1;
+export const GAME_GENERATOR_VERSION = 2;
 export const GAME_GENERATED_HEADER = generatedFileHeader(GAME_GENERATOR_NAME, GAME_GENERATOR_VERSION);
 
-interface ModuleExport {
-    readonly path: readonly string[];
-    readonly name: string;
-}
-
-const BACKEND_SCHEMAS: Readonly<Record<RenderBackendKind, ModuleExport>> = {
-    cells: {path: ["backends", "cells", "cellsComponentSchemas"], name: "registerCellsComponentSchemas"},
-    pixels: {path: ["backends", "pixels", "pixelsComponentSchemas"], name: "registerPixelsComponentSchemas"},
-    gpu: {path: ["backends", "gpu", "gpuComponentSchemas"], name: "registerGpuComponentSchemas"},
-};
 const RESOURCES_CONSTANT = "projectResources";
 const START_SCENE_CONSTANT = "projectStartScene";
-const BACKEND_SCHEMAS_CONSTANT = "projectBackendSchemas";
+const IMAGE_DECODERS_CONSTANT = "projectImageDecoders";
 const NO_RESOURCES: readonly ProjectResourceBinding[] = [];
 
 function resourceLines(resources: readonly ProjectResourceBinding[]): string[] {
@@ -37,16 +27,20 @@ function resourceLines(resources: readonly ProjectResourceBinding[]): string[] {
     ];
 }
 
+function imageDecoderLine(decoders: readonly CatalogImageDecoder[]): string {
+    return `export const ${IMAGE_DECODERS_CONSTANT}: readonly ImageDecoderEntry[] = [${decoders.map(decoder => decoder.source.name).join(", ")}];`;
+}
+
 function startSceneLine(startScene: string | undefined): string {
     return `export const ${START_SCENE_CONSTANT}: string | undefined = ${startScene === undefined ? "undefined" : JSON.stringify(startScene)};`;
 }
 
-function gameImports(sources: ProjectSources): ModuleImport[] {
+function gameImports(sources: ProjectSources, decoders: readonly CatalogImageDecoder[]): ModuleImport[] {
     return [
-        ...RENDER_BACKEND_KINDS.map(kind => ({names: [BACKEND_SCHEMAS[kind].name], module: sources.sourceModule(...BACKEND_SCHEMAS[kind].path)})),
+        ...decoders.map(decoder => ({names: [decoder.source.name], module: sources.sourceModule(...decoder.source.path)})),
+        {names: ["ImageDecoderEntry"], module: sources.engineModule("assets", "image", "decodedImage"), typeOnly: true},
         {names: ["World"], module: sources.engineModule("core"), typeOnly: true},
         {names: ["ProjectResourceBinding"], module: sources.engineModule("project", "projectManifest"), typeOnly: true},
-        {names: ["SchemaRegistration"], module: sources.engineModule("project", "projectSchemas"), typeOnly: true},
         {names: ["startGame"], module: sources.engineModule("project", "startGame")},
         {names: ["ProjectHost", "StartedGame"], module: sources.engineModule("project", "startGame"), typeOnly: true},
         {names: [GENERATED_SCHEMAS_EXPORT], module: sources.projectModule(GENERATED_SCHEMAS_FILE)},
@@ -56,22 +50,22 @@ function gameImports(sources: ProjectSources): ModuleImport[] {
 
 function gameSource(sources: ProjectSources): string {
     const manifest = sources.manifest;
-    const backendSchemas = RENDER_BACKEND_KINDS.map(kind => BACKEND_SCHEMAS[kind].name).join(", ");
+    const decoders = projectReachabilityOf(sources).imageDecoders;
     return generatedText([
         GAME_GENERATED_HEADER,
-        ...importLines(sources, GENERATED_GAME_FILE, gameImports(sources)),
-        "",
-        `export const ${BACKEND_SCHEMAS_CONSTANT}: readonly SchemaRegistration[] = [${backendSchemas}];`,
+        ...importLines(sources, GENERATED_GAME_FILE, gameImports(sources, decoders)),
         "",
         ...resourceLines(manifest?.resources ?? NO_RESOURCES),
         "",
         startSceneLine(manifest?.startScene),
         "",
+        imageDecoderLine(decoders),
+        "",
         `export function ${START_PROJECT_EXPORT}(world: World, {backendSystems = [], ...host}: ProjectHost = {}): Promise<StartedGame> {`,
         `${GENERATED_INDENT}return startGame(world, {`,
         `${GENERATED_INDENT}${GENERATED_INDENT}...host,`,
         `${GENERATED_INDENT}${GENERATED_INDENT}schemas: ${GENERATED_SCHEMAS_EXPORT},`,
-        `${GENERATED_INDENT}${GENERATED_INDENT}backendSchemas: ${BACKEND_SCHEMAS_CONSTANT},`,
+        `${GENERATED_INDENT}${GENERATED_INDENT}imageDecoders: ${IMAGE_DECODERS_CONSTANT},`,
         `${GENERATED_INDENT}${GENERATED_INDENT}systems: [...backendSystems, ...${GENERATED_SYSTEMS_EXPORT}],`,
         `${GENERATED_INDENT}${GENERATED_INDENT}resources: ${RESOURCES_CONSTANT},`,
         `${GENERATED_INDENT}${GENERATED_INDENT}startScene: ${START_SCENE_CONSTANT},`,

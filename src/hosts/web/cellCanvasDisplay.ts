@@ -6,6 +6,8 @@ import type {CellWorldDisplay} from "./worldWorkerPage";
 import {FIXED_TERMINAL_LIMITS, fixedTerminalSizeFromQuery} from "./worldWorkerProtocol";
 import type {CellSurfaceSize, FixedTerminalSize} from "./worldWorkerProtocol";
 
+const VISIBLE = true;
+
 function fittedCells(availableDevicePx: number, cellDevicePx: number, min: number): number {
     return Math.min(FIXED_TERMINAL_LIMITS.max, Math.max(min, Math.floor(availableDevicePx / cellDevicePx)));
 }
@@ -14,7 +16,7 @@ export class CellCanvasDisplay implements CellWorldDisplay {
     private readonly shell: CanvasDisplayShell<CellFrame>;
     private readonly presenter: CanvasCellPresenter<HTMLCanvasElement>;
 
-    public constructor(container: HTMLElement, private readonly fixed: FixedTerminalSize = {}) {
+    public constructor(container: HTMLElement, private readonly fixed: FixedTerminalSize = {}, visible: boolean = VISIBLE) {
         this.shell = new CanvasDisplayShell<CellFrame>(container, frame => this.presenter.present(frame));
         this.presenter = new CanvasCellPresenter<HTMLCanvasElement>({
             canvas: this.shell.canvas,
@@ -22,7 +24,19 @@ export class CellCanvasDisplay implements CellWorldDisplay {
             atlasCanvas: document.createElement("canvas"),
             devicePixelRatio: currentDevicePixelRatio(),
         });
-        this.shell.mount(this.fit);
+        this.shell.mount(this.fit, visible);
+    }
+
+    public show(): void {
+        this.shell.show();
+    }
+
+    public hide(): void {
+        this.shell.hide();
+    }
+
+    public dispose(): void {
+        this.shell.dispose();
     }
 
     public surfaceSize(): CellSurfaceSize {
@@ -67,6 +81,6 @@ export class CellCanvasDisplay implements CellWorldDisplay {
     };
 }
 
-export function cellCanvasDisplayFromQuery(container: HTMLElement, search: string): CellCanvasDisplay {
-    return new CellCanvasDisplay(container, fixedTerminalSizeFromQuery(search));
+export function cellCanvasDisplayFromQuery(container: HTMLElement, search: string, visible: boolean = VISIBLE): CellCanvasDisplay {
+    return new CellCanvasDisplay(container, fixedTerminalSizeFromQuery(search), visible);
 }

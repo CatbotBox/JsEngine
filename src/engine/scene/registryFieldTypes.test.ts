@@ -6,6 +6,8 @@ import {consoleOverride} from "../debugging";
 import {originalConsole} from "../debugging/originalConsole";
 import {Vec2} from "../math/types/vec";
 import type {Mesh} from "../rendering/3d/mesh";
+import {MESH_ASSET_TYPE} from "../rendering/3d/meshAssetType";
+import {ENGINE_ASSET_TYPES} from "./assetTypes";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {componentSchema, resourceSchema, structFields} from "./componentSchemaBuilder";
 import {DATA_ASSET_FILE_SUFFIX} from "./dataAssetDocument";
@@ -178,6 +180,8 @@ describe("ComponentSchemaRegistry field types", () => {
         registry.registerFieldAlias(PERCENT_TYPE_NAME, {options: PERCENT_OPTIONS});
         expect(() => registry.registerFieldAlias(PERCENT_TYPE_NAME, {options: {}})).toThrow(`a field alias named "Percent" is already registered`);
         expect(() => registry.registerFieldAlias("Name", {kind: "string" as never, options: {}})).toThrow("must be a number or integer");
+        expect(registry.assetTypes).toEqual([]);
+        for (const type of ENGINE_ASSET_TYPES) registry.registerAssetType(type);
         expect(registry.assetTypes.map(type => type.name)).toEqual(["mesh", "spriteImage", "prefab", "shader"]);
         expect(() => registry.registerAssetType({...registry.assetType("mesh")!})).toThrow(`the asset type "mesh" is already registered`);
         registry.registerAssetType({name: "sound", valueName: "Sound", fileSuffixes: [".wav"], isAsset: (value): value is string => typeof value === "string", load: path => path, pathOf: path => path});
@@ -186,6 +190,7 @@ describe("ComponentSchemaRegistry field types", () => {
 
     test("a registered resource becomes a data asset type", () => {
         const registry = new ComponentSchemaRegistry();
+        registry.registerAssetType(MESH_ASSET_TYPE);
         registry.registerResource(resourceSchema(Tuning, "Tuning").number("speed").build());
         const type = registry.assetType("Tuning")!;
         expect(type.fileSuffixes).toEqual([DATA_ASSET_FILE_SUFFIX]);

@@ -1,19 +1,18 @@
-import {ComponentSchemaRegistry, registerEngineComponentSchemas, registerSchemaEntries} from "../scene";
-import type {SchemaEntry} from "../scene";
-
-export type SchemaRegistration = (registry: ComponentSchemaRegistry) => void;
+import {ComponentSchemaRegistry} from "../scene/componentSchemaRegistry";
+import {registerSchemaEntries} from "../scene/schemaEntries";
+import type {SchemaEntry} from "../scene/schemaEntries";
+import {SCENE_MANAGER_SCHEMAS} from "../scene/schemas";
 
 export interface ProjectSchemaSources {
-    readonly backendSchemas?: readonly SchemaRegistration[];
+    readonly hostSchemas?: readonly SchemaEntry[];
     readonly schemas?: readonly SchemaEntry[];
 }
 
 const NO_SCHEMA_SOURCES: ProjectSchemaSources = {};
+const NO_SCHEMAS: readonly SchemaEntry[] = [];
 
 export function createProjectSchemaRegistry(sources: ProjectSchemaSources = NO_SCHEMA_SOURCES): ComponentSchemaRegistry {
     const registry = new ComponentSchemaRegistry();
-    registerEngineComponentSchemas(registry);
-    for (const registerBackendSchemas of sources.backendSchemas ?? []) registerBackendSchemas(registry);
-    registerSchemaEntries(registry, sources.schemas ?? []);
+    registerSchemaEntries(registry, [...sources.hostSchemas ?? NO_SCHEMAS, ...sources.schemas ?? NO_SCHEMAS, ...SCENE_MANAGER_SCHEMAS]);
     return registry;
 }

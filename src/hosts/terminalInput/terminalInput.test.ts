@@ -1,7 +1,7 @@
-import {describe, expect, test} from "../../../engine/testing/harness";
-import {MemoryPlatform, MemoryTerminal} from "../../../engine/testing/memoryPlatform";
-import {Input, Key, NO_MODIFIERS, PointerButton} from "../../../engine/input";
-import type {InputEvent, InputEventSink, KeyDownEvent, KeyUpEvent, Modifiers} from "../../../engine/input";
+import {describe, expect, test} from "../../engine/testing/harness";
+import {MemoryPlatform, MemoryTerminal} from "../../engine/testing/memoryPlatform";
+import {Input, Key, NO_MODIFIERS, PointerButton} from "../../engine/input";
+import type {InputEvent, InputEventSink, KeyDownEvent, KeyUpEvent, Modifiers} from "../../engine/input";
 import {TerminalInput} from "./terminalInput";
 import type {TerminalInputOptions} from "./terminalInput";
 

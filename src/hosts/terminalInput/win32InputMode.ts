@@ -1,5 +1,5 @@
-import {Key, keyForCharacter} from "../../../engine/input";
-import type {Modifiers} from "../../../engine/input";
+import {Key, keyForCharacter} from "../../engine/input";
+import type {Modifiers} from "../../engine/input";
 import {isPrintableCodePoint, modifiersAllowText} from "./keyReport";
 import type {KeyReport} from "./keyReport";
 

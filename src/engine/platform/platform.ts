@@ -57,3 +57,74 @@ export interface WorkerHandle extends WorkerPort {
 export interface WorkerFactory {
     spawn(source: string, data: unknown): WorkerHandle;
 }
+
+export type PlatformFeature = "dom" | "node" | "bun" | "gpu" | "workers" | "sharedMemory" | "audio";
+
+export const PLATFORM_FEATURES: readonly PlatformFeature[] = ["dom", "node", "bun", "gpu", "workers", "sharedMemory", "audio"];
+
+export const PLATFORM_FEATURE_CONSTANTS: Readonly<Record<PlatformFeature, string>> = {
+    dom: "JSENGINE_HAS_DOM",
+    node: "JSENGINE_HAS_NODE",
+    bun: "JSENGINE_HAS_BUN",
+    gpu: "JSENGINE_HAS_GPU",
+    workers: "JSENGINE_HAS_WORKERS",
+    sharedMemory: "JSENGINE_HAS_SHARED_MEMORY",
+    audio: "JSENGINE_HAS_AUDIO",
+};
+
+interface FeatureProbeGlobals {
+    readonly document?: unknown;
+    readonly WorkerGlobalScope?: unknown;
+    readonly process?: {readonly versions?: {readonly node?: string}};
+    readonly Bun?: unknown;
+    readonly navigator?: {readonly gpu?: unknown};
+    readonly Worker?: unknown;
+    readonly SharedArrayBuffer?: unknown;
+    readonly AudioContext?: unknown;
+}
+
+function builtFeature(feature: PlatformFeature): boolean | undefined {
+    switch (feature) {
+        case "dom":
+            return typeof JSENGINE_HAS_DOM === "undefined" ? undefined : JSENGINE_HAS_DOM;
+        case "node":
+            return typeof JSENGINE_HAS_NODE === "undefined" ? undefined : JSENGINE_HAS_NODE;
+        case "bun":
+            return typeof JSENGINE_HAS_BUN === "undefined" ? undefined : JSENGINE_HAS_BUN;
+        case "gpu":
+            return typeof JSENGINE_HAS_GPU === "undefined" ? undefined : JSENGINE_HAS_GPU;
+        case "workers":
+            return typeof JSENGINE_HAS_WORKERS === "undefined" ? undefined : JSENGINE_HAS_WORKERS;
+        case "sharedMemory":
+            return typeof JSENGINE_HAS_SHARED_MEMORY === "undefined" ? undefined : JSENGINE_HAS_SHARED_MEMORY;
+        case "audio":
+            return typeof JSENGINE_HAS_AUDIO === "undefined" ? undefined : JSENGINE_HAS_AUDIO;
+    }
+}
+
+function detectedFeature(feature: PlatformFeature, globals: FeatureProbeGlobals): boolean {
+    switch (feature) {
+        case "dom":
+            return globals.document !== undefined || globals.WorkerGlobalScope !== undefined;
+        case "node":
+            return globals.process?.versions?.node !== undefined;
+        case "bun":
+            return globals.Bun !== undefined;
+        case "gpu":
+            return globals.navigator?.gpu !== undefined;
+        case "workers":
+            return typeof globals.Worker === "function" || detectedFeature("node", globals);
+        case "sharedMemory":
+            return typeof globals.SharedArrayBuffer === "function";
+        case "audio":
+            return typeof globals.AudioContext === "function";
+    }
+}
+
+export function hasFeature(feature: PlatformFeature): boolean {
+    return builtFeature(feature) !== false && detectedFeature(feature, globalThis as FeatureProbeGlobals);
+}
+
+export function optionalFeature<T>(feature: PlatformFeature, probe: () => T): T | undefined {
+    return builtFeature(feature) === false ? undefined : probe();
+}

@@ -8,7 +8,8 @@ import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatfo
 import {LocalPosition} from "../src/engine/translation";
 import {installCellsBackend} from "../src/backends/cells";
 import {CELLS_WORLD_TEXT_PASSES} from "../src/backends/cells/2d";
-import {Ansi, AnsiCellPresenter, nodePlatform, TerminalInput} from "../src/hosts/terminal";
+import {Ansi, AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
+import {TerminalInput} from "../src/hosts/terminalInput";
 import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
 import {Drift, startLibraryOnlyGame} from "../demo/libraryOnly/game";
 

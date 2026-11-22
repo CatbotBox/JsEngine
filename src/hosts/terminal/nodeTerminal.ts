@@ -1,5 +1,5 @@
 import type {TerminalOutput, TerminalSize} from "./terminalOutput";
-import type {TerminalInputSource} from "./terminalInputSource";
+import type {TerminalInputSource} from "../terminalInput/terminalInputSource";
 
 export type NodeTerminal = TerminalOutput & TerminalInputSource;
 

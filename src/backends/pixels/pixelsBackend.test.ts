@@ -13,6 +13,7 @@ import {PIXELS_WORLD_TEXT_PASSES} from "./pixelsWorldTextPasses";
 import {PIXELS_HUD_SPRITE_PASSES} from "./2d/pixelsHudSpritePasses";
 import {PIXELS_SPRITE_PASSES} from "./2d/pixelsSpritePasses";
 import {PIXELS_MESH_PASSES} from "./3d/pixelsMeshPasses";
+import {PIXELS_2D_AND_HUD_PASSES, PIXELS_PASS_LISTS, PIXELS_STANDARD_PASSES} from "./pixelsStandardPasses";
 
 const SIZE = {widthPx: 64, heightPx: 48};
 const NO_PASSES: readonly RenderPassCtor[] = [];
@@ -27,6 +28,11 @@ function passOrder(world: World, passes: readonly RenderPassCtor[]): Function[] 
 }
 
 describe("installPixelsBackend", () => {
+    test("the standard passes are the pass lists in order, and the 2D and HUD passes all but the mesh list", () => {
+        expect(PIXELS_PASS_LISTS.flat()).toEqual([...PIXELS_STANDARD_PASSES]);
+        expect(PIXELS_PASS_LISTS.filter(list => list !== PIXELS_MESH_PASSES).flat()).toEqual([...PIXELS_2D_AND_HUD_PASSES]);
+    });
+
     test("inserts the presenter and only the pixels marker", () => {
         const world = newWorld();
         const presenter = new MemoryPixelPresenter(SIZE);

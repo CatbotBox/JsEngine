@@ -1,7 +1,8 @@
 import type {Component, ComponentCtor, Resource} from "../core";
 import type {ResourceCtor} from "../core/resource";
+import type {AssetType} from "./assetTypes";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
-import type {FieldAlias, FieldSchema, FieldTypeCodec, FieldTypeDefinition} from "./fieldSchema";
+import type {ComponentSchema, FieldAlias, FieldSchema, FieldTypeCodec, FieldTypeDefinition, ResourceSchema} from "./fieldSchema";
 
 export interface GeneratedComponentEntry {
     readonly kind: "component";
@@ -28,6 +29,18 @@ export interface ResourceClassEntry {
     readonly ctor: ResourceCtor<Resource>;
 }
 
+export interface ComponentSchemaEntry {
+    readonly kind: "componentSchema";
+
+    build(): ComponentSchema;
+}
+
+export interface ResourceSchemaEntry {
+    readonly kind: "resourceSchema";
+
+    build(): ResourceSchema;
+}
+
 export interface FieldAliasEntry {
     readonly kind: "fieldAlias";
     readonly typeName: string;
@@ -40,17 +53,37 @@ export interface FieldTypeEntry {
     readonly definition: FieldTypeCodec;
 }
 
-type FieldTypingEntry = FieldAliasEntry | FieldTypeEntry;
+export interface AssetTypeEntry {
+    readonly kind: "assetType";
+    readonly type: AssetType;
+}
+
+export interface OtherBackendTypesEntry {
+    readonly kind: "otherBackendTypes";
+    readonly names: readonly string[];
+}
+
+type PreparingEntry = FieldAliasEntry | FieldTypeEntry | AssetTypeEntry | OtherBackendTypesEntry;
 
 export type SchemaEntry =
     | GeneratedComponentEntry
     | GeneratedResourceEntry
     | ComponentClassEntry
     | ResourceClassEntry
-    | FieldTypingEntry;
+    | ComponentSchemaEntry
+    | ResourceSchemaEntry
+    | PreparingEntry;
 
-function isFieldTypingEntry(entry: SchemaEntry): entry is FieldTypingEntry {
-    return entry.kind === "fieldAlias" || entry.kind === "fieldType";
+function isPreparingEntry(entry: SchemaEntry): entry is PreparingEntry {
+    switch (entry.kind) {
+        case "fieldAlias":
+        case "fieldType":
+        case "assetType":
+        case "otherBackendTypes":
+            return true;
+        default:
+            return false;
+    }
 }
 
 function namedFieldType(typeName: string, codec: FieldTypeCodec): FieldTypeDefinition {
@@ -63,8 +96,23 @@ function namedFieldType(typeName: string, codec: FieldTypeCodec): FieldTypeDefin
 }
 
 export function registerSchemaEntries(registry: ComponentSchemaRegistry, entries: readonly SchemaEntry[]): void {
-    for (const entry of entries) if (isFieldTypingEntry(entry)) registerSchemaEntry(registry, entry);
-    for (const entry of entries) if (!isFieldTypingEntry(entry)) registerSchemaEntry(registry, entry);
+    for (const entry of entries) if (isPreparingEntry(entry)) registerSchemaEntry(registry, entry);
+    for (const entry of entries) if (!isPreparingEntry(entry)) registerSchemaEntry(registry, entry);
+}
+
+function registerComponentSchemaOnce(registry: ComponentSchemaRegistry, schema: ComponentSchema): void {
+    if (registry.byName(schema.name)?.ctor === schema.ctor) return;
+    registry.register(schema);
+}
+
+function registerResourceSchemaOnce(registry: ComponentSchemaRegistry, schema: ResourceSchema): void {
+    if (registry.resourceByName(schema.name)?.ctor === schema.ctor) return;
+    registry.registerResource(schema);
+}
+
+function registerAssetTypeOnce(registry: ComponentSchemaRegistry, type: AssetType): void {
+    if (registry.assetType(type.name) === type) return;
+    registry.registerAssetType(type);
 }
 
 function registerSchemaEntry(registry: ComponentSchemaRegistry, entry: SchemaEntry): void {
@@ -81,11 +129,23 @@ function registerSchemaEntry(registry: ComponentSchemaRegistry, entry: SchemaEnt
         case "resourceClass":
             registry.registerResourceClass(entry.ctor);
             return;
+        case "componentSchema":
+            registerComponentSchemaOnce(registry, entry.build());
+            return;
+        case "resourceSchema":
+            registerResourceSchemaOnce(registry, entry.build());
+            return;
         case "fieldAlias":
             registry.registerFieldAlias(entry.typeName, entry.alias);
             return;
         case "fieldType":
             registry.registerFieldType(namedFieldType(entry.typeName, entry.definition));
+            return;
+        case "assetType":
+            registerAssetTypeOnce(registry, entry.type);
+            return;
+        case "otherBackendTypes":
+            registry.registerOtherBackendTypeNames(entry.names);
             return;
     }
 }

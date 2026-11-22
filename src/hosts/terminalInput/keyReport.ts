@@ -1,4 +1,4 @@
-import type {Key, Modifiers} from "../../../engine/input";
+import type {Key, Modifiers} from "../../engine/input";
 
 export type KeyTransition = "press" | "repeat" | "release";
 

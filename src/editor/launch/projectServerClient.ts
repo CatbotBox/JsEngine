@@ -2,9 +2,12 @@ import {HttpProjectFileSystem} from "../project/httpProjectFileSystem";
 import type {HttpFetch, HttpRequestInit, HttpResponseLike} from "../project/httpProjectFileSystem";
 import {ServerEventStream} from "../project/serverEvents";
 import type {StreamingFetch} from "../project/serverEvents";
-import {projectApiUrl} from "../project/projectServerApi";
+import {editorSettingsOf} from "../project/editorSettings";
+import type {EditorSettings, GameTarget} from "../project/editorSettings";
+import {EDITOR_SETTINGS_UPDATE_METHOD, PROJECT_EDITOR_SETTINGS_ROUTE, projectApiUrl} from "../project/projectServerApi";
 import type {
     BrowseResult,
+    BuildProjectRequest,
     BuildProjectResult,
     CreateProjectRequest,
     OpenProjectRequest,
@@ -71,8 +74,18 @@ export class ProjectServerClient {
         return await this.post<OpenProjectResult>("create", body);
     }
 
-    public async build(projectId: string): Promise<BuildProjectResult> {
-        return await this.post<BuildProjectResult>(`${encodeURIComponent(projectId)}/build`, {});
+    public async build(projectId: string, gameTarget?: GameTarget): Promise<BuildProjectResult> {
+        const body: BuildProjectRequest = gameTarget === undefined ? {} : {gameTarget};
+        return await this.post<BuildProjectResult>(`${encodeURIComponent(projectId)}/build`, body);
+    }
+
+    public async editorSettings(projectId: string): Promise<EditorSettings> {
+        return editorSettingsOf(await this.json<unknown>(this.editorSettingsRoute(projectId), {cache: NO_STORE}));
+    }
+
+    public async updateEditorSettings(projectId: string, settings: EditorSettings): Promise<EditorSettings> {
+        const init: HttpRequestInit = {method: EDITOR_SETTINGS_UPDATE_METHOD, body: JSON.stringify(settings), headers: JSON_HEADERS};
+        return editorSettingsOf(await this.json<unknown>(this.editorSettingsRoute(projectId), init));
     }
 
     public events(projectId: string): ServerEventStream {
@@ -81,6 +94,10 @@ export class ProjectServerClient {
 
     public files(projectId: string, rootLabel: string, events: ServerEventStream): HttpProjectFileSystem {
         return new HttpProjectFileSystem({projectId, rootLabel, fetch: this.fetch, events});
+    }
+
+    private editorSettingsRoute(projectId: string): string {
+        return `${encodeURIComponent(projectId)}/${PROJECT_EDITOR_SETTINGS_ROUTE}`;
     }
 
     private async post<T>(route: string, body: unknown): Promise<T> {

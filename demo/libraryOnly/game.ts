@@ -2,7 +2,7 @@ import {Component, System} from "../../src/engine/core";
 import type {World} from "../../src/engine/core";
 import {Input, Key} from "../../src/engine/input";
 import {startGame} from "../../src/engine/project/startGame";
-import {componentSchema} from "../../src/engine/scene";
+import {componentSchema, ENGINE_SCHEMAS} from "../../src/engine/scene";
 import type {SceneActivation, SchemaEntry} from "../../src/engine/scene";
 import {LocalPosition} from "../../src/engine/translation";
 
@@ -44,7 +44,7 @@ class QuitOnKeySystem extends System {
     }
 }
 
-const LIBRARY_ONLY_SCHEMAS: readonly SchemaEntry[] = [{kind: "componentClass", ctor: Drift}];
+const LIBRARY_ONLY_SCHEMAS: readonly SchemaEntry[] = [...ENGINE_SCHEMAS, {kind: "componentClass", ctor: Drift}];
 const LIBRARY_ONLY_SYSTEMS = [DriftSystem, QuitOnKeySystem];
 const START_SCENE_ACTIVATION: SceneActivation = "immediate";
 

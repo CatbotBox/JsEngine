@@ -10,15 +10,19 @@ import type {ProjectManifestValidation} from "../../engine/project/projectManife
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensions";
 import {createProjectFiles} from "../../editor/project/projectTemplate";
 import {projectFileExtension, projectRelativePath} from "../../engine/project/projectPaths";
+import {DEFAULT_GAME_TARGET, EDITOR_SETTINGS_FILE, editorSettingsOf, gameTargetProblem, isGameTarget, parseEditorSettings} from "../../editor/project/editorSettings";
+import type {EditorSettings, GameTarget} from "../../editor/project/editorSettings";
 import {
+    EDITOR_SETTINGS_UPDATE_METHOD,
     isBuildSuccess,
     PROJECT_API_PREFIX,
-    PROJECT_BUILD_COPY_PATH,
+    PROJECT_EDITOR_SETTINGS_ROUTE,
     PROJECT_EVENT_BUILD_FAILED,
     PROJECT_EVENT_FILES_CHANGED,
     PROJECT_EVENT_REBUILT,
     PROJECT_OPEN_EXTERNALLY_ROUTE,
     PROJECT_WORKER_FILE,
+    projectBuildCopyPath,
 } from "../../editor/project/projectServerApi";
 import type {
     BrowsedDirectory,
@@ -65,6 +69,7 @@ export interface ProjectBuildRequest {
     readonly repoRoot: string;
     readonly bunPath: string;
     readonly folder: string;
+    readonly gameTarget: GameTarget;
 }
 
 export type ProjectBuildOutcome = ProjectWorkerBuildReport;
@@ -85,6 +90,8 @@ const REBUILD_DEBOUNCE_MS = 250;
 const TOOLCHAIN_CLI: readonly string[] = ["src", "toolchain", "cli.ts"];
 const EDITOR_BUILD_ARGUMENTS: readonly string[] = ["build", "--target", "editor", "--report", "json"];
 const PROJECT_ARGUMENT = "--project";
+const SIMULATE_ARGUMENT = "--simulate";
+const BACKEND_ARGUMENT = "--backend";
 const SOURCE_DIRECTORY = "src";
 const BUILD_OUTPUT_DIRECTORY = "dist";
 const IGNORED_LISTING_DIRECTORIES: ReadonlySet<string> = new Set([".git", "node_modules", ".jsengine"]);
@@ -104,6 +111,10 @@ const DEFAULT_OPENER_BY_PLATFORM: Readonly<Partial<Record<NodeJS.Platform, strin
 const FALLBACK_OPENER = "xdg-open";
 const COMMAND_QUOTES = "\"'";
 const COMMAND_WHITESPACE = /\s/;
+const GAME_TARGET_SETTING = "gameTarget";
+const EDITOR_SETTING_KEYS: readonly string[] = [GAME_TARGET_SETTING];
+const EDITOR_SETTINGS_INDENT = 2;
+const TRAILING_LINE_BREAK = "\n";
 
 class HttpError extends Error {
     public constructor(public readonly status: number, message: string) {
@@ -123,6 +134,7 @@ interface OpenProject {
     editorExtensionsPath: string | undefined;
     inputs: ReadonlySet<string>;
     generatedTexts: ReadonlyMap<string, string | undefined>;
+    gameTarget: GameTarget | undefined;
     buildChain: Promise<unknown>;
     changeTimer: ReturnType<typeof setTimeout> | undefined;
     rebuildTimer: ReturnType<typeof setTimeout> | undefined;
@@ -191,7 +203,13 @@ function lastJsonLine(text: string): unknown {
 }
 
 function runBuildCommand(request: ProjectBuildRequest): Promise<{readonly report: unknown, readonly stderr: string, readonly exitCode: number | null}> {
-    const command = [join(request.repoRoot, ...TOOLCHAIN_CLI), ...EDITOR_BUILD_ARGUMENTS, PROJECT_ARGUMENT, resolve(request.folder)];
+    const command = [
+        join(request.repoRoot, ...TOOLCHAIN_CLI),
+        ...EDITOR_BUILD_ARGUMENTS,
+        SIMULATE_ARGUMENT, request.gameTarget.target,
+        BACKEND_ARGUMENT, request.gameTarget.backend,
+        PROJECT_ARGUMENT, resolve(request.folder),
+    ];
     return new Promise((resolveRun, rejectRun) => {
         const child = spawn(request.bunPath, command, {
             cwd: request.repoRoot,
@@ -288,10 +306,10 @@ async function pathExists(path: string): Promise<boolean> {
     }
 }
 
-async function jsonBody(request: Request): Promise<{readonly [key: string]: unknown}> {
+function jsonObjectOf(text: string): {readonly [key: string]: unknown} {
     let body: unknown;
     try {
-        body = await request.json();
+        body = JSON.parse(text);
     } catch {
         throw new HttpError(HTTP_BAD_REQUEST, "the request body must be JSON");
     }
@@ -299,10 +317,33 @@ async function jsonBody(request: Request): Promise<{readonly [key: string]: unkn
     return body as {readonly [key: string]: unknown};
 }
 
+async function jsonBody(request: Request): Promise<{readonly [key: string]: unknown}> {
+    return jsonObjectOf(await request.text());
+}
+
+async function requestedGameTarget(request: Request): Promise<GameTarget | undefined> {
+    const text = await request.text();
+    if (text.trim().length === 0) return undefined;
+    const gameTarget = jsonObjectOf(text)[GAME_TARGET_SETTING];
+    if (gameTarget === undefined) return undefined;
+    if (!isGameTarget(gameTarget)) throw new HttpError(HTTP_BAD_REQUEST, gameTargetProblem(gameTarget));
+    return gameTarget;
+}
+
 function requiredString(body: {readonly [key: string]: unknown}, key: string): string {
     const value = body[key];
     if (typeof value !== "string" || value.trim().length === 0) throw new HttpError(HTTP_BAD_REQUEST, `"${key}" must be a non-empty string`);
     return value;
+}
+
+function parsedObjectOrEmpty(text: string | undefined): {readonly [key: string]: unknown} {
+    if (text === undefined) return {};
+    try {
+        const parsed = JSON.parse(text) as unknown;
+        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as {readonly [key: string]: unknown} : {};
+    } catch {
+        return {};
+    }
 }
 
 function requireMethod(request: Request, ...methods: readonly string[]): void {
@@ -406,11 +447,15 @@ export class ProjectServer {
                 return json({});
             case "build":
                 requireMethod(request, "POST");
-                return json(await this.build(project));
+                return json(await this.build(project, await requestedGameTarget(request)));
             case PROJECT_OPEN_EXTERNALLY_ROUTE:
                 requireMethod(request, "POST");
                 await this.openExternally(project, requiredString(await jsonBody(request), "path"));
                 return json({});
+            case PROJECT_EDITOR_SETTINGS_ROUTE:
+                requireMethod(request, "GET", EDITOR_SETTINGS_UPDATE_METHOD);
+                if (request.method === "GET") return json(await this.editorSettings(project));
+                return json(await this.updateEditorSettings(project, await jsonBody(request)));
             case PROJECT_WORKER_FILE:
                 requireMethod(request, "GET");
                 return await this.workerBundle(project);
@@ -494,6 +539,26 @@ export class ProjectServer {
         await (this.options.openExternally ?? openWithExternalEditor)(absolute);
     }
 
+    private async editorSettingsText(project: OpenProject): Promise<string | undefined> {
+        return await readFile(await this.confinedPath(project, EDITOR_SETTINGS_FILE), "utf8").catch(() => undefined);
+    }
+
+    private async editorSettings(project: OpenProject): Promise<EditorSettings> {
+        return parseEditorSettings(await this.editorSettingsText(project));
+    }
+
+    private async updateEditorSettings(project: OpenProject, body: {readonly [key: string]: unknown}): Promise<EditorSettings> {
+        const unknown = Object.keys(body).find(key => !EDITOR_SETTING_KEYS.includes(key));
+        if (unknown !== undefined) throw new HttpError(HTTP_BAD_REQUEST, `"${unknown}" is not an editor setting; the settings are ${EDITOR_SETTING_KEYS.join(", ")}`);
+        const gameTarget = body[GAME_TARGET_SETTING];
+        if (gameTarget !== undefined && !isGameTarget(gameTarget)) throw new HttpError(HTTP_BAD_REQUEST, gameTargetProblem(gameTarget));
+        const merged = {...parsedObjectOrEmpty(await this.editorSettingsText(project)), ...body};
+        const path = await this.confinedPath(project, EDITOR_SETTINGS_FILE);
+        await mkdir(dirname(path), RECURSIVE);
+        await writeFile(path, JSON.stringify(merged, null, EDITOR_SETTINGS_INDENT) + TRAILING_LINE_BREAK);
+        return editorSettingsOf(merged);
+    }
+
     private async confinedPath(project: OpenProject, path: string): Promise<string> {
         const inside = projectRelativePath(path);
         if (inside === undefined) throw new HttpError(HTTP_BAD_REQUEST, `${JSON.stringify(path)} is not a path inside the project folder`);
@@ -573,6 +638,7 @@ export class ProjectServer {
             editorExtensionsPath: undefined,
             inputs: new Set(),
             generatedTexts: new Map(),
+            gameTarget: undefined,
             buildChain: Promise.resolve(),
             changeTimer: undefined,
             rebuildTimer: undefined,
@@ -615,36 +681,44 @@ export class ProjectServer {
         return await this.open(folder);
     }
 
-    private build(project: OpenProject): Promise<BuildProjectResult> {
-        const run = project.buildChain.then(() => this.runBuild(project));
+    private build(project: OpenProject, requested?: GameTarget): Promise<BuildProjectResult> {
+        if (requested !== undefined) project.gameTarget = requested;
+        const chosen = project.gameTarget;
+        const run = project.buildChain.then(() => this.runBuild(project, chosen));
         project.buildChain = run.catch(() => undefined);
         return run;
     }
 
-    private async runBuild(project: OpenProject): Promise<BuildProjectResult> {
+    private async rememberedGameTarget(project: OpenProject): Promise<GameTarget> {
+        project.gameTarget ??= (await this.editorSettings(project)).gameTarget ?? DEFAULT_GAME_TARGET;
+        return project.gameTarget;
+    }
+
+    private async runBuild(project: OpenProject, chosen: GameTarget | undefined): Promise<BuildProjectResult> {
         const repoRoot = this.options.repoRoot;
         const bun = this.options.bun;
         const unavailable = this.buildUnavailableReason();
         if (unavailable !== undefined || repoRoot === undefined || !("path" in bun)) return {errors: [unavailable ?? "building is unavailable"]};
         const validation = await this.validate(project);
         if (!validation.ok) return {errors: validation.problems};
-        const outcome = await buildProjectEditorWorker({repoRoot, bunPath: bun.path, folder: project.folder});
+        const gameTarget = chosen ?? await this.rememberedGameTarget(project);
+        const outcome = await buildProjectEditorWorker({repoRoot, bunPath: bun.path, folder: project.folder, gameTarget});
         project.generatedTexts = await this.readGeneratedFiles(project, outcome.generatedFiles);
         if (!outcome.ok) return {errors: outcome.errors};
         project.bundlePath = outcome.bundlePath;
         project.editorExtensionsPath = outcome.editorExtensionsPath;
         project.inputs = new Set(outcome.inputs.map(input => this.pathKey(input)));
         project.version++;
-        await this.copyBundleIntoProject(project, outcome.bundlePath);
+        await this.copyBundleIntoProject(project, outcome.bundlePath, gameTarget);
         if (project.events.subscriberCount > 0) this.watchInputs(project, outcome.inputs);
         const projectRoute = `${PROJECT_API_PREFIX}${encodeURIComponent(project.id)}`;
         const version = `?v=${project.version}`;
         const editorExtensionsUrl = outcome.editorExtensionsPath === undefined ? {} : {editorExtensionsUrl: `${projectRoute}/${EDITOR_EXTENSIONS_BUNDLE_FILE}${version}`};
-        return {workerUrl: `${projectRoute}/${PROJECT_WORKER_FILE}${version}`, ...editorExtensionsUrl, warnings: outcome.warnings};
+        return {workerUrl: `${projectRoute}/${PROJECT_WORKER_FILE}${version}`, gameTarget, ...editorExtensionsUrl, warnings: outcome.warnings};
     }
 
-    private async copyBundleIntoProject(project: OpenProject, bundlePath: string): Promise<void> {
-        const target = join(project.folder, ...PROJECT_BUILD_COPY_PATH.split("/"));
+    private async copyBundleIntoProject(project: OpenProject, bundlePath: string, gameTarget: GameTarget): Promise<void> {
+        const target = join(project.folder, ...projectBuildCopyPath(gameTarget).split("/"));
         try {
             await mkdir(dirname(target), RECURSIVE);
             await copyFile(bundlePath, target);

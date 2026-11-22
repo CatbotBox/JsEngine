@@ -8,7 +8,9 @@ import type {EditorEventSource} from "../page/editorSession";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {serveProjectFiles} from "../project/projectFileServing";
 import type {ProjectFileServing} from "../project/projectFileServing";
+import type {InputEventSink} from "../../engine/input/inputEvent";
 import type {EditorSessionDisplay, EditorViewport} from "./editorViewport";
+import {terminalInputMessage} from "./terminalInputChannel";
 
 export const EDITOR_REQUEST_TIMEOUT_MS = 60_000;
 export const BUFFERED_EDITOR_EVENT_LIMIT = 1000;
@@ -62,6 +64,7 @@ export class WorkerEditorEvents implements EditorEventSource {
 }
 
 export class ProjectWorkerSession {
+    public readonly input: InputEventSink;
     private disposed = false;
 
     private constructor(
@@ -71,7 +74,9 @@ export class ProjectWorkerSession {
         public readonly page: WorldWorkerPage,
         public readonly client: EditorClient,
         public readonly events: WorkerEditorEvents,
+        viewport: EditorViewport,
     ) {
+        this.input = viewport.sessionInput({events: page.input, terminalBytes: data => this.sendTerminalBytes(data)});
     }
 
     public static start(options: ProjectWorkerSessionOptions): Promise<ProjectWorkerSession> {
@@ -94,7 +99,7 @@ export class ProjectWorkerSession {
                 firstFrame: () => {
                     if (settled) return;
                     settled = true;
-                    session = new ProjectWorkerSession(worker, display, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events);
+                    session = new ProjectWorkerSession(worker, display, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events, options.viewport);
                     resolve(session);
                 },
                 failed: text => {
@@ -123,6 +128,10 @@ export class ProjectWorkerSession {
 
     public exit(): void {
         this.page.exit();
+    }
+
+    private sendTerminalBytes(data: string): void {
+        if (!this.disposed) this.worker.postMessage(terminalInputMessage(data));
     }
 
     public dispose(): void {

@@ -1,10 +1,10 @@
 import {App} from "../../engine/core";
 import type {DebugWorld} from "../../engine/core";
-import {consoleOverride} from "../../engine/debugging";
+import {consoleOverride, installConsoleOverride} from "../../engine/debugging";
 import {Input} from "../../engine/input";
 import type {CellPresenter} from "../../backends/cells/cellPresenter";
 import {AnsiCellPresenter} from "./ansi/ansiCellPresenter";
-import {TerminalInput} from "./ansi/terminalInput";
+import {TerminalInput} from "../terminalInput/terminalInput";
 import {fileLogger} from "./fileLogger";
 import {nodePlatform} from "./nodePlatform";
 import {nodeTerminal} from "./nodeTerminal";
@@ -29,6 +29,7 @@ export function exitAfterLaunchFailure(gameName: string, error: unknown): never 
 
 export function runTerminalGame(gameName: string, start: TerminalGameStart): void {
     exitUnlessInteractiveTerminal(gameName);
+    installConsoleOverride();
     consoleOverride.addConsoleEventListener(fileLogger);
     const terminal = nodeTerminal();
     const world = new App({platform: nodePlatform()}).createDebugWorld();

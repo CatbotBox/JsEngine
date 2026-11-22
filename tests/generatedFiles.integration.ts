@@ -11,7 +11,7 @@ import {SYSTEMS_GENERATOR_NAME, SYSTEMS_GENERATOR_VERSION} from "../src/toolchai
 import {GAME_GENERATOR_NAME, GAME_GENERATOR_VERSION} from "../src/toolchain/generate/gameModule";
 import {MAINS_GENERATOR_NAME, MAINS_GENERATOR_VERSION} from "../src/toolchain/generate/mains";
 import {
-    EDITOR_WORKER_MAIN_FILE,
+    editorWorkerMainFile,
     GENERATED_GAME_FILE,
     GENERATED_SCHEMAS_FILE,
     GENERATED_SYSTEMS_FILE,
@@ -165,14 +165,14 @@ async function checkBootstraps(): Promise<void> {
         expect(game.includes("export function startProject(world: World"), `${GENERATED_GAME_FILE} exports startProject`);
         const terminal = readFileSync(join(folder, TERMINAL_MAIN_FILE), "utf8");
         expect(terminal.startsWith(generatedFileHeader(MAINS_GENERATOR_NAME, MAINS_GENERATOR_VERSION)), `${TERMINAL_MAIN_FILE} starts with the mains generator name and version`);
-        const mains = [TERMINAL_MAIN_FILE, webWorkerMainFile(CELLS_BACKEND), EDITOR_WORKER_MAIN_FILE].map(file => readFileSync(join(folder, file), "utf8"));
+        const mains = [TERMINAL_MAIN_FILE, webWorkerMainFile(CELLS_BACKEND), editorWorkerMainFile(CELLS_BACKEND)].map(file => readFileSync(join(folder, file), "utf8"));
         expect(mains.every(text => text.includes(`import {startProject} from "./game";`)), "without an entry the mains start the generated game");
 
         writeFileSync(join(folder, PROJECT_MANIFEST_FILE), JSON.stringify({name: "Generated files fixture", entry: OWN_ENTRY}));
         mkdirSync(dirname(join(folder, OWN_ENTRY)), {recursive: true});
         writeFileSync(join(folder, OWN_ENTRY), OWN_ENTRY_SOURCE);
         expect(await runCli(["generate", "--project", folder]) === EXIT_SUCCESS, "generate follows a manifest entry");
-        const ownMains = [TERMINAL_MAIN_FILE, webWorkerMainFile(CELLS_BACKEND), EDITOR_WORKER_MAIN_FILE].map(file => readFileSync(join(folder, file), "utf8"));
+        const ownMains = [TERMINAL_MAIN_FILE, webWorkerMainFile(CELLS_BACKEND), editorWorkerMainFile(CELLS_BACKEND)].map(file => readFileSync(join(folder, file), "utf8"));
         expect(ownMains.every(text => text.includes(`import {startProject} from "../src/ownGame";`)), `the mains start the manifest's entry ${OWN_ENTRY}`);
         expect(readFileSync(join(folder, GENERATED_GAME_FILE), "utf8").includes("export function startProject("), "the generated game is still written beside the dev's entry");
     } finally {

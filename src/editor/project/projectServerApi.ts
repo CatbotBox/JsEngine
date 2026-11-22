@@ -1,12 +1,16 @@
 import type {ProjectManifestValidation} from "../../engine/project/projectManifest";
+import {gameTargetKey, isGameTarget} from "./editorSettings";
+import type {GameTarget} from "./editorSettings";
 
 export const PROJECT_API_PREFIX = "/__project/";
 export const PROJECT_EVENT_FILES_CHANGED = "files-changed";
 export const PROJECT_EVENT_REBUILT = "rebuilt";
 export const PROJECT_EVENT_BUILD_FAILED = "build-failed";
 export const PROJECT_WORKER_FILE = "worker.js";
-export const PROJECT_BUILD_COPY_PATH = ".jsengine/build/editor.worker.js";
+export const PROJECT_BUILD_FOLDER = ".jsengine/build";
 export const PROJECT_OPEN_EXTERNALLY_ROUTE = "open-external";
+export const PROJECT_EDITOR_SETTINGS_ROUTE = "editor-settings";
+export const EDITOR_SETTINGS_UPDATE_METHOD = "PATCH";
 
 export interface ProjectCapabilities {
     readonly build: boolean;
@@ -46,8 +50,13 @@ export interface OpenProjectResult {
     readonly validation: ProjectManifestValidation;
 }
 
+export interface BuildProjectRequest {
+    readonly gameTarget?: GameTarget;
+}
+
 export interface BuiltProject {
     readonly workerUrl: string;
+    readonly gameTarget: GameTarget;
     readonly editorExtensionsUrl?: string;
     readonly warnings: readonly string[];
 }
@@ -85,6 +94,10 @@ export function projectApiUrl(route: string): string {
     return PROJECT_API_PREFIX + route;
 }
 
+export function projectBuildCopyPath(gameTarget: GameTarget): string {
+    return `${PROJECT_BUILD_FOLDER}/editor.${gameTargetKey(gameTarget)}.worker.js`;
+}
+
 export function projectFileRoute(path: string): string {
     return path.split("/").map(encodeURIComponent).join("/");
 }
@@ -108,7 +121,8 @@ export function isFilesChangedEvent(value: unknown): value is FilesChangedEvent 
 export function isRebuiltEvent(value: unknown): value is RebuiltEvent {
     if (!isRecord(value)) return false;
     const editorExtensionsUrl = value.editorExtensionsUrl;
-    return typeof value.workerUrl === "string" && isStringList(value.warnings) && (editorExtensionsUrl === undefined || typeof editorExtensionsUrl === "string");
+    return typeof value.workerUrl === "string" && isGameTarget(value.gameTarget) && isStringList(value.warnings)
+        && (editorExtensionsUrl === undefined || typeof editorExtensionsUrl === "string");
 }
 
 export function isBuildFailedEvent(value: unknown): value is BuildFailedEvent {

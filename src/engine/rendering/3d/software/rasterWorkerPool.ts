@@ -1,6 +1,6 @@
 import {rasterizeTriangleBand, TRI_STRIDE} from "./rasterKernel";
 import {TextureStore} from "./textureStore";
-import {WORKER_ENTRY_POINT} from "../../../platform";
+import {optionalFeature, WORKER_ENTRY_POINT} from "../../../platform";
 import type {WorkerFactory, WorkerHandle} from "../../../platform";
 
 const CTRL_JOB_GENERATION = 0;
@@ -91,7 +91,7 @@ export class RasterWorkerPool {
     private broken = false;
 
     public constructor(workerCount: number, workerFactory: WorkerFactory) {
-        if (typeof SharedArrayBuffer === "undefined") {
+        if (optionalFeature("sharedMemory", () => typeof SharedArrayBuffer === "function") !== true) {
             throw new Error("SharedArrayBuffer unavailable");
         }
 

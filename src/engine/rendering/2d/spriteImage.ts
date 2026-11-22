@@ -1,5 +1,4 @@
 import {decodeImageFile} from "../../assets/image/decodedImage";
-import "../../assets/image/builtinDecoders";
 import type {AssetLoadOptions, FileSource} from "../../platform";
 import {RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK} from "../packedRgb";
 

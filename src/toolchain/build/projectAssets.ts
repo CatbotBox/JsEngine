@@ -1,6 +1,7 @@
 import {existsSync, readdirSync} from "fs";
 import {join, relative} from "path";
 import {pathToFileURL} from "url";
+import {registerBuiltinImageDecoders} from "../../engine/assets/image/builtinDecoders";
 import type {AssetLoadOptions, FileSource, FileStat} from "../../engine/platform";
 import {joinPath, normalizePath} from "../../engine/platform";
 import {Mesh} from "../../engine/rendering/3d";
@@ -17,10 +18,7 @@ import {
 import type {ComponentSchemaRegistry, SceneAssetReference, SceneDocument, SchemaEntry} from "../../engine/scene";
 import {SCENE_FILE_SUFFIX} from "../../engine/project/projectManifest";
 import {createProjectSchemaRegistry} from "../../engine/project/projectSchemas";
-import type {SchemaRegistration} from "../../engine/project/projectSchemas";
-import {registerCellsComponentSchemas} from "../../backends/cells/cellsComponentSchemas";
-import {registerGpuComponentSchemas} from "../../backends/gpu/gpuComponentSchemas";
-import {registerPixelsComponentSchemas} from "../../backends/pixels/pixelsComponentSchemas";
+import {EDITOR_SCHEMAS} from "../../editor/world/editorSchemas";
 import type {AssetManifestFile, AssetManifestPrefab, ProjectAssetManifest} from "../../hosts/web/webProjectAssets";
 import {GENERATED_FOLDER, GENERATED_SCHEMAS_FILE} from "../projectLayout";
 import {compareText} from "../generate/projectSources";
@@ -30,7 +28,6 @@ const WRITABLE = true;
 const BYTES_PER_MB = 1024 * 1024;
 export const ON_DEMAND_PREFAB_BYTES = 16 * BYTES_PER_MB;
 const NO_SCHEMAS: readonly SchemaEntry[] = [];
-const BACKEND_SCHEMAS: readonly SchemaRegistration[] = [registerCellsComponentSchemas, registerPixelsComponentSchemas, registerGpuComponentSchemas];
 
 interface GeneratedSchemasModule {
     readonly generatedSchemas?: readonly SchemaEntry[];
@@ -222,11 +219,12 @@ export function buildProjectAssetManifest(
     registry: ComponentSchemaRegistry,
     onDemandPrefabBytes: number = ON_DEMAND_PREFAB_BYTES,
 ): ProjectAssetManifest {
+    registerBuiltinImageDecoders();
     return new ProjectAssetRecorder(root, projectDirectory, base, registry, onDemandPrefabBytes).manifest();
 }
 
 export async function projectAssetRegistry(projectFolder: string): Promise<ComponentSchemaRegistry> {
     const schemasModule = join(projectFolder, GENERATED_SCHEMAS_FILE);
     const generated = existsSync(schemasModule) ? await import(pathToFileURL(schemasModule).href) as GeneratedSchemasModule : {};
-    return createProjectSchemaRegistry({backendSchemas: BACKEND_SCHEMAS, schemas: generated.generatedSchemas ?? NO_SCHEMAS});
+    return createProjectSchemaRegistry({hostSchemas: EDITOR_SCHEMAS, schemas: generated.generatedSchemas ?? NO_SCHEMAS});
 }

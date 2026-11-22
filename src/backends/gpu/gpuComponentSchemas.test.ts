@@ -5,8 +5,9 @@ import {ComponentSchemaRegistry} from "../../engine/scene/componentSchemaRegistr
 import {registerEngineComponentSchemas} from "../../engine/scene/engineComponentSchemas";
 import {deserializeInto, serializeWorld} from "../../engine/scene/sceneSerialization";
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
-import {registerPixelsComponentSchemas} from "../pixels/pixelsComponentSchemas";
-import {registerGpuComponentSchemas} from "./gpuComponentSchemas";
+import {MESH_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY} from "../pixels/3d/schemas";
+import {PIXELS_SCHEMAS, registerPixelsComponentSchemas} from "../pixels/pixelsComponentSchemas";
+import {GPU_HOST_SCHEMAS, GPU_SCHEMAS, registerGpuComponentSchemas} from "./gpuComponentSchemas";
 import {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import {GpuSurfaceShader, LIT_SURFACE_SHADER} from "./gpuSurfaceShader";
 
@@ -25,6 +26,10 @@ function registry(): ComponentSchemaRegistry {
 }
 
 describe("gpu component schemas", () => {
+    test("a gpu host registers the pixels types but the pixel mesh pass settings, then the gpu types", () => {
+        expect(GPU_HOST_SCHEMAS).toEqual([...PIXELS_SCHEMAS.filter(entry => entry !== MESH_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY), ...GPU_SCHEMAS]);
+    });
+
     test("GpuMeshPassSettings round-trips at non-default values", () => {
         const registry = new ComponentSchemaRegistry();
         registerEngineComponentSchemas(registry);

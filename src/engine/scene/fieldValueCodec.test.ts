@@ -4,6 +4,7 @@ import {Vec, Vec3, Vec4} from "../math/types/vec";
 import {TextColor} from "../rendering/textColor";
 import {FaceCulling} from "../rendering/3d/faceCulling";
 import {Mesh} from "../rendering/3d/mesh";
+import type {MeshLoadOptions} from "../rendering/3d/mesh";
 import {SpriteImage} from "../rendering/2d/spriteImage";
 import {SpritePatternColor, spritePatternImage} from "../rendering/2d/spritePattern";
 import {decodeFieldValue, encodeFieldValue} from "./fieldValueCodec";
@@ -12,6 +13,8 @@ import type {FieldSchema} from "./fieldSchema";
 import type {SceneAssetLoader} from "./sceneAssets";
 import type {SceneJsonValue} from "./sceneDocument";
 import {decodeBase64, encodeBase64} from "./base64";
+import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
+import {registerEngineComponentSchemas} from "./engineComponentSchemas";
 
 const PATH = "entities[2].components.Thing.value";
 const TRIANGLE_OBJ = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
@@ -22,6 +25,13 @@ const PATTERN_RGB = 0x40E0FF;
 const UNKNOWN_SCENE_ID = 99;
 const LONGEST_BASE64_TEST_LENGTH = 10;
 const BYTE_VALUES = 256;
+const ENGINE_REGISTRY = engineRegistry();
+
+function engineRegistry(): ComponentSchemaRegistry {
+    const registry = new ComponentSchemaRegistry();
+    registerEngineComponentSchemas(registry);
+    return registry;
+}
 
 const field = {
     number: {key: "value", kind: "number"},
@@ -57,6 +67,7 @@ function encodeRecorder(): EncodeRecorder {
         sceneIdOf: entity => entity === KNOWN_ENTITY ? KNOWN_SCENE_ID : undefined,
         reportDanglingEntity: path => dangling.push(path),
         reportUnsavedAsset: path => unsaved.push(path),
+        fieldTypes: ENGINE_REGISTRY,
     };
     return {context, dangling, unsaved};
 }
@@ -73,6 +84,7 @@ function decodeRecorder(assets?: SceneAssetLoader): DecodeRecorder {
         reportDanglingEntity: path => dangling.push(path),
         assets,
         inlineSpriteImages: new Map(),
+        fieldTypes: ENGINE_REGISTRY,
     };
     return {context, dangling};
 }
@@ -215,12 +227,12 @@ describe("field value codec", () => {
         const loaded = meshFrom("models/tri.obj");
         const requested: string[] = [];
         const assets: SceneAssetLoader = {
-            loadMesh: path => {
-                requested.push(path);
-                return loaded;
+            get loadOptions(): MeshLoadOptions {
+                throw new Error("no image files");
             },
-            loadSpriteImage: path => {
-                throw new Error(`no image ${path}`);
+            loadCached<A>(kind: string, path: string): A {
+                requested.push(path);
+                return loaded as unknown as A;
             },
             loadPrefab: path => {
                 throw new Error(`no prefab ${path}`);
@@ -237,7 +249,7 @@ describe("field value codec", () => {
         expect(decode(field.mesh, null)).toBeUndefined();
         expect(() => decode(field.mesh, {path: "models/tri.obj"})).toThrow(`Scene field ${PATH}: loading "models/tri.obj" needs an asset loader`);
         expect(() => decode(field.mesh, {path: ""})).toThrow(`Scene field ${PATH}.path: expected a non-empty file path`);
-        expect(() => decodeFieldValue(field.spriteImage, {path: "a.png"}, decodeRecorder(assets).context, PATH)).toThrow(`Scene field ${PATH}: could not load "a.png": no image a.png`);
+        expect(() => decodeFieldValue(field.spriteImage, {path: "a.png"}, decodeRecorder(assets).context, PATH)).toThrow(`Scene field ${PATH}: could not load "a.png": no image files`);
     });
 
     test("spriteImage inline as base64 RGBA, or by path", () => {

@@ -1,4 +1,5 @@
 import {describe, expect, test} from "../testing/harness";
+import {registerBuiltinImageDecoders} from "../assets/image/builtinDecoders";
 import {dirname, isAbsolutePath, joinPath, normalizePath} from "./paths";
 import {MemoryFileSource, MemoryPlatform, MemoryTerminal} from "../testing/memoryPlatform";
 import {deflateStored} from "../testing/storedDeflate";
@@ -10,6 +11,8 @@ import {encodePng} from "../assets/image/png";
 import {encodePpm} from "../assets/image/ppm";
 import {meshCachePathFor} from "../assets/meshCache";
 import {SpriteImage} from "../rendering/2d/spriteImage";
+
+registerBuiltinImageDecoders();
 
 describe("path helpers", () => {
     test("joinPath normalizes separators, dot segments and parent references", () => {

@@ -1,4 +1,4 @@
-import {DecodedImage, registerImageDecoder} from "./decodedImage";
+import type {DecodedImage, ImageDecoderEntry} from "./decodedImage";
 
 const PPM_BINARY_MAGIC = "P6";
 const SUPPORTED_MAX_VALUE = 255;
@@ -44,7 +44,7 @@ export function encodePpm(width: number, height: number, rgba: Uint8Array): Uint
     return out;
 }
 
-registerImageDecoder(".ppm", decodePpm);
+export const PPM_IMAGE_DECODER: ImageDecoderEntry = {extensions: [".ppm"], decode: decodePpm};
 
 class PpmHeaderReader {
     public offset = 0;

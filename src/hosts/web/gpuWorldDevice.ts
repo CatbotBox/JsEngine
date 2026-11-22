@@ -1,5 +1,6 @@
 import {GpuCanvasPixelPresenter, GpuDeviceResource} from "../../backends/gpu";
 import type {GpuEntryPoint} from "../../backends/gpu";
+import {optionalFeature} from "../../engine/platform/platform";
 import type {PageConnection} from "./worldWorkerPlatform";
 
 export function webGpuUnavailableMessage(reason: string): string {
@@ -7,7 +8,7 @@ export function webGpuUnavailableMessage(reason: string): string {
 }
 
 function workerGpu(): GpuEntryPoint | undefined {
-    return (globalThis as {navigator?: {gpu?: GpuEntryPoint}}).navigator?.gpu;
+    return optionalFeature("gpu", () => (globalThis as {navigator?: {gpu?: GpuEntryPoint}}).navigator?.gpu);
 }
 
 function messageOf(error: unknown): string {

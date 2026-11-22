@@ -36,10 +36,11 @@ function serverProjectPath(folder: string): string {
 export async function editCommand(args: readonly string[]): Promise<CommandResult> {
     const options = parseOptions("edit", args, OPTIONS);
     const target = targetOf(options.value("target"), HOST_TARGETS);
-    const backend = backendFor("editor", options.value("backend"));
+    const requestedBackend = options.value("backend");
+    const backendOverride = requestedBackend === undefined ? "" : `?backend=${backendFor("editor", requestedBackend)}`;
     requireScope(options, ["smoke", "screenshot"], target === "window", "--target window");
     const folder = editedProjectFolder(options.value("project"));
-    const page = withProjectQuery(`${EDITOR_PAGE}?backend=${backend}`, folder === undefined ? undefined : serverProjectPath(folder));
+    const page = withProjectQuery(`${EDITOR_PAGE}${backendOverride}`, folder === undefined ? undefined : serverProjectPath(folder));
     const build = !options.flag("no-build");
     if (target === "window") return await launchWindow({page, build, smoke: options.flag("smoke"), screenshot: options.value("screenshot")});
     serveSite({prod: false, build, isolated: true, open: page});

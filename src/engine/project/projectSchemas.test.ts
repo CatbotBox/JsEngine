@@ -1,7 +1,8 @@
 import {describe, expect, test} from "../testing/harness";
 import {Component, ComponentType} from "../core";
-import {componentSchema, fieldAlias} from "../scene";
+import {componentSchema, ENGINE_SCHEMAS, fieldAlias} from "../scene";
 import type {ComponentSchemaRegistry} from "../scene";
+import {LOCAL_POSITION_SCHEMA_ENTRY} from "../translation/schemas";
 import {createProjectSchemaRegistry} from "./projectSchemas";
 
 const PERCENT_TYPE_NAME = "Percent";
@@ -21,29 +22,31 @@ function registeredNames(registry: ComponentSchemaRegistry): string[] {
 }
 
 describe("createProjectSchemaRegistry", () => {
-    test("registers engine, then backends, then the schema entries", () => {
-        const order: string[] = [];
+    test("registers the host's entries, then the schema entries, then what the scene manager needs", () => {
         const registry = createProjectSchemaRegistry({
-            backendSchemas: [backendRegistry => {
-                order.push(`backend after ${backendRegistry.byName("LocalPosition") === undefined ? "nothing" : "engine"}`);
-                backendRegistry.register(componentSchema(Foot, "Backend").build());
-            }],
+            hostSchemas: [{kind: "componentSchema", build: () => componentSchema(Foot, "Backend").build()}],
             schemas: [
                 {kind: "componentClass", ctor: Hand},
                 {kind: "fieldAlias", typeName: PERCENT_TYPE_NAME, alias: fieldAlias(PERCENT_OPTIONS)},
             ],
         });
-        expect(order).toEqual(["backend after engine"]);
-        expect(registeredNames(registry).indexOf("Backend") < registeredNames(registry).indexOf("Hand")).toBe(true);
+        expect(registeredNames(registry)).toEqual(["Backend", "Hand", "SceneInstance"]);
+        expect(registry.resourceByName("ActiveScene")).toBeDefined();
         expect(registry.byType(ComponentType.of(Hand))!.fields).toEqual([{key: "grip", kind: "number", typeName: PERCENT_TYPE_NAME, options: PERCENT_OPTIONS}]);
     });
 
-    test("schema entries alone register the project's classes", () => {
+    test("schema entries alone register the project's classes and only the engine schemas they list", () => {
         const registry = createProjectSchemaRegistry({
             schemas: [{kind: "component", ctor: Foot, name: "Foot", fields: [{key: "step", kind: "number"}]}],
         });
         expect(registry.byName("Foot")!.create()).toBeInstanceOf(Foot);
-        expect(registry.byName("LocalPosition")).toBeDefined();
+        expect(registry.byName("LocalPosition")).toBeUndefined();
         expect(createProjectSchemaRegistry().byName("Foot")).toBeUndefined();
+    });
+
+    test("an engine entry the host and the schema list both carry registers once", () => {
+        const registry = createProjectSchemaRegistry({hostSchemas: ENGINE_SCHEMAS, schemas: [LOCAL_POSITION_SCHEMA_ENTRY]});
+        expect(registeredNames(registry).filter(name => name === "LocalPosition")).toEqual(["LocalPosition"]);
+        expect(registeredNames(registry)).toEqual(registeredNames(createProjectSchemaRegistry({hostSchemas: ENGINE_SCHEMAS})));
     });
 });
