@@ -1,10 +1,21 @@
+import type {ProjectTarget} from "../../engine/project/projectTargets";
 import {HttpProjectFileSystem} from "../project/httpProjectFileSystem";
 import type {HttpFetch, HttpRequestInit, HttpResponseLike} from "../project/httpProjectFileSystem";
 import {ServerEventStream} from "../project/serverEvents";
 import type {StreamingFetch} from "../project/serverEvents";
 import {editorSettingsOf} from "../project/editorSettings";
 import type {EditorSettings, GameTarget} from "../project/editorSettings";
-import {EDITOR_SETTINGS_UPDATE_METHOD, isGenerateProjectReport, PROJECT_EDITOR_SETTINGS_ROUTE, PROJECT_GENERATE_ROUTE, projectApiUrl} from "../project/projectServerApi";
+import {
+    EDITOR_SETTINGS_UPDATE_METHOD,
+    isGenerateProjectReport,
+    isPackageResult,
+    isTargetReportResult,
+    PROJECT_EDITOR_SETTINGS_ROUTE,
+    PROJECT_GENERATE_ROUTE,
+    PROJECT_PACKAGE_ROUTE,
+    PROJECT_TARGET_REPORT_ROUTE,
+    projectApiUrl,
+} from "../project/projectServerApi";
 import type {
     BrowseResult,
     BuildProjectRequest,
@@ -13,9 +24,12 @@ import type {
     GenerateProjectReport,
     OpenProjectRequest,
     OpenProjectResult,
+    PackageResult,
     PickFolderResult,
     ProjectApiError,
     ProjectCapabilities,
+    TargetReportRequest,
+    TargetReportResult,
 } from "../project/projectServerApi";
 
 const JSON_HEADERS: Readonly<Record<string, string>> = {"Content-Type": "application/json"};
@@ -84,6 +98,19 @@ export class ProjectServerClient {
         const report = await this.post<unknown>(`${encodeURIComponent(projectId)}/${PROJECT_GENERATE_ROUTE}`, {});
         if (!isGenerateProjectReport(report)) throw new Error(`the project server answered generate with ${JSON.stringify(report)}`);
         return report;
+    }
+
+    public async targetReport(projectId: string, target: ProjectTarget): Promise<TargetReportResult> {
+        const body: TargetReportRequest = {target};
+        const result = await this.post<unknown>(`${encodeURIComponent(projectId)}/${PROJECT_TARGET_REPORT_ROUTE}`, body);
+        if (!isTargetReportResult(result)) throw new Error(`the project server answered target-report with ${JSON.stringify(result)}`);
+        return result;
+    }
+
+    public async packageProject(projectId: string): Promise<PackageResult> {
+        const result = await this.post<unknown>(`${encodeURIComponent(projectId)}/${PROJECT_PACKAGE_ROUTE}`, {});
+        if (!isPackageResult(result)) throw new Error(`the project server answered package with ${JSON.stringify(result)}`);
+        return result;
     }
 
     public async editorSettings(projectId: string): Promise<EditorSettings> {

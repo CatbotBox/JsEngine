@@ -630,6 +630,7 @@ export interface EditorConsoleEvent {
     readonly level: EditorConsoleLevel;
     readonly text: string;
     readonly timeMs: number;
+    readonly stack?: string;
 }
 
 export interface EditorWorldStoppedEvent {
@@ -844,7 +845,7 @@ export function isEditorEvent(value: unknown): value is EditorEvent {
     if (!isRecord(value)) return false;
     switch (value.kind) {
         case "console":
-            return isConsoleLevel(value.level) && isString(value.text) && isFiniteNumber(value.timeMs);
+            return isConsoleLevel(value.level) && isString(value.text) && isFiniteNumber(value.timeMs) && isAbsentOr(value.stack, isString);
         case "worldStopped":
             return isString(value.error);
         case "modeChanged":

@@ -21,7 +21,7 @@ import {
     UndoStack,
 } from "./undoStack";
 import type {ProjectFileOperations} from "./fileUndo";
-import type {EditorRequester, EntityValueShapes, FieldChange, UndoContext} from "./undoStack";
+import type {EditorRequester, EntityValueShapes, FieldChange, UndoCommand, UndoContext} from "./undoStack";
 
 const FIRST_NEW_HANDLE = 100;
 const UNUSED_FILES = {} as ProjectFileOperations;
@@ -222,6 +222,55 @@ describe("undo stack", () => {
         expect(world.requests).toEqual(["setParent 11 null 0"]);
         await stack.redo();
         expect(world.requests[1]).toBe("setParent 12 null 0");
+    });
+
+    test("the history lists done labels oldest first and undone labels next redo first", async () => {
+        for (const name of ["A", "B", "C"]) stack.push(new RenameCommand(`Rename ${name}`, refs.refOf(ENTITY), null, name));
+        expect(stack.history).toEqual({doneOldestFirst: ["Rename A", "Rename B", "Rename C"], undoneNextFirst: []});
+        await stack.undo();
+        await stack.undo();
+        expect(stack.history).toEqual({doneOldestFirst: ["Rename A"], undoneNextFirst: ["Rename B", "Rename C"]});
+    });
+
+    test("jumping to a depth undoes or redoes one step at a time and clamps to the history", async () => {
+        for (const name of ["A", "B", "C"]) stack.push(new RenameCommand(`Rename ${name}`, refs.refOf(ENTITY), null, name));
+        let notifications = 0;
+        stack.onChange(() => notifications++);
+        await stack.jumpTo(0);
+        expect(world.requests).toEqual(["rename 1 null", "rename 1 null", "rename 1 null"]);
+        expect(stack.depth).toBe(0);
+        expect(notifications).toBe(3);
+        await stack.jumpTo(2);
+        expect(world.requests.slice(3)).toEqual(["rename 1 A", "rename 1 B"]);
+        expect(stack.history).toEqual({doneOldestFirst: ["Rename A", "Rename B"], undoneNextFirst: ["Rename C"]});
+        await stack.jumpTo(99);
+        expect(stack.depth).toBe(3);
+        await stack.jumpTo(-1);
+        expect(stack.depth).toBe(0);
+    });
+
+    test("a jump stops at the first failing step and rethrows, keeping what already ran", async () => {
+        const failure = new Error("cannot undo");
+        const failing: UndoCommand = {
+            label: "Broken",
+            undo: () => Promise.reject(failure),
+            redo: () => Promise.resolve(),
+        };
+        stack.push(new RenameCommand("Rename A", refs.refOf(ENTITY), null, "A"));
+        stack.push(failing);
+        stack.push(new RenameCommand("Rename C", refs.refOf(ENTITY), "A", "C"));
+        let notifications = 0;
+        stack.onChange(() => notifications++);
+        let thrown: unknown;
+        try {
+            await stack.jumpTo(0);
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown).toBe(failure);
+        expect(world.requests).toEqual(["rename 1 A"]);
+        expect(stack.history).toEqual({doneOldestFirst: ["Rename A"], undoneNextFirst: ["Rename C"]});
+        expect(notifications).toBe(2);
     });
 
     test("the oldest entries are dropped past the limit", () => {

@@ -51,6 +51,7 @@ function fileMenu(commands: EditorCommands): MenuEntry[] {
         MENU_SEPARATOR,
         commandEntry(file.setStartScene),
         commandEntry(file.projectSettings),
+        commandEntry(file.build),
         MENU_SEPARATOR,
         commandEntry(file.closeProject),
     ];
@@ -61,6 +62,7 @@ function editMenu(commands: EditorCommands): MenuEntry[] {
     return [
         commandEntry(edit.undo),
         commandEntry(edit.redo),
+        commandEntry(edit.undoHistory),
         MENU_SEPARATOR,
         commandEntry(edit.cut),
         commandEntry(edit.copy),

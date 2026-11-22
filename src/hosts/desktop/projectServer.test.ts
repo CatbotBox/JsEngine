@@ -3,13 +3,14 @@ import type * as Fs from "fs";
 import type * as Os from "os";
 import type * as Path from "path";
 import {createProjectServer, externalOpenCommand, splitCommandLine} from "./projectServer";
-import type {ProjectServer} from "./projectServer";
+import type {ProjectServer, ToolchainOutput} from "./projectServer";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {STARTER_SCENE_FILE} from "../../editor/project/projectTemplate";
 import {EDITOR_SETTINGS_FILE} from "../../editor/project/editorSettings";
 import type {GameTarget} from "../../editor/project/editorSettings";
 import {EDITOR_SETTINGS_UPDATE_METHOD} from "../../editor/project/projectServerApi";
-import type {OpenProjectResult} from "../../editor/project/projectServerApi";
+import type {OpenProjectResult, PackageResult, TargetFeatureReport, TargetReportResult} from "../../editor/project/projectServerApi";
+import type {ProjectTarget} from "../../engine/project/projectTargets";
 
 const fs = require("fs") as typeof Fs;
 const os = require("os") as typeof Os;
@@ -24,6 +25,22 @@ const HTTP_METHOD_NOT_ALLOWED = 405;
 const HTTP_CONFLICT = 409;
 const TERMINAL: GameTarget = {target: "terminal", backend: "cells"};
 const WINDOW_GPU: GameTarget = {target: "window", backend: "gpu"};
+const BUN_STUB = "bun-stub";
+const EXIT_SUCCESS = 0;
+const EXIT_FAILURE = 1;
+const EXIT_USAGE = 2;
+const UNAVAILABLE_REASON = "building project code needs the JsEngine source tree; start the editor from the repository";
+const DOM_PROBLEM_REPORT: TargetFeatureReport = {
+    ok: false,
+    target: "terminal",
+    bundles: [{
+        bundle: "game terminal",
+        target: "terminal",
+        modules: 12,
+        problems: [{symbol: "document", file: "src/hud.ts", line: 4, column: 9, missing: {anyOf: [], allOf: ["dom"]}, chain: ["src/main.ts", "src/hud.ts"]}],
+    }],
+    errors: [],
+};
 
 let folder = "";
 let server: ProjectServer;
@@ -43,6 +60,36 @@ function patch(route: string, body: unknown): Promise<Response> {
 
 async function opened(target: string): Promise<OpenProjectResult> {
     return await (await post("open", {path: target})).json() as OpenProjectResult;
+}
+
+function serverWithToolchain(respond: (args: readonly string[]) => Promise<ToolchainOutput>): string[][] {
+    server.close();
+    const runs: string[][] = [];
+    server = createProjectServer({repoRoot: folder, bun: {path: BUN_STUB}, browse: false, allowedHostnames: ["localhost"], runToolchain: async (_repoRoot, _bunPath, args) => {
+        runs.push([...args]);
+        return await respond(args);
+    }});
+    return runs;
+}
+
+function passingReport(target: ProjectTarget): TargetFeatureReport {
+    return {ok: true, target, bundles: [{bundle: `${target}.js`, target, modules: 3, problems: []}], errors: []};
+}
+
+function requestedTargetOf(args: readonly string[]): ProjectTarget {
+    return args[args.indexOf("--target") + 1] as ProjectTarget;
+}
+
+async function targetReport(id: string, target: unknown): Promise<TargetReportResult> {
+    return await (await post(`${id}/target-report`, {target})).json() as TargetReportResult;
+}
+
+function nextTask(): Promise<void> {
+    return new Promise(resolveTask => setTimeout(resolveTask, 0));
+}
+
+async function packaged(id: string): Promise<PackageResult> {
+    return await (await post(`${id}/package`, {})).json() as PackageResult;
 }
 
 beforeEach(() => {
@@ -236,6 +283,95 @@ describe("project server", () => {
         expect(browsed.directories.map((directory: {name: string}) => directory.name)).toEqual(["child"]);
         expect(browsed.parent).toBe(path.dirname(folder));
         expect(browsed.roots.length).toBeGreaterThan(1);
+    });
+});
+
+describe("project server target builds", () => {
+    test("a target report runs jsengine build with --project for the terminal only, and splits the report from the other output", async () => {
+        const runs = serverWithToolchain(async args => {
+            const target = requestedTargetOf(args);
+            const report = target === "terminal" ? DOM_PROBLEM_REPORT : passingReport(target);
+            return {stdout: `warning: ${target} note\n${JSON.stringify(report)}\n`, stderr: "bundled\r\n", exitCode: report.ok ? EXIT_SUCCESS : EXIT_FAILURE};
+        });
+        const {id, path: projectFolder} = await opened(folder);
+        expect(await targetReport(id, "terminal")).toEqual({report: DOM_PROBLEM_REPORT, output: ["warning: terminal note", "bundled"]});
+        expect(await targetReport(id, "web")).toEqual({report: passingReport("web"), output: ["warning: web note", "bundled"]});
+        expect(runs).toEqual([
+            ["build", "--target", "terminal", "--report", "json", "--project", projectFolder],
+            ["build", "--target", "web", "--report", "json"],
+        ]);
+    });
+
+    test("a run that prints no report becomes a failed report carrying what the CLI said", async () => {
+        serverWithToolchain(async () => ({stdout: "regenerate generated/\n", stderr: "jsengine: the window build covers every demo; drop --project\n", exitCode: EXIT_USAGE}));
+        const {id} = await opened(folder);
+        expect(await targetReport(id, "window")).toEqual({
+            report: {ok: false, target: "window", bundles: [], errors: [`jsengine build --target window exited with ${EXIT_USAGE}:`, "jsengine: the window build covers every demo; drop --project"]},
+            output: ["regenerate generated/"],
+        });
+        serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_FAILURE}));
+        const reopened = await opened(folder);
+        expect((await targetReport(reopened.id, "web")).report.errors).toEqual([`jsengine build --target web exited with ${EXIT_FAILURE} and no report`]);
+        serverWithToolchain(async () => {
+            throw new Error("spawn failed");
+        });
+        const failedSpawn = await opened(folder);
+        expect((await targetReport(failedSpawn.id, "web")).report.errors).toEqual([`Could not run ${BUN_STUB}: spawn failed`]);
+    });
+
+    test("a report for another target than the one asked for is not trusted", async () => {
+        serverWithToolchain(async () => ({stdout: JSON.stringify(passingReport("web")), stderr: "", exitCode: EXIT_SUCCESS}));
+        const {id} = await opened(folder);
+        expect((await targetReport(id, "window")).report.ok).toBe(false);
+    });
+
+    test("target reports take a known target and only POST", async () => {
+        const runs = serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_SUCCESS}));
+        const {id} = await opened(folder);
+        const unknown = await post(`${id}/target-report`, {target: "editor"});
+        expect(unknown.status).toBe(HTTP_BAD_REQUEST);
+        expect((await unknown.json()).error).toBe(`"target" must be one of web, window, terminal`);
+        expect((await post(`${id}/target-report`, {})).status).toBe(HTTP_BAD_REQUEST);
+        expect((await request(`${id}/target-report`)).status).toBe(HTTP_METHOD_NOT_ALLOWED);
+        expect((await request(`${id}/package`)).status).toBe(HTTP_METHOD_NOT_ALLOWED);
+        expect(runs).toEqual([]);
+    });
+
+    test("package runs jsengine package for the window target and passes its output and exit status back", async () => {
+        let exitCode = EXIT_SUCCESS;
+        const runs = serverWithToolchain(async () => ({stdout: "packaged release/swarm\n", stderr: "", exitCode}));
+        const {id, path: projectFolder} = await opened(folder);
+        expect(await packaged(id)).toEqual({ok: true, output: ["packaged release/swarm"]});
+        exitCode = EXIT_USAGE;
+        expect(await packaged(id)).toEqual({ok: false, output: ["packaged release/swarm"]});
+        expect(runs).toEqual([
+            ["package", "--target", "window", "--project", projectFolder],
+            ["package", "--target", "window", "--project", projectFolder],
+        ]);
+    });
+
+    test("target builds and packaging run one at a time across the server", async () => {
+        const pending: (() => void)[] = [];
+        const runs = serverWithToolchain(args => new Promise(resolveRun => {
+            pending.push(() => resolveRun({stdout: JSON.stringify(passingReport(requestedTargetOf(args))), stderr: "", exitCode: EXIT_SUCCESS}));
+        }));
+        const {id} = await opened(folder);
+        const both = Promise.all([targetReport(id, "web"), packaged(id)]);
+        await nextTask();
+        expect(runs.length).toBe(1);
+        pending[0]();
+        await nextTask();
+        expect(runs.length).toBe(2);
+        pending[1]();
+        const [web, packaging] = await both;
+        expect(web.report.ok).toBe(true);
+        expect(packaging.ok).toBe(true);
+    });
+
+    test("target builds and packaging say why they cannot run where building is unavailable", async () => {
+        const {id} = await opened(folder);
+        expect(await targetReport(id, "web")).toEqual({report: {ok: false, target: "web", bundles: [], errors: [UNAVAILABLE_REASON]}, output: []});
+        expect(await packaged(id)).toEqual({ok: false, output: [UNAVAILABLE_REASON]});
     });
 });
 

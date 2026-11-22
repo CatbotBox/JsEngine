@@ -1490,6 +1490,7 @@ body:not(.terminal-unfocused) .editor-viewport {
 
 .console-entry {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.6rem;
     padding: 0.1rem 0.6rem;
     border-bottom: 1px solid #111a26;
@@ -1523,6 +1524,98 @@ body:not(.terminal-unfocused) .editor-viewport {
 
 .console-entry.level-info .console-text {
     color: #b8d6ff;
+}
+
+.console-search {
+    flex: 0 1 12rem;
+    min-width: 6rem;
+    margin-left: auto;
+}
+
+.console-collapse {
+    opacity: 0.55;
+}
+
+.console-collapse.active {
+    opacity: 1;
+}
+
+.console-entry.has-stack {
+    cursor: pointer;
+}
+
+.console-expander {
+    flex: none;
+    width: 1rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+.console-expander[hidden] {
+    display: inline-block;
+    visibility: hidden;
+}
+
+.console-repeat {
+    flex: none;
+    margin-left: auto;
+    min-width: 1.2rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--background);
+    color: var(--muted);
+    font-size: 0.85em;
+    text-align: center;
+}
+
+.console-repeat[hidden],
+.console-stack[hidden] {
+    display: none;
+}
+
+.console-stack {
+    flex-basis: 100%;
+    margin: 0.15rem 0 0.25rem 1.6rem;
+    color: var(--muted);
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.undo-history-list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+    padding: 0.25rem 0;
+}
+
+.undo-history-entry {
+    flex: none;
+    padding: 0.15rem 0.75rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+}
+
+.undo-history-entry:hover:not(:disabled) {
+    background: var(--panel-hover);
+}
+
+.undo-history-entry.current {
+    background: var(--selection-strong);
+    font-weight: 600;
+}
+
+.undo-history-entry.undone {
+    color: var(--muted);
 }
 
 .popup-menu {
@@ -2238,4 +2331,107 @@ body:not(.terminal-unfocused) .editor-viewport {
 
 .input-map-action .settings-form-problems {
     grid-column: 1 / -1;
+}
+
+.editor-modal.build-dialog {
+    width: min(46rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+}
+
+.build-notice {
+    margin: 0;
+    color: var(--warning);
+}
+
+.build-notice[hidden] {
+    display: none;
+}
+
+.build-targets {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 0;
+    overflow: auto;
+    color: var(--muted);
+}
+
+.build-target {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    background: var(--panel-raised);
+    color: var(--text);
+}
+
+.build-target-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.build-target-name {
+    font-weight: 600;
+}
+
+.build-target-scope,
+.build-target-status {
+    color: var(--muted);
+}
+
+.build-target-status {
+    margin-right: auto;
+}
+
+.build-target.ok .build-target-status {
+    color: var(--axis-y);
+}
+
+.build-target.failing .build-target-name,
+.build-target.failing .build-target-scope,
+.build-target.failing .build-target-status {
+    opacity: 0.55;
+}
+
+.build-errors,
+.build-problems {
+    margin: 0.4rem 0 0;
+    padding-left: 1.1rem;
+}
+
+.build-errors {
+    color: var(--danger);
+    font-family: var(--mono);
+    white-space: pre-wrap;
+}
+
+.build-problem + .build-problem {
+    margin-top: 0.3rem;
+}
+
+.build-problem-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.build-problem-feature {
+    color: var(--danger);
+}
+
+.build-problem-symbol,
+.build-problem-location,
+.build-problem-chain {
+    font-family: var(--mono);
+}
+
+.build-problem-location,
+.build-problem-chain {
+    color: var(--muted);
+}
+
+.build-status {
+    align-self: center;
+    margin-right: auto;
+    color: var(--muted);
 }

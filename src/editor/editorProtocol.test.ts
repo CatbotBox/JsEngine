@@ -172,6 +172,7 @@ describe("editor protocol guards", () => {
     test("event messages carry a typed event and no request id, and are neither requests nor responses", () => {
         const events: unknown[] = [
             {kind: "console", level: "warn", text: "careful", timeMs: 12},
+            {kind: "console", level: "error", text: "Error: boom", timeMs: 13, stack: "    at fail (game.js:1:2)"},
             {kind: "worldStopped", error: "boom"},
             {kind: "modeChanged", mode: "play", gameplayTicks: 3, view: "game"},
         ];
@@ -185,6 +186,8 @@ describe("editor protocol guards", () => {
         const malformed: unknown[] = [
             {kind: "console", level: "trace", text: "x", timeMs: 1},
             {kind: "console", level: "log", text: 1, timeMs: 1},
+            {kind: "console", level: "error", text: "x", timeMs: 1, stack: 7},
+            {kind: "console", level: "error", text: "x", timeMs: 1, stack: null},
             {kind: "worldStopped"},
             {kind: "modeChanged", mode: "play", gameplayTicks: 3},
             {kind: "explode"},

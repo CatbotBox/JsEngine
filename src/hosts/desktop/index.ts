@@ -8,7 +8,7 @@ export {
     LOOPBACK_HOSTNAMES,
     ProjectServer,
 } from "./projectServer";
-export type {BunLocation, ProjectBuildOutcome, ProjectBuildRequest, ProjectServerOptions, ProjectWorkerBuildReport} from "./projectServer";
+export type {BunLocation, ProjectBuildOutcome, ProjectBuildRequest, ProjectServerOptions, ProjectWorkerBuildReport, ToolchainOutput, ToolchainRunner} from "./projectServer";
 export {SERVER_SENT_EVENT_HEARTBEAT_MS, ServerSentEventChannel, serverSentEventText} from "./serverSentEvents";
 export type {ServerSentEventChannelOptions} from "./serverSentEvents";
 export {DEFAULT_ZOOM_FACTOR, nextZoomFactor, storedZoomFactor, ZOOM_FACTORS, zoomCommandOf, zoomSettingsText} from "./windowZoom";
