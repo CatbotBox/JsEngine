@@ -1,5 +1,6 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {NULL_ENTITY} from "../../engine/core";
+import {errorFrames} from "../../engine/debugging/errorStack";
 import {EDITOR_MESSAGE_TYPE} from "../editorProtocol";
 import type {EditorRequestMessage} from "../editorProtocol";
 import {EditorClient, EditorClientClosedError, EditorRequestError, EditorRequestTimeoutError} from "./editorClient";
@@ -60,6 +61,25 @@ describe("EditorClient", () => {
         const error = await rejectionOf(pending);
         expect(error).toBeInstanceOf(EditorRequestError);
         expect(error.message).toBe('Editor request "getEntity" failed: No entity 0 in this world');
+    });
+
+    test("an error response carrying the world's stack keeps it as the rejection's frames", async () => {
+        const worldFrames = "    at requireEntity (entityEditing.ts:12:7)\n    at EditorWorldService.perform (editorWorldService.ts:300:5)";
+        const channel = new RecordingChannel();
+        const client = new EditorClient(channel);
+        const pending = client.request({op: "getEntity", entity: NULL_ENTITY});
+        channel.answer({type: EDITOR_MESSAGE_TYPE, requestId: 1, ok: false, error: "No entity 0 in this world", stack: worldFrames});
+        const error = await rejectionOf(pending);
+        expect(error.stack).toBe(`EditorRequestError: ${error.message}\n${worldFrames}`);
+        expect(errorFrames(error)).toBe(worldFrames);
+    });
+
+    test("an error response with a malformed stack is ignored like any malformed answer", async () => {
+        const channel = new RecordingChannel();
+        const client = new EditorClient(channel, {timeoutMs: SHORT_TIMEOUT_MS});
+        const pending = client.request({op: "step"});
+        channel.answer({type: EDITOR_MESSAGE_TYPE, requestId: 1, ok: false, error: "nope", stack: 42});
+        expect(await rejectionOf(pending)).toBeInstanceOf(EditorRequestTimeoutError);
     });
 
     test("a request without an answer rejects with a named timeout naming the op", async () => {

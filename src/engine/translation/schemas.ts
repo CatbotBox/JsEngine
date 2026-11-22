@@ -5,6 +5,7 @@ import type {EntityFieldOptions} from "../scene/componentSchemaBuilder";
 import type {SchemaEntry} from "../scene/schemaEntries";
 import {PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY} from "../scene/sceneSerialization";
 import {Children} from "./children";
+import {EulerAngles} from "./eulerAngles";
 import {LocalPosition} from "./localPosition";
 import {LocalRotation} from "./localRotation";
 import {LocalScale} from "./localScale";
@@ -26,6 +27,11 @@ export const LOCAL_ROTATION_SCHEMA_ENTRY: SchemaEntry = {
 export const LOCAL_SCALE_SCHEMA_ENTRY: SchemaEntry = {
     kind: "componentSchema",
     build: () => componentSchema(LocalScale, "LocalScale").vec3("xyz").category(ENGINE_COMPONENT_CATEGORIES.transform).build(),
+};
+
+export const EULER_ANGLES_SCHEMA_ENTRY: SchemaEntry = {
+    kind: "componentSchema",
+    build: () => componentSchema(EulerAngles, "EulerAngles").vec3("radians").category(ENGINE_COMPONENT_CATEGORIES.transform).build(),
 };
 
 export const PARENT_SCHEMA_ENTRY: SchemaEntry = {

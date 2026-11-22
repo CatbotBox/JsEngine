@@ -19,7 +19,5 @@ export class Demo2dTuning extends Resource {
     public fadeJitterMs = 0;
     public playerStepXUnits = 0;
     public playerStepYUnits = 0;
-    public cameraStepXUnits = 0;
-    public cameraStepYUnits = 0;
     public hud = new Demo2dHudTuning();
 }

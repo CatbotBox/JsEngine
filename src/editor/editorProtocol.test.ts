@@ -164,6 +164,8 @@ describe("editor protocol guards", () => {
     test("response messages are a result or an error, never both shapes mixed", () => {
         expect(isEditorResponseMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: true, result: {entities: []}})).toBe(true);
         expect(isEditorResponseMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: false, error: "no"})).toBe(true);
+        expect(isEditorResponseMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: false, error: "no", stack: "    at f (a.ts:1:1)"})).toBe(true);
+        expect(isEditorResponseMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: false, error: "no", stack: 1})).toBe(false);
         expect(isEditorResponseMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: true})).toBe(false);
         expect(isEditorResponseMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: false})).toBe(false);
         expect(isEditorResponseMessage({type: EDITOR_MESSAGE_TYPE, requestId: REQUEST_ID, ok: "true", result: 1})).toBe(false);

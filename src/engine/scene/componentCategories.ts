@@ -6,6 +6,7 @@ export const ENGINE_COMPONENT_CATEGORIES = {
     rendering3d: "Rendering 3D",
     hud: "HUD",
     lighting: "Lighting",
+    motion: "Motion",
     prefab: "Prefab",
     scene: "Scene",
     settings: "Settings",

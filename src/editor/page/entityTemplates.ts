@@ -1,4 +1,5 @@
 import type {SceneJsonObject} from "../../engine/scene";
+import {UNIT_CUBE_MESH_PATH} from "../../engine/scene/fieldSchema";
 import type {CreateEntityRequest, EditorComponentValues, EditorEntitySummary} from "../editorProtocol";
 import {AXIS_X, degreesToRadians, quaternionFromAxisAngle} from "./editorCameraMath";
 import type {Quaternion} from "./editorCameraMath";
@@ -86,7 +87,7 @@ function templateComponents(template: EntityTemplate, context: EntityTemplateCon
             return {
                 [LOCAL_ROTATION]: {xyzw: [...IDENTITY_ROTATION]},
                 [LOCAL_SCALE]: {xyz: [...UNIT_SCALE]},
-                [RENDER_MESH]: {color: WHITE},
+                [RENDER_MESH]: {mesh: {path: UNIT_CUBE_MESH_PATH}, color: WHITE},
             };
         case "directionalLight":
             return {

@@ -1,7 +1,16 @@
 import type {ProjectEntry, ProjectFileChange, ProjectFileSystem} from "./projectFileSystem";
 import {requireProjectRelativePath} from "../../engine/project/projectPaths";
-import {isFilesChangedEvent, PROJECT_EVENT_FILES_CHANGED, PROJECT_OPEN_EXTERNALLY_ROUTE, PROJECT_SHOW_IN_FOLDER_ROUTE, projectApiUrl, projectFileRoute} from "./projectServerApi";
-import type {MakeDirectoryRequest, OpenExternallyRequest, ProjectApiError, RenameRequest, ShowInFolderRequest} from "./projectServerApi";
+import {
+    isFilesChangedEvent,
+    PROJECT_EVENT_FILES_CHANGED,
+    PROJECT_OPEN_EXTERNALLY_ROUTE,
+    PROJECT_SHOW_IN_FOLDER_ROUTE,
+    projectApiError,
+    projectApiFailureOf,
+    projectApiUrl,
+    projectFileRoute,
+} from "./projectServerApi";
+import type {MakeDirectoryRequest, OpenExternallyRequest, ProjectApiFailure, RenameRequest, ShowInFolderRequest} from "./projectServerApi";
 
 export interface HttpRequestInit {
     readonly method?: string;
@@ -37,15 +46,8 @@ const JSON_HEADERS: Readonly<Record<string, string>> = {"Content-Type": "applica
 const BINARY_HEADERS: Readonly<Record<string, string>> = {"Content-Type": "application/octet-stream"};
 const NO_STORE: RequestCache = "no-store";
 
-async function failureText(response: HttpResponseLike): Promise<string> {
-    const text = await response.text().catch(() => "");
-    try {
-        const parsed = JSON.parse(text) as Partial<ProjectApiError>;
-        if (typeof parsed.error === "string") return parsed.error;
-    } catch {
-        return text.length > 0 ? text : `HTTP ${response.status}`;
-    }
-    return `HTTP ${response.status}`;
+export async function responseFailure(response: HttpResponseLike): Promise<ProjectApiFailure> {
+    return projectApiFailureOf(await response.text().catch(() => ""), response.status);
 }
 
 export class HttpProjectFileSystem implements ProjectFileSystem {
@@ -117,7 +119,10 @@ export class HttpProjectFileSystem implements ProjectFileSystem {
 
     private async request(what: string, route: string, init: HttpRequestInit): Promise<HttpResponseLike> {
         const response = await this.fetch(this.base + route, init);
-        if (!response.ok) throw new Error(`Could not ${what}: ${await failureText(response)}`);
+        if (!response.ok) {
+            const failure = await responseFailure(response);
+            throw projectApiError(`Could not ${what}: ${failure.message}`, failure);
+        }
         return response;
     }
 }

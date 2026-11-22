@@ -1,4 +1,5 @@
 import type {Entity} from "../../engine/core";
+import {errorFramesOf} from "../../engine/debugging/errorStack";
 import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
 import {describeSchemaChange} from "../../engine/scene/schemaChanges";
 import type {SceneLoadReport} from "../../engine/scene/sceneSerialization";
@@ -158,8 +159,8 @@ export class ProjectRunner {
         return {client: session.client, events: session.events, files: this.options.files, project: this.options.project, stackMapper: this.stackMapper};
     }
 
-    private notice(level: EditorNoticeLevel, text: string): void {
-        this.options.shell.notice(level, text);
+    private notice(level: EditorNoticeLevel, text: string, stack?: string): void {
+        this.options.shell.notice(level, text, stack);
     }
 
     private async performReload(build: WorkerBuild): Promise<void> {
@@ -199,7 +200,7 @@ export class ProjectRunner {
             if (next !== undefined && this.current !== next) next.dispose();
             if (viewport !== this.viewport) viewport.dispose();
             const failure = switching ? `Switching to ${gameTargetLabelText(build.gameTarget)} failed` : "Hot reload failed";
-            this.notice("error", `${failure}, the previous game code keeps running: ${describeError(error)}`);
+            this.notice("error", `${failure}, the previous game code keeps running: ${describeError(error)}`, errorFramesOf(error));
         } finally {
             this.reloading = false;
             this.runQueuedReload();

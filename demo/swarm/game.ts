@@ -15,7 +15,8 @@ import {LocalPosition} from "../../src/engine/translation";
 import {DataAssets, dataAssetPathOf, PrefabSpawner} from "../../src/engine/scene";
 import type {PrefabAsset} from "../../src/engine/scene";
 import {Random} from "../../src/engine/math/random";
-import {Bullet, Enemy, Lifetime, Ship, Spark, Velocity} from "./components";
+import {Lifetime, LifetimeSystem, MotionSystem, Velocity} from "../../src/engine/motion";
+import {Bullet, Enemy, Ship, Spark} from "./components";
 import {EnemyGrid} from "./enemyGrid";
 import {SwarmPhase, SwarmState} from "./resources";
 import {MS_PER_SECOND, SWARM_TUNING_FILE, SwarmTuning} from "./tuning";
@@ -39,14 +40,15 @@ const Action = {
 
 type SwarmActions = ResolvedInputActions<typeof Action>;
 
-const ARENA_PRIORITY = -130;
-const CONTROL_PRIORITY = -120;
-const SHIP_PRIORITY = -110;
-const WEAPON_PRIORITY = -100;
-const WAVE_PRIORITY = -90;
-const SEEK_PRIORITY = -80;
-const MOTION_PRIORITY = -70;
-const LIFETIME_PRIORITY = -60;
+const ARENA_PRIORITY = -140;
+const CONTROL_PRIORITY = -130;
+const SHIP_PRIORITY = -120;
+const WEAPON_PRIORITY = -110;
+const WAVE_PRIORITY = -100;
+const SEEK_PRIORITY = -90;
+const MOTION_PRIORITY = -80;
+const LIFETIME_PRIORITY = -70;
+const SPARK_FADE_PRIORITY = -60;
 const BROADPHASE_PRIORITY = -50;
 const BULLET_HIT_PRIORITY = -40;
 const BOMB_PRIORITY = -30;
@@ -469,52 +471,48 @@ export class EnemySeekSystem extends System {
     }
 }
 
-export class MotionSystem extends System {
-    private _moving = this.createEntityQuery([Velocity, LocalPosition]);
-
+export class SwarmMotionSystem extends MotionSystem {
     override priority(): number {
         return MOTION_PRIORITY;
     }
 
-    protected onCreate(): void {
+    protected override onCreate(): void {
         this.requireResourceForUpdate(SwarmTuning);
-        this.requireAnyForUpdate(this._moving);
+        super.onCreate();
     }
 
-    onUpdate(): void {
-        const stepSeconds = simulationStepMs(this.world) / MS_PER_SECOND;
-        this._moving.stream({read: {velocity: Velocity}, write: {position: LocalPosition}}).consumeSpans(({start, end, cols, stores}) => {
-            const positions = cols.position!, velocities = stores.velocity!;
-            for (let i = start; i < end; i++) {
-                const velocity = velocities.get(i) as Velocity;
-                const p = i * POSITION_STRIDE;
-                positions[p + POSITION_X] += velocity.xUnitsPerSecond * stepSeconds;
-                positions[p + POSITION_Y] += velocity.yUnitsPerSecond * stepSeconds;
-            }
-        });
+    protected override stepMs(): number {
+        return simulationStepMs(this.world);
     }
 }
 
-export class LifetimeSystem extends System {
-    private _lifetimes = this.createEntityQuery([Lifetime]);
-    private _fading = this.createEntityQuery([Spark, Lifetime, Sprite]);
-
+export class SwarmLifetimeSystem extends LifetimeSystem {
     override priority(): number {
         return LIFETIME_PRIORITY;
     }
 
-    protected onCreate(): void {
+    protected override onCreate(): void {
         this.requireResourceForUpdate(SwarmTuning);
-        this.requireAnyForUpdate(this._lifetimes);
+        super.onCreate();
+    }
+
+    protected override stepMs(): number {
+        return simulationStepMs(this.world);
+    }
+}
+
+export class SparkFadeSystem extends System {
+    private _fading = this.createEntityQuery([Spark, Lifetime, Sprite]);
+
+    override priority(): number {
+        return SPARK_FADE_PRIORITY;
+    }
+
+    protected onCreate(): void {
+        this.requireAnyForUpdate(this._fading);
     }
 
     onUpdate(): void {
-        const stepMs = simulationStepMs(this.world);
-        const buffer = commandBufferOf(this.world);
-        this._lifetimes.stream({write: {lifetime: Lifetime}}, {includeEntity: true}).consume(({entity, lifetime}) => {
-            lifetime.remainingMs -= stepMs;
-            if (lifetime.remainingMs <= 0) buffer.destroyEntity(entity);
-        });
         this._fading.stream({read: {lifetime: Lifetime}, write: {sprite: Sprite}}).consume(({lifetime, sprite}) => {
             sprite.opacity = Math.max(HIDDEN_OPACITY, lifetime.remainingMs / lifetime.durationMs);
         });

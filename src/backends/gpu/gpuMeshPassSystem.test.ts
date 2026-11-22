@@ -7,6 +7,7 @@ import {Camera} from "../../engine/rendering/camera";
 import {Mesh, MeshBuilder} from "../../engine/rendering/3d/mesh";
 import {Material} from "../../engine/rendering/3d/material";
 import {RenderMesh} from "../../engine/rendering/3d/renderMesh";
+import {createUnitCubeMesh} from "../../engine/rendering/3d/meshAssetType";
 import {FaceCulling} from "../../engine/rendering/3d/faceCulling";
 import {FieldOfView} from "../../engine/rendering/3d/fieldOfView";
 import {MeshRenderSettings} from "../../engine/rendering/3d/meshRenderSettings";
@@ -46,6 +47,7 @@ const ONE_LEVEL_COARSER = 1;
 const TRIANGLE_CORNERS = 3;
 const GRID_HALF_SIZE = 1;
 const OFF_SCREEN_X = 30;
+const UNIT_CUBE_TRIANGLES = 12;
 
 interface Placement {
     readonly x: number;
@@ -468,5 +470,18 @@ describe("GpuMeshPassSystem", () => {
         expect(writes[0].length).toBe(FRAME_UNIFORM_FLOATS);
         expect(first >= 0).toBe(true);
         expect(last - first).toBeGreaterThan(CLOCK_ADVANCE_MS / HALF / MS_PER_SECOND);
+    });
+
+    test("draws the built-in unit cube as one indexed call over its twelve triangles, culling back faces", async () => {
+        const rig = gpuWorld();
+        const {world, device, errors} = rig;
+        world.getOrCreateSystem(GpuMeshPassSystem);
+        addQuads(world, createUnitCubeMesh(), 1);
+        await step(rig, SETTLE_STEPS);
+        expect(errors).toEqual([]);
+        expect(world.resources.get(MeshRenderStats).trianglesDrawn).toBe(UNIT_CUBE_TRIANGLES);
+        expect(lastScenePass(device)!.callsOf("drawIndexed").map(call => call.args)).toEqual([[UNIT_CUBE_TRIANGLES * TRIANGLE_CORNERS, 1, 0, 0, 0]]);
+        const cullModes = device.pipelines.filter(pipeline => pipeline.label?.startsWith(`${LIT_SURFACE_SHADER}|`)).map(pipeline => pipeline.primitive?.cullMode);
+        expect(cullModes).toEqual(["back"]);
     });
 });

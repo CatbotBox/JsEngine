@@ -384,6 +384,7 @@ export interface DescribeSchemasResult {
 export interface EditorAssetTypeDescription {
     readonly name: string;
     readonly fileSuffixes: readonly string[];
+    readonly builtInPaths: readonly string[];
     readonly dataAsset: boolean;
 }
 
@@ -671,6 +672,7 @@ export interface EditorFailureMessage {
     readonly requestId: number;
     readonly ok: false;
     readonly error: string;
+    readonly stack?: string;
 }
 
 export type EditorResponseMessage = EditorSuccessMessage | EditorFailureMessage;
@@ -876,7 +878,7 @@ export function isEditorRequestMessage(message: unknown): message is EditorReque
 export function isEditorResponseMessage(message: unknown): message is EditorResponseMessage {
     if (!isEditorMessage(message)) return false;
     if (message.ok === true) return "result" in message;
-    return message.ok === false && isString(message.error);
+    return message.ok === false && isString(message.error) && isAbsentOr(message.stack, isString);
 }
 
 export function isEditorEventMessage(message: unknown): message is EditorEventMessage {

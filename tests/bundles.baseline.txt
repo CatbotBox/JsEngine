@@ -1,5 +1,5 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 177 modules, 221700 bytes minified
+demo/2d terminal cells main: 182 modules, 222270 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -10,8 +10,6 @@ demo/2d terminal cells main: 177 modules, 221700 bytes minified
   demo/2d/generated/systems.cells.ts
   demo/2d/generated/systems.ts
   demo/2d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/2d/cellsHudSpritePasses.ts
   src/backends/cells/2d/cellsSpritePasses.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
@@ -35,6 +33,10 @@ demo/2d terminal cells main: 177 modules, 221700 bytes minified
   src/engine/assets/image/inflate.ts
   src/engine/assets/image/jpeg.ts
   src/engine/assets/image/png.ts
+  src/engine/cameraControllers/2d/panCamera.ts
+  src/engine/cameraControllers/2d/panCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -73,6 +75,7 @@ demo/2d terminal cells main: 177 modules, 221700 bytes minified
   src/engine/datatypes/ringQueue.ts
   src/engine/debugging/consoleOverride.ts
   src/engine/debugging/originalConsole.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/debugging/table.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -120,6 +123,8 @@ demo/2d terminal cells main: 177 modules, 221700 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -207,7 +212,7 @@ demo/2d web cells page: 18 modules, 24366 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 173 modules, 214010 bytes minified
+demo/2d web cells worker: 178 modules, 214574 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -218,8 +223,6 @@ demo/2d web cells worker: 173 modules, 214010 bytes minified
   demo/2d/generated/systems.cells.ts
   demo/2d/generated/systems.ts
   demo/2d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/2d/cellsHudSpritePasses.ts
   src/backends/cells/2d/cellsSpritePasses.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
@@ -244,6 +247,10 @@ demo/2d web cells worker: 173 modules, 214010 bytes minified
   src/engine/assets/image/inflate.ts
   src/engine/assets/image/jpeg.ts
   src/engine/assets/image/png.ts
+  src/engine/cameraControllers/2d/panCamera.ts
+  src/engine/cameraControllers/2d/panCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -280,6 +287,7 @@ demo/2d web cells worker: 173 modules, 214010 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
   src/engine/input/inputMap.ts
@@ -326,6 +334,8 @@ demo/2d web cells worker: 173 modules, 214010 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -398,7 +408,7 @@ demo/2d web pixels page: 16 modules, 16512 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 172 modules, 211042 bytes minified
+demo/2d web pixels worker: 177 modules, 211606 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -408,8 +418,6 @@ demo/2d web pixels worker: 172 modules, 211042 bytes minified
   demo/2d/generated/systems.pixels.ts
   demo/2d/generated/systems.ts
   demo/2d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/2d/pixelsHudSpritePasses.ts
@@ -434,6 +442,10 @@ demo/2d web pixels worker: 172 modules, 211042 bytes minified
   src/engine/assets/image/inflate.ts
   src/engine/assets/image/jpeg.ts
   src/engine/assets/image/png.ts
+  src/engine/cameraControllers/2d/panCamera.ts
+  src/engine/cameraControllers/2d/panCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -470,6 +482,7 @@ demo/2d web pixels worker: 172 modules, 211042 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
   src/engine/input/inputMap.ts
@@ -516,6 +529,8 @@ demo/2d web pixels worker: 172 modules, 211042 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -588,7 +603,7 @@ demo/2d web gpu page: 16 modules, 16052 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 189 modules, 228480 bytes minified
+demo/2d web gpu worker: 194 modules, 229044 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -598,8 +613,6 @@ demo/2d web gpu worker: 189 modules, 228480 bytes minified
   demo/2d/generated/systems.gpu.ts
   demo/2d/generated/systems.ts
   demo/2d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/cellFrame.ts
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts
@@ -639,6 +652,10 @@ demo/2d web gpu worker: 189 modules, 228480 bytes minified
   src/engine/assets/image/inflate.ts
   src/engine/assets/image/jpeg.ts
   src/engine/assets/image/png.ts
+  src/engine/cameraControllers/2d/panCamera.ts
+  src/engine/cameraControllers/2d/panCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -675,6 +692,7 @@ demo/2d web gpu worker: 189 modules, 228480 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
   src/engine/input/inputMap.ts
@@ -722,6 +740,8 @@ demo/2d web gpu worker: 189 modules, 228480 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -778,7 +798,7 @@ demo/2d web gpu worker: 189 modules, 228480 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 199 modules, 292069 bytes minified
+demo/3d terminal cells main: 206 modules, 292485 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -792,8 +812,6 @@ demo/3d terminal cells main: 199 modules, 292069 bytes minified
   demo/3d/modelGrid.ts
   demo/3d/supersamplePresetKeys.ts
   demo/3d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
   src/backends/cells/3d/cellResolveTarget.ts
@@ -818,6 +836,10 @@ demo/3d terminal cells main: 199 modules, 292069 bytes minified
   src/engine/assets/image/png.ts
   src/engine/assets/meshCache.ts
   src/engine/assets/mtlParser.ts
+  src/engine/cameraControllers/3d/flyCamera.ts
+  src/engine/cameraControllers/3d/flyCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -857,6 +879,7 @@ demo/3d terminal cells main: 199 modules, 292069 bytes minified
   src/engine/datatypes/ringQueue.ts
   src/engine/debugging/consoleOverride.ts
   src/engine/debugging/originalConsole.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/debugging/table.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -921,6 +944,8 @@ demo/3d terminal cells main: 199 modules, 292069 bytes minified
   src/engine/rendering/shaderAssetType.ts
   src/engine/rendering/shaderSource.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -954,6 +979,7 @@ demo/3d terminal cells main: 199 modules, 292069 bytes minified
   src/engine/scene/schemas.ts
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
+  src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
@@ -964,6 +990,7 @@ demo/3d terminal cells main: 199 modules, 292069 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/translation/turnEulerAngles.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/terminal/ansi/ansiCellEncoder.ts
@@ -1008,7 +1035,7 @@ demo/3d web cells page: 18 modules, 24366 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 195 modules, 284168 bytes minified
+demo/3d web cells worker: 202 modules, 284573 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1022,8 +1049,6 @@ demo/3d web cells worker: 195 modules, 284168 bytes minified
   demo/3d/modelGrid.ts
   demo/3d/supersamplePresetKeys.ts
   demo/3d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
   src/backends/cells/3d/cellResolveTarget.ts
@@ -1049,6 +1074,10 @@ demo/3d web cells worker: 195 modules, 284168 bytes minified
   src/engine/assets/image/png.ts
   src/engine/assets/meshCache.ts
   src/engine/assets/mtlParser.ts
+  src/engine/cameraControllers/3d/flyCamera.ts
+  src/engine/cameraControllers/3d/flyCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -1086,6 +1115,7 @@ demo/3d web cells worker: 195 modules, 284168 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
   src/engine/input/inputMap.ts
@@ -1149,6 +1179,8 @@ demo/3d web cells worker: 195 modules, 284168 bytes minified
   src/engine/rendering/shaderAssetType.ts
   src/engine/rendering/shaderSource.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -1182,6 +1214,7 @@ demo/3d web cells worker: 195 modules, 284168 bytes minified
   src/engine/scene/schemas.ts
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
+  src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
@@ -1192,6 +1225,7 @@ demo/3d web cells worker: 195 modules, 284168 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/translation/turnEulerAngles.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/web/animationFrameScheduler.ts
@@ -1221,7 +1255,7 @@ demo/3d web pixels page: 16 modules, 16512 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 195 modules, 282573 bytes minified
+demo/3d web pixels worker: 202 modules, 282983 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1235,8 +1269,6 @@ demo/3d web pixels worker: 195 modules, 282573 bytes minified
   demo/3d/modelGrid.ts
   demo/3d/supersamplePresetKeys.ts
   demo/3d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/3d/meshPixelPassSettings.ts
   src/backends/pixels/3d/meshPixelPassSystem.ts
@@ -1262,6 +1294,10 @@ demo/3d web pixels worker: 195 modules, 282573 bytes minified
   src/engine/assets/image/png.ts
   src/engine/assets/meshCache.ts
   src/engine/assets/mtlParser.ts
+  src/engine/cameraControllers/3d/flyCamera.ts
+  src/engine/cameraControllers/3d/flyCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -1299,6 +1335,7 @@ demo/3d web pixels worker: 195 modules, 282573 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
   src/engine/input/inputMap.ts
@@ -1362,6 +1399,8 @@ demo/3d web pixels worker: 195 modules, 282573 bytes minified
   src/engine/rendering/shaderAssetType.ts
   src/engine/rendering/shaderSource.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -1395,6 +1434,7 @@ demo/3d web pixels worker: 195 modules, 282573 bytes minified
   src/engine/scene/schemas.ts
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
+  src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
@@ -1405,6 +1445,7 @@ demo/3d web pixels worker: 195 modules, 282573 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/translation/turnEulerAngles.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/web/animationFrameScheduler.ts
@@ -1434,7 +1475,7 @@ demo/3d web gpu page: 16 modules, 16052 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 210 modules, 294468 bytes minified
+demo/3d web gpu worker: 217 modules, 294888 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
   demo/3d/components.ts
@@ -1449,8 +1490,6 @@ demo/3d web gpu worker: 210 modules, 294468 bytes minified
   demo/3d/modelGrid.ts
   demo/3d/supersamplePresetKeys.ts
   demo/3d/tuning.ts
-  demo/_shared/debugWorld.ts
-  demo/_shared/hud.ts
   src/backends/cells/cellFrame.ts
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts
@@ -1494,6 +1533,10 @@ demo/3d web gpu worker: 210 modules, 294468 bytes minified
   src/engine/assets/image/png.ts
   src/engine/assets/meshCache.ts
   src/engine/assets/mtlParser.ts
+  src/engine/cameraControllers/3d/flyCamera.ts
+  src/engine/cameraControllers/3d/flyCameraSystem.ts
+  src/engine/cameraControllers/cameraControllerPriority.ts
+  src/engine/cameraControllers/schemas.ts
   src/engine/core/activeRenderers.ts
   src/engine/core/app.ts
   src/engine/core/changeStampCounter.ts
@@ -1531,6 +1574,7 @@ demo/3d web gpu worker: 210 modules, 294468 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
   src/engine/input/inputMap.ts
@@ -1589,6 +1633,8 @@ demo/3d web gpu worker: 210 modules, 294468 bytes minified
   src/engine/rendering/shaderAssetType.ts
   src/engine/rendering/shaderSource.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -1622,6 +1668,7 @@ demo/3d web gpu worker: 210 modules, 294468 bytes minified
   src/engine/scene/schemas.ts
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
+  src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
@@ -1632,6 +1679,7 @@ demo/3d web gpu worker: 210 modules, 294468 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/translation/turnEulerAngles.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/web/animationFrameScheduler.ts
@@ -1645,7 +1693,7 @@ demo/3d web gpu worker: 210 modules, 294468 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 178 modules, 240450 bytes minified
+demo/swarm terminal cells main: 185 modules, 241198 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1731,6 +1779,11 @@ demo/swarm terminal cells main: 178 modules, 240450 bytes minified
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
+  src/engine/motion/lifetime.ts
+  src/engine/motion/lifetimeSystem.ts
+  src/engine/motion/motionSystem.ts
+  src/engine/motion/schemas.ts
+  src/engine/motion/velocity.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
   src/engine/platform/paths.ts
@@ -1766,6 +1819,8 @@ demo/swarm terminal cells main: 178 modules, 240450 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -1854,7 +1909,7 @@ demo/swarm web cells page: 18 modules, 24358 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 174 modules, 232773 bytes minified
+demo/swarm web cells worker: 181 modules, 233512 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1938,6 +1993,11 @@ demo/swarm web cells worker: 174 modules, 232773 bytes minified
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
+  src/engine/motion/lifetime.ts
+  src/engine/motion/lifetimeSystem.ts
+  src/engine/motion/motionSystem.ts
+  src/engine/motion/schemas.ts
+  src/engine/motion/velocity.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
   src/engine/platform/paths.ts
@@ -1973,6 +2033,8 @@ demo/swarm web cells worker: 174 modules, 232773 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -2046,7 +2108,7 @@ demo/swarm web pixels page: 16 modules, 16504 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 174 modules, 230351 bytes minified
+demo/swarm web pixels worker: 181 modules, 231090 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2130,6 +2192,11 @@ demo/swarm web pixels worker: 174 modules, 230351 bytes minified
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
+  src/engine/motion/lifetime.ts
+  src/engine/motion/lifetimeSystem.ts
+  src/engine/motion/motionSystem.ts
+  src/engine/motion/schemas.ts
+  src/engine/motion/velocity.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
   src/engine/platform/paths.ts
@@ -2165,6 +2232,8 @@ demo/swarm web pixels worker: 174 modules, 230351 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
@@ -2238,7 +2307,7 @@ demo/swarm web gpu page: 16 modules, 16044 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 191 modules, 247777 bytes minified
+demo/swarm web gpu worker: 198 modules, 248516 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2337,6 +2406,11 @@ demo/swarm web gpu worker: 191 modules, 247777 bytes minified
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
+  src/engine/motion/lifetime.ts
+  src/engine/motion/lifetimeSystem.ts
+  src/engine/motion/motionSystem.ts
+  src/engine/motion/schemas.ts
+  src/engine/motion/velocity.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
   src/engine/platform/paths.ts
@@ -2373,6 +2447,8 @@ demo/swarm web gpu worker: 191 modules, 247777 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/hudLabel.ts
+  src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts

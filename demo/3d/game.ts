@@ -1,18 +1,20 @@
 import {EntityCommandBufferSystem, FrameLoopSettings, NULL_ENTITY, Resource, System} from "../../src/engine/core";
 import type {Component, ComponentCtor, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
 import {Input, resolveInputActions} from "../../src/engine/input";
-import type {InputAction, InputEvent, ResolvedInputActions} from "../../src/engine/input";
-import {RenderPasses, SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../src/engine/rendering";
+import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
+import {RenderPasses} from "../../src/engine/rendering";
 import type {RenderPassKind} from "../../src/engine/rendering";
-import {LocalPosition, LocalRotation} from "../../src/engine/translation";
-import {AmbientLight, DirectionalLight, FieldOfView, MeshRenderSettings, MeshRenderStats, PointLight} from "../../src/engine/rendering/3d";
+import {EulerAngles, LocalRotation} from "../../src/engine/translation";
+import {turnEulerAngles} from "../../src/engine/translation/turnEulerAngles";
+import {AmbientLight, DirectionalLight, MeshRenderSettings, MeshRenderStats, PointLight} from "../../src/engine/rendering/3d";
 import {Vec} from "../../src/engine/math/types/vec";
-import type {ReadonlyVec3, ReadonlyVec4, Vec3, Vec4} from "../../src/engine/math/types/vec";
+import type {ReadonlyVec3, Vec3} from "../../src/engine/math/types/vec";
 import {Quaternions} from "../../src/engine/math/quaternions";
+import {FlyCameraSystem} from "../../src/engine/cameraControllers/3d";
 import {DataAssets, dataAssetPathOf, PrefabSpawner} from "../../src/engine/scene";
-import {requireDebugWorld} from "../_shared/debugWorld";
-import {formatHudLines, formatHudText, HudLabel} from "../_shared/hud";
-import {Demo3dHud, EulerAngles, FlyCamera, ModelGrid} from "./components";
+import {requireDebugWorld} from "../../src/engine/debugging";
+import {formatHudLines, formatHudText, HudLabel} from "../../src/engine/rendering/text";
+import {Demo3dHud, ModelGrid} from "./components";
 import {assetModelFiles, ModelCatalog} from "./modelCatalog";
 import type {CatalogModel, ModelDownload} from "./modelCatalog";
 import {GridModels} from "./modelGrid";
@@ -22,9 +24,6 @@ import type {Demo3dHudTuning, RenderPacingPreset} from "./tuning";
 const DEMO_NAME = "The 3D demo";
 const CONTROLS_PRIORITY = -10;
 const HUD_PRIORITY = 20;
-const QUARTER_TURN_RAD = Math.PI / 2;
-const SCREEN_UNIT_WIDTH_PER_HEIGHT = 1 / SCREEN_UNIT_HEIGHT_PER_WIDTH;
-const NO_ROLL_RAD = 0;
 const NO_TURN_RAD = 0;
 const LESS_DETAIL_SIGN = 1;
 const MORE_DETAIL_SIGN = -1;
@@ -43,26 +42,16 @@ const COMPACT_UNITS: readonly (readonly [value: number, suffix: string])[] = [
     [1e6, "M"],
     [1e3, "k"],
 ];
-const FORWARD: ReadonlyVec3 = Vec.alloc3(0, 0, 1);
-const RIGHT: ReadonlyVec3 = Vec.alloc3(1, 0, 0);
 const INCLUDING_DISABLED = {includeDisabled: true} as const;
 const ENTITIES_INCLUDING_DISABLED = {includeEntity: true, includeDisabled: true} as const;
 
 const Demo3dAction = {
-    MoveForward: "moveForward",
-    MoveBackward: "moveBackward",
-    MoveRight: "moveRight",
-    MoveLeft: "moveLeft",
-    MoveDown: "moveDown",
-    MoveUp: "moveUp",
     RotateModelsUp: "rotateModelsUp",
     RotateModelsDown: "rotateModelsDown",
     RotateModelsLeft: "rotateModelsLeft",
     RotateModelsRight: "rotateModelsRight",
     ShrinkModels: "shrinkModels",
     GrowModels: "growModels",
-    ZoomIn: "zoomIn",
-    ZoomOut: "zoomOut",
     RotateSunUp: "rotateSunUp",
     RotateSunDown: "rotateSunDown",
     RotateSunLeft: "rotateSunLeft",
@@ -71,7 +60,6 @@ const Demo3dAction = {
     DespawnModel: "despawnModel",
     NextModel: "nextModel",
     ReloadModels: "reloadModels",
-    Look: "look",
     ToggleMeshPass: "toggleMeshPass",
     ToggleHud: "toggleHud",
     LogSystemOrder: "logSystemOrder",
@@ -126,23 +114,6 @@ function createSession(world: World): Demo3dSession {
     return session;
 }
 
-function cameraRotationOf(camera: Readonly<FlyCamera>, scratch: Vec3): Vec4 {
-    return Quaternions.eulerToQuat(Vec.set3(scratch, camera.pitchRad, camera.yawRad, NO_ROLL_RAD));
-}
-
-function rotateByQuat(q: ReadonlyVec4, v: ReadonlyVec3, out: Vec3): Vec3 {
-    const x = Vec.x(q), y = Vec.y(q), z = Vec.z(q), w = Vec.w(q);
-    const vx = Vec.x(v), vy = Vec.y(v), vz = Vec.z(v);
-    const tx = 2 * (y * vz - z * vy);
-    const ty = 2 * (z * vx - x * vz);
-    const tz = 2 * (x * vy - y * vx);
-    return Vec.set3(out,
-        vx + w * tx + (y * tz - z * ty),
-        vy + w * ty + (z * tx - x * tz),
-        vz + w * tz + (x * ty - y * tx),
-    );
-}
-
 function formatCompact(num: number): string {
     const abs = Math.abs(num);
     const sign = num < 0 ? "-" : "";
@@ -167,9 +138,10 @@ function renderPacingOf(tuning: Demo3dTuning, session: Demo3dSession): RenderPac
     return tuning.renderPacing[session.renderPacingIndex];
 }
 
+export class Demo3dFlyCameraSystem extends FlyCameraSystem {
+}
+
 export class Demo3dControlsSystem extends System {
-    private _flyCameras = this.createEntityQuery([FlyCamera, LocalPosition, LocalRotation]);
-    private _zoomCameras = this.createEntityQuery([FlyCamera, FieldOfView]);
     private _suns = this.createEntityQuery([DirectionalLight, EulerAngles, LocalRotation]);
     private _directionalLights = this.createEntityQuery([DirectionalLight]);
     private _ambientLights = this.createEntityQuery([AmbientLight]);
@@ -181,13 +153,8 @@ export class Demo3dControlsSystem extends System {
     private _keyDownHandlers: readonly ActionHandler[] = [];
     private _keyPressHandlers: readonly ActionHandler[] = [];
     private _commands: readonly ActionHandler[] = [];
-    private readonly _eulerScratch: Vec3 = Vec.alloc3();
-    private readonly _directionScratch: Vec3 = Vec.alloc3();
     private _scaleFactor: Vec3 = Vec.alloc3();
     private _scaleStep = Number.NaN;
-    private _lastPointerX = 0;
-    private _lastPointerY = 0;
-    private _looking = false;
 
     override priority(): number {
         return CONTROLS_PRIORITY;
@@ -200,20 +167,12 @@ export class Demo3dControlsSystem extends System {
         const actions = resolveInputActions(this.world, Demo3dAction);
         this._actions = actions;
         this._keyDownHandlers = [
-            {action: actions.MoveForward, run: () => this.moveCamera(FORWARD, this.tuning().camera.moveStepUnits)},
-            {action: actions.MoveBackward, run: () => this.moveCamera(FORWARD, -this.tuning().camera.moveStepUnits)},
-            {action: actions.MoveRight, run: () => this.moveCamera(RIGHT, this.tuning().camera.moveStepUnits)},
-            {action: actions.MoveLeft, run: () => this.moveCamera(RIGHT, -this.tuning().camera.moveStepUnits)},
-            {action: actions.MoveDown, run: () => this.raiseCamera(-this.tuning().camera.moveStepUnits)},
-            {action: actions.MoveUp, run: () => this.raiseCamera(this.tuning().camera.moveStepUnits)},
             {action: actions.RotateModelsUp, run: () => this.rotateModels(this.tuning().modelControls.rotateStepRad, NO_TURN_RAD)},
             {action: actions.RotateModelsDown, run: () => this.rotateModels(-this.tuning().modelControls.rotateStepRad, NO_TURN_RAD)},
             {action: actions.RotateModelsLeft, run: () => this.rotateModels(NO_TURN_RAD, -this.tuning().modelControls.rotateStepRad)},
             {action: actions.RotateModelsRight, run: () => this.rotateModels(NO_TURN_RAD, this.tuning().modelControls.rotateStepRad)},
             {action: actions.ShrinkModels, run: () => this.scaleModels(Vec.divInto)},
             {action: actions.GrowModels, run: () => this.scaleModels(Vec.mulInto)},
-            {action: actions.ZoomIn, run: () => this.zoom(fieldOfView => fieldOfView.degrees /= this.tuning().camera.fovKeyStep)},
-            {action: actions.ZoomOut, run: () => this.zoom(fieldOfView => fieldOfView.degrees *= this.tuning().camera.fovKeyStep)},
             {action: actions.RotateSunUp, run: () => this.rotateSun(this.tuning().sunRotateStepRad, NO_TURN_RAD)},
             {action: actions.RotateSunDown, run: () => this.rotateSun(-this.tuning().sunRotateStepRad, NO_TURN_RAD)},
             {action: actions.RotateSunLeft, run: () => this.rotateSun(NO_TURN_RAD, -this.tuning().sunRotateStepRad)},
@@ -249,10 +208,7 @@ export class Demo3dControlsSystem extends System {
             return;
         }
         for (const event of input.events) {
-            if (event.type !== "keyDown") {
-                this.handlePointer(input, event);
-                continue;
-            }
+            if (event.type !== "keyDown") continue;
             for (const handler of this._keyDownHandlers) if (input.isActionEvent(event, handler.action)) handler.run();
             if (event.repeat) continue;
             for (const handler of this._keyPressHandlers) if (input.isActionEvent(event, handler.action)) handler.run();
@@ -280,43 +236,9 @@ export class Demo3dControlsSystem extends System {
         return this._grids.tryGetSingleton({grid: ModelGrid}, INCLUDING_DISABLED)?.grid;
     }
 
-    private moveCamera(localDirection: ReadonlyVec3, amount: number): void {
-        this._flyCameras.stream({read: {camera: FlyCamera}, write: {position: LocalPosition}}, INCLUDING_DISABLED).consume(({camera, position}) => {
-            const direction = rotateByQuat(cameraRotationOf(camera, this._eulerScratch), localDirection, this._directionScratch);
-            const dx = Vec.x(direction), dy = Vec.y(direction), dz = Vec.z(direction);
-            position.x += dx * amount;
-            position.y += dy * amount;
-            position.z += dz * amount;
-        });
-    }
-
-    private raiseCamera(amount: number): void {
-        this._flyCameras.stream({write: {position: LocalPosition}}, INCLUDING_DISABLED).consume(({position}) => {
-            position.y += amount;
-        });
-    }
-
-    private look(yawRad: number, pitchRad: number): void {
-        const pitchLimit = QUARTER_TURN_RAD - this.tuning().camera.pitchMarginRad;
-        this._flyCameras.stream({write: {camera: FlyCamera, rotation: LocalRotation}}, INCLUDING_DISABLED).consume(({camera, rotation}) => {
-            camera.yawRad += yawRad;
-            camera.pitchRad += pitchRad;
-            camera.pitchRad = Math.max(-pitchLimit, Math.min(pitchLimit, camera.pitchRad));
-            rotation.xyzw = cameraRotationOf(camera, this._eulerScratch);
-        });
-    }
-
-    private zoom(change: (fieldOfView: FieldOfView) => void): void {
-        this._zoomCameras.stream({write: {fieldOfView: FieldOfView}}, INCLUDING_DISABLED).consume(({fieldOfView}) => {
-            change(fieldOfView);
-        });
-    }
-
     private rotateSun(pitchRad: number, yawRad: number): void {
         this._suns.stream({write: {euler: EulerAngles, rotation: LocalRotation}}, INCLUDING_DISABLED).consume(({euler, rotation}) => {
-            if (pitchRad !== NO_TURN_RAD) Vec.setX(euler.radians, Vec.x(euler.radians) + pitchRad);
-            if (yawRad !== NO_TURN_RAD) Vec.setY(euler.radians, Vec.y(euler.radians) + yawRad);
-            rotation.xyzw = Quaternions.eulerToQuat(euler.radians);
+            turnEulerAngles(euler, rotation, pitchRad, yawRad);
         });
     }
 
@@ -448,37 +370,6 @@ export class Demo3dControlsSystem extends System {
         setEnabledStateOf(this._directionalLights, session.lightsOn, buffer);
         setEnabledStateOf(this._ambientLights, session.lightsOn, buffer);
         setEnabledStateOf(this._pointLights, session.lightsOn && session.lampOn, buffer);
-    }
-
-    private handlePointer(input: Input, event: InputEvent): void {
-        switch (event.type) {
-            case "pointerDown":
-                if (!input.isActionEvent(event, this._actions.Look)) return;
-                this._looking = true;
-                this._lastPointerX = event.x;
-                this._lastPointerY = event.y;
-                return;
-            case "pointerUp":
-                if (input.isActionEvent(event, this._actions.Look)) this._looking = false;
-                return;
-            case "pointerMove": {
-                if (!this._looking) return;
-                const dx = event.x - this._lastPointerX;
-                const dy = event.y - this._lastPointerY;
-                this._lastPointerX = event.x;
-                this._lastPointerY = event.y;
-                const lookRadPerUnit = this.tuning().camera.lookRadPerUnit;
-                this.look(dx * lookRadPerUnit, dy * lookRadPerUnit * SCREEN_UNIT_WIDTH_PER_HEIGHT);
-                return;
-            }
-            case "wheel": {
-                const camera = this.tuning().camera;
-                this.zoom(fieldOfView => {
-                    fieldOfView.degrees = Math.max(camera.minFovDegrees, Math.min(camera.maxFovDegrees, fieldOfView.degrees * Math.pow(camera.fovWheelStep, -event.delta)));
-                });
-                return;
-            }
-        }
     }
 }
 

@@ -1,4 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
+import {errorFrames} from "../../engine/debugging/errorStack";
 import {HttpProjectFileSystem} from "./httpProjectFileSystem";
 import type {HttpFetch, HttpRequestInit, HttpResponseLike, ProjectEventSource} from "./httpProjectFileSystem";
 import type {ProjectFileChange} from "./projectFileSystem";
@@ -90,6 +91,20 @@ describe("HttpProjectFileSystem", () => {
             failure = error;
         }
         expect(failure instanceof Error && failure.message === "Could not read missing.png: missing.png is not a file in the project").toBe(true);
+    });
+
+    test("a server error with a stack keeps the server's frames on the error", async () => {
+        const serverFrames = "    at readProjectFile (projectServer.ts:610:11)";
+        const {fetch} = recordingFetch(() => response(500, JSON.stringify({error: "EBUSY: resource busy", stack: serverFrames})));
+        const files = new HttpProjectFileSystem({projectId: "p1", rootLabel: "game", fetch, events: new ScriptedEvents()});
+        let failure: unknown;
+        try {
+            await files.write("level.scene.json", "{}");
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure instanceof Error ? failure.message : failure).toBe("Could not write level.scene.json: EBUSY: resource busy");
+        expect(failure instanceof Error ? errorFrames(failure) : undefined).toBe(serverFrames);
     });
 
     test("paths leaving the project are refused before any request", async () => {

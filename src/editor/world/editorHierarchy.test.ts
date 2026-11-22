@@ -27,9 +27,9 @@ import {linkChild, worldMatrixOf} from "./hierarchyEditing";
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const POSITION_DIGITS = 4;
 
-class Velocity extends Component {
+class Heading extends Component {
     public speed = 1;
-    public label = "velocity";
+    public label = "heading";
     public direction = [0, 0, 1];
 }
 
@@ -92,37 +92,37 @@ describe("editor rename and multi-field edits", () => {
     test("unregistered components get an inferred schema: described, inspected, edited in place, added and removed", async () => {
         const handles: Entity[] = [];
         const harnessed = editorWorld(world => {
-            handles.push(world.entityManager.createEntity("mover", [new LocalPosition(), new Velocity()]));
+            handles.push(world.entityManager.createEntity("mover", [new LocalPosition(), new Heading()]));
             handles.push(world.entityManager.createEntity("idle", [new LocalPosition()]));
         });
         const [mover, idle] = handles;
         const {components} = await ask(harnessed, {op: "describeSchemas"});
-        expect(components.find(component => component.typeName === "Velocity")).toEqual({
-            typeName: "Velocity",
+        expect(components.find(component => component.typeName === "Heading")).toEqual({
+            typeName: "Heading",
             persistence: "fields",
             fields: [{key: "speed", kind: "number"}, {key: "label", kind: "string", nullable: false}, {key: "direction", kind: "vec3"}],
             inferred: true,
             category: "Game",
         });
         const details = await ask(harnessed, {op: "getEntity", entity: mover});
-        expect(details.components.find(component => component.typeName === "Velocity"))
-            .toEqual({typeName: "Velocity", inspectable: true, inferred: true, fields: {speed: 1, label: "velocity", direction: [0, 0, 1]}});
+        expect(details.components.find(component => component.typeName === "Heading"))
+            .toEqual({typeName: "Heading", inspectable: true, inferred: true, fields: {speed: 1, label: "heading", direction: [0, 0, 1]}});
 
-        const velocity = harnessed.world.entityManager.getComponent<Velocity>(mover, Velocity)!;
-        const direction = velocity.direction;
+        const heading = harnessed.world.entityManager.getComponent<Heading>(mover, Heading)!;
+        const direction = heading.direction;
         await ask(harnessed, {op: "setFields", edits: [
-            {entity: mover, typeName: "Velocity", key: "speed", value: 4},
-            {entity: mover, typeName: "Velocity", key: "direction", value: [1, 0, 0]},
+            {entity: mover, typeName: "Heading", key: "speed", value: 4},
+            {entity: mover, typeName: "Heading", key: "direction", value: [1, 0, 0]},
         ]});
-        expect(velocity.speed).toBe(4);
-        expect(velocity.direction).toBe(direction);
-        expect(velocity.direction).toEqual([1, 0, 0]);
+        expect(heading.speed).toBe(4);
+        expect(heading.direction).toBe(direction);
+        expect(heading.direction).toEqual([1, 0, 0]);
 
-        const added = await ask(harnessed, {op: "addComponent", entity: idle, typeName: "Velocity", values: {speed: 9}});
-        expect(fieldsOf(added, "Velocity")).toEqual({speed: 9, label: "velocity", direction: [0, 0, 1]});
-        const removed = await ask(harnessed, {op: "removeComponent", entity: mover, typeName: "Velocity"});
+        const added = await ask(harnessed, {op: "addComponent", entity: idle, typeName: "Heading", values: {speed: 9}});
+        expect(fieldsOf(added, "Heading")).toEqual({speed: 9, label: "heading", direction: [0, 0, 1]});
+        const removed = await ask(harnessed, {op: "removeComponent", entity: mover, typeName: "Heading"});
         expect(removed.components.map(component => component.typeName)).toEqual(["LocalPosition"]);
-        expect((await ask(harnessed, {op: "saveScene"})).report.skippedComponentTypes).toEqual([{typeName: "Velocity", entityCount: 1}]);
+        expect((await ask(harnessed, {op: "saveScene"})).report.skippedComponentTypes).toEqual([{typeName: "Heading", entityCount: 1}]);
     });
 });
 

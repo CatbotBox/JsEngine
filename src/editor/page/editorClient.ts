@@ -1,3 +1,4 @@
+import {adoptStackFrames} from "../../engine/debugging/errorStack";
 import {EDITOR_MESSAGE_TYPE, isEditorResponseMessage} from "../editorProtocol";
 import type {EditorOp, EditorRequest, EditorRequestMessage, EditorResult, EditorResultOf} from "../editorProtocol";
 
@@ -25,8 +26,9 @@ export class EditorRequestTimeoutError extends Error {
 export class EditorRequestError extends Error {
     public override readonly name = "EditorRequestError";
 
-    public constructor(public readonly op: EditorOp, reason: string) {
+    public constructor(public readonly op: EditorOp, reason: string, worldStack?: string) {
         super(`Editor request "${op}" failed: ${reason}`);
+        adoptStackFrames(this, worldStack);
     }
 }
 
@@ -96,6 +98,6 @@ export class EditorClient {
         this.pending.delete(data.requestId);
         clearTimeout(pending.timer);
         if (data.ok) pending.resolve(data.result);
-        else pending.reject(new EditorRequestError(pending.op, data.error));
+        else pending.reject(new EditorRequestError(pending.op, data.error, data.stack));
     }
 }

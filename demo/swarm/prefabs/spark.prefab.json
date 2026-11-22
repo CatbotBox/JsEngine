@@ -39,7 +39,8 @@
         "Spark": {},
         "Velocity": {
           "xUnitsPerSecond": 0,
-          "yUnitsPerSecond": 0
+          "yUnitsPerSecond": 0,
+          "zUnitsPerSecond": 0
         }
       }
     }

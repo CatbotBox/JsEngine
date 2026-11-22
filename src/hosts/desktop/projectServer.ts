@@ -4,7 +4,8 @@ import {existsSync, statSync, watch} from "fs";
 import type {FSWatcher} from "fs";
 import {copyFile, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile} from "fs/promises";
 import {homedir} from "os";
-import {delimiter, dirname, isAbsolute, join, relative, resolve, sep} from "path";
+import {basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep} from "path";
+import {errorFramesOf} from "../../engine/debugging/errorStack";
 import {PROJECT_ENTRY_EXTENSIONS, PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
 import type {ProjectManifestValidation} from "../../engine/project/projectManifest";
 import {isProjectTarget, PROJECT_TARGETS} from "../../engine/project/projectTargets";
@@ -21,6 +22,7 @@ import {
     isTargetFeatureReport,
     PACKAGED_TARGET,
     PROJECT_API_PREFIX,
+    PROJECT_EDITOR_EXTENSIONS_COPY_PATH,
     PROJECT_EDITOR_SETTINGS_ROUTE,
     PROJECT_EVENT_BUILD_FAILED,
     PROJECT_EVENT_FILES_CHANGED,
@@ -41,6 +43,7 @@ import type {
     OpenProjectResult,
     PackageResult,
     PickFolderResult,
+    ProjectApiError,
     ProjectCapabilities,
     TargetFeatureReport,
     TargetReportResult,
@@ -189,8 +192,9 @@ function json(value: unknown, status = HTTP_OK): Response {
     return new Response(JSON.stringify(value), {status, headers: {...ISOLATION_HEADERS, "Content-Type": JSON_CONTENT_TYPE, "Cache-Control": NO_STORE}});
 }
 
-function failure(status: number, message: string): Response {
-    return json({error: message}, status);
+function failure(status: number, message: string, stack?: string): Response {
+    const body: ProjectApiError = stack === undefined ? {error: message} : {error: message, stack};
+    return json(body, status);
 }
 
 export function isInsideDirectory(root: string, path: string): boolean {
@@ -523,7 +527,7 @@ export class ProjectServer {
             return await this.route(request);
         } catch (error) {
             if (error instanceof HttpError) return failure(error.status, error.message);
-            return failure(HTTP_INTERNAL_ERROR, describeError(error));
+            return failure(HTTP_INTERNAL_ERROR, describeError(error), errorFramesOf(error));
         }
     }
 
@@ -897,7 +901,8 @@ export class ProjectServer {
         project.editorExtensionsPath = outcome.editorExtensionsPath;
         project.inputs = new Set(outcome.inputs.map(input => this.pathKey(input)));
         project.version++;
-        await this.copyBundleIntoProject(project, outcome.bundlePath, gameTarget);
+        await this.copyBundleIntoProject(project, outcome.bundlePath, projectBuildCopyPath(gameTarget));
+        await this.copyEditorExtensionsIntoProject(project, outcome.editorExtensionsPath);
         if (project.events.subscriberCount > 0) this.watchInputs(project, outcome.inputs);
         const projectRoute = `${PROJECT_API_PREFIX}${encodeURIComponent(project.id)}`;
         const version = `?v=${project.version}`;
@@ -905,13 +910,26 @@ export class ProjectServer {
         return {workerUrl: `${projectRoute}/${PROJECT_WORKER_FILE}${version}`, gameTarget, ...editorExtensionsUrl, warnings: outcome.warnings};
     }
 
-    private async copyBundleIntoProject(project: OpenProject, bundlePath: string, gameTarget: GameTarget): Promise<void> {
-        const target = join(project.folder, ...projectBuildCopyPath(gameTarget).split("/"));
+    private async copyBundleIntoProject(project: OpenProject, bundlePath: string, copyPath: string): Promise<void> {
+        const target = join(project.folder, ...copyPath.split("/"));
         try {
             await mkdir(dirname(target), RECURSIVE);
             await copyFile(bundlePath, target);
         } catch (error) {
-            console.warn(`Could not copy the editor worker into ${target}: ${describeError(error)}`);
+            console.warn(`Could not copy ${basename(bundlePath)} into ${target}: ${describeError(error)}`);
+        }
+    }
+
+    private async copyEditorExtensionsIntoProject(project: OpenProject, bundlePath: string | undefined): Promise<void> {
+        if (bundlePath !== undefined) {
+            await this.copyBundleIntoProject(project, bundlePath, PROJECT_EDITOR_EXTENSIONS_COPY_PATH);
+            return;
+        }
+        const stale = join(project.folder, ...PROJECT_EDITOR_EXTENSIONS_COPY_PATH.split("/"));
+        try {
+            await rm(stale, {force: true});
+        } catch (error) {
+            console.warn(`Could not remove the stale ${stale}: ${describeError(error)}`);
         }
     }
 

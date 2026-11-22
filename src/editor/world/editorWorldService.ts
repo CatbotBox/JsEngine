@@ -1,6 +1,7 @@
 import {EntityCommandBufferSystem} from "../../engine/core";
 import type {ResourceCtor} from "../../engine/core/resource";
 import type {Entity, Resource, System, SystemCtor, World, WorldStoppedEvent} from "../../engine/core";
+import {errorFramesOf} from "../../engine/debugging/errorStack";
 import {
     applySceneInPlace,
     DataAssets,
@@ -34,6 +35,7 @@ import type {
     EditorMode,
     EditorRequest,
     EditorRequestMessage,
+    EditorFailureMessage,
     EditorResponseMessage,
     EditorResult,
     EditorSceneRef,
@@ -74,7 +76,7 @@ import {
 import {duplicateEntities, setParent} from "./hierarchyEditing";
 import {EditorViews} from "./editorViews";
 import {PrefabLibrary} from "./prefabEditing";
-import {ConsoleForwarder, errorFrames} from "./consoleForwarding";
+import {ConsoleForwarder} from "./consoleForwarding";
 import {exportWorldSnapshot, importedEditSnapshot} from "./editorSnapshots";
 import {
     assignResourceField,
@@ -121,6 +123,12 @@ function warnDataAssetSchemaChanges(report: DataAssetSchemaChanges): void {
 
 function errorText(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function failureMessage(requestId: number, text: string, cause: unknown): EditorFailureMessage {
+    const stack = errorFramesOf(cause);
+    const failure: EditorFailureMessage = {type: EDITOR_MESSAGE_TYPE, requestId, ok: false, error: text};
+    return stack === undefined ? failure : {...failure, stack};
 }
 
 function documentText(document: SceneDocument): string {
@@ -226,12 +234,12 @@ export class EditorWorldService {
         try {
             response = {type: EDITOR_MESSAGE_TYPE, requestId, ok: true, result: await this.perform(message.request)};
         } catch (error) {
-            response = {type: EDITOR_MESSAGE_TYPE, requestId, ok: false, error: errorText(error)};
+            response = failureMessage(requestId, errorText(error), error);
         }
         try {
             this.post(response);
         } catch (error) {
-            this.post({type: EDITOR_MESSAGE_TYPE, requestId, ok: false, error: `The result could not be sent: ${errorText(error)}`});
+            this.post(failureMessage(requestId, `The result could not be sent: ${errorText(error)}`, error));
         }
     }
 
@@ -704,7 +712,7 @@ export class EditorWorldService {
         if (this.stoppedError !== undefined) return;
         this.stoppedError = error === undefined ? PLAIN_STOP_TEXT : errorText(error);
         this.stopTicking();
-        const stack = error instanceof Error ? errorFrames(error) : undefined;
+        const stack = errorFramesOf(error);
         this.postEvent(stack === undefined ? {kind: "worldStopped", error: this.stoppedError} : {kind: "worldStopped", error: this.stoppedError, stack});
     }
 

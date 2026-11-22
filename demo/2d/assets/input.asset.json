@@ -37,7 +37,7 @@
         "buttons": []
       },
       {
-        "name": "moveCameraUp",
+        "name": "panCameraUp",
         "keys": [
           "W"
         ],
@@ -45,7 +45,7 @@
         "buttons": []
       },
       {
-        "name": "moveCameraDown",
+        "name": "panCameraDown",
         "keys": [
           "S"
         ],
@@ -53,7 +53,7 @@
         "buttons": []
       },
       {
-        "name": "moveCameraLeft",
+        "name": "panCameraLeft",
         "keys": [
           "A"
         ],
@@ -61,7 +61,7 @@
         "buttons": []
       },
       {
-        "name": "moveCameraRight",
+        "name": "panCameraRight",
         "keys": [
           "D"
         ],

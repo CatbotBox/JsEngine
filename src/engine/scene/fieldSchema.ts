@@ -10,6 +10,18 @@ export const SPRITE_IMAGE_ASSET_TYPE_NAME = "spriteImage";
 export const PREFAB_ASSET_TYPE_NAME = "prefab";
 export const SHADER_ASSET_TYPE_NAME = "shader";
 export const PREFAB_FILE_SUFFIX = ".prefab.json";
+export const BUILT_IN_ASSET_SCHEME = "builtin:";
+
+export function builtInAssetPath(name: string): string {
+    return BUILT_IN_ASSET_SCHEME + name;
+}
+
+export function isBuiltInAssetPath(path: string): boolean {
+    return path.startsWith(BUILT_IN_ASSET_SCHEME);
+}
+
+export const UNIT_CUBE_MESH_PATH = builtInAssetPath("cube");
+export const BUILT_IN_MESH_PATHS: readonly string[] = [UNIT_CUBE_MESH_PATH];
 
 export type PlainFieldKind = "boolean" | "textLines" | "vec2" | "vec3" | "rotation" | "rgb" | "textColor";
 

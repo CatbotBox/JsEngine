@@ -1,4 +1,5 @@
 import {consoleOverride} from "../../engine/debugging";
+import {errorFrames, errorHeadline, stackFramesOrUndefined} from "../../engine/debugging/errorStack";
 import {originalConsole} from "../../engine/debugging/originalConsole";
 import {EDITOR_CONSOLE_LEVELS} from "../editorProtocol";
 import type {EditorConsoleEvent, EditorConsoleLevel} from "../editorProtocol";
@@ -18,13 +19,8 @@ type ErrorConstructorWithCapture = ErrorConstructor & {
 const STACK_CAPTURING_LEVELS: ReadonlySet<EditorConsoleLevel> = new Set(["warn", "error"]);
 const STACK_LINE_SEPARATOR = "\n";
 const PLAIN_STACK_HEADER = "Error";
-const LEADING_LINE_BREAK = /^\r?\n/;
 
 function ignore(): void {
-}
-
-function errorHeadline(error: Error): string {
-    return error.message.length === 0 ? error.name : `${error.name}: ${error.message}`;
 }
 
 function describeArgument(argument: unknown): string {
@@ -42,23 +38,11 @@ export function consoleText(args: readonly unknown[]): string {
     return args.map(describeArgument).join(" ");
 }
 
-function framesOrUndefined(frames: string): string | undefined {
-    return frames.trim().length === 0 ? undefined : frames;
-}
-
-export function errorFrames(error: Error): string | undefined {
-    const stack = error.stack;
-    if (stack === undefined) return undefined;
-    const headline = errorHeadline(error);
-    const frames = stack.startsWith(headline) ? stack.slice(headline.length).replace(LEADING_LINE_BREAK, "") : stack;
-    return framesOrUndefined(frames);
-}
-
 function framesBelowHeader(stack: string | undefined): string | undefined {
     if (stack === undefined) return undefined;
     const lines = stack.split(STACK_LINE_SEPARATOR);
     const frames = lines[0] === PLAIN_STACK_HEADER ? lines.slice(1) : lines;
-    return framesOrUndefined(frames.join(STACK_LINE_SEPARATOR));
+    return stackFramesOrUndefined(frames.join(STACK_LINE_SEPARATOR));
 }
 
 function stackAbove(boundary: StackBoundary): string | undefined {

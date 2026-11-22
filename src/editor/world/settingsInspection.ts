@@ -34,6 +34,7 @@ import {editorDecodeContext} from "./entityEditing";
 import {componentTypeName, encodeEditorFieldValue, entitiesInCreationOrder} from "./entityInspection";
 
 export const SETTINGS_CATEGORY = ENGINE_COMPONENT_CATEGORIES.settings;
+const NO_BUILT_IN_PATHS: readonly string[] = [];
 
 interface PresentResource {
     readonly schema: ResourceSchema;
@@ -76,6 +77,7 @@ export function describeAssetTypes(registry: ComponentSchemaRegistry): DescribeA
         assetTypes: registry.assetTypes.map(type => ({
             name: type.name,
             fileSuffixes: [...type.fileSuffixes],
+            builtInPaths: [...type.builtInPaths ?? NO_BUILT_IN_PATHS],
             dataAsset: registry.resourceByName(type.name) !== undefined,
         })),
     };

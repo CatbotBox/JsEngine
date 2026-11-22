@@ -1,9 +1,7 @@
-import {ComponentType, NULL_ENTITY, persistentTrackComponent, System} from "../../src/engine/core";
-import type {Entity, World} from "../../src/engine/core";
-import {TextSprite} from "../../src/engine/rendering";
-import type {TextColor} from "../../src/engine/rendering";
+import {NULL_ENTITY, System} from "../../src/engine/core";
+import {formatHudLines, formatHudText, HudLabel} from "../../src/engine/rendering/text";
+import type {HudValues} from "../../src/engine/rendering/text";
 import {AverageStat} from "../../src/engine/datatypes";
-import {untrackedComponentOf} from "../../src/engine/scene";
 import {Enemy, SwarmHud} from "./components";
 import {SwarmPhase, SwarmState} from "./resources";
 import {MS_PER_SECOND, SwarmTuning} from "./tuning";
@@ -16,20 +14,8 @@ const REFRESH_ON_FIRST_FRAME_MS = Number.POSITIVE_INFINITY;
 const NO_TEXT: string[] = [];
 const BLANK_LINE = "";
 const SPACE = " ";
-const PLACEHOLDER = /\{(\w+)\}/g;
 
 type BannerKind = "none" | "title" | "wave" | "gameOver";
-
-type HudValues = Readonly<Record<string, number>>;
-
-function formatHudText(template: string, values: HudValues): string {
-    return template.replace(PLACEHOLDER, (placeholder: string, name: string) =>
-        Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : placeholder);
-}
-
-function formatHudLines(lines: readonly string[], values: HudValues): string[] {
-    return lines.map(line => formatHudText(line, values));
-}
 
 function widestLength(lines: readonly string[]): number {
     let width = 0;
@@ -62,32 +48,6 @@ function waveLines(banner: WaveBanner, state: SwarmState, values: HudValues): st
     const lines = formatHudLines(banner.lines, values);
     if (state.lastClearEarnedBomb) lines.push(...formatHudLines(banner.bombEarnedLines, values));
     return lines;
-}
-
-class HudLabel {
-    private source: TextSprite | undefined;
-    private label: TextSprite | undefined;
-    private lines: string[] | undefined;
-    private foreground: TextColor | undefined;
-
-    public bindTo(world: World, entity: Entity): void {
-        const source = untrackedComponentOf<TextSprite>(world, entity, ComponentType.of(TextSprite));
-        if (source === this.source) return;
-        this.source = source;
-        this.label = source === undefined ? undefined : persistentTrackComponent(entity, source);
-        if (this.foreground !== undefined) this.paint(this.foreground);
-        if (this.lines !== undefined) this.show(this.lines);
-    }
-
-    public paint(foreground: TextColor): void {
-        this.foreground = foreground;
-        if (this.label !== undefined) this.label.foreground = foreground;
-    }
-
-    public show(lines: string[]): void {
-        this.lines = lines;
-        if (this.label !== undefined) this.label.image = lines;
-    }
 }
 
 export class SwarmHudSystem extends System {

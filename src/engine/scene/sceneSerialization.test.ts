@@ -11,6 +11,7 @@ import {LocalScale} from "../translation/localScale";
 import {LocalToWorld} from "../translation/localToWorld";
 import {Parent} from "../translation/parent";
 import {Children} from "../translation/children";
+import {EulerAngles} from "../translation/eulerAngles";
 import {TranslationSystemGroup} from "../translation/translationSystemGroup";
 import {LocalToWorldSystem} from "../translation/localToWorldSystem";
 import {Camera} from "../rendering/camera";
@@ -31,6 +32,10 @@ import {Mesh} from "../rendering/3d/mesh";
 import {AmbientLight} from "../rendering/3d/lighting/ambientLight";
 import {DirectionalLight} from "../rendering/3d/lighting/directionalLight";
 import {PointLight} from "../rendering/3d/lighting/pointLight";
+import {Lifetime} from "../motion/lifetime";
+import {Velocity} from "../motion/velocity";
+import {PanCamera} from "../cameraControllers/2d/panCamera";
+import {FlyCamera} from "../cameraControllers/3d/flyCamera";
 import {encodePpm} from "../assets/image/ppm";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {registerEngineComponentSchemas} from "./engineComponentSchemas";
@@ -115,8 +120,16 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     offset.z = 3;
     const rootRotation = new LocalRotation();
     rootRotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.1, 0.2, 0.3));
+    const panCamera = new PanCamera();
+    panCamera.stepXUnits = 2;
+    panCamera.stepYUnits = 0.5;
+    const flyCamera = new FlyCamera();
+    flyCamera.yawRad = 0.4;
+    flyCamera.pitchRad = -0.2;
+    flyCamera.moveStepUnits = 0.25;
+    flyCamera.minFovDegrees = 20;
     const root = em.createEntity("root", [
-        new LocalPosition(10, -2, 3), rootRotation, new LocalScale(2, 3, 4), new LocalToWorld(), camera, fieldOfView, offset,
+        new LocalPosition(10, -2, 3), rootRotation, new LocalScale(2, 3, 4), new LocalToWorld(), camera, fieldOfView, offset, panCamera, flyCamera,
     ]);
 
     const sprite = new Sprite(SpriteImage.fromPixels(INLINE_SIZE, INLINE_SIZE, INLINE_RGBA), 0x123456);
@@ -126,7 +139,16 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     const renderMesh = new RenderMesh(Mesh.fromFile(MESH_PATH, platform), 0x00FF7F);
     renderMesh.faceCulling = FaceCulling.None;
     const meshHolder = em.createEntity("meshHolder", [renderMesh, new LocalPosition(0, 0, 5), new LocalToWorld()]);
-    const moon = em.createEntity("moon", [new LocalPosition(0, 1, 0), new LocalToWorld(), new Parent(meshHolder), new Sprite(SpriteImage.fromFile(SPRITE_PATH, platform))]);
+    const velocity = new Velocity();
+    velocity.xUnitsPerSecond = 1.5;
+    velocity.yUnitsPerSecond = -2;
+    velocity.zUnitsPerSecond = 0.25;
+    const lifetime = new Lifetime();
+    lifetime.durationMs = 900;
+    lifetime.remainingMs = 400;
+    const moon = em.createEntity("moon", [
+        new LocalPosition(0, 1, 0), new LocalToWorld(), new Parent(meshHolder), new Sprite(SpriteImage.fromFile(SPRITE_PATH, platform)), velocity, lifetime,
+    ]);
 
     const text = new TextSprite();
     text.image = ["hi", "there"];
@@ -139,7 +161,9 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
 
     const sunRotation = new LocalRotation();
     sunRotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.7, -0.6, 0));
-    const sun = em.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalPosition(), sunRotation, new LocalToWorld()]);
+    const sunAngles = new EulerAngles();
+    sunAngles.radians = Vec3.alloc(0.7, -0.6, 0);
+    const sun = em.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalPosition(), sunRotation, new LocalToWorld(), sunAngles]);
     const lampPattern = new SpritePattern(LAMP_PATTERN_ROWS, [new SpritePatternColor("#", LAMP_PATTERN_RGB)]);
     em.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld(), lampPattern]);
     const frameLoop = new FrameLoopSettings();

@@ -1,7 +1,9 @@
+import {adoptStackFrames} from "../../engine/debugging/errorStack";
 import type {PlatformFeature} from "../../engine/platform/platform";
 import type {ProjectManifestValidation} from "../../engine/project/projectManifest";
 import {isProjectTarget} from "../../engine/project/projectTargets";
 import type {ProjectTarget} from "../../engine/project/projectTargets";
+import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "./editorExtensions";
 import {gameTargetKey, isGameTarget} from "./editorSettings";
 import type {GameTarget} from "./editorSettings";
 
@@ -101,6 +103,31 @@ export interface BuildFailedEvent {
 
 export interface ProjectApiError {
     readonly error: string;
+    readonly stack?: string;
+}
+
+export interface ProjectApiFailure {
+    readonly message: string;
+    readonly stack?: string;
+}
+
+function httpStatusText(status: number): string {
+    return `HTTP ${status}`;
+}
+
+export function projectApiFailureOf(body: string, status: number): ProjectApiFailure {
+    let parsed: Partial<ProjectApiError>;
+    try {
+        parsed = JSON.parse(body) as Partial<ProjectApiError>;
+    } catch {
+        return {message: body.length > 0 ? body : httpStatusText(status)};
+    }
+    if (typeof parsed?.error !== "string") return {message: httpStatusText(status)};
+    return typeof parsed.stack === "string" ? {message: parsed.error, stack: parsed.stack} : {message: parsed.error};
+}
+
+export function projectApiError(message: string, failure: ProjectApiFailure): Error {
+    return adoptStackFrames(new Error(message), failure.stack);
 }
 
 export type GenerateProjectReport =
@@ -156,6 +183,8 @@ export function projectApiUrl(route: string): string {
 export function projectBuildCopyPath(gameTarget: GameTarget): string {
     return `${PROJECT_BUILD_FOLDER}/editor.${gameTargetKey(gameTarget)}.worker.js`;
 }
+
+export const PROJECT_EDITOR_EXTENSIONS_COPY_PATH = `${PROJECT_BUILD_FOLDER}/${EDITOR_EXTENSIONS_BUNDLE_FILE}`;
 
 export function projectFileRoute(path: string): string {
     return path.split("/").map(encodeURIComponent).join("/");

@@ -1,6 +1,7 @@
 import {EntityCommandBufferSystem, NULL_ENTITY, System} from "../../src/engine/core";
 import type {Component, ComponentCtor, Entity, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
 import {getEntityCreationOrder} from "../../src/engine/core/ownership";
+import {PanCameraSystem} from "../../src/engine/cameraControllers/2d";
 import {Input, resolveInputActions} from "../../src/engine/input";
 import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
 import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderingSystemGroup, RenderPasses} from "../../src/engine/rendering";
@@ -12,9 +13,9 @@ import type {RandomSource} from "../../src/engine/math/randomSource";
 import {AverageStat} from "../../src/engine/datatypes";
 import {PrefabSpawner} from "../../src/engine/scene";
 import type {PrefabAsset} from "../../src/engine/scene";
-import {requireDebugWorld} from "../_shared/debugWorld";
-import {formatHudText, HudLabel} from "../_shared/hud";
-import {Demo2dHud, FadeToColor, OriginalColor, PanCamera, PlayerTag, RandomTint} from "./components";
+import {requireDebugWorld} from "../../src/engine/debugging";
+import {formatHudText, HudLabel} from "../../src/engine/rendering/text";
+import {Demo2dHud, FadeToColor, OriginalColor, PlayerTag, RandomTint} from "./components";
 import {Demo2dTuning} from "./tuning";
 
 const DEMO_NAME = "The 2D demo";
@@ -37,10 +38,6 @@ const Demo2dAction = {
     MovePlayerDown: "movePlayerDown",
     MovePlayerLeft: "movePlayerLeft",
     MovePlayerRight: "movePlayerRight",
-    MoveCameraUp: "moveCameraUp",
-    MoveCameraDown: "moveCameraDown",
-    MoveCameraLeft: "moveCameraLeft",
-    MoveCameraRight: "moveCameraRight",
     SpawnPixels: "spawnPixels",
     ToggleRendering: "toggleRendering",
     ToggleSpritePass: "toggleSpritePass",
@@ -147,7 +144,6 @@ export class RandomTintSystem extends System {
 export class Demo2dControlsSystem extends System {
     private _players = this.createEntityQuery([PlayerTag, LocalPosition]);
     private _playerTransforms = this.createEntityQuery([PlayerTag, LocalToWorld]);
-    private _cameras = this.createEntityQuery([PanCamera, LocalPosition]);
     private _actions!: Demo2dActions;
     private _handlers: readonly ActionHandler[] = [];
 
@@ -164,10 +160,6 @@ export class Demo2dControlsSystem extends System {
             {action: actions.MovePlayerDown, run: () => translate(this._players, NO_STEP, this.tuning().playerStepYUnits)},
             {action: actions.MovePlayerLeft, run: () => translate(this._players, -this.tuning().playerStepXUnits, NO_STEP)},
             {action: actions.MovePlayerRight, run: () => translate(this._players, this.tuning().playerStepXUnits, NO_STEP)},
-            {action: actions.MoveCameraUp, run: () => translate(this._cameras, NO_STEP, -this.tuning().cameraStepYUnits)},
-            {action: actions.MoveCameraDown, run: () => translate(this._cameras, NO_STEP, this.tuning().cameraStepYUnits)},
-            {action: actions.MoveCameraLeft, run: () => translate(this._cameras, -this.tuning().cameraStepXUnits, NO_STEP)},
-            {action: actions.MoveCameraRight, run: () => translate(this._cameras, this.tuning().cameraStepXUnits, NO_STEP)},
             {action: actions.SpawnPixels, run: () => this.spawnFadingPixels()},
             {action: actions.ToggleRendering, run: () => toggle(this.world.tryGetSystem(RenderingSystemGroup))},
             {action: actions.ToggleSpritePass, run: () => this.world.resources.tryGet(RenderPasses)?.toggle("sprites")},
@@ -216,6 +208,9 @@ export class Demo2dControlsSystem extends System {
             pixel.rootComponent(Sprite).tint = rgb;
         }
     }
+}
+
+export class Demo2dPanCameraSystem extends PanCameraSystem {
 }
 
 export class FadeSystem extends System {

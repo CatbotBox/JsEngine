@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, test} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
+import {errorFrames} from "../../engine/debugging/errorStack";
 import {Component, NULL_ENTITY, System, SystemGroup, World} from "../../engine/core";
 import type {Entity} from "../../engine/core";
 import {Children} from "../../engine/translation/children";
@@ -34,6 +35,8 @@ const INLINE_SPRITE_WIDTH = 2;
 const INLINE_SPRITE_HEIGHT = 3;
 const GREEN_RGB = 0x00FF00;
 const DISABLED = false;
+const THROWING_WORLD_SOURCE = "entityInspection.ts:";
+const PAGE_CLIENT_SOURCE = "editorClient.ts:";
 
 class UnregisteredTag extends Component {
 }
@@ -129,6 +132,19 @@ describe("EditorWorldService requests", () => {
         expect(fieldsOf(details, "Sprite")).toEqual({image: {inline: {width: INLINE_SPRITE_WIDTH, height: INLINE_SPRITE_HEIGHT}}, tint: "#00ff00", opacity: 1});
         expect(fieldsOf(details, "UnregisteredTag")).toEqual({});
         expect(await failureOf(ask(harnessed, {op: "getEntity", entity: NULL_ENTITY}))).toBe('Editor request "getEntity" failed: No entity 0 in this world');
+    });
+
+    test("a failed request reaches the page with the stack of the world code that threw", async () => {
+        const harnessed = editorWorld();
+        let failure: unknown;
+        try {
+            await ask(harnessed, {op: "getEntity", entity: NULL_ENTITY});
+        } catch (error) {
+            failure = error;
+        }
+        const frames = failure instanceof Error ? errorFrames(failure) ?? "" : "";
+        expect(frames.includes(THROWING_WORLD_SOURCE)).toBe(true);
+        expect(frames.includes(PAGE_CLIENT_SOURCE)).toBe(false);
     });
 
     test("setField decodes through the codec, assigns through the tracked component, and the next edit ticks propagate it", async () => {
