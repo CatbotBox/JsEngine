@@ -1693,7 +1693,7 @@ body:not(.terminal-unfocused) .editor-viewport {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    width: min(26rem, calc(100vw - 2rem));
+    width: min(26rem, calc(100vw / var(--page-zoom, 1) - 2rem));
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 0.45rem;
@@ -1749,11 +1749,11 @@ body:not(.terminal-unfocused) .editor-viewport {
 }
 
 .editor-modal.shortcuts-dialog {
-    width: min(34rem, calc(100vw - 2rem));
+    width: min(34rem, calc(100vw / var(--page-zoom, 1) - 2rem));
 }
 
 .shortcut-table-scroller {
-    max-height: 60vh;
+    max-height: calc(60vh / var(--page-zoom, 1));
     overflow: auto;
 }
 
@@ -1780,13 +1780,13 @@ body:not(.terminal-unfocused) .editor-viewport {
 .command-palette {
     position: fixed;
     z-index: 25;
-    top: 12vh;
+    top: calc(12vh / var(--page-zoom, 1));
     left: 50%;
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    width: min(36rem, calc(100vw - 2rem));
-    max-height: 60vh;
+    width: min(36rem, calc(100vw / var(--page-zoom, 1) - 2rem));
+    max-height: calc(60vh / var(--page-zoom, 1));
     padding: 0.4rem;
     border: 1px solid var(--accent);
     border-radius: 0.4rem;
@@ -2162,8 +2162,8 @@ body:not(.terminal-unfocused) .editor-viewport {
 }
 
 .editor-modal.project-settings-dialog {
-    width: min(54rem, calc(100vw - 2rem));
-    height: min(42rem, calc(100vh - 2rem));
+    width: min(54rem, calc(100vw / var(--page-zoom, 1) - 2rem));
+    height: min(42rem, calc(100vh / var(--page-zoom, 1) - 2rem));
 }
 
 .project-settings-tabs {
@@ -2346,8 +2346,8 @@ body:not(.terminal-unfocused) .editor-viewport {
 }
 
 .editor-modal.build-dialog {
-    width: min(46rem, calc(100vw - 2rem));
-    max-height: calc(100vh - 2rem);
+    width: min(46rem, calc(100vw / var(--page-zoom, 1) - 2rem));
+    max-height: calc(100vh / var(--page-zoom, 1) - 2rem);
 }
 
 .build-notice {

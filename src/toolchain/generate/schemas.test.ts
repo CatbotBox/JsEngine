@@ -330,6 +330,23 @@ function structs(): GeneratedProjectSchemas {
     return structResult ??= generateFixture(STRUCT_FIXTURE);
 }
 
+describe("generateProjectSchemas engine checkout", () => {
+    test("refuses a project whose code imports another engine checkout", () => {
+        const root = mkdtempSync(OUTSIDE_REPO_FIXTURE_PREFIX);
+        try {
+            const otherEngineCore = join(root, "other", "src", "engine", "core.ts");
+            const projectFolder = join(root, "game");
+            mkdirSync(dirname(otherEngineCore), {recursive: true});
+            mkdirSync(projectFolder, {recursive: true});
+            writeFileSync(otherEngineCore, "export class Component {}\n");
+            writeFileSync(join(projectFolder, "components.ts"), 'import {Component} from "../other/src/engine/core";\nexport class Ship extends Component {}\n');
+            expect(() => generateProjectSchemas(projectFolder, {repoRoot: REPO_ROOT})).toThrow("imports the engine of");
+        } finally {
+            rmSync(root, {recursive: true, force: true});
+        }
+    });
+});
+
 describe("generateProjectSchemas type mapping", () => {
     const expectations: readonly (readonly [string, string])[] = [
         ["inferredNumber", `{key: "inferredNumber", kind: "number"},`],

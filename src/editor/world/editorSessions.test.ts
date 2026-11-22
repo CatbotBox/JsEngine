@@ -89,6 +89,7 @@ describe("editor robustness", () => {
         await ask(harnessed, {op: "setMode", mode: "play"});
         expect(await waitUntil(() => eventsOfKind(harnessed, "worldStopped").length > 0)).toBe(true);
         expect(eventsOfKind(harnessed, "worldStopped")[0].error).toBe("error while running system: FailingGameplaySystem Error: Error: gameplay exploded");
+        expect(eventsOfKind(harnessed, "worldStopped")[0].stack?.split("\n")[0].includes("editorSessions.test.ts:")).toBe(true);
         expect(harnessed.service.worldStoppedError).toBeDefined();
 
         expect(await failureOf(ask(harnessed, {op: "setMode", mode: "play"})))

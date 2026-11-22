@@ -14,8 +14,12 @@ import {
     matrix3FromRotationScale,
     multiplyMatrix3,
     rotatedAboutWorldAxis,
+    isRotated,
+    isWorldAxis,
+    snappedDeltaFrom,
+    snappedMoveDelta,
     snapToIncrement,
-    snapVector,
+    twistRadians,
 } from "./transformMath";
 
 const DIGITS = 5;
@@ -59,8 +63,25 @@ describe("transform maths for gizmos", () => {
         expect(snapToIncrement(0.37, 0.25)).toBe(0.25);
         expect(Object.is(snapToIncrement(-0.1, 0.25), 0)).toBe(true);
         expect(snapToIncrement(-0.13, 0.25)).toBe(-0.25);
-        expect(snapVector([1.4, 2.6, -0.6], 1)).toEqual([1, 3, -1]);
         expect(snapToIncrement(0.37, 0)).toBe(0.37);
+    });
+
+    test("snapped moves land on the grid instead of keeping the starting offset", () => {
+        expect(snappedDeltaFrom(0.37, 0.8, 1)).toBeCloseTo(0.63, DIGITS);
+        expectVector(snappedMoveDelta([0.37, 2.2, 0.5], [1.4, -0.9, 0], 1), [1.63, -1.2, 0]);
+    });
+
+    test("an axis the drag does not move keeps its value", () => {
+        expect(snappedMoveDelta([0.37, 0.37, 0.5], [0.2, 0, 0], 1)[2]).toBe(0);
+    });
+
+    test("twist is the rotation about an axis, and rotations are told apart from identity", () => {
+        expect(twistRadians(quarterTurnZ, AXIS_Z)).toBeCloseTo(QUARTER_TURN, DIGITS);
+        expect(twistRadians(IDENTITY_QUATERNION, AXIS_Z)).toBe(0);
+        expect(isRotated(quarterTurnZ)).toBe(true);
+        expect(isRotated(IDENTITY_QUATERNION)).toBe(false);
+        expect(isWorldAxis(AXIS_Z)).toBe(true);
+        expect(isWorldAxis([0, Math.SQRT1_2, Math.SQRT1_2])).toBe(false);
     });
 });
 

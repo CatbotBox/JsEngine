@@ -14,6 +14,9 @@ import {
 import type {Quaternion, Vector3} from "./editorCameraMath";
 import type {HandlePosition} from "./handleModes";
 
+const AXIS_ALIGNMENT_TOLERANCE = 1e-6;
+const ROTATION_TOLERANCE = 1e-6;
+
 export type Matrix3 = readonly number[];
 
 export interface LocalTransform {
@@ -88,8 +91,25 @@ export function snapToIncrement(value: number, increment: number): number {
     return increment > 0 ? Math.round(value / increment) * increment + 0 : value;
 }
 
-export function snapVector(v: Vector3, increment: number): Vector3 {
-    return [snapToIncrement(v[0], increment), snapToIncrement(v[1], increment), snapToIncrement(v[2], increment)];
+export function snappedDeltaFrom(start: number, delta: number, increment: number): number {
+    return snapToIncrement(start + delta, increment) - start;
+}
+
+export function snappedMoveDelta(origin: Vector3, delta: Vector3, increment: number): Vector3 {
+    const snapped = (index: number): number => delta[index] === 0 ? 0 : snappedDeltaFrom(origin[index], delta[index], increment);
+    return [snapped(0), snapped(1), snapped(2)];
+}
+
+export function twistRadians(rotation: Quaternion, axis: Vector3): number {
+    return 2 * Math.atan2(rotation[0] * axis[0] + rotation[1] * axis[1] + rotation[2] * axis[2], rotation[3]);
+}
+
+export function isWorldAxis(axis: Vector3): boolean {
+    return axis.filter(component => Math.abs(component) > AXIS_ALIGNMENT_TOLERANCE).length === 1;
+}
+
+export function isRotated(rotation: Quaternion): boolean {
+    return Math.abs(rotation[3]) < 1 - ROTATION_TOLERANCE;
 }
 
 export function rotatedAboutWorldAxis(local: Quaternion, parentWorld: Quaternion, worldAxis: Vector3, radians: number): Quaternion {

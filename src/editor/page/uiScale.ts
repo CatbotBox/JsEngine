@@ -26,6 +26,7 @@ export const UI_SCALE_STORAGE_KEY = "jsengine.editor.uiScale";
 const PERCENT = 100;
 const PUT_METHOD = "PUT";
 const PAGE_ZOOM_PROPERTY = "zoom";
+const PAGE_ZOOM_VARIABLE = "--page-zoom";
 
 export function uiScaleChoices(): UiScaleChoice[] {
     return ZOOM_FACTORS.map(factor => ({factor, label: `${Math.round(factor * PERCENT)}%`}));
@@ -59,8 +60,10 @@ export function storedPageUiScale(window: Window | null): number {
 }
 
 export function applyPageUiScale(root: HTMLElement, factor: number): void {
-    if (factor === DEFAULT_ZOOM_FACTOR) root.style.removeProperty(PAGE_ZOOM_PROPERTY);
-    else root.style.setProperty(PAGE_ZOOM_PROPERTY, String(factor));
+    for (const property of [PAGE_ZOOM_PROPERTY, PAGE_ZOOM_VARIABLE]) {
+        if (factor === DEFAULT_ZOOM_FACTOR) root.style.removeProperty(property);
+        else root.style.setProperty(property, String(factor));
+    }
 }
 
 export function pageUiScale(root: HTMLElement, window: Window | null): UiScale {

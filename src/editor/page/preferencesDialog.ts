@@ -21,7 +21,7 @@ export const PREFERENCES_TITLE = "Preferences";
 const UI_SCALE_LABEL = "UI scale";
 const WINDOW_SCALE_NOTE = "Scales the whole window, the same as Ctrl+=, Ctrl+- and Ctrl+0.";
 const PAGE_SCALE_NOTE = "Scales the editor in this browser tab; the browser's own zoom (Ctrl+=, Ctrl+-) also works.";
-const SNAP_NOTE = "Snap steps used while Ctrl is held during a handle drag.";
+const SNAP_NOTE = "Snap steps used while snapping is on (the toolbar's Snap button; Ctrl flips it during a handle drag).";
 const SNAP_WAITING_NOTE = "Snap steps can be set once the game is connected.";
 const CLOSE_TEXT = "Close";
 

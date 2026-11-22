@@ -2,7 +2,8 @@ import {readdirSync} from "fs";
 import {dirname, isAbsolute, join, relative, resolve} from "path";
 import * as ts from "typescript";
 import type {ProjectManifest} from "../../engine/project/projectManifest";
-import {hasProjectManifest, readProjectManifest} from "../project";
+import {CliError} from "../cliArguments";
+import {displayPath, hasProjectManifest, readProjectManifest} from "../project";
 import {ENGINE_IMPORT_PREFIX, GENERATED_FOLDER} from "../projectLayout";
 
 export const SOURCE_EXTENSION_PATTERN = /\.tsx?$/;
@@ -16,6 +17,7 @@ const BACKENDS_SOURCE_PATH = [...SOURCE_PATH, "backends"];
 const ENGINE_PATHS_PATTERN = `${ENGINE_IMPORT_PREFIX}*`;
 const RELATIVE_IMPORT_PREFIX = "./";
 const PARENT_IMPORT_PREFIX = "../";
+const ENGINE_SOURCE_SEGMENT = "/src/engine/";
 
 export interface ExportReference {
     readonly fileName: string;
@@ -87,6 +89,16 @@ export function projectCompilerOptions(repoRoot: string): ts.CompilerOptions {
     };
 }
 
+function foreignEngineRoot(program: ts.Program, projectFolder: string, engineDirectory: string): string | undefined {
+    for (const sourceFile of program.getSourceFiles()) {
+        const fileName = toPosix(resolve(sourceFile.fileName));
+        const segmentAt = fileName.lastIndexOf(ENGINE_SOURCE_SEGMENT);
+        const isForeign = segmentAt >= 0 && !isInside(projectFolder, fileName) && !isInside(engineDirectory, fileName);
+        if (isForeign) return fileName.slice(0, segmentAt);
+    }
+    return undefined;
+}
+
 function manifestOf(projectFolder: string): ProjectManifest | undefined {
     return hasProjectManifest(projectFolder) ? readProjectManifest(projectFolder) : undefined;
 }
@@ -116,6 +128,11 @@ export class ProjectSources {
         const root = resolve(repoRoot);
         const files = discoverProjectFiles(folder);
         const program = ts.createProgram({rootNames: files, options: projectCompilerOptions(root)});
+        const otherEngine = foreignEngineRoot(program, folder, join(root, ...ENGINE_SOURCE_PATH));
+        if (otherEngine !== undefined) {
+            throw new CliError(`${displayPath(folder)} imports the engine of ${displayPath(otherEngine)}, but this jsengine runs from ${displayPath(root)}; `
+                + `run that checkout's jsengine, or import the engine as ${ENGINE_IMPORT_PREFIX}<path under src>`);
+        }
         return new ProjectSources(folder, root, files, program);
     }
 

@@ -6,6 +6,7 @@ import {
     addVectors,
     degreesToRadians,
     dollyCamera,
+    dotVectors,
     flyCamera,
     focusCamera2d,
     focusOrbitCamera,
@@ -34,13 +35,18 @@ import {
     handleOrigin,
     IDENTITY_MATRIX3,
     localDeltaOf,
+    isRotated,
+    isWorldAxis,
     rotatedAboutWorldAxis,
+    snappedDeltaFrom,
+    snappedMoveDelta,
     snapToIncrement,
-    snapVector,
+    twistRadians,
     UNIT_SCALE,
     WORLD_AXES,
 } from "./transformMath";
 import type {LocalTransform, Matrix3} from "./transformMath";
+import {snapsThisDrag} from "./snapSteps";
 import {HOLDS_NO_ENTITIES} from "./undoStack";
 import type {FieldChange} from "./undoStack";
 import {
@@ -135,6 +141,8 @@ interface TransformGesture {
     readonly key: string;
     readonly sender: LatestOnly;
     readonly origin: ScreenPoint;
+    readonly worldOrigin: Vector3;
+    readonly startTwist: number | undefined;
     readonly depth: number;
     readonly info: EditorViewInfo;
     readonly scale: OverlayScale;
@@ -225,6 +233,7 @@ export class SceneView {
     private frameHandle: number | undefined;
     private wasActive = false;
     private shownView: string | undefined;
+    private shownSelectionRotated = false;
 
     public constructor(
         private readonly stage: HTMLElement,
@@ -251,8 +260,13 @@ export class SceneView {
             this.pickCycle = undefined;
         });
         workspace.on("state", () => this.stateChanged());
+        workspace.on("selection", () => this.showSelectionRotation());
         workspace.on("entityPick", () => this.overlay.classList.toggle(PICKING_CLASS, workspace.pickingEntity));
         this.frameHandle = this.window()?.requestAnimationFrame(this.frame);
+    }
+
+    public get selectionRotated(): boolean {
+        return this.shownSelectionRotated;
     }
 
     public get capturesKeys(): boolean {
@@ -340,6 +354,7 @@ export class SceneView {
 
     private adoptInfo(info: EditorViewInfo): void {
         this.info = info;
+        this.showSelectionRotation();
         const camera = this.camera;
         const wanted = info.projection === "perspective" ? "3d" : "2d";
         if (camera !== undefined && camera.kind === wanted) return;
@@ -388,6 +403,18 @@ export class SceneView {
 
     private gizmoOrigin(info: EditorViewInfo): Vector3 | undefined {
         return handleOrigin(this.selectedBounds(info), this.workspace.primary, this.workspace.handleModes.position);
+    }
+
+    private showSelectionRotation(): void {
+        const info = this.info;
+        const rotated = info !== undefined && isRotated(handleAxisRotation(this.selectedBounds(info), this.workspace.primary, true));
+        if (rotated === this.shownSelectionRotated) return;
+        this.shownSelectionRotated = rotated;
+        this.workspace.emit("handles");
+    }
+
+    private snapping(event: {readonly ctrlKey: boolean, readonly metaKey: boolean}): boolean {
+        return snapsThisDrag(this.workspace.snapEnabled, hasCommandModifier(event));
     }
 
     private gizmoAxes(info: EditorViewInfo, tool: EditorTool): Vector3[] {
@@ -476,7 +503,7 @@ export class SceneView {
         }
         const handle = this.handleAt(point);
         if (handle !== undefined && info !== undefined && scale !== undefined) {
-            this.startTransform(handle, point, info, scale, hasCommandModifier(event));
+            this.startTransform(handle, point, info, scale, this.snapping(event));
             return;
         }
         const overSelection = info !== undefined && scale !== undefined && this.isOverSelection(point, info, scale);
@@ -505,13 +532,13 @@ export class SceneView {
                 const info = this.info;
                 const scale = info === undefined ? undefined : this.overlayScale(info);
                 if (info === undefined || scale === undefined) return;
-                this.startTransform({kind: "free"}, gesture.start, info, scale, hasCommandModifier(event));
+                this.startTransform({kind: "free"}, gesture.start, info, scale, this.snapping(event));
                 const started = this.gesture;
-                if (started?.kind === "transform") this.updateTransform(started, point, hasCommandModifier(event));
+                if (started?.kind === "transform") this.updateTransform(started, point, this.snapping(event));
                 return;
             }
             case "transform":
-                this.updateTransform(gesture, point, hasCommandModifier(event));
+                this.updateTransform(gesture, point, this.snapping(event));
                 return;
         }
     }
@@ -618,6 +645,8 @@ export class SceneView {
         const origin = this.gizmoOrigin(info);
         if (origin === undefined) return;
         const projected = projectPoint(info.worldToScreen, origin);
+        const viewAxis = viewAxisOf(info);
+        const primaryRotation = handleAxisRotation(this.selectedBounds(info), this.workspace.primary, true);
         const gesture: TransformGesture = {
             kind: "transform",
             handle,
@@ -626,6 +655,8 @@ export class SceneView {
             key: `gizmo:${nextGestureId++}`,
             sender: new LatestOnly(),
             origin: overlayPointOf(scale, projected),
+            worldOrigin: origin,
+            startTwist: isWorldAxis(viewAxis) ? twistRadians(primaryRotation, viewAxis) : undefined,
             depth: isInFront(projected) ? projected.w : 1,
             info,
             scale,
@@ -727,10 +758,10 @@ export class SceneView {
                 let worldDelta: Vector3;
                 if (handle.kind === "free") {
                     worldDelta = viewPlaneDelta(info, gesture.depth, pointerDelta.x / scale.pxPerUnitX, pointerDelta.y / scale.pxPerUnitY);
-                    if (gesture.snapping) worldDelta = snapVector(worldDelta, snap);
+                    if (gesture.snapping) worldDelta = snappedMoveDelta(gesture.worldOrigin, worldDelta, snap);
                 } else {
                     let amount = amountAlongScreenAxis(handle.screenPerUnit, pointerDelta);
-                    if (gesture.snapping) amount = snapToIncrement(amount, snap);
+                    if (gesture.snapping) amount = snappedDeltaFrom(dotVectors(gesture.worldOrigin, handle.axis), amount, snap);
                     worldDelta = scaleVector(handle.axis, amount);
                 }
                 for (const target of targets) {
@@ -740,10 +771,11 @@ export class SceneView {
                 return changes;
             }
             case "ring": {
-                let angle = wrapAngleRadians(pointerAngleRadians(gesture.origin, gesture.current) - pointerAngleRadians(gesture.origin, gesture.start));
-                if (gesture.snapping) angle = snapToIncrement(angle, degreesToRadians(this.workspace.snapSteps.rotateDegrees));
+                const angle = wrapAngleRadians(pointerAngleRadians(gesture.origin, gesture.current) - pointerAngleRadians(gesture.origin, gesture.start));
                 const axis = viewAxisOf(info);
-                const radians = viewRotationSign(info) * angle;
+                const step = degreesToRadians(this.workspace.snapSteps.rotateDegrees);
+                let radians = viewRotationSign(info) * angle;
+                if (gesture.snapping) radians = gesture.startTwist === undefined ? snapToIncrement(radians, step) : snappedDeltaFrom(gesture.startTwist, radians, step);
                 for (const target of targets) {
                     changes.push(field(target, LOCAL_ROTATION, QUATERNION_KEY, target.rotationJson, rotatedAboutWorldAxis(target.rotation, target.parentRotation, axis, radians)));
                 }

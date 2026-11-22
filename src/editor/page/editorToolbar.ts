@@ -18,9 +18,10 @@ export const MAX_LISTED_REPORT_PATHS = 3;
 
 const MODE_LABELS: Readonly<Record<EditorMode, string>> = {edit: "Editing", play: "Playing", paused: "Paused"};
 const HANDLE_POSITION_HINT = "where the handles sit: the primary selection's pivot or the selection's bounds centre";
-const HANDLE_ROTATION_HINT = "how the move handles turn: with the primary selection (Local) or with the world axes (Global); scale handles always follow the selection";
-const SNAP_TEXT = "Snap";
-const SNAP_TITLE = "Ctrl snaps while dragging a handle; choose the move, rotate and scale steps";
+const HANDLE_ROTATION_HINT = "which way the move handles point: along the primary selection's rotation (Local) or along the world axes (Global)";
+const SNAP_HINT = "moves land on the grid, rotation on angle steps and scale on scale steps; hold Ctrl while dragging to flip it for that drag";
+const SNAP_STEPS_TEXT = "Steps";
+const SNAP_STEPS_TITLE = "Choose the move, rotate and scale snap steps";
 const PLAY_HINT = "press again to stop and restore the scene";
 const PAUSE_HINT = "pause or resume gameplay";
 const STEP_HINT = "run one gameplay tick";
@@ -33,9 +34,9 @@ const GAME_VIEW_OPTION_HINTS: Readonly<Record<GameViewOption, string>> = {
 };
 const TOOL_HINTS: Readonly<Record<EditorTool, string>> = {
     hand: "Drag to pan the Scene view",
-    move: "Drag the selection or its axis handles to move it (Ctrl snaps)",
-    rotate: "Drag the ring to rotate about the view axis (Ctrl snaps)",
-    scale: "Drag the axis handles or the centre to scale (Ctrl snaps)",
+    move: "Drag the selection or its axis handles to move it (Ctrl flips snapping)",
+    rotate: "Drag the ring to rotate about the view axis (Ctrl flips snapping)",
+    scale: "Drag the axis handles or the centre to scale (Ctrl flips snapping)",
 };
 const ERROR_CLASS = "error";
 const WARNING_CLASS = "warn";
@@ -129,7 +130,10 @@ export function buildToolbar(container: HTMLElement, commands: EditorCommands, o
         commandButton(document, registry, commands.tools.handlePosition, {className: "toolbar-handle-position", text: () => HANDLE_POSITION_LABELS[options.handleModes().position], hint: HANDLE_POSITION_HINT}),
         commandButton(document, registry, commands.tools.handleRotation, {className: "toolbar-handle-rotation", text: () => HANDLE_ROTATION_LABELS[options.handleModes().rotation], hint: HANDLE_ROTATION_HINT}),
     ];
-    const snap = dropdownButton(document, registry, {className: "toolbar-snap", title: SNAP_TITLE, text: () => SNAP_TEXT, entries: () => snapMenu(commands)});
+    const snap = [
+        commandButton(document, registry, commands.tools.snap, {className: "toolbar-snap", hint: SNAP_HINT}),
+        dropdownButton(document, registry, {className: "toolbar-snap-steps", title: SNAP_STEPS_TITLE, text: () => SNAP_STEPS_TEXT, entries: () => snapMenu(commands)}),
+    ];
     const playback = [
         commandButton(document, registry, commands.play.play, {className: "toolbar-play", hint: PLAY_HINT}),
         commandButton(document, registry, commands.play.pause, {className: "toolbar-pause", hint: PAUSE_HINT}),
@@ -153,7 +157,7 @@ export function buildToolbar(container: HTMLElement, commands: EditorCommands, o
     left.append(
         toolbarGroup(document, "toolbar-tools", "Scene tools", tools),
         toolbarGroup(document, "toolbar-handles", "Handle position and rotation", handles),
-        toolbarGroup(document, "toolbar-snapping", "Snapping", [snap]),
+        toolbarGroup(document, "toolbar-snapping", "Snapping", snap),
     );
     const center = createElement(document, "div", "toolbar-section toolbar-center");
     center.append(toolbarGroup(document, "toolbar-playback", "Play controls", playback));

@@ -336,7 +336,7 @@ class EditorShellImplementation implements EditorShell {
         const window = this.document.defaultView;
         this.layout = buildLayout(body);
         this.viewport = this.layout.viewport;
-        applyPageUiScale(this.layout.root, storedPageUiScale(window));
+        applyPageUiScale(this.document.documentElement, storedPageUiScale(window));
         this.resizer = new PanelResizer(this.layout, window);
         observeViewportSize(this.viewport);
         onSizeChange(this.layout.stage, () => this.applyGameViewAspect());
@@ -385,6 +385,7 @@ class EditorShellImplementation implements EditorShell {
         workspace.on("openDataAsset", () => this.showBottomTab("assets"));
         workspace.on("state", () => this.stateChanged(workspace));
         workspace.on("document", () => this.commands.changed());
+        workspace.on("handles", () => this.commands.changed());
         workspace.on("entities", () => rotations.retainEntities(new Set(workspace.entities.map(summary => summary.entity))));
         for (const notice of this.pendingNotices.splice(0)) workspace.notice(notice.level, notice.text);
         this.stateChanged(workspace);
@@ -553,7 +554,8 @@ class EditorShellImplementation implements EditorShell {
             return;
         }
         const bounds = stage.getBoundingClientRect();
-        const frame = fittedAspectRect(bounds.width, bounds.height, widthToHeight);
+        const scale = visualScaleOf(stage);
+        const frame = fittedAspectRect(bounds.width / scale, bounds.height / scale, widthToHeight);
         style.setProperty("inset", FRAME_INSET);
         style.setProperty("left", `${frame.left}${PIXELS}`);
         style.setProperty("top", `${frame.top}${PIXELS}`);
@@ -643,7 +645,7 @@ class EditorShellImplementation implements EditorShell {
     private async uiScale(): Promise<UiScale> {
         const window = this.document.defaultView;
         const scalesWindow = window === null ? undefined : await windowUiScale((path, init) => window.fetch(path, init));
-        return scalesWindow ?? pageUiScale(this.layout.root, window);
+        return scalesWindow ?? pageUiScale(this.document.documentElement, window);
     }
 
     private showDataAssetsTitle(dataAssets: DataAssetsView): void {

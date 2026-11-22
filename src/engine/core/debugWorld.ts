@@ -14,6 +14,17 @@ const RUNNING_MARK = "";
 const DISABLED_MARK = "⏸";
 const IDLE_MARK = "idle";
 
+function systemFailure(systemName: string, cause: unknown): Error {
+    const failure = new Error(`error while running system: ${systemName} Error: ${cause}`, {cause});
+    const causeStack = cause instanceof Error ? cause.stack : undefined;
+    if (causeStack === undefined) return failure;
+    const causeHeadline = String(cause);
+    const causeFrames = causeStack.startsWith(causeHeadline) ? causeStack.slice(causeHeadline.length) : `
+${causeStack}`;
+    failure.stack = String(failure) + causeFrames;
+    return failure;
+}
+
 function runStateMark(system: System, parentMark: string): string {
     if (parentMark === DISABLED_MARK || !system.enabled) return DISABLED_MARK;
     if (parentMark === IDLE_MARK || !system.requirementsMet) return IDLE_MARK;
@@ -58,9 +69,9 @@ export class DebugWorld extends World {
                 const end = performance.now();
                 statTracker.add(end - start);
                 if (world.tryGetSystem(QuitSystemGroup)?.updating === true) throw err;
-                const message = "error while running system: " + systemClass.name + " Error: " + err;
-                world.stop(message);
-                console.error(message);
+                const failure = systemFailure(systemClass.name, err);
+                world.stop(failure);
+                console.error(failure);
             }
         } as System['onUpdate'];
 

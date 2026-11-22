@@ -32,7 +32,7 @@ import type {GameViewOptionChoice, GameViewOptions} from "./gameViewOptions";
 import {DEFAULT_SNAP_STEPS, withSnapStep} from "./snapSteps";
 import {entityTemplateProblem} from "./entityTemplates";
 import type {EntityTemplate} from "./entityTemplates";
-import {DEFAULT_HANDLE_MODES} from "./handleModes";
+import {DEFAULT_HANDLE_MODES, HANDLE_ROTATION_MOVE_ONLY_REASON, HANDLE_ROTATION_UNROTATED_REASON} from "./handleModes";
 import type {HandleModes} from "./handleModes";
 import {ALL_PANELS_SHOWN, withPanelToggled} from "./panelSizes";
 import type {PanelVisibility} from "./panelSizes";
@@ -73,6 +73,8 @@ interface FakeWorkspace {
     entityClipboard: string | undefined;
     worldStoppedError: string | null;
     snapSteps: typeof DEFAULT_SNAP_STEPS;
+    snapEnabled: boolean;
+    selectionRotated: boolean;
     openExternally: boolean;
     showInFolder: boolean;
     undoLabel: string | undefined;
@@ -86,7 +88,7 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
     const calls: string[] = [];
     const workspace: FakeWorkspace = {
         mode: "edit", view: "scene", tool: "move", closed: false, selection: [], entityClipboard: undefined,
-        worldStoppedError: null, snapSteps: DEFAULT_SNAP_STEPS, openExternally: false, showInFolder: false, undoLabel: undefined, entityKeysFocused: true,
+        worldStoppedError: null, snapSteps: DEFAULT_SNAP_STEPS, snapEnabled: false, selectionRotated: false, openExternally: false, showInFolder: false, undoLabel: undefined, entityKeysFocused: true,
         gameViewOptions: DEFAULT_GAME_VIEW_OPTIONS, projectSelection: [], handleModes: DEFAULT_HANDLE_MODES,
     };
     let panels: PanelVisibility = ALL_PANELS_SHOWN;
@@ -151,12 +153,14 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
             setMode: (mode: string) => calls.push(`setMode ${mode}`),
             setTool: (tool: string) => calls.push(`setTool ${tool}`),
             setSnapStep: (choice: SnapStepChoice) => workspace.snapSteps = withSnapStep(workspace.snapSteps, choice),
+            get snapEnabled() { return workspace.snapEnabled; },
+            setSnapEnabled: (enabled: boolean) => workspace.snapEnabled = enabled,
             get handleModes() { return workspace.handleModes; },
             setHandleModes: (modes: HandleModes) => workspace.handleModes = modes,
             templateProblem: (template: EntityTemplate) => entityTemplateProblem(template, GAME_TYPE_NAMES),
             createFromTemplate: (template: EntityTemplate) => calls.push(`createFromTemplate ${template}`),
         },
-        scene: {capturesKeys: false},
+        scene: {capturesKeys: false, get selectionRotated() { return workspace.selectionRotated; }},
         hierarchy: {beginRename: (entity: Entity) => calls.push(`beginRename ${entity}`)},
         project: {
             currentFolder: "assets",
@@ -326,11 +330,32 @@ describe("editor menu bar", () => {
     test("Pivot/Center and Local/Global flip the workspace's handle modes", () => {
         const editor = fakeEditor();
         editor.mount();
+        editor.workspace.selectionRotated = true;
         expect(editor.commands.tools.handlePosition.runAlone()).toBe(true);
         expect(editor.workspace.handleModes).toEqual({position: "pivot", rotation: "global"});
         expect(editor.commands.tools.handleRotation.runAlone()).toBe(true);
         expect(editor.commands.tools.handlePosition.runAlone()).toBe(true);
         expect(editor.workspace.handleModes).toEqual({position: "center", rotation: "local"});
+    });
+
+    test("Local/Global is disabled when it would not change the handles", () => {
+        const editor = fakeEditor();
+        editor.mount();
+        expect(editor.commands.tools.handleRotation.stateAlone().reason).toBe(HANDLE_ROTATION_UNROTATED_REASON);
+        editor.workspace.selectionRotated = true;
+        editor.workspace.tool = "rotate";
+        expect(editor.commands.tools.handleRotation.stateAlone().reason).toBe(HANDLE_ROTATION_MOVE_ONLY_REASON);
+        editor.workspace.tool = "move";
+        expect(editor.commands.tools.handleRotation.stateAlone().enabled).toBe(true);
+    });
+
+    test("Snap toggles snapping on and off", () => {
+        const editor = fakeEditor();
+        editor.mount();
+        expect(editor.commands.tools.snap.stateAlone().checked).toBe(false);
+        expect(editor.commands.tools.snap.runAlone()).toBe(true);
+        expect(editor.workspace.snapEnabled).toBe(true);
+        expect(editor.commands.tools.snap.stateAlone().checked).toBe(true);
     });
 
     test("Project Settings… waits for the game, then opens the window", () => {

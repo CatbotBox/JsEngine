@@ -66,7 +66,7 @@ import type {HandleModes} from "./handleModes";
 import {SceneDocuments} from "./sceneDocuments";
 import type {StackMapper} from "./stackMapper";
 import type {TabHistory} from "./sceneDocuments";
-import {parseSnapSteps, SNAP_STEPS_STORAGE_KEY, snapStepsText, withSnapStep} from "./snapSteps";
+import {parseSnapEnabled, parseSnapSteps, SNAP_ENABLED_STORAGE_KEY, SNAP_STEPS_STORAGE_KEY, snapStepsText, withSnapStep} from "./snapSteps";
 import type {SnapStepChoice, SnapSteps} from "./snapSteps";
 import {
     ComponentPresenceCommand,
@@ -85,7 +85,7 @@ import {
 } from "./undoStack";
 import type {EditorRequester, EntityValueShape, FieldChange, RecordedSubtree, StoredValues, UndoCommand, UndoContext} from "./undoStack";
 
-export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile" | "entityPick" | "openDataAsset" | "files";
+export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile" | "entityPick" | "openDataAsset" | "files" | "handles";
 
 export type DragPayload =
     | {readonly kind: "entities", readonly entities: readonly Entity[]}
@@ -153,6 +153,7 @@ export class EditorWorkspace implements UndoContext {
     public view: EditorView = "scene";
     public tool: EditorTool = "move";
     public snapSteps: SnapSteps;
+    public snapEnabled: boolean;
     public handleModes: HandleModes;
     public gameViewOptions: GameViewOptions;
     public worldStoppedError: string | null = null;
@@ -181,6 +182,7 @@ export class EditorWorkspace implements UndoContext {
 
     public constructor(private currentSession: EditorSession, public readonly document: Document) {
         this.snapSteps = parseSnapSteps(readStorage(document.defaultView, SNAP_STEPS_STORAGE_KEY));
+        this.snapEnabled = parseSnapEnabled(readStorage(document.defaultView, SNAP_ENABLED_STORAGE_KEY));
         this.handleModes = parseHandleModes(readStorage(document.defaultView, HANDLE_MODES_STORAGE_KEY));
         this.gameViewOptions = parseGameViewOptions(readStorage(document.defaultView, GAME_VIEW_OPTIONS_STORAGE_KEY));
         this.scenes = new SceneDocuments(this, currentSession.project.startScene, () => this.createHistory());
@@ -376,6 +378,12 @@ export class EditorWorkspace implements UndoContext {
     public setSnapStep(choice: SnapStepChoice): void {
         this.snapSteps = withSnapStep(this.snapSteps, choice);
         writeStorage(this.document.defaultView, SNAP_STEPS_STORAGE_KEY, snapStepsText(this.snapSteps));
+        this.emit("state");
+    }
+
+    public setSnapEnabled(enabled: boolean): void {
+        this.snapEnabled = enabled;
+        writeStorage(this.document.defaultView, SNAP_ENABLED_STORAGE_KEY, String(enabled));
         this.emit("state");
     }
 

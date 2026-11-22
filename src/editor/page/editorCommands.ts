@@ -10,7 +10,7 @@ import type {EditorWorkspace} from "./editorWorkspace";
 import {ENTITY_TEMPLATE_NAMES} from "./entityTemplates";
 import type {EntityTemplate} from "./entityTemplates";
 import {GAME_VIEW_ASPECTS, gameViewAspectOf} from "./gameViewAspect";
-import {withHandlePositionToggled, withHandleRotationToggled} from "./handleModes";
+import {handleRotationProblem, withHandlePositionToggled, withHandleRotationToggled} from "./handleModes";
 import {GAME_VIEW_OPTION_LABELS, GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import type {GameViewOption} from "./gameViewOptions";
 import type {HierarchyView} from "./hierarchyView";
@@ -167,6 +167,7 @@ export interface ToolCommands {
     readonly tools: Readonly<Record<EditorTool, Command<void>>>;
     readonly handlePosition: Command<void>;
     readonly handleRotation: Command<void>;
+    readonly snap: Command<void>;
     readonly snapStep: Command<SnapStepChoice>;
 }
 
@@ -645,7 +646,12 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             yieldsKey: () => host.views()?.scene.capturesKeys === true,
         })),
         handlePosition: action("tools.togglePivotCenter", TOOLS_CATEGORY, "Toggle Pivot/Center", ({workspace}) => workspace.setHandleModes(withHandlePositionToggled(workspace.handleModes))),
-        handleRotation: action("tools.toggleLocalGlobal", TOOLS_CATEGORY, "Toggle Local/Global", ({workspace}) => workspace.setHandleModes(withHandleRotationToggled(workspace.handleModes))),
+        handleRotation: action("tools.toggleLocalGlobal", TOOLS_CATEGORY, "Toggle Local/Global Handles", ({workspace}) => workspace.setHandleModes(withHandleRotationToggled(workspace.handleModes)), {
+            disabledReason: whenOpen(({workspace, scene}) => handleRotationProblem(workspace.tool, scene.selectionRotated)),
+        }),
+        snap: action("tools.toggleSnap", SNAP_CATEGORY, "Snap", ({workspace}) => workspace.setSnapEnabled(!workspace.snapEnabled), {
+            checked: () => host.views()?.workspace.snapEnabled === true,
+        }),
         snapStep: registry.addTargeted<SnapStepChoice>({
             id: "tools.snapStep", category: SNAP_CATEGORY, label: "Snap Step",
             labelFor: choice => `${SNAP_KIND_LABELS[choice.kind]} step ${snapStepText(choice)}`,
