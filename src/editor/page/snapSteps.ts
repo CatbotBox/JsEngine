@@ -8,6 +8,8 @@ export interface SnapStepChoice {
 }
 
 export const SNAP_STEPS_STORAGE_KEY = "jsengine.editor.snapSteps";
+export const SNAP_ENABLED_STORAGE_KEY = "jsengine.editor.snapEnabled";
+export const DEFAULT_SNAP_ENABLED = false;
 export const SNAP_KINDS: readonly SnapKind[] = ["move2d", "move3d", "rotateDegrees", "scale"];
 export const DEFAULT_SNAP_STEPS: SnapSteps = {move2d: 1, move3d: 0.25, rotateDegrees: 15, scale: 0.1};
 export const SNAP_STEP_PRESETS: Readonly<Record<SnapKind, readonly number[]>> = {
@@ -61,6 +63,14 @@ export function parseSnapSteps(text: string | null): SnapSteps {
         if (isSnapStep(value)) steps[kind] = value;
     }
     return steps;
+}
+
+export function parseSnapEnabled(text: string | null): boolean {
+    return text === null ? DEFAULT_SNAP_ENABLED : text === String(true);
+}
+
+export function snapsThisDrag(snapEnabled: boolean, flipHeld: boolean): boolean {
+    return snapEnabled !== flipHeld;
 }
 
 export function snapStepsText(steps: SnapSteps): string {

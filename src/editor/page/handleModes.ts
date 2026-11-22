@@ -1,3 +1,5 @@
+import type {EditorTool} from "./editorTools";
+
 export type HandlePosition = "pivot" | "center";
 
 export type HandleRotation = "local" | "global";
@@ -10,7 +12,9 @@ export interface HandleModes {
 export const HANDLE_MODES_STORAGE_KEY = "jsengine.editor.handleModes";
 export const DEFAULT_HANDLE_MODES: HandleModes = {position: "center", rotation: "global"};
 export const HANDLE_POSITION_LABELS: Readonly<Record<HandlePosition, string>> = {pivot: "Pivot", center: "Center"};
-export const HANDLE_ROTATION_LABELS: Readonly<Record<HandleRotation, string>> = {local: "Local", global: "Global"};
+export const HANDLE_ROTATION_LABELS: Readonly<Record<HandleRotation, string>> = {local: "Handles: Local", global: "Handles: Global"};
+export const HANDLE_ROTATION_MOVE_ONLY_REASON = "Local/Global only turns the move handles; the rotate ring follows the view and scale handles follow the selection";
+export const HANDLE_ROTATION_UNROTATED_REASON = "Local and Global handles point the same way until the selection is rotated";
 
 const HANDLE_POSITIONS: readonly HandlePosition[] = ["pivot", "center"];
 const HANDLE_ROTATIONS: readonly HandleRotation[] = ["local", "global"];
@@ -21,6 +25,11 @@ export function withHandlePositionToggled(modes: HandleModes): HandleModes {
 
 export function withHandleRotationToggled(modes: HandleModes): HandleModes {
     return {...modes, rotation: modes.rotation === "local" ? "global" : "local"};
+}
+
+export function handleRotationProblem(tool: EditorTool, selectionRotated: boolean): string | undefined {
+    if (tool !== "move") return HANDLE_ROTATION_MOVE_ONLY_REASON;
+    return selectionRotated ? undefined : HANDLE_ROTATION_UNROTATED_REASON;
 }
 
 export function parseHandleModes(text: string | null): HandleModes {

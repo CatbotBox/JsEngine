@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {DEFAULT_SNAP_STEPS, parseSnapSteps, SNAP_KINDS, SNAP_STEP_PRESETS, snapStepChoices, snapStepsText, snapStepText, withSnapStep} from "./snapSteps";
+import {DEFAULT_SNAP_STEPS, parseSnapEnabled, parseSnapSteps, snapsThisDrag, SNAP_KINDS, SNAP_STEP_PRESETS, snapStepChoices, snapStepsText, snapStepText, withSnapStep} from "./snapSteps";
 
 describe("snap steps", () => {
     test("the defaults are the steps Ctrl-snapping used before they became editor state", () => {
@@ -23,5 +23,19 @@ describe("snap steps", () => {
             snapStepText({kind: "rotateDegrees", step: 15}),
             snapStepText({kind: "scale", step: 0.1}),
         ]).toEqual(["1 unit", "0.25 units", "15°", "0.1"]);
+    });
+
+    test("snapping starts off and reads back what was stored", () => {
+        expect(parseSnapEnabled(null)).toBe(false);
+        expect(parseSnapEnabled("true")).toBe(true);
+        expect(parseSnapEnabled("false")).toBe(false);
+        expect(parseSnapEnabled("garbage")).toBe(false);
+    });
+
+    test("holding Ctrl flips snapping for the drag", () => {
+        expect(snapsThisDrag(false, false)).toBe(false);
+        expect(snapsThisDrag(false, true)).toBe(true);
+        expect(snapsThisDrag(true, false)).toBe(true);
+        expect(snapsThisDrag(true, true)).toBe(false);
     });
 });

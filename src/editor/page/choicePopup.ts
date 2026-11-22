@@ -1,4 +1,4 @@
-import {createElement, errorText} from "./dom";
+import {createElement, errorText, visualScaleOf} from "./dom";
 
 export interface Choice<V> {
     readonly label: string;
@@ -128,10 +128,12 @@ export function showChoicePopup<V>(document: Document, anchor: HTMLElement, opti
     render();
     document.body.append(popup);
     const view = document.defaultView;
-    const bounds = anchor.getBoundingClientRect();
+    const scale = visualScaleOf(popup);
+    const anchorRect = anchor.getBoundingClientRect();
+    const bounds = {left: anchorRect.left / scale, top: anchorRect.top / scale, width: anchorRect.width / scale, bottom: anchorRect.bottom / scale};
     const width = Math.max(MIN_WIDTH_PX, bounds.width);
-    const viewportWidth = view?.innerWidth ?? bounds.left + width;
-    const viewportHeight = view?.innerHeight ?? bounds.bottom + MAX_HEIGHT_PX;
+    const viewportWidth = view === null ? bounds.left + width : view.innerWidth / scale;
+    const viewportHeight = view === null ? bounds.bottom + MAX_HEIGHT_PX : view.innerHeight / scale;
     const left = Math.max(VIEWPORT_MARGIN_PX, Math.min(bounds.left, viewportWidth - width - VIEWPORT_MARGIN_PX));
     const spaceBelow = viewportHeight - bounds.bottom - VIEWPORT_MARGIN_PX;
     const spaceAbove = bounds.top - VIEWPORT_MARGIN_PX;

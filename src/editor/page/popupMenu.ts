@@ -1,4 +1,4 @@
-import {createElement} from "./dom";
+import {createElement, visualScaleOf} from "./dom";
 
 interface MenuEntry {
     readonly label: string;
@@ -99,10 +99,13 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
     }
     document.body.append(menu);
     const view = document.defaultView;
-    const maxLeft = (view?.innerWidth ?? clientX + menu.offsetWidth) - menu.offsetWidth - VIEWPORT_MARGIN_PX;
-    const maxTop = (view?.innerHeight ?? clientY + menu.offsetHeight) - menu.offsetHeight - VIEWPORT_MARGIN_PX;
-    menu.style.left = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(clientX, maxLeft))}px`;
-    menu.style.top = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(clientY, maxTop))}px`;
+    const scale = visualScaleOf(menu);
+    const left = clientX / scale;
+    const top = clientY / scale;
+    const maxLeft = (view === null ? left + menu.offsetWidth : view.innerWidth / scale) - menu.offsetWidth - VIEWPORT_MARGIN_PX;
+    const maxTop = (view === null ? top + menu.offsetHeight : view.innerHeight / scale) - menu.offsetHeight - VIEWPORT_MARGIN_PX;
+    menu.style.left = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(left, maxLeft))}px`;
+    menu.style.top = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(top, maxTop))}px`;
     openMenus.set(document, close);
     document.addEventListener("pointerdown", onOutside, true);
     document.addEventListener("keydown", onKey, true);
