@@ -53,14 +53,15 @@ interface SharedDisplay<Surface> {
     surfaceSize(): Surface;
     onResize(listener: () => void): () => void;
     showStatus(text: string): void;
+    hideStatus(): void;
     showError(text: string): void;
     cellArea(): CellArea;
     show(): void;
     dispose(): void;
 }
 
-export type SharedPixelDisplay = Pick<PixelCanvasDisplay, "surfaceSize" | "onResize" | "presentPixels" | "showStatus" | "showError" | "cellArea" | "show" | "dispose">;
-export type SharedCellDisplay = Pick<CellCanvasDisplay, "surfaceSize" | "onResize" | "presentCells" | "showStatus" | "showError" | "cellArea" | "show" | "dispose">;
+export type SharedPixelDisplay = Pick<PixelCanvasDisplay, "surfaceSize" | "onResize" | "presentPixels" | "showStatus" | "hideStatus" | "showError" | "cellArea" | "show" | "dispose">;
+export type SharedCellDisplay = Pick<CellCanvasDisplay, "surfaceSize" | "onResize" | "presentCells" | "showStatus" | "hideStatus" | "showError" | "cellArea" | "show" | "dispose">;
 
 abstract class SharedSessionDisplay<Surface> implements SessionDisplayControls {
     protected constructor(private readonly shared: SharedDisplay<Surface>, private visible: boolean, private readonly events: SessionDisplayEvents) {
@@ -88,6 +89,10 @@ abstract class SharedSessionDisplay<Surface> implements SessionDisplayControls {
 
     public showStatus(text: string): void {
         if (this.visible) this.shared.showStatus(text);
+    }
+
+    public hideStatus(): void {
+        if (this.visible) this.shared.hideStatus();
     }
 
     public showError(text: string): void {
@@ -173,7 +178,7 @@ export class CellEditorViewport implements EditorViewport {
 }
 
 export type SessionGpuCanvas = Pick<GpuCanvasDisplay,
-    "surfaceSize" | "onResize" | "transferCanvas" | "showScreenUnit" | "showStatus" | "showError" | "cellArea" | "show" | "hide" | "hasFocus" | "focus" | "dispose">;
+    "surfaceSize" | "onResize" | "transferCanvas" | "showScreenUnit" | "showStatus" | "hideStatus" | "showError" | "cellArea" | "show" | "hide" | "hasFocus" | "focus" | "dispose">;
 
 interface GpuSessionHost {
     shown(canvas: SessionGpuCanvas): void;
@@ -223,6 +228,10 @@ export class GpuSessionDisplay implements GpuWorldDisplay, SessionDisplayControl
 
     public showStatus(text: string): void {
         if (this.visible) this.canvas.showStatus(text);
+    }
+
+    public hideStatus(): void {
+        if (this.visible) this.canvas.hideStatus();
     }
 
     public showError(text: string): void {

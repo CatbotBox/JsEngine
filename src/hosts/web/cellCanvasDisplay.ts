@@ -56,6 +56,10 @@ export class CellCanvasDisplay implements CellWorldDisplay {
         this.shell.showStatus(text);
     }
 
+    public hideStatus(): void {
+        this.shell.hideStatus();
+    }
+
     public showError(text: string): void {
         this.shell.showError(text);
     }

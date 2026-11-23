@@ -1,6 +1,6 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {EditorConsoleLevel} from "../editorProtocol";
-import {allConsoleLevels, collapseConsoleEntries, ConsoleLog, consoleRows, countByLevel, filterConsoleEntries} from "./consoleLog";
+import {allConsoleLevels, collapseConsoleEntries, ConsoleLog, consoleRows, countByLevel, countMatchingSearch, filterConsoleEntries} from "./consoleLog";
 import type {ConsoleFilter, ConsoleRow} from "./consoleLog";
 
 const EVERYTHING: ConsoleFilter = {levels: allConsoleLevels(), search: ""};
@@ -24,6 +24,15 @@ describe("console log", () => {
         expect(log.entries.map(entry => entry.text)).toEqual(["one", "two", "three"]);
         expect(log.levelCounts).toEqual({log: 2, info: 0, warn: 1, error: 0, debug: 0});
         expect(countByLevel(log.entries)).toEqual(log.levelCounts);
+    });
+
+    test("level counts under a search count only the matching entries of every level, case-insensitively", () => {
+        const log = new ConsoleLog();
+        log.add("log", "Loaded scene", 1);
+        log.add("warn", "scene missing camera", 2);
+        log.add("error", "shader failed", 3);
+        expect(countMatchingSearch(log.entries, "SCENE")).toEqual({log: 1, info: 0, warn: 1, error: 0, debug: 0});
+        expect(countMatchingSearch(log.entries, "")).toEqual(log.levelCounts);
     });
 
     test("past the cap the oldest entries are dropped and uncounted", () => {

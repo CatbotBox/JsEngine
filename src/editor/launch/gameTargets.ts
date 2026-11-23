@@ -81,6 +81,11 @@ export function backendOverrideFromQuery(search: string): RenderBackendKind | un
     return isRenderBackendKind(value) ? value : undefined;
 }
 
+export function addressKeepingBackendOverride(pathname: string, search: string): string {
+    const override = backendOverrideFromQuery(search);
+    return override === undefined ? pathname : `${pathname}?${new URLSearchParams({[BACKEND_QUERY_PARAMETER]: override})}`;
+}
+
 export function gpuFallbackNotice(gameTarget: GameTarget, reason: string): string {
     return `The ${SIMULATED_TARGET_LABELS[gameTarget.target]} target with ${RENDER_BACKEND_LABELS[GPU_BACKEND]} is unavailable here: ${reason}; `
         + `the editor uses ${RENDER_BACKEND_LABELS[GPU_FALLBACK_BACKEND]} instead`;

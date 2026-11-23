@@ -43,9 +43,18 @@ export function countByLevel(entries: readonly ConsoleEntry[]): ConsoleLevelCoun
     return counts;
 }
 
+function searchMatcher(search: string): (entry: ConsoleEntry) => boolean {
+    const needle = search.toLowerCase();
+    return entry => needle.length === 0 || entry.text.toLowerCase().includes(needle);
+}
+
 export function filterConsoleEntries(entries: readonly ConsoleEntry[], filter: ConsoleFilter): ConsoleEntry[] {
-    const needle = filter.search.toLowerCase();
-    return entries.filter(entry => filter.levels.has(entry.level) && (needle.length === 0 || entry.text.toLowerCase().includes(needle)));
+    const matches = searchMatcher(filter.search);
+    return entries.filter(entry => filter.levels.has(entry.level) && matches(entry));
+}
+
+export function countMatchingSearch(entries: readonly ConsoleEntry[], search: string): ConsoleLevelCounts {
+    return countByLevel(entries.filter(searchMatcher(search)));
 }
 
 export function allConsoleLevels(): Set<EditorConsoleLevel> {

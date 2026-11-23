@@ -27,7 +27,7 @@ import type {ServerEventStream} from "../project/serverEvents";
 import {editorViewportFor} from "./editorViewport";
 import {EditorExtensionLoader} from "./editorExtensionLoader";
 import {browseForFolder} from "./folderBrowser";
-import {chooseGameTarget, gameTargetLabelText, gpuFallbackNotice, projectGameTarget, registerGameTargetCommand, webGpuAvailability} from "./gameTargets";
+import {addressKeepingBackendOverride, chooseGameTarget, gameTargetLabelText, gpuFallbackNotice, projectGameTarget, registerGameTargetCommand, webGpuAvailability} from "./gameTargets";
 import type {GameTargetChoice, WebGpuAvailability} from "./gameTargets";
 import {ProjectRunner} from "./projectRunner";
 import {ProjectServerClient} from "./projectServerClient";
@@ -304,7 +304,7 @@ class EditorStart {
         const initialTarget = launch.target.gameTarget;
         const shell = createEditorShell(document.body, {
             targetLabel: gameTargetLabelText(initialTarget),
-            closeProject: () => location.assign(location.pathname),
+            closeProject: () => location.assign(addressKeepingBackendOverride(location.pathname, location.search)),
             keyOfEvent: keyOf,
             ...(launch.generate === undefined ? {} : {generate: launch.generate}),
             ...(launch.projectBuild === undefined ? {} : {projectBuild: launch.projectBuild}),

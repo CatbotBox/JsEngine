@@ -167,6 +167,8 @@ function fakeBrowserHost(extra: BrowserWorkerHost = {}): BrowserWorkerHost & {re
     };
 }
 
+const STATUS_HIDDEN = "(status hidden)";
+
 class FakeDisplaySurface<Frame> {
     public readonly shown: string[] = [];
     public readonly frames: Frame[] = [];
@@ -182,6 +184,10 @@ class FakeDisplaySurface<Frame> {
 
     public showStatus(text: string): void {
         this.shown.push(text);
+    }
+
+    public hideStatus(): void {
+        this.shown.push(STATUS_HIDDEN);
     }
 
     public showError(text: string): void {
@@ -962,13 +968,14 @@ describe("connectWorldWorker (the page's end)", () => {
         expect(quits).toBe(0);
     });
 
-    test("ready runs onReady without waiting for a frame; frames do not, and a closed page ignores it", () => {
+    test("ready hides the starting status and runs onReady without waiting for a frame; frames do not, and a closed page ignores it", () => {
         const display = new FakeDisplay();
         const worker = new FakeWorldWorker();
         let readies = 0;
         connectWorldWorker(display, worker, {name: "the demo", onReady: () => readies++});
         worker.emit({type: "ready"});
         expect([readies, display.frames.length]).toEqual([1, 0]);
+        expect(display.shown).toEqual([startingStatus("the demo"), STATUS_HIDDEN]);
         worker.emit({type: "frame", frame: frameWithText(2, 1)});
         expect([readies, display.frames.length]).toEqual([1, 1]);
         worker.emit({type: "quit"});

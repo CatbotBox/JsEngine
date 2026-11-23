@@ -84,6 +84,9 @@ class FakePixelDisplay implements SharedPixelDisplay {
         this.shown.push(`status: ${text}`);
     }
 
+    public hideStatus(): void {
+    }
+
     public showError(text: string): void {
         this.shown.push(`error: ${text}`);
     }
@@ -124,6 +127,9 @@ class FakeGpuCanvas implements SessionGpuCanvas {
 
     public showStatus(text: string): void {
         this.shown.push(`status: ${text}`);
+    }
+
+    public hideStatus(): void {
     }
 
     public showError(text: string): void {
@@ -279,6 +285,9 @@ class FakeCellDisplay implements SharedCellDisplay {
     }
 
     public showStatus(): void {
+    }
+
+    public hideStatus(): void {
     }
 
     public showError(): void {

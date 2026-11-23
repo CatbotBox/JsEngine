@@ -8,6 +8,7 @@ import {isWorldToPageMessage} from "./worldWorkerProtocol";
 interface WorldDisplaySurface {
     onResize(listener: () => void): () => void;
     showStatus(text: string): void;
+    hideStatus(): void;
     showError(text: string): void;
 }
 
@@ -126,6 +127,7 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
                 else failOnMismatch(GPU_BACKEND);
                 break;
             case "ready":
+                display.hideStatus();
                 options.onReady?.();
                 break;
             case "quit":

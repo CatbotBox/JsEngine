@@ -124,6 +124,9 @@ class FrameCounter implements PixelWorldDisplay {
         return;
     }
 
+    public hideStatus(): void {
+    }
+
     public showError(text: string): void {
         this.errors.push(text);
     }

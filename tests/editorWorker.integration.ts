@@ -176,6 +176,9 @@ class PixelFrameRecorder implements PixelWorldDisplay {
         this.statuses.push(text);
     }
 
+    public hideStatus(): void {
+    }
+
     public showError(text: string): void {
         this.errors.push(text);
     }
@@ -201,6 +204,9 @@ class CellFrameRecorder implements CellWorldDisplay {
 
     public showStatus(text: string): void {
         this.statuses.push(text);
+    }
+
+    public hideStatus(): void {
     }
 
     public showError(text: string): void {
