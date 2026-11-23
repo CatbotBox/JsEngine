@@ -8,7 +8,7 @@ import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {
     assetReferencesOfFields,
-    assignInferredFieldValue,
+    assignFieldValue,
     decodeFieldValue,
     EditorOnly,
     inferComponentSchema,
@@ -140,13 +140,13 @@ function prepareEdit(world: World, registry: ComponentSchemaRegistry, context: F
 function applyEdit(world: World, prepared: PreparedEdit): void {
     const {edit, target, field, value} = prepared;
     if (target.inferred) {
-        assignInferredFieldValue(untrackedComponentOf<Component>(world, edit.entity, target.type)!, field, value);
+        assignFieldValue(untrackedComponentOf<Component>(world, edit.entity, target.type)!, field, value);
         markComponentChanged(world, edit.entity, target.type);
         return;
     }
     const component = world.entityManager.getComponent<Component>(edit.entity, target.type)!;
     if (component instanceof Parent) reparentKeepingLocals(world, edit.entity, component, value as Entity);
-    else fieldsOf(component)[field.key] = value;
+    else assignFieldValue(component, field, value);
 }
 
 function encodedValueOf(world: World, registry: ComponentSchemaRegistry, prepared: PreparedEdit): EditorFieldValue {
@@ -191,8 +191,7 @@ function decodeValuesOnto(
         const json = values[field.key];
         if (json === undefined) continue;
         const value = decodeFieldValue(field, json, context, `${typeName}.${field.key}`);
-        if (schema.inferred === true) assignInferredFieldValue(component, field, value);
-        else fieldsOf(component)[field.key] = value;
+        assignFieldValue(component, field, value);
     }
 }
 

@@ -109,6 +109,7 @@ const NO_VALUES: SceneJsonObject = {};
 const NO_ENTITIES: readonly Entity[] = [];
 const NO_COMPONENT_VALUES: EditorComponentValues = {};
 const PLAIN_STOP_TEXT = "The world was stopped";
+const EDIT_AFTER_QUIT_TEXT = "The game quit and play stopped while this edit loaded its assets, so the edit was not applied";
 const SKIPPED_UNKNOWN_TYPES = "skip";
 const REPORTED_SCHEMA_CHANGES = "report";
 const OPENED_SCENE_MODE = "single";
@@ -154,6 +155,7 @@ export class EditorWorldService {
     private pendingRequests: Promise<void> = Promise.resolve();
     private attached = true;
     private stepping = false;
+    private quitStops = 0;
     private stoppedError: string | undefined;
     private firstFrameListener: (() => void) | undefined;
     private readonly gate: GameplaySystemGate;
@@ -305,6 +307,12 @@ export class EditorWorldService {
         await this.preload(sceneAssetPaths(document, this.registry));
     }
 
+    private async preloadForEdit(references: readonly SceneAssetReference[]): Promise<void> {
+        const quitStopsBefore = this.quitStops;
+        await this.preload(references);
+        if (this.quitStops !== quitStopsBefore) throw new Error(EDIT_AFTER_QUIT_TEXT);
+    }
+
     private async perform(request: EditorRequest): Promise<EditorResult> {
         const {world, registry} = this;
         switch (request.op) {
@@ -315,14 +323,14 @@ export class EditorWorldService {
             case "getEntity":
                 return this.inGameView(() => entityDetails(world, registry, request.entity));
             case "setField":
-                await this.preload(assetReferencesOf(registry, request.typeName, {[request.key]: request.value}));
+                await this.preloadForEdit(assetReferencesOf(registry, request.typeName, {[request.key]: request.value}));
                 return this.edit([request.entity], () => ({value: assignField(world, registry, this.assets, request)}));
             case "setFields":
-                await this.preload(assetReferencesOfEdits(registry, request.edits));
+                await this.preloadForEdit(assetReferencesOfEdits(registry, request.edits));
                 return this.edit(request.edits.map(edit => edit.entity), () => ({values: assignFields(world, registry, this.assets, request.edits)}));
             case "addComponent": {
                 const values = request.values ?? NO_VALUES;
-                await this.preload(assetReferencesOf(registry, request.typeName, values));
+                await this.preloadForEdit(assetReferencesOf(registry, request.typeName, values));
                 return this.edit([request.entity], () => {
                     addComponentTo(world, registry, this.assets, request.entity, request.typeName, values);
                     return entityDetails(world, registry, request.entity);
@@ -335,7 +343,7 @@ export class EditorWorldService {
                 });
             case "createEntity": {
                 const components = request.components ?? NO_COMPONENT_VALUES;
-                await this.preload(Object.entries(components).flatMap(([typeName, values]) => assetReferencesOf(registry, typeName, values)));
+                await this.preloadForEdit(Object.entries(components).flatMap(([typeName, values]) => assetReferencesOf(registry, typeName, values)));
                 return this.edit([request.parent], () => entityDetails(world, registry, createEditorEntity(world, registry, this.assets, request.name, request.parent, components)), created => [created.entity]);
             }
             case "destroyEntity":
@@ -479,13 +487,13 @@ export class EditorWorldService {
         if (this._mode === "edit") {
             throw new Error(`${request.typeName} is read-only while editing: resources are live game state, so edit them while the game plays or is paused`);
         }
-        await this.preload(resourceFieldAssetReferences(this.registry, request));
+        await this.preloadForEdit(resourceFieldAssetReferences(this.registry, request));
         return this.inGameView(() => ({value: assignResourceField(this.world, this.registry, this.assets, request)}));
     }
 
     private async instantiateEntities(request: InstantiateEntitiesRequest): Promise<InstantiateEntitiesResult> {
         const document = withoutSceneMembership(parseSceneDocument(request.documentText));
-        await this.preloadDocument(document);
+        await this.preloadForEdit(sceneAssetPaths(document, this.registry));
         return this.inGameView(() => {
             const parent = request.parent ?? null;
             if (parent !== null) requireSceneEntity(this.world, parent);
@@ -719,8 +727,10 @@ export class EditorWorldService {
     }
 
     private stopGameplayThatQuit(): void {
+        if (!this.stepping && this._mode !== "play") return;
+        this.quitStops++;
         if (this.stepping) this.stop();
-        else if (this._mode === "play") this.inGameView(() => this.changeMode(() => this.stop()));
+        else this.inGameView(() => this.changeMode(() => this.stop()));
     }
 
     private discardPendingCommands(): void {

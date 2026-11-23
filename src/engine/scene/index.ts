@@ -119,7 +119,7 @@ export {
     POINTER_BUTTON_FIELD_TYPE,
     POINTER_BUTTON_TYPE_NAME,
 } from "./inputMapSchema";
-export {assignInferredFieldValue, inferComponentSchema} from "./inferredSchema";
+export {inferComponentSchema} from "./inferredSchema";
 export {EditorOnly} from "./editorOnly";
 export {PrefabInstance} from "./prefabInstance";
 export {
@@ -153,7 +153,7 @@ export {
     untrackedComponentOf,
 } from "./sceneHierarchy";
 export type {SiblingOrder} from "./sceneHierarchy";
-export {decodeFieldValue, encodeFieldValue, readSceneEntityId} from "./fieldValueCodec";
+export {assignFieldValue, decodeFieldValue, encodeFieldValue, readSceneEntityId} from "./fieldValueCodec";
 export type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 export {
     FIRST_SCENE_ENTITY_ID,

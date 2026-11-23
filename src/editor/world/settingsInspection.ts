@@ -7,6 +7,7 @@ import {
     assetReferencesOfFields,
     categoryOf,
     dataAssetPathOf,
+    assignFieldValue,
     decodeFieldValue,
     encodeDataAssetFields,
     ENGINE_COMPONENT_CATEGORIES,
@@ -142,7 +143,7 @@ export function assignResourceField(world: World, registry: ComponentSchemaRegis
     const path = `${request.typeName}.${request.key}`;
     const value = decodeFieldValue(field, request.value, editorDecodeContext(world, registry, assets), path);
     if (isEntityField(field) && !field.nullable && value === NULL_ENTITY) throw new Error(`${path} cannot be null`);
-    fieldsOf(present.resource)[request.key] = value;
+    assignFieldValue(present.resource, field, value);
     return encodedResourceField(world, registry, present, field);
 }
 

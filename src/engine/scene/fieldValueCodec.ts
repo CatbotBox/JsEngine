@@ -6,7 +6,7 @@ import {PACKED_RGB_MASK} from "../rendering/packedRgb";
 import type {SpriteImage} from "../rendering/2d/spriteImage";
 import type {AssetType} from "./assetTypes";
 import {createStructValue, customFieldTypeOf} from "./fieldDefaults";
-import type {AssetFieldType, FieldType, FieldTypeResolver, StructFieldType} from "./fieldSchema";
+import type {AssetFieldType, FieldSchema, FieldType, FieldTypeResolver, StructFieldType} from "./fieldSchema";
 import {fieldValueError} from "./fieldValueError";
 import type {SceneAssetLoader} from "./sceneAssets";
 import {describeJson, FIRST_SCENE_ENTITY_ID, isSceneJsonObject} from "./sceneDocument";
@@ -279,6 +279,32 @@ function encodeList(element: FieldType, value: unknown, context: FieldEncodeCont
 function decodeList(element: FieldType, json: SceneJsonValue, context: FieldDecodeContext, path: string): unknown[] {
     if (!Array.isArray(json)) throw fieldValueError(path, "an array", json);
     return json.map((item, i) => decodeFieldValue(element, item, context, `${path}[${i}]`));
+}
+
+type NumberSlots = {[index: number]: number, readonly length: number};
+
+function isNumberSlots(value: unknown): value is NumberSlots {
+    return value instanceof Float32Array || Array.isArray(value);
+}
+
+function isVectorKind(kind: FieldType["kind"]): boolean {
+    return kind === "vec2" || kind === "vec3" || kind === "rotation";
+}
+
+function isOwnDataField(target: object, key: string): boolean {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    return descriptor !== undefined && "value" in descriptor;
+}
+
+export function assignFieldValue(target: object, field: FieldSchema, value: unknown): void {
+    const values = target as Record<string, unknown>;
+    const current = values[field.key];
+    const copiesInPlace = isVectorKind(field.kind) && isOwnDataField(target, field.key);
+    if (copiesInPlace && isNumberSlots(current) && isNumberSlots(value) && current.length === value.length) {
+        for (let i = 0; i < current.length; i++) current[i] = value[i];
+        return;
+    }
+    values[field.key] = value;
 }
 
 export function encodeFieldValue(field: FieldType, value: unknown, context: FieldEncodeContext, path: string): SceneJsonValue {

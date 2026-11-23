@@ -10,7 +10,7 @@ import type {SpriteImage} from "../rendering/2d/spriteImage";
 import type {ComponentSchema, FieldSchema, ResourceSchema} from "./fieldSchema";
 import {hasEntityFields, isEntityField, refersToEntities} from "./fieldSchema";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
-import {decodeFieldValue, encodeFieldValue, readSceneEntityId} from "./fieldValueCodec";
+import {assignFieldValue, decodeFieldValue, encodeFieldValue, readSceneEntityId} from "./fieldValueCodec";
 import type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 import type {SceneAssetLoader} from "./sceneAssets";
 import {FIRST_SCENE_ENTITY_ID, isSceneJsonObject, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION, sceneJsonEquals} from "./sceneDocument";
@@ -116,7 +116,7 @@ interface PlannedResource {
 }
 
 interface DecodedField {
-    readonly key: string;
+    readonly field: FieldSchema;
     readonly value: unknown;
 }
 
@@ -132,7 +132,7 @@ interface PreparedResource {
 
 interface FieldChange {
     readonly type: AnyCT;
-    readonly key: string;
+    readonly field: FieldSchema;
     readonly value: unknown;
 }
 
@@ -487,7 +487,7 @@ function valueDecodeContext(registry: ComponentSchemaRegistry, options: SceneLoa
 }
 
 function decodeValueFields(fields: readonly PlannedValueField[], context: FieldDecodeContext): DecodedField[] {
-    return fields.map(planned => ({key: planned.field.key, value: decodeFieldValue(planned.field, planned.json, context, planned.path)}));
+    return fields.map(planned => ({field: planned.field, value: decodeFieldValue(planned.field, planned.json, context, planned.path)}));
 }
 
 function prepare(planned: PlannedComponent, context: FieldDecodeContext): PreparedComponent {
@@ -500,8 +500,7 @@ function prepareResource(planned: PlannedResource, context: FieldDecodeContext):
 
 function instantiate(prepared: PreparedComponent): Component {
     const component = prepared.planned.schema.create();
-    const fields = fieldsOf(component);
-    for (const {key, value} of prepared.values) fields[key] = value;
+    for (const {field, value} of prepared.values) assignFieldValue(component, field, value);
     return component;
 }
 
@@ -520,7 +519,7 @@ function referenceContext(document: SceneDocument, entities: readonly Entity[], 
 
 function decodeEntityFields(fields: readonly PlannedEntityField[], context: FieldDecodeContext): DecodedField[] {
     return fields.map(reference => ({
-        key: reference.field.key,
+        field: reference.field,
         value: decodeFieldValue(reference.field, reference.json, context, reference.path),
     }));
 }
@@ -532,8 +531,7 @@ function missesRequiredEntity(schema: ComponentSchema, component: Component): bo
 
 function instantiateReferring(prepared: PreparedComponent, context: FieldDecodeContext, report: LoadReportBuilder): Component | undefined {
     const component = instantiate(prepared);
-    const fields = fieldsOf(component);
-    for (const {key, value} of decodeEntityFields(prepared.planned.entityFields, context)) fields[key] = value;
+    for (const {field, value} of decodeEntityFields(prepared.planned.entityFields, context)) assignFieldValue(component, field, value);
     if (!missesRequiredEntity(prepared.planned.schema, component)) return component;
     report.droppedComponents.push(prepared.planned.path);
     return undefined;
@@ -647,15 +645,14 @@ function assignResourceFields(world: World, prepared: PreparedResource, referenc
     const schema = prepared.planned.schema;
     const resource = world.resources.tryGet(schema.ctor) ?? world.resources.insert(schema.create());
     const current = fieldsOf(resource);
-    const fieldByKey = new Map(schema.fields.map(field => [field.key, field]));
     const jsonByKey = new Map(prepared.planned.valueFields.map(field => [field.field.key, field]));
-    for (const {key, value} of prepared.values) {
-        const planned = jsonByKey.get(key)!;
-        if (comparison !== undefined && encodesTo(fieldByKey.get(key)!, current[key], planned.json, comparison, planned.path)) continue;
-        current[key] = value;
+    for (const {field, value} of prepared.values) {
+        const planned = jsonByKey.get(field.key)!;
+        if (comparison !== undefined && encodesTo(field, current[field.key], planned.json, comparison, planned.path)) continue;
+        assignFieldValue(resource, field, value);
     }
-    for (const {key, value} of decodeEntityFields(prepared.planned.entityFields, references)) {
-        if (current[key] !== value) current[key] = value;
+    for (const {field, value} of decodeEntityFields(prepared.planned.entityFields, references)) {
+        if (current[field.key] !== value) current[field.key] = value;
     }
 }
 
@@ -744,7 +741,7 @@ function planInPlaceChanges(
         const currentFields = fieldsOf(current);
         const changed = component.valueFields.filter(field =>
             !encodesTo(field.field, currentFields[field.field.key], field.json, comparisonContext, field.path));
-        for (const {key, value} of decodeValueFields(changed, valueContext)) changes.fieldChanges.push({type: component.type, key, value});
+        for (const {field, value} of decodeValueFields(changed, valueContext)) changes.fieldChanges.push({type: component.type, field, value});
         if (component.refersToEntities) changes.referringComponents.push({planned: component, values: []});
     }
     return changes;
@@ -768,8 +765,8 @@ function applyReferringComponent(world: World, entity: Entity, prepared: Prepare
     const existing = entityManager.getComponent<Component>(entity, prepared.planned.type);
     if (existing === undefined) return instantiateReferring(prepared, context, report);
     const fields = fieldsOf(existing);
-    for (const {key, value} of decodeEntityFields(prepared.planned.entityFields, context)) {
-        if (fields[key] !== value) fields[key] = value;
+    for (const {field, value} of decodeEntityFields(prepared.planned.entityFields, context)) {
+        if (fields[field.key] !== value) fields[field.key] = value;
     }
     if (missesRequiredEntity(prepared.planned.schema, existing)) {
         entityManager.removeComponent(entity, prepared.planned.type);
@@ -830,7 +827,7 @@ export function applySceneInPlace(world: World, registry: ComponentSchemaRegistr
         if (existing === undefined) return entityManager.createEntity(record.name ?? undefined, entityChanges.additions.map(instantiate));
         for (const type of entityChanges.removals) entityManager.removeComponent(existing, type);
         if (entityChanges.additions.length > 0) entityManager.addComponents(existing, entityChanges.additions.map(instantiate));
-        for (const change of entityChanges.fieldChanges) fieldsOf(entityManager.getComponent<Component>(existing, change.type)!)[change.key] = change.value;
+        for (const change of entityChanges.fieldChanges) assignFieldValue(entityManager.getComponent<Component>(existing, change.type)!, change.field, change.value);
         return existing;
     });
 

@@ -3,13 +3,16 @@ import {NULL_ENTITY, QuitSystemGroup, System} from "../../engine/core";
 import type {Entity, SystemCtor} from "../../engine/core";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
+import {Sprite} from "../../engine/rendering/2d/sprite";
+import {SpriteImage} from "../../engine/rendering/2d/spriteImage";
 import type {EditorMode, EditorServiceState, EditorView} from "../editorProtocol";
-import {ask, disposeEditorWorlds, editorWorld, fieldsOf, waitUntil} from "./editorServiceTestHarness";
+import {SPRITE_PATH, ask, disposeEditorWorlds, editorWorld, failureOf, fieldsOf, waitUntil} from "./editorServiceTestHarness";
 import type {Harnessed} from "./editorServiceTestHarness";
 
 const EDIT_X = 1;
 const PLAY_X = 9;
 const QUIT_FAILURE = "failed right after requesting the quit";
+const SOLID_GREEN_RGB = 0x00ff00;
 
 class QuitRequestingSystem extends System {
     public quitOnNextUpdate = false;
@@ -39,6 +42,7 @@ class RecordPositionOnQuitSystem extends System {
 interface QuittingGameOptions {
     readonly gameplaySystems: readonly SystemCtor<System>[];
     readonly debugWorld?: boolean;
+    readonly preloadsFinishWhen?: Promise<void>;
 }
 
 interface QuittingGame {
@@ -56,10 +60,10 @@ afterEach(disposeEditorWorlds);
 function quittingGame(options: QuittingGameOptions): QuittingGame {
     let player = NULL_ENTITY;
     const harnessed = editorWorld(world => {
-        player = world.entityManager.createEntity("player", [new LocalPosition(EDIT_X, 0, 0), new LocalToWorld()]);
+        player = world.entityManager.createEntity("player", [new LocalPosition(EDIT_X, 0, 0), new LocalToWorld(), new Sprite(SpriteImage.solid(1, 1, SOLID_GREEN_RGB))]);
         world.getOrCreateSystem(QuitRequestingSystem);
         world.getOrCreateSystem(RecordPositionOnQuitSystem).watched = player;
-    }, {gameplaySystems: options.gameplaySystems, debugWorld: options.debugWorld, drivenFrames: false});
+    }, {gameplaySystems: options.gameplaySystems, debugWorld: options.debugWorld, preloadsFinishWhen: options.preloadsFinishWhen, drivenFrames: false});
     const world = harnessed.world;
     return {harnessed, player, quitter: world.tryGetSystem(QuitRequestingSystem)!, recorder: world.tryGetSystem(RecordPositionOnQuitSystem)!};
 }
@@ -153,6 +157,23 @@ describe("a game that requests quit in the editor", () => {
         await ask(harnessed, {op: "setMode", mode: "play"});
         quitWithinNextFrame(game);
         expect([service.mode, recorder.seenX]).toEqual(["edit", [EDIT_X]]);
+    });
+
+    test("during play, an edit still loading its assets when the game quits fails instead of landing on the restored edit scene", async () => {
+        let finishPreloads = (): void => undefined;
+        const preloadsFinishWhen = new Promise<void>(finish => finishPreloads = finish);
+        const game = quittingGame({gameplaySystems: LISTED_QUIT_SYSTEMS, preloadsFinishWhen});
+        const {harnessed, player} = game;
+        await ask(harnessed, {op: "setMode", mode: "play"});
+        const edit = ask(harnessed, {op: "setField", entity: player, typeName: "Sprite", key: "image", value: {path: SPRITE_PATH}});
+        expect(await waitUntil(() => harnessed.preloaded.length === 1)).toBe(true);
+        quitWithinNextFrame(game);
+        finishPreloads();
+
+        expect((await failureOf(edit)).includes("the edit was not applied")).toBe(true);
+        expect(harnessed.service.mode).toBe("edit");
+        expect(fieldsOf(await ask(harnessed, {op: "getEntity", entity: player}), "Sprite")?.image).not.toEqual({path: SPRITE_PATH});
+        expect((await ask(harnessed, {op: "listEntities"})).editedSceneIds).toEqual([]);
     });
 
     test("in a frame whose system error stopped the world, play is left for the error report and the session does not quit", async () => {

@@ -5,7 +5,8 @@ import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {componentSchema, resourceSchema} from "./componentSchemaBuilder";
 import {DEFAULT_COMPONENT_CATEGORY} from "./fieldSchema";
 import type {ResourceSchema} from "./fieldSchema";
-import {assignInferredFieldValue, inferComponentSchema} from "./inferredSchema";
+import {inferComponentSchema} from "./inferredSchema";
+import {assignFieldValue} from "./fieldValueCodec";
 import {registerEngineComponentSchemas} from "./engineComponentSchemas";
 
 class Spinner extends Component {
@@ -118,9 +119,9 @@ describe("inferred component schemas", () => {
         const offset = loose.offset;
         const spin = loose.spin;
         const schema = inferComponentSchema(loose);
-        assignInferredFieldValue(loose, schema.fields[3], Vec.alloc3(7, 8, 9));
-        assignInferredFieldValue(loose, schema.fields[4], [0, 1, 0, 0]);
-        assignInferredFieldValue(loose, schema.fields[0], 5);
+        assignFieldValue(loose, schema.fields[3], Vec.alloc3(7, 8, 9));
+        assignFieldValue(loose, schema.fields[4], [0, 1, 0, 0]);
+        assignFieldValue(loose, schema.fields[0], 5);
         expect(loose.offset).toBe(offset);
         expect(loose.offset).toEqual([7, 8, 9]);
         expect(Array.isArray(loose.offset)).toBe(true);

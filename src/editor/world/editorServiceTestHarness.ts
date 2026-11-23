@@ -99,6 +99,7 @@ export interface EditorWorldOptions {
     readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
     readonly gameplaySystems?: readonly SystemCtor<System>[];
     readonly onFirstFrame?: () => void;
+    readonly preloadsFinishWhen?: Promise<void>;
 }
 
 interface RunningEditorWorld {
@@ -163,7 +164,7 @@ export function editorWorld(populate: (world: World) => void = () => undefined, 
         gameplaySystems: [...HARNESS_GAMEPLAY_SYSTEMS, ...options.gameplaySystems ?? NO_EXTRA_GAMEPLAY_SYSTEMS],
         preloadAssets: async paths => {
             preloaded.push([...paths]);
-            await sleep(PRELOAD_DELAY_MS);
+            await (options.preloadsFinishWhen ?? sleep(PRELOAD_DELAY_MS));
         },
     });
     attachedService = service;

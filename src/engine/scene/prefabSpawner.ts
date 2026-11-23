@@ -8,7 +8,7 @@ import type {SpriteImage} from "../rendering/2d/spriteImage";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {hasEntityFields, isEntityField} from "./fieldSchema";
 import type {ComponentSchema, FieldSchema, FieldType} from "./fieldSchema";
-import {decodeFieldValue} from "./fieldValueCodec";
+import {assignFieldValue, decodeFieldValue} from "./fieldValueCodec";
 import type {FieldDecodeContext} from "./fieldValueCodec";
 import type {PrefabAsset} from "./prefabAsset";
 import type {SceneAssetLoader} from "./sceneAssets";
@@ -79,9 +79,8 @@ class ComponentTemplate {
 
     public create(context: FieldDecodeContext): Component {
         const component = this.schema.create();
-        const values = fieldsOf(component);
         for (const field of this.fields) {
-            values[field.key] = field.decodedOnce ? field.value : decodeFieldValue(field.field, field.json, context, field.path);
+            assignFieldValue(component, field.field, field.decodedOnce ? field.value : decodeFieldValue(field.field, field.json, context, field.path));
         }
         return component;
     }

@@ -37,16 +37,3 @@ export function inferComponentSchema<T extends Component>(instance: T): Componen
         create: () => new ctor(),
     });
 }
-
-export function assignInferredFieldValue(instance: Component, field: FieldSchema, value: unknown): void {
-    const values = instance as unknown as Record<string, unknown>;
-    const current = values[field.key];
-    const isVector = field.kind === "vec3" || field.kind === "rotation";
-    if (isVector && (current instanceof Float32Array || Array.isArray(current)) && (value instanceof Float32Array || Array.isArray(value))) {
-        const target = current as {[index: number]: number, readonly length: number};
-        const source = value as ArrayLike<number>;
-        for (let i = 0; i < target.length; i++) target[i] = source[i];
-        return;
-    }
-    values[field.key] = value;
-}

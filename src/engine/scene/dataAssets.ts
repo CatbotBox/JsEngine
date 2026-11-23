@@ -10,7 +10,7 @@ import {dataAssetDocumentText, newDataAssetDocument, parseDataAssetDocument, rem
 import type {DataAssetDocument} from "./dataAssetDocument";
 import {hasEntityFields} from "./fieldSchema";
 import type {ResourceSchema} from "./fieldSchema";
-import {decodeFieldValue, encodeFieldValue} from "./fieldValueCodec";
+import {assignFieldValue, decodeFieldValue, encodeFieldValue} from "./fieldValueCodec";
 import type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 import {platformSceneAssetLoader} from "./sceneAssets";
 import type {SceneAssetLoader} from "./sceneAssets";
@@ -145,8 +145,7 @@ export class DataAssets extends Resource {
         }
         const decoded = this.decode(key, document);
         const fresh = fieldsOf(decoded.asset);
-        const target = fieldsOf(asset);
-        for (const field of schema.fields) target[field.key] = fresh[field.key];
+        for (const field of schema.fields) assignFieldValue(asset, field, fresh[field.key]);
         this.recordSchemaChanges(key, decoded.changes);
         this.onReloaded.invoke({path: key, asset});
         return asset;

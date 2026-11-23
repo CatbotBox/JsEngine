@@ -5,6 +5,7 @@ import {NULL_ENTITY} from "../../engine/core/entity";
 import {getOwner} from "../../engine/core/ownership";
 import {Parent} from "../../engine/translation/parent";
 import {
+    assignFieldValue,
     decodeFieldValue,
     encodeFieldValue,
     instantiateDocument,
@@ -340,7 +341,7 @@ export class PrefabLibrary {
             const component = schema.create();
             for (const field of schema.fields) {
                 const json = values[field.key];
-                if (json !== undefined) fieldsOf(component)[field.key] = decodeFieldValue(field, json, decode, `${path}/${schema.name}.${field.key}`);
+                if (json !== undefined) assignFieldValue(component, field, decodeFieldValue(field, json, decode, `${path}/${schema.name}.${field.key}`));
             }
             const missesEntity = schema.fields.some(field => isEntityField(field) && !field.nullable && fieldsOf(component)[field.key] === NULL_ENTITY);
             if (!missesEntity && !(component instanceof Parent)) entityManager.addComponent(entity, component);
@@ -357,7 +358,7 @@ export class PrefabLibrary {
             } catch {
                 equal = false;
             }
-            if (!equal) fieldsOf(existing)[field.key] = decodeFieldValue(field, json, decode, fieldPath);
+            if (!equal) assignFieldValue(existing, field, decodeFieldValue(field, json, decode, fieldPath));
         }
     }
 }

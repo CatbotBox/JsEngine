@@ -34,6 +34,8 @@ export type WritableKeys<T> = {
 
 export type FieldKey<T, V> = KeysOfType<T, V> & WritableKeys<T> & string;
 
+export type VectorKey<T, V> = KeysOfType<T, V> & string;
+
 export type ListKey<T> = {
     [K in keyof T]-?: T[K] extends readonly unknown[] ? K : never
 }[keyof T] & WritableKeys<T> & string;
@@ -145,15 +147,15 @@ export abstract class FieldListBuilder<T extends object> {
         return this.plain(key, "textLines");
     }
 
-    public vec2(key: FieldKey<T, Vec2>): this {
+    public vec2(key: VectorKey<T, Vec2>): this {
         return this.plain(key, "vec2");
     }
 
-    public vec3(key: FieldKey<T, Vec3>): this {
+    public vec3(key: VectorKey<T, Vec3>): this {
         return this.plain(key, "vec3");
     }
 
-    public rotation(key: FieldKey<T, Vec4>): this {
+    public rotation(key: VectorKey<T, Vec4>): this {
         return this.plain(key, "rotation");
     }
 
