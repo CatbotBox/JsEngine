@@ -7,7 +7,7 @@ export const APP_ICON_ICO_FILE = "icon.ico";
 export const APP_ICON_ICNS_FILE = "icon.icns";
 export const APP_ICON_PNG_FILE = "icon.png";
 
-const MAIN_PROCESS_ENTRY = join(SOURCE_ROOT, "hosts", "desktop", "main.ts");
+const MAIN_PROCESS_ENTRY = join(SOURCE_ROOT, "editor", "desktop", "main.ts");
 const MAIN_PROCESS_BUNDLE = "main.js";
 
 export async function bundleMainProcess(outdir = WINDOW_DIST): Promise<string> {

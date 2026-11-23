@@ -15,7 +15,7 @@ const TEST_SUFFIX = ".test.ts";
 const BUILD_OUTPUT_DIRECTORIES = new Set(["dist", "dist-prod", "node_modules"]);
 
 const NODE_API_USE = /require\("(fs|path|os|zlib|worker_threads|util|readline)"\)|from "(node:)?(fs|path|os|zlib|worker_threads|util|perf_hooks|timers|readline)"|process\.(stdout|stdin|env)/;
-const NODE_API_HOSTS = ["src/hosts/terminal/", "src/hosts/desktop/", "src/toolchain/"];
+const NODE_API_HOSTS = ["src/hosts/terminal/", "src/hosts/desktop/", "src/editor/desktop/", "src/toolchain/"];
 
 const BUN_TEST_IMPORT = /from\s+["']bun:test["']|require\(\s*["']bun:test["']\s*\)/;
 const HARNESS = path.join(SRC, "engine", "testing", "harness.ts");
@@ -36,17 +36,18 @@ const ALLOWED_LAYERS: Readonly<Record<string, readonly string[]>> = {
     [TERMINAL_INPUT]: ["engine", TERMINAL_INPUT],
     "hosts/terminal": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal"],
     "hosts/web": ["engine", ...BACKENDS, "hosts/web"],
-    "hosts/desktop": ["engine", ...BACKENDS, "editor project", "hosts/desktop"],
+    "hosts/desktop": ["engine", "hosts/desktop"],
     "editor project": ["engine", "editor project"],
     "editor": ["engine", ...BACKENDS, "editor project", "editor"],
     "editor launch": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/web", "editor project", "editor", "editor launch"],
+    "editor desktop": ["engine", ...BACKENDS, "editor project", "hosts/desktop", "editor desktop"],
     "demo": ["engine", "demo"],
     "demo backend cells": ["engine", "backends/cells", "demo", "demo backend cells"],
     "demo backend pixels": ["engine", "backends/pixels", "demo", "demo backend pixels"],
     "demo backend gpu": ["engine", "backends/pixels", "backends/gpu", "demo", "demo backend gpu"],
     "demo launch": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal", "hosts/web", "demo", ...DEMO_BACKENDS, "demo launch"],
     "demo generated": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal", "hosts/web", "editor launch", "demo", ...DEMO_BACKENDS, "demo generated"],
-    "toolchain": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal", "hosts/web", "hosts/desktop", "editor project", "editor", "toolchain"],
+    "toolchain": ["engine", ...BACKENDS, TERMINAL_INPUT, "hosts/terminal", "hosts/web", "hosts/desktop", "editor project", "editor", "editor desktop", "toolchain"],
 };
 
 const UNSCHEDULED = "unscheduled";
@@ -59,6 +60,7 @@ const DEMO_GENERATED_FOLDER = "generated";
 const GENERATED_BACKEND_FILE = /\.(cells|pixels|gpu)\.ts$/;
 const EDITOR_LAUNCH_FOLDER = "launch";
 const EDITOR_PROJECT_FOLDER = "project";
+const EDITOR_DESKTOP_FOLDER = "desktop";
 const EDITOR_SOURCES = "src/editor/";
 const GENERATED_MAIN_PREFIX = "main.";
 const GENERATED_EDITOR_MAIN_PREFIX = "main.editor-";
@@ -133,6 +135,7 @@ function layerOf(file: string): string | undefined {
     if (top === "src" && (second === "hosts" || second === "backends")) return `${second}/${third}`;
     if (top === "src" && second === "editor" && third === EDITOR_LAUNCH_FOLDER) return "editor launch";
     if (top === "src" && second === "editor" && third === EDITOR_PROJECT_FOLDER) return "editor project";
+    if (top === "src" && second === "editor" && third === EDITOR_DESKTOP_FOLDER) return "editor desktop";
     if (top === "src") return second;
     if (top === "demo" && third === DEMO_BACKEND_FOLDER) return `demo backend ${fourth}`;
     const generatedBackend = top === "demo" && third === DEMO_GENERATED_FOLDER ? GENERATED_BACKEND_FILE.exec(fourth)?.[1] : undefined;
@@ -235,7 +238,7 @@ function gameEntries(): string[] {
 }
 
 describe("source rules", () => {
-    test("only src/hosts/terminal, src/hosts/desktop and src/toolchain touch node APIs among the non-test files under src/", () => {
+    test("only src/hosts/terminal, src/hosts/desktop, src/editor/desktop and src/toolchain touch node APIs among the non-test files under src/", () => {
         const sourceFiles = typeScriptFilesUnder(SRC).filter(file => !file.endsWith(TEST_SUFFIX));
         const isNodeHost = (file: string) => NODE_API_HOSTS.some(host => fromRoot(file).startsWith(host));
         expect(linesMatching(sourceFiles.filter(file => !isNodeHost(file)), NODE_API_USE)).toEqual([]);

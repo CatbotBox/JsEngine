@@ -1,8 +1,8 @@
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "fs";
 import {dirname, join, resolve} from "path";
 import {pathToFileURL} from "url";
-import {createProjectServer} from "../src/hosts/desktop";
-import type {ProjectServer} from "../src/hosts/desktop";
+import {createProjectServer} from "../src/editor/desktop";
+import type {ProjectServer} from "../src/editor/desktop";
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../src/editor/project/editorExtensions";
 import {PROJECT_MANIFEST_FILE} from "../src/engine/project/projectManifest";
 import {isBuildSuccess, PROJECT_EDITOR_EXTENSIONS_COPY_PATH, projectApiUrl} from "../src/editor/project/projectServerApi";

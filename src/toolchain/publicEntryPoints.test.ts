@@ -137,7 +137,7 @@ describe("public entry points", () => {
         expect((engineImportError(`${ENGINE_IMPORT_PREFIX}engine/core/index`) ?? "").includes("is not an engine entry point")).toBe(true);
         expect(closestPublicEntryPoints("engine/math/types/vec")).toEqual(["engine/math"]);
         expect(closestPublicEntryPoints("backends/pixels/2d/pixelsSpritePasses")).toEqual(["backends/pixels/2d"]);
-        expect(closestPublicEntryPoints("editor/project/editorExtensions")).toEqual(["editor/extensions", "editor/launch"]);
+        expect(closestPublicEntryPoints("editor/project/editorExtensions")).toEqual(["editor/desktop", "editor/extensions", "editor/launch"]);
         expect(closestPublicEntryPoints("hosts/web/worldWorker")[0]).toBe("hosts/web");
     });
 

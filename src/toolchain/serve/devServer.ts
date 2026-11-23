@@ -1,6 +1,7 @@
 import {existsSync, watch} from "fs";
 import {join} from "path";
-import {contentTypeOf, createProjectServer, distFileFor, ISOLATION_HEADERS, LOOPBACK_HOSTNAMES, locateBun, ServerSentEventChannel} from "../../hosts/desktop";
+import {contentTypeOf, distFileFor, ISOLATION_HEADERS, ServerSentEventChannel} from "../../hosts/desktop";
+import {createProjectServer, LOOPBACK_HOSTNAMES, locateBun} from "../../editor/desktop";
 import {DEV_EVENTS_PATH, DEV_RELOAD_EVENT} from "../../hosts/web/devReload";
 import {CliError} from "../cliArguments";
 import {isWebProjectDataFile} from "../build/webDistFiles";

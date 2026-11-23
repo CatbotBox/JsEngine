@@ -44,8 +44,8 @@ import {
     START_MESSAGE_ACTION_HOOK,
     SUBMENU_HOOK,
     TOOLBAR_HOOK,
-} from "../../editor/project/editorUiHooks";
-import type {EditorMenuId, ModalKind} from "../../editor/project/editorUiHooks";
+} from "../project/editorUiHooks";
+import type {EditorMenuId, ModalKind} from "../project/editorUiHooks";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import type {SmokeFlow} from "./smokeFlows";
 import {SmokeFailure} from "./smokeUi";

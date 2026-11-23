@@ -10,11 +10,11 @@ import {PROJECT_ENTRY_EXTENSIONS, PROJECT_MANIFEST_FILE, validateProjectManifest
 import type {ProjectManifestValidation} from "../../engine/project/projectManifest";
 import {isProjectTarget, PROJECT_TARGETS} from "../../engine/project/projectTargets";
 import type {ProjectTarget} from "../../engine/project/projectTargets";
-import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensions";
-import {createProjectFiles} from "../../editor/project/projectTemplate";
+import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../project/editorExtensions";
+import {createProjectFiles} from "../project/projectTemplate";
 import {projectFileExtension, projectRelativePath} from "../../engine/project/projectPaths";
-import {DEFAULT_GAME_TARGET, EDITOR_SETTINGS_FILE, editorSettingsOf, gameTargetProblem, isGameTarget, parseEditorSettings} from "../../editor/project/editorSettings";
-import type {EditorSettings, GameTarget} from "../../editor/project/editorSettings";
+import {DEFAULT_GAME_TARGET, EDITOR_SETTINGS_FILE, editorSettingsOf, gameTargetProblem, isGameTarget, parseEditorSettings} from "../project/editorSettings";
+import type {EditorSettings, GameTarget} from "../project/editorSettings";
 import {
     EDITOR_SETTINGS_UPDATE_METHOD,
     isBuildSuccess,
@@ -34,7 +34,7 @@ import {
     PROJECT_TARGET_REPORT_ROUTE,
     PROJECT_WORKER_FILE,
     projectBuildCopyPath,
-} from "../../editor/project/projectServerApi";
+} from "../project/projectServerApi";
 import type {
     BrowsedDirectory,
     BrowseResult,
@@ -47,10 +47,10 @@ import type {
     ProjectCapabilities,
     TargetFeatureReport,
     TargetReportResult,
-} from "../../editor/project/projectServerApi";
-import type {ProjectEntry} from "../../editor/project/projectFileSystem";
-import {ServerSentEventChannel} from "./serverSentEvents";
-import {ISOLATION_HEADERS} from "./webDistFiles";
+} from "../project/projectServerApi";
+import type {ProjectEntry} from "../project/projectFileSystem";
+import {ISOLATION_HEADERS, ServerSentEventChannel} from "../../hosts/desktop";
+import {folderKey, isLinkedToCheckout} from "./projectLinks";
 
 export type ExternalOpener = (absolutePath: string) => Promise<void>;
 
@@ -423,6 +423,11 @@ async function pathExists(path: string): Promise<boolean> {
     }
 }
 
+async function isFile(path: string): Promise<boolean> {
+    const info = await stat(path).catch(() => undefined);
+    return info !== undefined && info.isFile();
+}
+
 function jsonObjectOf(text: string): {readonly [key: string]: unknown} {
     let body: unknown;
     try {
@@ -772,7 +777,7 @@ export class ProjectServer {
     }
 
     private projectFor(folder: string): OpenProject {
-        const key = process.platform === "win32" ? folder.toLowerCase() : folder;
+        const key = folderKey(folder);
         const known = this.idsByFolder.get(key);
         if (known !== undefined) return this.projects.get(known)!;
         const id = randomBytes(PROJECT_ID_BYTES).toString("hex");
@@ -815,7 +820,9 @@ export class ProjectServer {
     }
 
     private async open(path: string): Promise<OpenProjectResult> {
-        const project = this.projectFor(await this.folderOf(path));
+        const folder = await this.folderOf(path);
+        await this.linkUnlinkedProject(folder);
+        const project = this.projectFor(folder);
         return {id: project.id, path: project.folder, validation: await this.validate(project)};
     }
 
@@ -831,15 +838,20 @@ export class ProjectServer {
             await mkdir(dirname(target), RECURSIVE);
             await writeFile(target, file.contents, EXCLUSIVE_WRITE);
         }
-        await this.linkEnginePackages(folder);
         return await this.open(folder);
     }
 
-    private async linkEnginePackages(folder: string): Promise<void> {
+    private async linkUnlinkedProject(folder: string): Promise<void> {
         const repoRoot = this.options.repoRoot;
         const bun = this.options.bun;
         if (repoRoot === undefined || !("path" in bun)) return;
-        const run = await this.runToolchain(repoRoot, bun.path, [LINK_COMMAND, PROJECT_ARGUMENT, folder]);
+        if (!await isFile(join(folder, PROJECT_MANIFEST_FILE))) return;
+        if (await isLinkedToCheckout(folder, repoRoot)) return;
+        await this.linkEnginePackages(repoRoot, bun.path, folder);
+    }
+
+    private async linkEnginePackages(repoRoot: string, bunPath: string, folder: string): Promise<void> {
+        const run = await this.runToolchain(repoRoot, bunPath, [LINK_COMMAND, PROJECT_ARGUMENT, folder]);
         if (run.exitCode === EXIT_SUCCESS) return;
         const output = linesOf(`${run.stdout}\n${run.stderr}`).join("\n");
         throw new HttpError(HTTP_INTERNAL_ERROR, `jsengine ${LINK_COMMAND} exited with ${run.exitCode}, so ${folder} cannot resolve the engine packages${output.length > 0 ? `: ${output}` : ""}`);

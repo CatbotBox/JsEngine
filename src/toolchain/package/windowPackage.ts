@@ -3,7 +3,7 @@ import {packager} from "@electron/packager";
 import {copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "fs";
 import {join} from "path";
 import {deflateRawSync} from "zlib";
-import type {PackagedLaunch} from "../../hosts/desktop/main";
+import type {PackagedLaunch} from "../../editor/desktop";
 import {CliError} from "../cliArguments";
 import {APP_ICON_DIRECTORY, APP_ICON_ICNS_FILE, APP_ICON_ICO_FILE, APP_ICON_PNG_FILE, bundleMainProcess} from "../build/windowBuild";
 import {readProjectManifest} from "../project";

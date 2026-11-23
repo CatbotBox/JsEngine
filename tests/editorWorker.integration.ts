@@ -23,8 +23,8 @@ import type {
 } from "../src/editor/editorProtocol";
 import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_DOCUMENT_VERSION, SCENE_INSTANCE_COMPONENT_NAME} from "../src/engine/scene";
 import type {SceneEntityRecord} from "../src/engine/scene";
-import {createProjectServer} from "../src/hosts/desktop";
-import type {ProjectServer} from "../src/hosts/desktop";
+import {createProjectServer} from "../src/editor/desktop";
+import type {ProjectServer} from "../src/editor/desktop";
 import {HttpProjectFileSystem} from "../src/editor/project/httpProjectFileSystem";
 import type {HttpRequestInit, ProjectEventSource} from "../src/editor/project/httpProjectFileSystem";
 import {serveProjectFiles} from "../src/editor/project/projectFileServing";

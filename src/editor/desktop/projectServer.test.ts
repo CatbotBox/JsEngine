@@ -5,11 +5,11 @@ import type * as Path from "path";
 import {createProjectServer, externalOpenCommand, splitCommandLine} from "./projectServer";
 import type {ProjectServer, ToolchainOutput} from "./projectServer";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
-import {STARTER_SCENE_FILE} from "../../editor/project/projectTemplate";
-import {EDITOR_SETTINGS_FILE} from "../../editor/project/editorSettings";
-import type {GameTarget} from "../../editor/project/editorSettings";
-import {EDITOR_SETTINGS_UPDATE_METHOD} from "../../editor/project/projectServerApi";
-import type {OpenProjectResult, PackageResult, TargetFeatureReport, TargetReportResult} from "../../editor/project/projectServerApi";
+import {STARTER_SCENE_FILE} from "../project/projectTemplate";
+import {EDITOR_SETTINGS_FILE} from "../project/editorSettings";
+import type {GameTarget} from "../project/editorSettings";
+import {EDITOR_SETTINGS_UPDATE_METHOD} from "../project/projectServerApi";
+import type {OpenProjectResult, PackageResult, TargetFeatureReport, TargetReportResult} from "../project/projectServerApi";
 import type {ProjectTarget} from "../../engine/project/projectTargets";
 
 const fs = require("fs") as typeof Fs;
@@ -32,6 +32,9 @@ const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 const EXIT_USAGE = 2;
 const UNAVAILABLE_REASON = "building project code needs the JsEngine source tree; start the editor from the repository";
+const ENGINE_PACKAGE = "@jsengine/engine";
+const ENGINE_WORKSPACE = "src/engine";
+const DIRECTORY_LINK_TYPE = "junction";
 const DOM_PROBLEM_REPORT: TargetFeatureReport = {
     ok: false,
     target: "terminal",
@@ -45,6 +48,7 @@ const DOM_PROBLEM_REPORT: TargetFeatureReport = {
 };
 
 let folder = "";
+let checkout = "";
 let server: ProjectServer;
 let openedExternally: string[] = [];
 
@@ -67,11 +71,29 @@ async function opened(target: string): Promise<OpenProjectResult> {
 function serverWithToolchain(respond: (args: readonly string[]) => Promise<ToolchainOutput>): string[][] {
     server.close();
     const runs: string[][] = [];
-    server = createProjectServer({repoRoot: folder, bun: {path: BUN_STUB}, browse: false, allowedHostnames: ["localhost"], runToolchain: async (_repoRoot, _bunPath, args) => {
+    server = createProjectServer({repoRoot: checkout, bun: {path: BUN_STUB}, browse: false, allowedHostnames: ["localhost"], runToolchain: async (_repoRoot, _bunPath, args) => {
         runs.push([...args]);
         return await respond(args);
     }});
     return runs;
+}
+
+function makeCheckout(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jsengine-checkout-"));
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({name: "jsengine", workspaces: [ENGINE_WORKSPACE]}));
+    fs.mkdirSync(path.join(root, ENGINE_WORKSPACE), {recursive: true});
+    fs.writeFileSync(path.join(root, ENGINE_WORKSPACE, "package.json"), JSON.stringify({name: ENGINE_PACKAGE}));
+    return root;
+}
+
+function writeManifest(): void {
+    fs.writeFileSync(path.join(folder, PROJECT_MANIFEST_FILE), JSON.stringify({name: "Game"}));
+}
+
+function linkToCheckout(): void {
+    const link = path.join(folder, "node_modules", ...ENGINE_PACKAGE.split("/"));
+    fs.mkdirSync(path.dirname(link), {recursive: true});
+    fs.symlinkSync(path.join(checkout, ENGINE_WORKSPACE), link, DIRECTORY_LINK_TYPE);
 }
 
 function passingReport(target: ProjectTarget): TargetFeatureReport {
@@ -96,6 +118,7 @@ async function packaged(id: string): Promise<PackageResult> {
 
 beforeEach(() => {
     folder = fs.mkdtempSync(path.join(os.tmpdir(), "jsengine-project-"));
+    checkout = makeCheckout();
     openedExternally = [];
     server = createProjectServer({
         bun: {unavailableReason: "no bun in tests"},
@@ -110,6 +133,7 @@ beforeEach(() => {
 afterEach(() => {
     server.close();
     fs.rmSync(folder, {recursive: true, force: true});
+    fs.rmSync(checkout, {recursive: true, force: true});
 });
 
 describe("project server", () => {
@@ -137,7 +161,37 @@ describe("project server", () => {
         const runs = serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_SUCCESS}));
         const created = await (await post("create", {path: folder, name: "Linked"})).json() as OpenProjectResult;
         expect(created.validation.ok).toBe(true);
-        expect(runs).toEqual([["link", "--project", folder]]);
+        expect(runs).toEqual([["link", "--project", created.path]]);
+    });
+
+    test("opening a project that is not linked to this checkout links it through jsengine link", async () => {
+        const runs = serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_SUCCESS}));
+        writeManifest();
+        const {path: projectFolder} = await opened(folder);
+        expect(runs).toEqual([["link", "--project", projectFolder]]);
+    });
+
+    test("opening a project already linked to this checkout runs nothing", async () => {
+        const runs = serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_SUCCESS}));
+        writeManifest();
+        linkToCheckout();
+        expect((await post("open", {path: folder})).status).toBe(HTTP_OK);
+        expect(runs).toEqual([]);
+    });
+
+    test("opening a folder that is not a project never links it", async () => {
+        const runs = serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_SUCCESS}));
+        expect((await opened(folder)).validation.ok).toBe(false);
+        expect(runs).toEqual([]);
+        expect(fs.existsSync(path.join(folder, "package.json"))).toBe(false);
+    });
+
+    test("opening a project whose link fails answers with the toolchain's output", async () => {
+        serverWithToolchain(async () => ({stdout: "", stderr: "bun install could not reach the engine checkout\n", exitCode: EXIT_FAILURE}));
+        writeManifest();
+        const response = await post("open", {path: folder});
+        expect(response.status).toBe(HTTP_INTERNAL_ERROR);
+        expect((await response.json()).error.includes("bun install could not reach the engine checkout")).toBe(true);
     });
 
     test("create reports a link that fails, with the toolchain's output", async () => {

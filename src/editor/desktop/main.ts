@@ -3,7 +3,7 @@ import {existsSync, mkdtempSync, readFileSync, rmSync} from "fs";
 import {access, mkdtemp, readFile, rm, writeFile} from "fs/promises";
 import {tmpdir} from "os";
 import {join} from "path";
-import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "./webDistFiles";
+import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "../../hosts/desktop";
 import {createProjectServer, locateBun} from "./projectServer";
 import {renderBackendMatches, requestedRenderBackend} from "./smokeBackend";
 import {editorSmokeFlows, recoverEditor} from "./editorSmokeFlows";
@@ -11,7 +11,7 @@ import {runSmokeFlows, selectFlows, smokeFlowsPassed} from "./smokeFlows";
 import type {SmokeFlow, SmokeFlowResult, SmokeHost} from "./smokeFlows";
 import type {SmokeInputEvent} from "./smokeInput";
 import type {SmokeClock, SmokePage} from "./smokeUi";
-import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../../editor/project/windowZoom";
+import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../project/windowZoom";
 
 const SCHEME = "app";
 const HOST = "bundle";

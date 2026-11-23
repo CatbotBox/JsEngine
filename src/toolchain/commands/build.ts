@@ -27,7 +27,7 @@ import {projectFolderOf} from "../project";
 import {repoRelative} from "../repoPaths";
 import {BACKEND_OPTION, backendFor, BUILD_TARGETS, editorSimulationOf, PROJECT_OPTION, SIMULATE_OPTION, targetOf} from "../targets";
 import type {EditorSimulation, RunTarget, Target} from "../targets";
-import type {ProjectWorkerBuildReport} from "../../hosts/desktop";
+import type {ProjectWorkerBuildReport} from "../../editor/desktop";
 import {requireScope} from "./command";
 import type {CommandResult} from "./command";
 

@@ -4,7 +4,7 @@ import {dirname, isAbsolute, join, relative, resolve, sep} from "path";
 import type {BuildConfig, BuildOutput, BunPlugin} from "bun";
 import type {ProjectManifest} from "../../engine/project/projectManifest";
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensions";
-import type {ProjectWorkerBuildReport} from "../../hosts/desktop";
+import type {ProjectWorkerBuildReport} from "../../editor/desktop";
 import {CliError} from "../cliArguments";
 import {PROJECT_GENERATED_FILES, writeGeneratedFiles} from "../generate/generatedFiles";
 import {DEFAULT_ENTRY_FILE, editorWorkerMainFile, ENGINE_IMPORT_PREFIX, GENERATED_FOLDER, START_PROJECT_EXPORT} from "../projectLayout";
