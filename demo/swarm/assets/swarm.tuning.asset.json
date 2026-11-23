@@ -125,6 +125,10 @@
             "effect": "fire, hold to repeat"
           },
           {
+            "keys": "MOUSE",
+            "effect": "hold left button to fire at cursor"
+          },
+          {
             "keys": "SPACE",
             "effect": "bomb"
           },

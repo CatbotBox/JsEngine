@@ -31,6 +31,7 @@ const Action = {
     FireDown: "fireDown",
     FireLeft: "fireLeft",
     FireRight: "fireRight",
+    FireAtPointer: "fireAtPointer",
     Bomb: "bomb",
     Start: "start",
     Restart: "restart",
@@ -312,6 +313,7 @@ export class ShipWeaponSystem extends System {
     protected onCreate(): void {
         this.requireResourceForUpdate(SwarmState);
         this.requireResourceForUpdate(SwarmTuning);
+        this.requireResourceForUpdate(SwarmArena);
         this._actions = swarmActionsOf(this.world);
     }
 
@@ -319,8 +321,13 @@ export class ShipWeaponSystem extends System {
         const state = this.world.resources.get(SwarmState);
         if (state.phase !== SwarmPhase.Playing) return;
         const input = this.world.resources.get(Input);
-        const right = axis(input, this._actions.FireRight, this._actions.FireLeft);
-        const down = axis(input, this._actions.FireDown, this._actions.FireUp);
+        let right = axis(input, this._actions.FireRight, this._actions.FireLeft);
+        let down = axis(input, this._actions.FireDown, this._actions.FireUp);
+        if (input.actionHeld(this._actions.FireAtPointer)) {
+            const arena = this.world.resources.get(SwarmArena);
+            right = input.pointerX - arena.halfWidthUnits - state.shipX;
+            down = (input.pointerY - arena.halfHeightUnits - state.shipY) * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+        }
         state.fireCooldownMs -= simulationStepMs(this.world);
         if (right === 0 && down === 0) {
             state.fireCooldownMs = Math.max(0, state.fireCooldownMs);

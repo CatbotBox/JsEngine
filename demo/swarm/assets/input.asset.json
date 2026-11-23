@@ -69,6 +69,14 @@
         "buttons": []
       },
       {
+        "name": "fireAtPointer",
+        "keys": [],
+        "chords": [],
+        "buttons": [
+          "Left"
+        ]
+      },
+      {
         "name": "bomb",
         "keys": [
           "Space"
