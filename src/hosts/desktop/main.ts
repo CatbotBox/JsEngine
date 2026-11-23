@@ -1,10 +1,16 @@
 import {app, BrowserWindow, dialog, Menu, protocol, screen, shell} from "electron";
-import {existsSync, readFileSync} from "fs";
-import {readFile, writeFile} from "fs/promises";
+import {existsSync, mkdtempSync, readFileSync, rmSync} from "fs";
+import {access, mkdtemp, readFile, rm, writeFile} from "fs/promises";
+import {tmpdir} from "os";
 import {join} from "path";
 import {contentTypeOf, distFileFor, ISOLATION_HEADERS} from "./webDistFiles";
 import {createProjectServer, locateBun} from "./projectServer";
 import {renderBackendMatches, requestedRenderBackend} from "./smokeBackend";
+import {editorSmokeFlows, recoverEditor} from "./editorSmokeFlows";
+import {runSmokeFlows, selectFlows, smokeFlowsPassed} from "./smokeFlows";
+import type {SmokeFlow, SmokeFlowResult, SmokeHost} from "./smokeFlows";
+import type {SmokeInputEvent} from "./smokeInput";
+import type {SmokeClock, SmokePage} from "./smokeUi";
 import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../../editor/project/windowZoom";
 
 const SCHEME = "app";
@@ -33,6 +39,19 @@ const LEAVE_PAGE_INDEX = 0;
 const STAY_ON_PAGE_INDEX = 1;
 const LEAVE_PAGE_TITLE = "Unsaved changes";
 const LEAVE_PAGE_MESSAGE = "This page has unsaved changes. Leave and lose them?";
+const SMOKE_PROFILE_FOLDER = "jsengine-smoke-profile";
+const SMOKE_PROFILE_PREFIX = "jsengine-smoke-profile-";
+const SMOKE_PROJECT_PREFIX = "jsengine-smoke-project-";
+const SMOKE_FLOW_BUDGET_MS = 60_000;
+const SMOKE_WAIT_TIMEOUT_MS = 10_000;
+const SMOKE_POLL_MS = 50;
+const SMOKE_EVALUATE_TIMEOUT_MS = 15_000;
+const SMOKE_REMOVE_RETRIES = 5;
+const FLOW_LIST_SEPARATOR = ",";
+const NO_FLOWS = "none";
+const FLOW_SELECTION = "flowSelection";
+const NO_DURATION_MS = 0;
+const RECURSIVE_REMOVAL = {recursive: true, force: true, maxRetries: SMOKE_REMOVE_RETRIES};
 
 export interface PackagedLaunch {
     readonly page: string;
@@ -63,12 +82,29 @@ const screenshotPath = flagValue("screenshot");
 const MIN_DRAWN_PIXELS = 256;
 const DISPLAY_CANVAS_SELECTOR = "#terminal canvas, #viewport canvas, [data-editor-viewport] canvas";
 const repoRoot = flagValue("repo");
+const requestedFlows = flagValue("flows");
+const smokeFolderAnswers: string[] = [];
+const smokeTempFolders: string[] = [];
 let mainWindow: BrowserWindow | undefined;
+
+function isolatedSmokeProfile(): string {
+    const fixed = join(tmpdir(), SMOKE_PROFILE_FOLDER);
+    try {
+        rmSync(fixed, RECURSIVE_REMOVAL);
+        return fixed;
+    } catch {
+        return mkdtempSync(join(tmpdir(), SMOKE_PROFILE_PREFIX));
+    }
+}
+
+if (smoke) app.setPath("userData", isolatedSmokeProfile());
+
 const projectServer = createProjectServer({
     repoRoot,
     bun: locateBun(flagValue("bun")),
     browse: false,
     pickFolder: async () => {
+        if (smoke) return smokeFolderAnswers.shift() ?? null;
         const options = {title: "Open a JsEngine project folder", properties: ["openDirectory" as const, "createDirectory" as const]};
         const result = mainWindow === undefined ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(mainWindow, options);
         return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
@@ -112,6 +148,71 @@ async function waitWhileEditorLoads(window: BrowserWindow): Promise<void> {
     while (await editorStateOf(window) === EDITOR_LOADING_STATE && Date.now() < deadline) await sleep(EDITOR_READY_POLL_MS);
 }
 
+function withTimeout<T>(work: Promise<T>, timeoutMs: number, what: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${what} did not finish within ${timeoutMs} ms`)), timeoutMs);
+        work.then(value => {
+            clearTimeout(timer);
+            resolve(value);
+        }, error => {
+            clearTimeout(timer);
+            reject(error);
+        });
+    });
+}
+
+function smokePageOf(window: BrowserWindow): SmokePage {
+    const contents = window.webContents;
+    return {
+        evaluate: <T>(script: string) => withTimeout(contents.executeJavaScript(script) as Promise<T>, SMOKE_EVALUATE_TIMEOUT_MS, "the page script"),
+        sendInput: (event: SmokeInputEvent) => contents.sendInputEvent(event),
+        insertText: text => contents.insertText(text),
+        zoomFactor: () => contents.getZoomFactor(),
+    };
+}
+
+const smokeClock: SmokeClock = {now: () => Date.now(), sleep};
+
+const smokeHost: SmokeHost = {
+    createTempFolder: async () => {
+        const folder = await mkdtemp(join(tmpdir(), SMOKE_PROJECT_PREFIX));
+        smokeTempFolders.push(folder);
+        return folder;
+    },
+    answerFolderPick: path => {
+        smokeFolderAnswers.push(path);
+    },
+    fileExists: path => access(path).then(() => true, () => false),
+    writeFile: (path, text) => writeFile(path, text),
+};
+
+function flowNames(): readonly string[] | undefined {
+    if (requestedFlows === undefined) return undefined;
+    return requestedFlows === NO_FLOWS ? [] : requestedFlows.split(FLOW_LIST_SEPARATOR).map(name => name.trim()).filter(name => name.length > 0);
+}
+
+async function runEditorFlows(window: BrowserWindow, pageErrors: readonly string[]): Promise<SmokeFlowResult[]> {
+    let flows: SmokeFlow[];
+    try {
+        flows = selectFlows(editorSmokeFlows(), flowNames());
+    } catch (error) {
+        return [{name: FLOW_SELECTION, passed: false, durationMs: NO_DURATION_MS, reason: error instanceof Error ? error.message : String(error)}];
+    }
+    window.webContents.focus();
+    const results = await runSmokeFlows(flows, {
+        page: smokePageOf(window),
+        clock: smokeClock,
+        host: smokeHost,
+        defaultBudgetMs: SMOKE_FLOW_BUDGET_MS,
+        waitTimeoutMs: SMOKE_WAIT_TIMEOUT_MS,
+        pollMs: SMOKE_POLL_MS,
+        pageErrors: () => pageErrors,
+        recover: recoverEditor,
+    });
+    await Promise.all(smokeTempFolders.splice(0).map(folder => rm(folder, RECURSIVE_REMOVAL).catch(() => undefined)));
+    return results;
+}
+
 async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<void> {
     await waitWhileEditorLoads(window);
     await sleep(SMOKE_SETTLE_MS);
@@ -130,8 +231,11 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     const editorReady = editorState === undefined || editorState === EDITOR_READY_STATE;
     const requestedBackend = requestedRenderBackend(page);
     const backendMatches = renderBackendMatches(requestedBackend, report.renderBackend);
-    const passed = report.crossOriginIsolated && report.canvas && editorReady && backendMatches && drawnPixels >= MIN_DRAWN_PIXELS && pageErrors.length === 0;
-    console.log(JSON.stringify({page, ...report, requestedBackend, editorState, drawnPixels, pageErrors, passed}));
+    const pagePassed = report.crossOriginIsolated && report.canvas && editorReady && backendMatches && drawnPixels >= MIN_DRAWN_PIXELS && pageErrors.length === 0;
+    const loadErrors = [...pageErrors];
+    const flows = pagePassed && editorState !== undefined ? await runEditorFlows(window, pageErrors) : [];
+    const passed = pagePassed && smokeFlowsPassed(flows);
+    console.log(JSON.stringify({page, ...report, requestedBackend, editorState, drawnPixels, pageErrors: loadErrors, flows, passed}));
     app.exit(passed ? 0 : 1);
 }
 
@@ -192,6 +296,10 @@ async function respondToWindowZoom(request: Request): Promise<Response> {
 
 function confirmLeavingUnsavedPages(window: BrowserWindow): void {
     window.webContents.on("will-prevent-unload", event => {
+        if (smoke) {
+            event.preventDefault();
+            return;
+        }
         const choice = dialog.showMessageBoxSync(window, {
             type: "question",
             buttons: LEAVE_PAGE_BUTTONS,

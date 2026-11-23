@@ -1,6 +1,5 @@
 import {existsSync, mkdirSync, readdirSync, writeFileSync} from "fs";
 import {dirname, join, relative} from "path";
-import {pathToFileURL} from "url";
 import {registerBuiltinImageDecoders} from "../../engine/assets/image/builtinDecoders";
 import type {AssetLoadOptions, FileSource, FileStat} from "../../engine/platform";
 import {joinPath, normalizePath} from "../../engine/platform";
@@ -240,7 +239,7 @@ async function engineSharingSchemasModule(projectFolder: string, schemasModule: 
 export async function projectAssetRegistry(projectFolder: string): Promise<ComponentSchemaRegistry> {
     const schemasModule = join(projectFolder, GENERATED_SCHEMAS_FILE);
     const generated = existsSync(schemasModule)
-        ? await import(pathToFileURL(await engineSharingSchemasModule(projectFolder, schemasModule)).href) as GeneratedSchemasModule
+        ? await import(await engineSharingSchemasModule(projectFolder, schemasModule)) as GeneratedSchemasModule
         : {};
     return createProjectSchemaRegistry({hostSchemas: EDITOR_SCHEMAS, schemas: generated.generatedSchemas ?? NO_SCHEMAS});
 }

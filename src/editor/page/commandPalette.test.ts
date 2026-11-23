@@ -4,7 +4,7 @@ import type {PaletteEntry} from "./commandPalette";
 import {CommandRegistry} from "./commandRegistry";
 
 function entry(category: string, label: string, enabled = true): PaletteEntry {
-    return {key: `${category}.${label}`, category, label, shortcutText: undefined, enabled, reason: enabled ? undefined : "not yet", run: () => enabled};
+    return {key: `${category}.${label}`, commandId: `${category}.${label}`, category, label, shortcutText: undefined, enabled, reason: enabled ? undefined : "not yet", run: () => enabled};
 }
 
 const ENTRIES: readonly PaletteEntry[] = [
@@ -63,6 +63,7 @@ describe("command palette entries", () => {
             ["Game View: Aspect 4:3", undefined, true, undefined],
         ]);
         expect(new Set(entries.map(item => item.key)).size).toBe(entries.length);
+        expect(entries.map(item => item.commandId)).toEqual(["save", "saveAs", "aspect", "aspect"]);
         entries[3].run();
         expect(ran).toBe("4:3");
         expect(entries[1].run()).toBe(false);

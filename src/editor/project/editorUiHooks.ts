@@ -1,0 +1,65 @@
+export const MENU_HOOK = "data-menu";
+export const POPUP_MENU_HOOK = "data-popup-menu";
+export const COMMAND_HOOK = "data-command";
+export const CHOICE_HOOK = "data-choice";
+export const SUBMENU_HOOK = "data-submenu";
+export const DROPDOWN_HOOK = "data-dropdown";
+export const COMMAND_PALETTE_HOOK = "data-command-palette";
+export const COMMAND_PALETTE_SEARCH_HOOK = "data-command-palette-search";
+export const CHOICE_POPUP_HOOK = "data-choice-popup";
+export const CHOICE_VALUE_HOOK = "data-choice-value";
+export const PANEL_HOOK = "data-panel";
+export const TOOLBAR_HOOK = "data-toolbar";
+export const BOTTOM_TAB_HOOK = "data-bottom-tab";
+export const BOTTOM_PANEL_HOOK = "data-bottom-panel";
+export const SCENE_TAB_HOOK = "data-scene-tab";
+export const SCENE_TAB_CLOSE_HOOK = "data-scene-tab-close";
+export const PREFAB_BREADCRUMB_HOOK = "data-prefab-breadcrumb";
+export const HIERARCHY_ENTITY_HOOK = "data-entity";
+export const HISTORY_STEP_HOOK = "data-history-step";
+export const HISTORY_STATE_HOOK = "data-history-state";
+export const CONSOLE_ACTION_HOOK = "data-console-action";
+export const CONSOLE_LEVEL_HOOK = "data-console-level";
+export const CONSOLE_SEARCH_HOOK = "data-console-search";
+export const CONSOLE_ENTRY_HOOK = "data-console-entry";
+export const CONSOLE_REPEAT_HOOK = "data-console-repeat";
+export const CONSOLE_EXPANDER_HOOK = "data-console-expander";
+export const CONSOLE_STACK_HOOK = "data-console-stack";
+export const MODAL_HOOK = "data-modal";
+export const MODAL_INPUT_HOOK = "data-modal-input";
+export const MODAL_ACTION_HOOK = "data-modal-action";
+export const FIELD_INPUT_HOOK = "data-field-input";
+export const BUILD_TARGET_HOOK = "data-target";
+export const BUILD_TARGET_STATE_HOOK = "data-build-state";
+export const BUILD_ACTION_HOOK = "data-build-action";
+export const DATA_ASSET_HOOK = "data-asset-path";
+export const DATA_ASSET_DIRTY_HOOK = "data-dirty";
+export const DATA_ASSETS_ACTION_HOOK = "data-assets-action";
+export const DATA_ASSET_FIELDS_HOOK = "data-asset-fields";
+export const PROJECT_ITEM_HOOK = "data-path";
+export const START_ACTION_HOOK = "data-start-action";
+export const START_MESSAGE_ACTION_HOOK = "data-start-message-action";
+export const RECENT_PROJECT_HOOK = "data-recent-project";
+export const EDITOR_TITLE_HOOK = "data-editor-title";
+
+export type EditorMenuId = "file" | "edit" | "assets" | "entity" | "window" | "help";
+export type DropdownId = "snapSteps" | "gameTarget" | "gameViewAspect";
+export type ModalKind = "text" | "savePath" | "choice" | "build" | "shortcuts" | "preferences" | "projectSettings";
+export type ModalAction = "confirm" | "cancel" | "close";
+export type ConsoleAction = "clear" | "collapse";
+export type BuildWindowAction = "build" | "package" | "buildAll" | "close";
+export type BuildTargetState = "idle" | "running" | "ok" | "failing";
+export type HistoryStepState = "done" | "current" | "undone";
+export type DataAssetsAction = "save" | "revert" | "refresh";
+export type FieldInputKind = "number";
+export type StartAction = "open" | "sample";
+export type StartMessageAction = "createProject" | "retry" | "back";
+
+export const EDITOR_MENU_IDS: readonly EditorMenuId[] = ["file", "edit", "assets", "entity", "window", "help"];
+
+const ESCAPED_SELECTOR_CHARACTERS = /["\\]/g;
+
+export function hookSelector(hook: string, value?: string | number): string {
+    if (value === undefined) return `[${hook}]`;
+    return `[${hook}="${String(value).replace(ESCAPED_SELECTOR_CHARACTERS, character => `\\${character}`)}"]`;
+}

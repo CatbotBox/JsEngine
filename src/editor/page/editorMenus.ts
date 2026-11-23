@@ -8,6 +8,7 @@ import {BOTTOM_TABS} from "./editorPanels";
 import {gameViewAspectOf} from "./gameViewAspect";
 import {GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import type {MenuBarMenu} from "./menuBar";
+import type {EditorMenuId} from "../project/editorUiHooks";
 import {MENU_SEPARATOR} from "./popupMenu";
 import {isAssetKind} from "./projectFiles";
 import {SNAP_KIND_LABELS, SNAP_KINDS, snapStepText} from "./snapSteps";
@@ -27,6 +28,11 @@ const NEW_SCENE_LABEL = "New Scene";
 const OPEN_RECENT_LABEL = "Open Recent";
 const PREFAB_LABEL = "Prefab";
 const SCRIPT_LABEL = "Script";
+const OPEN_RECENT_SUBMENU = "openRecent";
+const CREATE_SUBMENU = "create";
+const DATA_ASSET_SUBMENU = "createDataAsset";
+const SNAP_SUBMENU_PREFIX = "snap.";
+const MENU_IDS: Readonly<Record<EditorMenuId, EditorMenuId>> = {file: "file", edit: "edit", assets: "assets", entity: "entity", window: "window", help: "help"};
 
 function dataAssetEntries(commands: EditorCommands, folder: string | undefined): MenuEntry[] {
     const command = commands.assets.createDataAsset;
@@ -43,7 +49,7 @@ function fileMenu(commands: EditorCommands): MenuEntry[] {
     return [
         commandEntry(file.newScene),
         commandEntry(file.openScene),
-        submenuEntry(OPEN_RECENT_LABEL, recentScenesMenu(commands)),
+        submenuEntry(OPEN_RECENT_SUBMENU, OPEN_RECENT_LABEL, recentScenesMenu(commands)),
         MENU_SEPARATOR,
         commandEntry(file.save),
         commandEntry(file.saveAs),
@@ -85,13 +91,13 @@ function editMenu(commands: EditorCommands): MenuEntry[] {
 function assetsMenu(commands: EditorCommands): MenuEntry[] {
     const assets = commands.assets;
     return [
-        submenuEntry(CREATE_LABEL, [
+        submenuEntry(CREATE_SUBMENU, CREATE_LABEL, [
             commandEntry(assets.createFolder, "Folder"),
             commandEntry(assets.createScene, "Scene"),
             commandEntry(assets.createPrefab, PREFAB_LABEL),
             commandEntry(assets.createScript, SCRIPT_LABEL),
             MENU_SEPARATOR,
-            submenuEntry(DATA_ASSET_LABEL, dataAssetEntries(commands, undefined)),
+            submenuEntry(DATA_ASSET_SUBMENU, DATA_ASSET_LABEL, dataAssetEntries(commands, undefined)),
         ]),
         MENU_SEPARATOR,
         commandEntry(assets.showInExplorer),
@@ -139,12 +145,12 @@ function helpMenu(commands: EditorCommands): MenuEntry[] {
 
 export function editorMenuBar(commands: EditorCommands): MenuBarMenu[] {
     return [
-        {label: FILE_MENU_LABEL, entries: () => fileMenu(commands)},
-        {label: EDIT_MENU_LABEL, entries: () => editMenu(commands)},
-        {label: ASSETS_MENU_LABEL, entries: () => assetsMenu(commands)},
-        {label: ENTITY_MENU_LABEL, entries: () => entityMenu(commands)},
-        {label: WINDOW_MENU_LABEL, entries: () => windowMenu(commands)},
-        {label: HELP_MENU_LABEL, entries: () => helpMenu(commands)},
+        {id: MENU_IDS.file, label: FILE_MENU_LABEL, entries: () => fileMenu(commands)},
+        {id: MENU_IDS.edit, label: EDIT_MENU_LABEL, entries: () => editMenu(commands)},
+        {id: MENU_IDS.assets, label: ASSETS_MENU_LABEL, entries: () => assetsMenu(commands)},
+        {id: MENU_IDS.entity, label: ENTITY_MENU_LABEL, entries: () => entityMenu(commands)},
+        {id: MENU_IDS.window, label: WINDOW_MENU_LABEL, entries: () => windowMenu(commands)},
+        {id: MENU_IDS.help, label: HELP_MENU_LABEL, entries: () => helpMenu(commands)},
     ];
 }
 
@@ -172,11 +178,11 @@ export function projectFolderMenu(commands: EditorCommands, folder: string, isRo
     const entries: MenuEntry[] = [
         commandEntryFor(assets.createFolder, folder, NEW_FOLDER_LABEL),
         commandEntryFor(assets.createScene, folder, NEW_SCENE_LABEL),
-        submenuEntry(CREATE_LABEL, [
+        submenuEntry(CREATE_SUBMENU, CREATE_LABEL, [
             commandEntryFor(assets.createPrefab, folder, PREFAB_LABEL),
             commandEntryFor(assets.createScript, folder, SCRIPT_LABEL),
             MENU_SEPARATOR,
-            submenuEntry(DATA_ASSET_LABEL, dataAssetEntries(commands, folder)),
+            submenuEntry(DATA_ASSET_SUBMENU, DATA_ASSET_LABEL, dataAssetEntries(commands, folder)),
         ]),
         MENU_SEPARATOR,
         commandEntryFor(assets.showInExplorer, folder),
@@ -242,7 +248,7 @@ function snapKindEntries(commands: EditorCommands, kind: SnapKind): MenuEntry[] 
 }
 
 export function snapMenu(commands: EditorCommands): MenuEntry[] {
-    return SNAP_KINDS.map(kind => submenuEntry(`${SNAP_KIND_LABELS[kind]} step`, snapKindEntries(commands, kind)));
+    return SNAP_KINDS.map(kind => submenuEntry(`${SNAP_SUBMENU_PREFIX}${kind}`, `${SNAP_KIND_LABELS[kind]} step`, snapKindEntries(commands, kind)));
 }
 
 export function gameViewAspectMenu(commands: EditorCommands): MenuEntry[] {

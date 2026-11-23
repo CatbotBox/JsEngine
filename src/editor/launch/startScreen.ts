@@ -1,8 +1,11 @@
 import type {SampleProject} from "../project/sampleProjects";
+import {RECENT_PROJECT_HOOK, START_ACTION_HOOK, START_MESSAGE_ACTION_HOOK} from "../project/editorUiHooks";
+import type {StartAction, StartMessageAction} from "../project/editorUiHooks";
 import {button, element} from "./domElements";
 import type {RecentProject} from "./recentProjects";
 
 export interface StartScreenAction {
+    readonly id: StartMessageAction;
     readonly label: string;
     readonly run: () => void;
 }
@@ -14,6 +17,11 @@ export interface StartScreenOptions {
     readonly openSample: (sample: SampleProject) => void;
     readonly samples: readonly SampleProject[];
     readonly modeNote: string;
+}
+
+function startActionButton(created: HTMLButtonElement, action: StartAction): HTMLButtonElement {
+    created.setAttribute(START_ACTION_HOOK, action);
+    return created;
 }
 
 export class StartScreen {
@@ -29,11 +37,11 @@ export class StartScreen {
         this.root = element(document, "main", "start-screen");
         const title = element(document, "h1", "start-title", "JsEngine editor");
         this.actions = element(document, "div", "start-actions");
-        this.actions.append(button(document, "Open project…", options.openProject, "start-button start-primary"));
+        this.actions.append(startActionButton(button(document, "Open project…", options.openProject, "start-button start-primary"), "open"));
         if (options.samples.length > 0) {
             const samples = element(document, "div", "start-samples");
             samples.append(element(document, "span", "start-samples-label", "Open sample:"));
-            for (const sample of options.samples) samples.append(button(document, sample.label, () => options.openSample(sample)));
+            for (const sample of options.samples) samples.append(startActionButton(button(document, sample.label, () => options.openSample(sample)), "sample"));
             this.actions.append(samples);
         }
         const note = element(document, "p", "start-note", options.modeNote);
@@ -58,6 +66,7 @@ export class StartScreen {
             const item = element(document, "li", "start-recent-item");
             const open = button(document, project.name, () => this.options.openRecent(project), "start-recent-open");
             open.title = project.path;
+            open.setAttribute(RECENT_PROJECT_HOOK, project.path);
             const path = element(document, "span", "start-recent-path", project.path);
             const forget = button(document, "×", () => this.options.forgetRecent(project), "start-recent-forget");
             forget.title = "Remove from the list";
@@ -104,7 +113,11 @@ export class StartScreen {
         }
         if (actions.length > 0) {
             const row = element(document, "div", "start-message-actions");
-            for (const action of actions) row.append(button(document, action.label, action.run));
+            for (const action of actions) {
+                const actionButton = button(document, action.label, action.run);
+                actionButton.setAttribute(START_MESSAGE_ACTION_HOOK, action.id);
+                row.append(actionButton);
+            }
             this.message.append(row);
         }
         this.message.hidden = false;

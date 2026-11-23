@@ -1,4 +1,6 @@
 import {createButton, createElement} from "./dom";
+import {MODAL_ACTION_HOOK, MODAL_HOOK, MODAL_INPUT_HOOK} from "../project/editorUiHooks";
+import type {ModalAction, ModalKind} from "../project/editorUiHooks";
 
 export interface TextPromptOptions {
     readonly title: string;
@@ -21,6 +23,8 @@ export interface ChoiceOptions<T> {
 }
 
 const CANCEL_TEXT = "Cancel";
+const CONFIRM_ACTION: ModalAction = "confirm";
+const CANCEL_ACTION: ModalAction = "cancel";
 
 export interface Modal {
     readonly dialog: HTMLElement;
@@ -29,13 +33,19 @@ export interface Modal {
     close(): void;
 }
 
-export function openModal(document: Document, title: string, onCancel: () => void): Modal {
+export function modalActionButton(button: HTMLButtonElement, action: ModalAction): HTMLButtonElement {
+    button.setAttribute(MODAL_ACTION_HOOK, action);
+    return button;
+}
+
+export function openModal(document: Document, title: string, kind: ModalKind, onCancel: () => void): Modal {
     const previousFocus = document.activeElement;
     const backdrop = createElement(document, "div", "editor-modal-backdrop");
     const dialog = createElement(document, "div", "editor-modal");
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-modal", "true");
     dialog.setAttribute("aria-label", title);
+    dialog.setAttribute(MODAL_HOOK, kind);
     const heading = createElement(document, "h2", "editor-modal-title", title);
     const buttons = createElement(document, "div", "editor-modal-buttons");
     dialog.append(heading, buttons);
@@ -70,9 +80,10 @@ export function askForText(document: Document, options: TextPromptOptions): Prom
             modal.close();
             resolve(value);
         };
-        const modal = openModal(document, options.title, () => finish(undefined));
+        const modal = openModal(document, options.title, "text", () => finish(undefined));
         const label = createElement(document, "label", "editor-modal-field");
         const input = createElement(document, "input", "field-input");
+        input.setAttribute(MODAL_INPUT_HOOK, "");
         input.type = "text";
         input.spellcheck = false;
         input.value = options.initialValue;
@@ -96,8 +107,8 @@ export function askForText(document: Document, options: TextPromptOptions): Prom
         modal.dialog.insertBefore(label, modal.buttons);
         modal.dialog.insertBefore(problem, modal.buttons);
         modal.buttons.append(
-            createButton(document, {className: "", text: CANCEL_TEXT, title: CANCEL_TEXT, onClick: () => finish(undefined)}),
-            createButton(document, {className: "primary", text: options.confirmText, title: options.confirmText, onClick: submit}),
+            modalActionButton(createButton(document, {className: "", text: CANCEL_TEXT, title: CANCEL_TEXT, onClick: () => finish(undefined)}), CANCEL_ACTION),
+            modalActionButton(createButton(document, {className: "primary", text: options.confirmText, title: options.confirmText, onClick: submit}), CONFIRM_ACTION),
         );
         input.focus();
         input.select();
@@ -129,7 +140,7 @@ export function askForSavePath(document: Document, options: SavePathOptions): Pr
             modal.close();
             resolve(value);
         };
-        const modal = openModal(document, options.title, () => finish(undefined));
+        const modal = openModal(document, options.title, "savePath", () => finish(undefined));
         const folderLabel = createElement(document, "label", "editor-modal-field");
         const folder = createElement(document, "select", "field-input");
         for (const path of options.folders) {
@@ -142,6 +153,7 @@ export function askForSavePath(document: Document, options: SavePathOptions): Pr
         const nameLabel = createElement(document, "label", "editor-modal-field");
         const nameRow = createElement(document, "span", "editor-modal-name");
         const name = createElement(document, "input", "field-input");
+        name.setAttribute(MODAL_INPUT_HOOK, "");
         name.type = "text";
         name.spellcheck = false;
         name.value = options.name;
@@ -165,8 +177,8 @@ export function askForSavePath(document: Document, options: SavePathOptions): Pr
         });
         for (const element of [folderLabel, nameLabel, problem]) modal.dialog.insertBefore(element, modal.buttons);
         modal.buttons.append(
-            createButton(document, {className: "", text: CANCEL_TEXT, title: CANCEL_TEXT, onClick: () => finish(undefined)}),
-            createButton(document, {className: "primary", text: options.confirmText, title: options.confirmText, onClick: submit}),
+            modalActionButton(createButton(document, {className: "", text: CANCEL_TEXT, title: CANCEL_TEXT, onClick: () => finish(undefined)}), CANCEL_ACTION),
+            modalActionButton(createButton(document, {className: "primary", text: options.confirmText, title: options.confirmText, onClick: submit}), CONFIRM_ACTION),
         );
         name.focus();
         name.select();
@@ -182,7 +194,7 @@ export function askForChoice<T>(document: Document, options: ChoiceOptions<T>): 
             modal.close();
             resolve(value);
         };
-        const modal = openModal(document, options.title, () => finish(undefined));
+        const modal = openModal(document, options.title, "choice", () => finish(undefined));
         modal.dialog.insertBefore(createElement(document, "p", "editor-modal-message", options.message), modal.buttons);
         let primary: HTMLButtonElement | undefined;
         for (const choice of options.choices) {
@@ -190,7 +202,7 @@ export function askForChoice<T>(document: Document, options: ChoiceOptions<T>): 
             if (choice.primary === true) primary = button;
             modal.buttons.append(button);
         }
-        modal.buttons.append(createButton(document, {className: "", text: CANCEL_TEXT, title: CANCEL_TEXT, onClick: () => finish(undefined)}));
+        modal.buttons.append(modalActionButton(createButton(document, {className: "", text: CANCEL_TEXT, title: CANCEL_TEXT, onClick: () => finish(undefined)}), CANCEL_ACTION));
         (primary ?? modal.buttons.querySelector("button"))?.focus();
     });
 }

@@ -12,6 +12,8 @@ import {GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import {HANDLE_POSITION_LABELS, HANDLE_ROTATION_LABELS} from "./handleModes";
 import type {HandleModes} from "./handleModes";
 import type {GameViewOption} from "./gameViewOptions";
+import {EDITOR_TITLE_HOOK} from "../project/editorUiHooks";
+import type {DropdownId} from "../project/editorUiHooks";
 
 export const SCENE_FILE_NAME = "scene.json";
 export const MAX_LISTED_REPORT_PATHS = 3;
@@ -43,6 +45,7 @@ const WARNING_CLASS = "warn";
 const DIRTY_MARK = " *";
 const TITLE_SEPARATOR = " - ";
 const NOT_SAVED_TITLE = "Not saved yet";
+const DROPDOWN_IDS: Readonly<Record<DropdownId, DropdownId>> = {snapSteps: "snapSteps", gameTarget: "gameTarget", gameViewAspect: "gameViewAspect"};
 
 interface CountedPhrase {
     readonly one: string;
@@ -132,7 +135,7 @@ export function buildToolbar(container: HTMLElement, commands: EditorCommands, o
     ];
     const snap = [
         commandButton(document, registry, commands.tools.snap, {className: "toolbar-snap", hint: SNAP_HINT}),
-        dropdownButton(document, registry, {className: "toolbar-snap-steps", title: SNAP_STEPS_TITLE, text: () => SNAP_STEPS_TEXT, entries: () => snapMenu(commands)}),
+        dropdownButton(document, registry, {id: DROPDOWN_IDS.snapSteps, className: "toolbar-snap-steps", title: SNAP_STEPS_TITLE, text: () => SNAP_STEPS_TEXT, entries: () => snapMenu(commands)}),
     ];
     const playback = [
         commandButton(document, registry, commands.play.play, {className: "toolbar-play", hint: PLAY_HINT}),
@@ -140,13 +143,14 @@ export function buildToolbar(container: HTMLElement, commands: EditorCommands, o
         commandButton(document, registry, commands.play.step, {className: "toolbar-step", hint: STEP_HINT}),
     ];
     const target = dropdownButton(document, registry, {
+        id: DROPDOWN_IDS.gameTarget,
         className: "toolbar-target",
         title: TARGET_TITLE,
         text: () => options.gameTargetLabel(),
         entries: () => options.gameTargetMenu() ?? [],
         hidden: () => options.gameTargetMenu() === undefined,
     });
-    const aspect = dropdownButton(document, registry, {className: "toolbar-aspect", title: ASPECT_TITLE, text: () => options.gameViewAspectLabel(), entries: () => gameViewAspectMenu(commands)});
+    const aspect = dropdownButton(document, registry, {id: DROPDOWN_IDS.gameViewAspect, className: "toolbar-aspect", title: ASPECT_TITLE, text: () => options.gameViewAspectLabel(), entries: () => gameViewAspectMenu(commands)});
     const gameViewToggles = GAME_VIEW_OPTIONS.map(option => commandButton(document, registry, commands.view.gameViewOptions[option], {
         className: `toolbar-game-option game-option-${option}`,
         text: GAME_VIEW_OPTION_BUTTON_TEXT[option],
@@ -175,6 +179,7 @@ export class EditorStatusView {
     public constructor(container: HTMLElement, private readonly workspace: EditorWorkspace) {
         const document = container.ownerDocument;
         this.title = createElement(document, "span", "toolbar-title");
+        this.title.setAttribute(EDITOR_TITLE_HOOK, "");
         this.mode = createElement(document, "span", "toolbar-mode");
         this.stopped = createElement(document, "span", "toolbar-stopped");
         this.stopped.hidden = true;

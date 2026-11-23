@@ -57,6 +57,7 @@ import {SceneView} from "./sceneView";
 import {SettingsView} from "./settingsView";
 import {showKeyboardShortcuts} from "./shortcutsDialog";
 import {UndoHistoryView} from "./undoHistoryView";
+import {BOTTOM_PANEL_HOOK, BOTTOM_TAB_HOOK, PANEL_HOOK, PREFAB_BREADCRUMB_HOOK, TOOLBAR_HOOK} from "../project/editorUiHooks";
 
 export const EDITOR_VIEWPORT_ID = "viewport";
 export const BOTTOM_TAB_STORAGE_KEY = "jsengine.editor.bottomTab";
@@ -91,6 +92,9 @@ const NO_TARGET_LABEL = "";
 const FRAME_STYLE_PROPERTIES: readonly string[] = ["inset", "left", "top", "width", "height"];
 const FRAME_INSET = "auto";
 const PIXELS = "px";
+const HIERARCHY_PANEL: LayoutPanel = "hierarchy";
+const INSPECTOR_PANEL: LayoutPanel = "inspector";
+const BOTTOM_PANEL: LayoutPanel = "bottom";
 const OPEN_SCENE_LABEL = "Open scene";
 const OPEN_SCENE_PLACEHOLDER = "Search scenes and prefabs";
 const NO_SCENES_TEXT = "No scenes or prefabs in the project";
@@ -159,13 +163,16 @@ function buildLayout(body: HTMLElement): ShellLayout {
     menuRow.append(menuStatus);
     const toolbar = panel(document, "div", "editor-toolbar", "Toolbar");
     toolbar.setAttribute("role", "toolbar");
+    toolbar.setAttribute(TOOLBAR_HOOK, "");
     const hierarchy = panel(document, "nav", "editor-hierarchy editor-panel", "Hierarchy");
+    hierarchy.setAttribute(PANEL_HOOK, HIERARCHY_PANEL);
     const center = panel(document, "section", "editor-center", "Views");
     const sceneTabs = createElement(document, "div", "editor-tabs scene-tabs");
     sceneTabs.setAttribute("role", "tablist");
     sceneTabs.setAttribute("aria-label", "Open scenes and prefabs");
     const prefabBreadcrumb = createElement(document, "nav", "prefab-breadcrumb");
     prefabBreadcrumb.setAttribute("aria-label", "Prefab breadcrumb");
+    prefabBreadcrumb.setAttribute(PREFAB_BREADCRUMB_HOOK, "");
     prefabBreadcrumb.hidden = true;
     const viewTabs = createElement(document, "div", "editor-tabs view-tabs");
     viewTabs.setAttribute("role", "tablist");
@@ -176,7 +183,9 @@ function buildLayout(body: HTMLElement): ShellLayout {
     stage.append(viewport, overlay);
     center.append(sceneTabs, prefabBreadcrumb, viewTabs, stage);
     const inspector = panel(document, "aside", "editor-inspector editor-panel", "Inspector");
+    inspector.setAttribute(PANEL_HOOK, INSPECTOR_PANEL);
     const bottom = panel(document, "section", "editor-bottom", "Project, Console, History, Settings and Data Assets");
+    bottom.setAttribute(PANEL_HOOK, BOTTOM_PANEL);
     const bottomTabs = createElement(document, "div", "editor-tabs bottom-tabs");
     bottomTabs.setAttribute("role", "tablist");
     const projectPanel = createElement(document, "div", "bottom-panel project-panel");
@@ -184,6 +193,8 @@ function buildLayout(body: HTMLElement): ShellLayout {
     const historyPanel = createElement(document, "div", "bottom-panel undo-history-panel");
     const settingsPanel = createElement(document, "div", "bottom-panel settings-panel");
     const assetsPanel = createElement(document, "div", "bottom-panel data-assets-panel");
+    const bottomPanels: Readonly<Record<BottomTab, HTMLElement>> = {project: projectPanel, console: consolePanel, history: historyPanel, settings: settingsPanel, assets: assetsPanel};
+    for (const tab of BOTTOM_TABS) bottomPanels[tab].setAttribute(BOTTOM_PANEL_HOOK, tab);
     bottom.append(bottomTabs, projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel);
     const splitters = new Map<PanelSizeKey, HTMLElement>();
     for (const key of ["hierarchyWidthPx", "inspectorWidthPx", "bottomHeightPx"] as const) {
@@ -480,6 +491,7 @@ class EditorShellImplementation implements EditorShell {
         for (const tab of BOTTOM_TABS) {
             const button = createButton(document, {className: "editor-tab", text: BOTTOM_TAB_LABELS[tab], title: `Show the ${BOTTOM_TAB_LABELS[tab]}`, onClick: () => this.showBottomTab(tab)});
             button.setAttribute("role", "tab");
+            button.setAttribute(BOTTOM_TAB_HOOK, tab);
             this.bottomTabButtons.set(tab, button);
             this.layout.bottomTabs.append(button);
         }
@@ -576,7 +588,7 @@ class EditorShellImplementation implements EditorShell {
             ariaLabel: OPEN_SCENE_LABEL,
             searchPlaceholder: OPEN_SCENE_PLACEHOLDER,
             emptyText: NO_SCENES_TEXT,
-            loadChoices: async () => sceneAndPrefabPaths(await workspace.session.files.list()).map(path => ({label: path, value: path})),
+            loadChoices: async () => sceneAndPrefabPaths(await workspace.session.files.list()).map(path => ({label: path, value: path, key: path})),
             choose: path => void workspace.scenes.open(path),
         });
     }

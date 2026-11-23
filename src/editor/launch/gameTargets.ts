@@ -33,6 +33,7 @@ const GPU_SCRIPT_AVAILABLE = true;
 const SINGLE_BACKEND = 1;
 const SWITCH_TARGET_LABEL = "Switch Target";
 const TARGET_LABEL_PREFIX = "Target: ";
+const GAME_TARGET_SUBMENU_PREFIX = "gameTarget.";
 
 export interface WebGpuAvailability {
     readonly usable: boolean;
@@ -114,7 +115,7 @@ function gameTargetMenuEntries(command: Command<GameTarget>, current: () => Game
         const gameTargets = backendsOf(target).map((backend): GameTarget => ({target, backend}));
         if (gameTargets.length === SINGLE_BACKEND) return commandEntryFor(command, gameTargets[0], label);
         const entries = gameTargets.map(gameTarget => commandEntryFor(command, gameTarget, RENDER_BACKEND_LABELS[gameTarget.backend]));
-        return submenuEntry(label, entries, () => current().target === target);
+        return submenuEntry(`${GAME_TARGET_SUBMENU_PREFIX}${target}`, label, entries, () => current().target === target);
     });
 }
 

@@ -1,9 +1,11 @@
 import {showCommandMenu} from "./commandMenus";
 import type {MenuEntry} from "./commandMenus";
+import {MENU_HOOK} from "../project/editorUiHooks";
 import {createElement} from "./dom";
 import {closePopupMenu} from "./popupMenu";
 
 export interface MenuBarMenu {
+    readonly id: string;
     readonly label: string;
 
     entries(): readonly MenuEntry[];
@@ -23,6 +25,7 @@ export class MenuBar {
         for (const menu of menus) {
             const button = createElement(document, "button", "menu-bar-item", menu.label);
             button.type = "button";
+            button.setAttribute(MENU_HOOK, menu.id);
             button.setAttribute("aria-haspopup", "menu");
             button.setAttribute("aria-expanded", "false");
             button.addEventListener("click", () => {

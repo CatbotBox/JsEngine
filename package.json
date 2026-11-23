@@ -14,6 +14,7 @@
   },
   "scripts": {
     "check": "bun scripts/runChecks.ts",
+    "check:release": "bun scripts/runChecks.ts --release",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "build:library": "tsc -p tsconfig.json",
     "test": "bun test",
