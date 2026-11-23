@@ -2,7 +2,7 @@ import {EntityCommandBufferSystem, FrameLoopSettings, NULL_ENTITY, Resource, Sys
 import type {Component, ComponentCtor, EntityCommandBuffer, EntityQuery, World} from "../../src/engine/core";
 import {Input, resolveInputActions} from "../../src/engine/input";
 import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
-import {RenderPasses} from "../../src/engine/rendering";
+import {activeRenderBackend, RenderPasses} from "../../src/engine/rendering";
 import type {RenderPassKind} from "../../src/engine/rendering";
 import {EulerAngles, LocalRotation} from "../../src/engine/translation";
 import {turnEulerAngles} from "../../src/engine/translation/turnEulerAngles";
@@ -416,14 +416,19 @@ export class Demo3dHudSystem extends System {
         const lodLevels = stats === undefined ? NO_TEXT : formatHudText(tuning.hud.lodLevelsFormat, {
             levels: Array.from(stats.lodLevelCounts.subarray(0, tuning.hud.lodLevelsShown)).join(tuning.hud.lodLevelSeparator),
         });
-        const rasterWorkers = stats === undefined ? 0 : stats.rasterWorkers;
-        this._entityCounter.show(formatHudLines(tuning.hud.statsLines, {
+        const statsLines = formatHudLines(tuning.hud.statsLines, {
             entities: this.world.enabledEntityCount,
             drawn: formatCompact(stats === undefined ? 0 : stats.trianglesDrawn),
             source: formatCompact(session.models.sourceTriangles()),
             lodLevels,
-            rasterWorkers: rasterWorkers === 0 ? tuning.hud.singleThreadedRasterText : rasterWorkers,
-        }));
+        });
+        if (activeRenderBackend(this.world) !== "gpu") {
+            const rasterWorkers = stats === undefined ? 0 : stats.rasterWorkers;
+            statsLines.push(formatHudText(tuning.hud.rasterWorkersLine, {
+                rasterWorkers: rasterWorkers === 0 ? tuning.hud.singleThreadedRasterText : rasterWorkers,
+            }));
+        }
+        this._entityCounter.show(statsLines);
     }
 
     private pacingLabel(pacing: RenderPacingPreset | undefined, hud: Demo3dHudTuning): string {

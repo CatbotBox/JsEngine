@@ -10,6 +10,7 @@ export class RootSystemGroup extends SystemGroup {
     private readonly _runningAfterSlot: RunningList = new RunningList(this);
     private readonly _presentationGroups: PresentationSystemGroup[] = [];
     private _simulating = false;
+    private _presenting = false;
     private readonly runsInSimulation = (system: System): boolean =>
         !(system instanceof PresentationSystemGroup) && system.enabled && system.requirementsMet && this.walksChild(system);
 
@@ -28,6 +29,7 @@ export class RootSystemGroup extends SystemGroup {
         } finally {
             this._simulating = false;
         }
+        this.applyRemovalsLeftByUpdate();
     }
 
     public updateSimulation(): void {
@@ -40,12 +42,18 @@ export class RootSystemGroup extends SystemGroup {
         } finally {
             this._simulating = false;
         }
+        this.applyRemovalsLeftByUpdate();
     }
 
     public updatePresentation(): void {
         if (!this.enabled) return;
         if (!this._simulating) this.applyOrderChanges();
         this.presentGroups();
+        this.applyRemovalsLeftByUpdate();
+    }
+
+    protected override updatingSystems(): boolean {
+        return this._simulating || this._presenting;
     }
 
     protected override runningListOf(system: System): RunningList | undefined {
@@ -83,10 +91,13 @@ export class RootSystemGroup extends SystemGroup {
     private presentGroups(): void {
         const groups = this._presentationGroups;
         const barriers = this.world.presentationBarriers;
+        const wasPresenting = this._presenting;
         barriers.enter();
+        this._presenting = true;
         try {
             for (let index = FIRST_INDEX; index < groups.length; index++) groups[index].update();
         } finally {
+            this._presenting = wasPresenting;
             barriers.exit();
         }
     }

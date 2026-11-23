@@ -1,7 +1,7 @@
-import {readFileSync} from "fs";
-import {resolve} from "path";
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "fs";
+import {join, resolve} from "path";
 import {connectWorldWorker} from "../src/hosts/web";
-import type {CellSurfaceSize, CellWorldDisplay, PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
+import type {CellArea, CellSurfaceSize, CellWorldDisplay, PixelSurfaceSize, PixelWorldDisplay, WorldWorker, WorldWorkerPage} from "../src/hosts/web";
 import type {CellFrame} from "../src/backends/cells";
 import {copyPixelFrame} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
@@ -11,8 +11,18 @@ import type {SceneJsonValue} from "../src/engine/scene";
 import {EditorClient} from "../src/editor/page/editorClient";
 import type {EditorChannel} from "../src/editor/page/editorClient";
 import {isEditorEventMessage} from "../src/editor/editorProtocol";
-import type {EditorEntityDetails, EditorEntitySummary, EditorEvent, EditorRequest, EditorResultOf, EditorView} from "../src/editor/editorProtocol";
-import {parseSceneDocument, SCENE_INSTANCE_COMPONENT_NAME} from "../src/engine/scene";
+import type {
+    EditorEntityDetails,
+    EditorEntitySummary,
+    EditorEvent,
+    EditorRequest,
+    EditorResultOf,
+    EditorView,
+    ExportSnapshotResult,
+    ImportSnapshotRequest,
+} from "../src/editor/editorProtocol";
+import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_INSTANCE_COMPONENT_NAME} from "../src/engine/scene";
+import type {SceneEntityRecord} from "../src/engine/scene";
 import {createProjectServer} from "../src/hosts/desktop";
 import type {ProjectServer} from "../src/hosts/desktop";
 import {HttpProjectFileSystem} from "../src/editor/project/httpProjectFileSystem";
@@ -25,6 +35,11 @@ import {isBuildSuccess, projectApiUrl} from "../src/editor/project/projectServer
 import type {BuildProjectResult, OpenProjectResult} from "../src/editor/project/projectServerApi";
 import {entityRemapOf} from "../src/editor/launch/projectRunner";
 import {terminalInputMessage} from "../src/editor/launch/terminalInputChannel";
+import {NO_CELL_AREA, PixelEditorViewport} from "../src/editor/launch/editorViewport";
+import type {EditorViewport, SharedPixelDisplay} from "../src/editor/launch/editorViewport";
+import {ProjectWorkerSession} from "../src/editor/launch/projectWorkerSession";
+import type {SessionVisibility} from "../src/editor/launch/projectWorkerSession";
+import {STARTER_SCENE_FILE} from "../src/editor/project/projectTemplate";
 import type {RenderBackendKind} from "../src/engine/rendering/renderBackend";
 
 const ROOT = resolve(__dirname, "..");
@@ -91,6 +106,16 @@ const RIGHT_ARROW_BYTES = "\x1b[C";
 const EDITOR_VIEWS: readonly EditorView[] = ["scene", "game"];
 const BACKEND_INSTALLERS: Readonly<Record<RenderBackendKind, string>> = {cells: "installCellsBackend", pixels: "installPixelsBackend", gpu: "installGpuBackend"};
 const UNFOLDED_FEATURE_CONSTANT = "typeof JSENGINE_HAS_";
+const FIXTURE_PARENT = join(ROOT, "dist");
+const CAMERA_LESS_FIXTURE_PREFIX = "editorWorker-cameraLess-";
+const FIXTURE_REMOVAL_RETRIES = 5;
+const CAMERA_LESS_PROJECT_NAME = "Camera-less fixture";
+const CAMERA_COMPONENT = "Camera";
+const MARKER_NAME = "marker";
+const MARKER_XYZ = [1, 2, 3];
+const VISIBLE_SESSION: SessionVisibility = {visible: true};
+const HIDDEN_SESSION: SessionVisibility = {visible: false};
+const NO_QUERY = "";
 
 interface BuiltProject {
     readonly id: string;
@@ -183,6 +208,18 @@ class CellFrameRecorder implements CellWorldDisplay {
     }
 }
 
+class SharedPixelFrameRecorder extends PixelFrameRecorder implements SharedPixelDisplay {
+    public cellArea(): CellArea {
+        return NO_CELL_AREA;
+    }
+
+    public show(): void {
+    }
+
+    public dispose(): void {
+    }
+}
+
 type RecordingDisplay = PixelFrameRecorder | CellFrameRecorder;
 
 function serverFetch(server: ProjectServer) {
@@ -219,6 +256,7 @@ class EditorPage {
     public readonly workerErrors: string[] = [];
     public readonly events: EditorEvent[] = [];
     public readonly client: EditorClient;
+    public readyReports = 0;
     private readonly worker: Worker;
     private readonly connection: WorldWorkerPage;
     private readonly fileServing: ProjectFileServing;
@@ -227,7 +265,7 @@ class EditorPage {
         this.worker = new Worker(project.bundlePath, {type: "module"});
         this.worker.addEventListener("error", event => this.workerErrors.push(event.message));
         this.fileServing = serveProjectFiles(this.worker as unknown as ProjectFilesPort, project.files);
-        this.connection = connectWorldWorker(this.display, this.worker as unknown as WorldWorker, {name});
+        this.connection = connectWorldWorker(this.display, this.worker as unknown as WorldWorker, {name, onReady: () => this.readyReports++});
         this.client = new EditorClient(this.worker as unknown as EditorChannel, {timeoutMs: TIMEOUT_MS});
         this.worker.addEventListener("message", event => {
             if (isEditorEventMessage(event.data)) this.events.push(event.data.event);
@@ -280,11 +318,24 @@ class EditorPage {
 }
 
 async function verifyStartsInEditMode(page: EditorPage, label: string): Promise<void> {
+    expect(await waitUntil(() => page.readyReports > 0), `${label}: the worker reports ready`);
     expect(await waitUntil(() => page.display.frames > 0), `${label}: frames arrive in edit mode`);
     const state = await page.ask({op: "setMode", mode: "edit"});
     expect(state.mode === "edit" && state.gameplayTicks === 0, `${label}: the world starts in edit mode with no gameplay ticks (${JSON.stringify(state)})`);
     const arrived = await page.framesKeepArriving();
     expect(arrived > 0, `${label}: edit mode keeps presenting frames (${arrived} in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
+    expect(page.readyReports === 1, `${label}: ready is reported once while frames keep arriving (${page.readyReports})`);
+}
+
+function importSnapshotRequest(exported: ExportSnapshotResult): ImportSnapshotRequest {
+    return {
+        op: "importSnapshot",
+        documentText: exported.documentText,
+        editSnapshotText: exported.editSnapshotText,
+        editSnapshotRecords: exported.editSnapshotRecords,
+        mode: exported.mode,
+        gameplayTicks: exported.gameplayTicks,
+    };
 }
 
 async function verifySchemas(page: EditorPage, label: string, typeNames: readonly string[]): Promise<void> {
@@ -465,21 +516,16 @@ async function verifyDomainReload(project: BuiltProject, page: EditorPage, label
     const exported = await page.ask({op: "exportSnapshot"});
     const reloaded = new EditorPage(project, `${label} (reloaded)`);
     try {
-        expect(await waitUntil(() => reloaded.display.frames > 0), `${label}: a second worker from the same bundle presents frames`);
-        const imported = await reloaded.ask({
-            op: "importSnapshot",
-            documentText: exported.documentText,
-            editSnapshotText: exported.editSnapshotText,
-            editSnapshotRecords: exported.editSnapshotRecords,
-            mode: exported.mode,
-            gameplayTicks: exported.gameplayTicks,
-        });
+        expect(await waitUntil(() => reloaded.readyReports > 0), `${label}: a second worker from the same bundle reports ready`);
+        const imported = await reloaded.ask(importSnapshotRequest(exported));
         const remap = entityRemapOf(exported.entities, imported.entities);
         expect(imported.entities.length === exported.entities.length, `${label}: importSnapshot recreates every exported entity (${exported.entities.length} -> ${imported.entities.length})`);
         expect(imported.report.skippedComponentTypes.length === 0, `${label}: every component type survives the domain reload (${JSON.stringify(imported.report.skippedComponentTypes)})`);
         const moved = checked === undefined ? undefined : remap.get(checked.entity);
         const movedXyz = moved === undefined ? undefined : await reloaded.fieldOf(moved, "LocalPosition", "xyz");
         expect(checkedXyz !== undefined && sameJson(movedXyz, checkedXyz), `${label}: the remapped ${checkedName} kept its position through the domain reload (${JSON.stringify(movedXyz)})`);
+        expect(await waitUntil(() => reloaded.display.frames > 0), `${label}: the second worker presents frames`);
+        expect(reloaded.readyReports === 1, `${label}: the second worker reported ready once (${reloaded.readyReports})`);
         reloaded.expectNoErrors(`${label} (reloaded)`);
     } finally {
         reloaded.dispose();
@@ -710,6 +756,102 @@ async function verifyTerminalTargetSwitch(server: ProjectServer): Promise<void> 
     }
 }
 
+function removeCamerasFromStarterScene(folder: string): void {
+    const path = join(folder, ...STARTER_SCENE_FILE.split("/"));
+    const document = parseSceneDocument(readFileSync(path, "utf8"));
+    const marker: SceneEntityRecord = {
+        id: Math.max(FIRST_SCENE_ENTITY_ID, ...document.entities.map(record => record.id + 1)),
+        name: MARKER_NAME,
+        enabled: true,
+        components: {LocalPosition: {xyz: MARKER_XYZ}},
+    };
+    const entities = [...document.entities.filter(record => record.components[CAMERA_COMPONENT] === undefined), marker];
+    writeFileSync(path, JSON.stringify({...document, entities}));
+}
+
+function startEditorSession(project: BuiltProject, viewport: EditorViewport, visibility: SessionVisibility, name: string): Promise<ProjectWorkerSession> {
+    return ProjectWorkerSession.start({workerUrl: project.bundlePath, viewport, files: project.files, name, search: NO_QUERY, visibility, onQuit: () => undefined});
+}
+
+async function sessionWithin(starting: Promise<ProjectWorkerSession>, timeoutMs: number): Promise<ProjectWorkerSession | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<undefined>(done => {
+        timer = setTimeout(() => done(undefined), timeoutMs);
+    });
+    try {
+        const session = await Promise.race([starting, timedOut]);
+        if (session === undefined) void starting.then(late => late.dispose(), () => undefined);
+        return session;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function markerDetails(client: EditorClient): Promise<EditorEntityDetails | undefined> {
+    const marker = (await client.request({op: "listEntities"})).entities.find(entity => entity.name === MARKER_NAME);
+    return marker === undefined ? undefined : await client.request({op: "getEntity", entity: marker.entity});
+}
+
+async function verifyCameraLessWorker(project: BuiltProject, label: string): Promise<void> {
+    const page = new EditorPage(project, "the camera-less scene");
+    try {
+        expect(await waitUntil(() => page.readyReports > 0), `${label}: the worker reports ready`);
+        const listed = (await page.ask({op: "listEntities"})).entities;
+        expect(listed.some(entity => entity.name === MARKER_NAME) && !listed.some(entity => entity.componentTypeNames.includes(CAMERA_COMPONENT)),
+            `${label}: the start scene is open with its entities and no camera (${listed.map(entity => entity.name).join(", ")})`);
+        const arrived = await page.framesKeepArriving();
+        expect(page.display.frames === 0, `${label}: no frame is drawn without a camera (${page.display.frames} in all, ${arrived} in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
+        expect(page.readyReports === 1, `${label}: ready is reported once (${page.readyReports})`);
+        page.expectNoErrors(label);
+    } finally {
+        page.dispose();
+    }
+}
+
+async function verifyCameraLessHotReload(project: BuiltProject, label: string): Promise<void> {
+    const display = new SharedPixelFrameRecorder();
+    const viewport = new PixelEditorViewport(display, WEB_PIXELS);
+    const opened = await sessionWithin(startEditorSession(project, viewport, VISIBLE_SESSION, label), TIMEOUT_MS);
+    expect(opened !== undefined, `${label}: the editor page's worker session opens within ${TIMEOUT_MS} ms`);
+    if (opened === undefined) return;
+    try {
+        const before = await markerDetails(opened.client);
+        const exported = await opened.client.request({op: "exportSnapshot"});
+        const reloaded = await sessionWithin(startEditorSession(project, viewport, HIDDEN_SESSION, `${label} (reloaded)`), TIMEOUT_MS);
+        expect(reloaded !== undefined, `${label}: a hot reload's hidden worker session opens within ${TIMEOUT_MS} ms`);
+        if (reloaded === undefined) return;
+        try {
+            const imported = await reloaded.client.request(importSnapshotRequest(exported));
+            const remap = entityRemapOf(exported.entities, imported.entities);
+            const after = await markerDetails(reloaded.client);
+            const xyz = after?.components.find(component => component.typeName === "LocalPosition")?.fields.xyz;
+            expect(before !== undefined && after?.entity === remap.get(before.entity) && sameJson(xyz, MARKER_XYZ),
+                `${label}: the hot-reloaded session holds the imported scene, ${MARKER_NAME} remapped with its position (${JSON.stringify(xyz)})`);
+            expect(display.frames === 0 && display.errors.length === 0,
+                `${label}: both sessions opened with no frame and no error (${display.frames} frames${display.errors.length > 0 ? ": " + display.errors.join(" | ") : ""})`);
+        } finally {
+            reloaded.dispose();
+        }
+    } finally {
+        opened.dispose();
+    }
+}
+
+async function verifyCameraLessScene(server: ProjectServer, folder: string): Promise<void> {
+    const label = "Camera-less scene";
+    try {
+        const created = await postJson<OpenProjectResult>(server, "create", {path: folder, name: CAMERA_LESS_PROJECT_NAME});
+        expect(created.validation.ok, `${label}: a new project is created from the template (${JSON.stringify(created.validation)})`);
+        removeCamerasFromStarterScene(folder);
+        const project = await buildProject(server, folder, label);
+        if (project === undefined) return;
+        await verifyCameraLessWorker(project, label);
+        await verifyCameraLessHotReload(project, label);
+    } catch (error) {
+        expect(false, `${label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
 async function main(): Promise<void> {
     if (typeof (globalThis as {Worker?: unknown}).Worker !== "function") {
         log("editor worker check: skipped, this runtime has no Web Worker global");
@@ -724,6 +866,8 @@ async function main(): Promise<void> {
         return;
     }
 
+    mkdirSync(FIXTURE_PARENT, {recursive: true});
+    const cameraLessFolder = mkdtempSync(join(FIXTURE_PARENT, CAMERA_LESS_FIXTURE_PREFIX));
     const server = createProjectServer({repoRoot: ROOT, bun: {path: process.execPath}, browse: false});
     try {
         const project2d = await buildProject(server, "demo/2d", "2D editor");
@@ -733,8 +877,10 @@ async function main(): Promise<void> {
         if (project3d !== undefined) await verify3d(project3d);
         if (projectSwarm !== undefined) await verifySwarm(projectSwarm);
         await verifyTerminalTargetSwitch(server);
+        await verifyCameraLessScene(server, cameraLessFolder);
     } finally {
         server.close();
+        rmSync(cameraLessFolder, {recursive: true, force: true, maxRetries: FIXTURE_REMOVAL_RETRIES});
     }
 
     if (failures > 0) {

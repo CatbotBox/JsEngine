@@ -134,6 +134,7 @@ async function startProjectWorld(
         scenes: game.scenes,
         gameplaySystems: [...backendSystems, ...systemLists.shared],
         refetchFiles: paths => files.refetch(paths),
+        onFirstTick: () => page.reportReady(),
     });
 }
 

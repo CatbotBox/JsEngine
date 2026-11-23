@@ -16,10 +16,22 @@ type CustomShaderState = typeof SHADER_COMPILING | typeof SHADER_READY | typeof 
 
 export type GpuPipelineDevice = Pick<GpuDevice, "createShaderModule" | "createRenderPipeline" | "createRenderPipelineAsync" | "pushErrorScope" | "popErrorScope">;
 
-interface CustomShaderEntry {
+interface FrameStamped {
+    lastUsedFrame: number;
+}
+
+interface FallbackPipeline extends FrameStamped {
+    readonly pipeline: GPURenderPipeline;
+}
+
+interface CustomPipeline extends FrameStamped {
+    pipeline: GPURenderPipeline | undefined;
+}
+
+interface CustomShaderEntry extends FrameStamped {
     readonly shader: GpuShader;
     readonly module: GPUShaderModule;
-    readonly pipelines: Map<string, GPURenderPipeline | undefined>;
+    readonly pipelines: Map<string, CustomPipeline>;
     state: CustomShaderState;
 }
 
@@ -54,8 +66,18 @@ function pipelineKey(culling: FaceCulling, format: GPUTextureFormat, sampleCount
     return `${culling}|${format}|${sampleCount}`;
 }
 
+function isStale(entry: FrameStamped, frame: number, maxUnusedFrames: number): boolean {
+    return frame - entry.lastUsedFrame > maxUnusedFrames;
+}
+
+function evictStale<T extends FrameStamped>(entries: Map<string, T>, frame: number, maxUnusedFrames: number): void {
+    for (const [key, entry] of entries) {
+        if (isStale(entry, frame, maxUnusedFrames)) entries.delete(key);
+    }
+}
+
 export class GpuPipelineCache {
-    private readonly fallbackPipelines = new Map<string, GPURenderPipeline>();
+    private readonly fallbackPipelines = new Map<string, FallbackPipeline>();
     private fallbackModule: GPUShaderModule | undefined;
     private readonly customShaders = new Map<string, CustomShaderEntry>();
 
@@ -69,50 +91,68 @@ export class GpuPipelineCache {
     public get size(): number {
         let size = this.fallbackPipelines.size;
         for (const entry of this.customShaders.values()) {
-            for (const pipeline of entry.pipelines.values()) if (pipeline !== undefined) size++;
+            for (const custom of entry.pipelines.values()) if (custom.pipeline !== undefined) size++;
         }
         return size;
     }
 
-    public pipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number): GPURenderPipeline {
+    public pipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline {
         if (shader !== this.fallback) {
-            const custom = this.customPipelineFor(shader, culling, format, sampleCount);
+            const custom = this.customPipelineFor(shader, culling, format, sampleCount, frame);
             if (custom !== undefined) return custom;
         }
-        return this.fallbackPipelineFor(culling, format, sampleCount);
+        return this.fallbackPipelineFor(culling, format, sampleCount, frame);
     }
 
-    private fallbackPipelineFor(culling: FaceCulling, format: GPUTextureFormat, sampleCount: number): GPURenderPipeline {
-        const key = pipelineKey(culling, format, sampleCount);
-        let pipeline = this.fallbackPipelines.get(key);
-        if (pipeline === undefined) {
-            this.fallbackModule ??= this.device.createShaderModule({label: this.fallback.name, code: this.fallback.code});
-            pipeline = this.device.createRenderPipeline(this.descriptorFor(this.fallback, this.fallbackModule, key, culling, format, sampleCount));
-            this.fallbackPipelines.set(key, pipeline);
+    public evictUnused(frame: number, maxUnusedFrames: number): void {
+        evictStale(this.fallbackPipelines, frame, maxUnusedFrames);
+        for (const [name, entry] of this.customShaders) {
+            if (isStale(entry, frame, maxUnusedFrames)) this.customShaders.delete(name);
+            else evictStale(entry.pipelines, frame, maxUnusedFrames);
         }
-        return pipeline;
     }
 
-    private customPipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number): GPURenderPipeline | undefined {
-        const entry = this.customEntryFor(shader);
+    private fallbackPipelineFor(culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline {
+        const key = pipelineKey(culling, format, sampleCount);
+        let fallback = this.fallbackPipelines.get(key);
+        if (fallback === undefined) {
+            this.fallbackModule ??= this.device.createShaderModule({label: this.fallback.name, code: this.fallback.code});
+            const pipeline = this.device.createRenderPipeline(this.descriptorFor(this.fallback, this.fallbackModule, key, culling, format, sampleCount));
+            fallback = {pipeline, lastUsedFrame: frame};
+            this.fallbackPipelines.set(key, fallback);
+        }
+        fallback.lastUsedFrame = frame;
+        return fallback.pipeline;
+    }
+
+    private customPipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline | undefined {
+        const entry = this.customEntryFor(shader, frame);
         if (entry.state !== SHADER_READY) return undefined;
         const key = pipelineKey(culling, format, sampleCount);
-        if (entry.pipelines.has(key)) return entry.pipelines.get(key);
-        entry.pipelines.set(key, undefined);
-        this.device.createRenderPipelineAsync(this.descriptorFor(shader, entry.module, key, culling, format, sampleCount)).then(
-            pipeline => entry.pipelines.set(key, pipeline),
-            error => this.fail(entry, `its pipeline could not be created: ${messageOf(error)}`),
-        );
-        return undefined;
+        let custom = entry.pipelines.get(key);
+        if (custom === undefined) {
+            const created: CustomPipeline = {pipeline: undefined, lastUsedFrame: frame};
+            entry.pipelines.set(key, created);
+            this.device.createRenderPipelineAsync(this.descriptorFor(shader, entry.module, key, culling, format, sampleCount)).then(
+                pipeline => created.pipeline = pipeline,
+                error => this.fail(entry, `its pipeline could not be created: ${messageOf(error)}`),
+            );
+            custom = created;
+        }
+        custom.lastUsedFrame = frame;
+        return custom.pipeline;
     }
 
-    private customEntryFor(shader: GpuShader): CustomShaderEntry {
+    private customEntryFor(shader: GpuShader, frame: number): CustomShaderEntry {
         const current = this.customShaders.get(shader.name);
-        if (current !== undefined && current.shader === shader) return current;
+        if (current !== undefined && current.shader === shader) {
+            current.lastUsedFrame = frame;
+            return current;
+        }
         this.device.pushErrorScope(VALIDATION_ERRORS);
         const module = this.device.createShaderModule({label: shader.name, code: shader.code});
         const validation = this.device.popErrorScope();
-        const entry: CustomShaderEntry = {shader, module, pipelines: new Map(), state: SHADER_COMPILING};
+        const entry: CustomShaderEntry = {shader, module, pipelines: new Map(), state: SHADER_COMPILING, lastUsedFrame: frame};
         this.customShaders.set(shader.name, entry);
         Promise.all([module.getCompilationInfo(), validation]).then(
             ([info, error]) => {

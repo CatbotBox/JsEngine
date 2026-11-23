@@ -1,4 +1,4 @@
-import {EntityCommandBufferSystem, System} from "../../../../src/engine/core";
+import {EntityCommandBuffer, System} from "../../../../src/engine/core";
 import type {ShaderSource} from "../../../../src/engine/rendering";
 import {RenderMesh} from "../../../../src/engine/rendering/3d";
 import {GpuRenderBackend} from "../../../../src/engine/rendering/renderBackend";
@@ -21,6 +21,7 @@ export class DemoSurfaceShaderSystem extends System {
     private readonly _unassigned = this.createEntityQuery([RenderMesh], [GpuSurfaceShader]);
     private readonly _assigned = this.createEntityQuery([RenderMesh, GpuSurfaceShader]);
     private readonly _registered = new Map<string, ShaderSource>();
+    private readonly _assignments = new EntityCommandBuffer();
     private _selected = FIRST_CHOICE;
     private _applied = FIRST_CHOICE;
     private _nextInstanceIndex = 0;
@@ -54,14 +55,15 @@ export class DemoSurfaceShaderSystem extends System {
                 writeParams(choice, surfaceShader.params, this._nextInstanceIndex++);
             });
         }
-        const buffer = this.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
+        if (!this._unassigned.hasEntity()) return;
         this._unassigned.stream({read: {renderMesh: RenderMesh}}).consumeSpans(({start, end, entities}) => {
             for (let row = start; row < end; row++) {
                 const shader = new GpuSurfaceShader(choice.name);
                 writeParams(choice, shader.params, this._nextInstanceIndex++);
-                buffer.addComponent(entities[row], shader);
+                this._assignments.addComponent(entities[row], shader);
             }
         });
+        this._assignments.playback(this.entityManager);
     }
 
     private choices(): readonly SurfaceShaderChoice[] {

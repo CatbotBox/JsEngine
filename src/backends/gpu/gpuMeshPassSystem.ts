@@ -197,7 +197,15 @@ export class GpuMeshPassSystem extends System {
         const pass = this._gpu.frame.beginScene(background, sampleCount, widthPx, heightPx);
         this.drawBatches(pass, settings, meshSettings, sampleCount, this.world.resources.getOrCreate(GpuShaderLibrary));
         pass.end();
-        this._meshes.evictUnused(this._frameNumber, settings.evictUnusedMeshAfterFrames);
+        this.evictUnused(settings.evictUnusedMeshAfterFrames);
+    }
+
+    private evictUnused(maxUnusedFrames: number): void {
+        const frame = this._frameNumber;
+        this._meshes.evictUnused(frame, maxUnusedFrames);
+        this._materials.evictUnused(frame, maxUnusedFrames);
+        this._textures.evictUnused(frame, maxUnusedFrames);
+        this._pipelines.evictUnused(frame, maxUnusedFrames);
     }
 
     override onDestroy(): void {
@@ -345,7 +353,7 @@ export class GpuMeshPassSystem extends System {
         const format = this._gpu.format;
         let currentPipeline: GPURenderPipeline | undefined;
         for (const batch of this._batcher.batches) {
-            const pipeline = this._pipelines.pipelineFor(library.shaderNamed(batch.surfaceShader), batch.culling, format, sampleCount);
+            const pipeline = this._pipelines.pipelineFor(library.shaderNamed(batch.surfaceShader), batch.culling, format, sampleCount, this._frameNumber);
             if (pipeline !== currentPipeline) {
                 pass.setPipeline(pipeline);
                 currentPipeline = pipeline;
@@ -355,7 +363,7 @@ export class GpuMeshPassSystem extends System {
             pass.setVertexBuffer(MESH_VERTEX_BUFFER_SLOT, gpuMesh.vertexBuffer);
             pass.setIndexBuffer(gpuMesh.indexBuffer, INDEX_FORMAT);
             for (const range of gpuMesh.ranges) {
-                const material = this._materials.prepare(mesh.materials[range.material], meshSettings.textures, settings.textureFiltering);
+                const material = this._materials.prepare(mesh.materials[range.material], meshSettings.textures, settings.textureFiltering, this._frameNumber);
                 pass.setBindGroup(MATERIAL_BIND_GROUP, material.bindGroup);
                 pass.drawIndexed(range.indexCount, batch.instanceCount, range.firstIndex, NO_BASE_VERTEX, batch.firstInstance);
             }

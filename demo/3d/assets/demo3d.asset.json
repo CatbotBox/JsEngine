@@ -131,9 +131,9 @@
       "pacingWithCpuLimitFormat": "{label} (cpu limit {limit})",
       "statsLines": [
         "Entities: {entities}",
-        "Triangles: {drawn} drawn / {source} source{lodLevels}",
-        "Raster workers: {rasterWorkers}"
+        "Triangles: {drawn} drawn / {source} source{lodLevels}"
       ],
+      "rasterWorkersLine": "Raster workers: {rasterWorkers}",
       "lodLevelsFormat": "  LOD levels: {levels}",
       "lodLevelsShown": 5,
       "lodLevelSeparator": "/",

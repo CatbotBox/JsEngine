@@ -41,6 +41,7 @@ export interface WorldWorker {
 export interface WorldWorkerPageOptions {
     readonly name: string;
     readonly requestedRasterWorkers?: number;
+    readonly onReady?: () => void;
     readonly onQuit?: () => void;
 }
 
@@ -123,6 +124,9 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
             case "screenUnit":
                 if (isGpuDisplay(display)) display.showScreenUnit(message.pixelsPerScreenUnitX, message.pixelsPerScreenUnitY);
                 else failOnMismatch(GPU_BACKEND);
+                break;
+            case "ready":
+                options.onReady?.();
                 break;
             case "quit":
                 close();

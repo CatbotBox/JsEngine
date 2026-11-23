@@ -8,8 +8,8 @@ import type * as Crypto from "crypto";
 const crypto = require("crypto") as typeof Crypto;
 
 const PINNED_MESH_CACHE = {
-    version: 3,
-    fingerprint: "8afb990ed2b6815d3efb3d78bc87b68370ec786e",
+    version: 4,
+    fingerprint: "af886d58d0226065ce268ca2aed0dcfcb7fd070d",
 };
 
 const FIXTURE_DIRECTORY = "/fixture";

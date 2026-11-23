@@ -3,7 +3,7 @@ import type {Texture} from "../../engine/rendering/3d/texture";
 import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, RED_SHIFT} from "../../engine/rendering/packedRgb";
 import {asGpuBufferSource, GPU_BUFFER_USAGE} from "./gpuTypes";
 import type {GpuDevice} from "./gpuTypes";
-import type {GpuTextureCache} from "./gpuTextureCache";
+import type {GpuTexture, GpuTextureCache} from "./gpuTextureCache";
 import {FLOAT_BYTES} from "./gpuLightPacking";
 import {LINEAR_TEXTURE_FILTERING} from "./gpuMeshPassSettings";
 import type {GpuTextureFiltering} from "./gpuMeshPassSettings";
@@ -40,7 +40,16 @@ interface MaterialEntry extends GpuMaterial {
     boundTexture: Texture | undefined;
     boundSpecularTexture: Texture | undefined;
     boundSampler: GPUSampler;
+    diffuseUpload: GpuTexture;
+    specularUpload: GpuTexture;
     readonly written: Float32Array;
+    lastUsedFrame: number;
+}
+
+interface MaterialBinding {
+    readonly bindGroup: GPUBindGroup;
+    readonly diffuseUpload: GpuTexture;
+    readonly specularUpload: GpuTexture;
 }
 
 function writeRgb(out: Float32Array, offset: number, rgb: number): void {
@@ -97,7 +106,7 @@ export class GpuMaterialCache {
         return this.entries.size;
     }
 
-    public prepare(material: Material, texturesEnabled: boolean, filtering: GpuTextureFiltering): GpuMaterial {
+    public prepare(material: Material, texturesEnabled: boolean, filtering: GpuTextureFiltering, frame: number): GpuMaterial {
         packMaterial(material, texturesEnabled, this.packed);
         const sampler = this.samplerFor(filtering);
         let entry = this.entries.get(material);
@@ -109,11 +118,12 @@ export class GpuMaterialCache {
             });
             entry = {
                 uniformBuffer,
-                bindGroup: this.bindGroupFor(uniformBuffer, material, sampler),
+                ...this.bindingFor(uniformBuffer, material, sampler, frame),
                 boundTexture: material.diffuseTexture,
                 boundSpecularTexture: material.specularTexture,
                 boundSampler: sampler,
                 written: this.packed.slice(),
+                lastUsedFrame: frame,
             };
             this.entries.set(material, entry);
             this.device.queue.writeBuffer(uniformBuffer, 0, asGpuBufferSource(entry.written));
@@ -123,13 +133,24 @@ export class GpuMaterialCache {
             entry.boundTexture = material.diffuseTexture;
             entry.boundSpecularTexture = material.specularTexture;
             entry.boundSampler = sampler;
-            entry.bindGroup = this.bindGroupFor(entry.uniformBuffer, material, sampler);
+            Object.assign(entry, this.bindingFor(entry.uniformBuffer, material, sampler, frame));
         }
+        entry.lastUsedFrame = frame;
+        entry.diffuseUpload.lastUsedFrame = frame;
+        entry.specularUpload.lastUsedFrame = frame;
         if (!sameValues(this.packed, entry.written)) {
             entry.written.set(this.packed);
             this.device.queue.writeBuffer(entry.uniformBuffer, 0, asGpuBufferSource(entry.written));
         }
         return entry;
+    }
+
+    public evictUnused(frame: number, maxUnusedFrames: number): void {
+        for (const [material, entry] of this.entries) {
+            if (frame - entry.lastUsedFrame <= maxUnusedFrames) continue;
+            entry.uniformBuffer.destroy();
+            this.entries.delete(material);
+        }
     }
 
     public dispose(): void {
@@ -146,16 +167,19 @@ export class GpuMaterialCache {
         return sampler;
     }
 
-    private bindGroupFor(uniformBuffer: GPUBuffer, material: Material, sampler: GPUSampler): GPUBindGroup {
-        return this.device.createBindGroup({
+    private bindingFor(uniformBuffer: GPUBuffer, material: Material, sampler: GPUSampler, frame: number): MaterialBinding {
+        const diffuseUpload = this.textures.ensure(material.diffuseTexture, frame);
+        const specularUpload = this.textures.ensure(material.specularTexture, frame);
+        const bindGroup = this.device.createBindGroup({
             label: "material",
             layout: this.layout,
             entries: [
                 {binding: MATERIAL_UNIFORMS_BINDING, resource: {buffer: uniformBuffer}},
                 {binding: MATERIAL_SAMPLER_BINDING, resource: sampler},
-                {binding: MATERIAL_TEXTURE_BINDING, resource: this.textures.viewOf(material.diffuseTexture)},
-                {binding: MATERIAL_SPECULAR_TEXTURE_BINDING, resource: this.textures.viewOf(material.specularTexture)},
+                {binding: MATERIAL_TEXTURE_BINDING, resource: diffuseUpload.view},
+                {binding: MATERIAL_SPECULAR_TEXTURE_BINDING, resource: specularUpload.view},
             ],
         });
+        return {bindGroup, diffuseUpload, specularUpload};
     }
 }

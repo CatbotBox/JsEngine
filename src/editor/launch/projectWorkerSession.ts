@@ -95,13 +95,6 @@ export class ProjectWorkerSession {
                 reject(new Error(text));
             };
             const display = options.viewport.sessionDisplay(options.visibility.visible, {
-// The client is created on the first frame: requests sent before the worker attached the editor service are lost.
-                firstFrame: () => {
-                    if (settled) return;
-                    settled = true;
-                    session = new ProjectWorkerSession(worker, display, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events, options.viewport);
-                    resolve(session);
-                },
                 failed: text => {
                     if (!settled) fail(text);
                     else session?.client.close();
@@ -110,6 +103,13 @@ export class ProjectWorkerSession {
             const page = connectWorldWorker(display, worker, {
                 name: options.name,
                 requestedRasterWorkers: requestedRasterWorkersFromQuery(options.search),
+// The client is created on ready: requests sent before the worker attached the editor service are lost.
+                onReady: () => {
+                    if (settled) return;
+                    settled = true;
+                    session = new ProjectWorkerSession(worker, display, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events, options.viewport);
+                    resolve(session);
+                },
                 onQuit: () => {
                     session?.client.close();
                     options.onQuit();

@@ -120,6 +120,22 @@ function probePresentationGroup(log: string[], name: string, options: ProbeOptio
     };
 }
 
+class InspectableGroup extends SystemGroup {
+    public get updateOrder(): readonly System[] {
+        return this.order;
+    }
+
+    public get walkedSystems(): readonly System[] {
+        return this.runningList.systems;
+    }
+}
+
+function expectNoLongerReferenced(group: InspectableGroup, system: System): void {
+    expect(group.systems.includes(system)).toBe(false);
+    expect(group.updateOrder.includes(system)).toBe(false);
+    expect(group.walkedSystems.includes(system)).toBe(false);
+}
+
 let world: World;
 let em: EntityManager;
 let log: string[];
@@ -379,6 +395,41 @@ describe("running list: groups", () => {
         expect(stepLog()).toEqual(["before", "group", "requirer"]);
         plain.enabled = true;
         expect(stepLog()).toEqual(["before", "group", "requirer", "plain"]);
+    });
+
+    test("a system destroyed inside a disabled group leaves the group's update order and walk at once", () => {
+        const kept = world.createSystem(probe(log, "kept", {group: () => InspectableGroup, priority: FIRST}));
+        const destroyedCtor = probe(log, "destroyed", {group: () => InspectableGroup, priority: SECOND});
+        const destroyed = world.createSystem(destroyedCtor);
+        const group = world.tryGetSystem(InspectableGroup)!;
+        expect(stepLog()).toEqual(["kept", "destroyed"]);
+
+        group.enabled = false;
+        world.removeSystem(destroyedCtor);
+        expectNoLongerReferenced(group, destroyed);
+        expect(group.updateOrder.includes(kept)).toBe(true);
+
+        group.enabled = true;
+        expect(stepLog()).toEqual(["kept"]);
+    });
+
+    test("a system destroyed during its group's walk leaves the group's update order when the walk ends", () => {
+        const destroyedCtor = probe(log, "destroyed", {group: () => InspectableGroup, priority: FIRST});
+        const destroyed = world.createSystem(destroyedCtor);
+        world.createSystem(probe(log, "destroyer", {
+            group: () => InspectableGroup,
+            priority: SECOND,
+            run: current => {
+                if (!current.hasSystem(destroyedCtor)) return;
+                current.removeSystem(destroyedCtor);
+                current.tryGetSystem(InspectableGroup)!.enabled = false;
+            },
+        }));
+        world.createSystem(probe(log, "next", {group: () => InspectableGroup, priority: THIRD}));
+        const group = world.tryGetSystem(InspectableGroup)!;
+
+        expect(stepLog()).toEqual(["destroyed", "destroyer", "next"]);
+        expectNoLongerReferenced(group, destroyed);
     });
 
     test("a group whose camera-like requirement is empty leaves its parent's walk and pays no boundary", () => {

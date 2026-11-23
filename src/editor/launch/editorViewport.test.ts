@@ -46,12 +46,7 @@ function areaOf(columns: number): CellArea {
 }
 
 class RecordedEvents implements SessionDisplayEvents {
-    public firstFrames = 0;
     public readonly failures: string[] = [];
-
-    public firstFrame(): void {
-        this.firstFrames++;
-    }
 
     public failed(text: string): void {
         this.failures.push(text);
@@ -182,7 +177,7 @@ describe("PixelEditorViewport", () => {
         if (!("presentPixels" in hidden)) throw new Error("a pixel session display presents pixels");
         hidden.presentPixels(FRAME, () => acknowledged++);
         hidden.presentPixels(FRAME, () => acknowledged++);
-        expect([display.presented, acknowledged, events.firstFrames]).toEqual([0, 2, 1]);
+        expect([display.presented, acknowledged]).toEqual([0, 2]);
         hidden.showStatus("loading");
         hidden.showError("broken");
         expect(display.shown).toEqual([]);
@@ -210,16 +205,15 @@ describe("PixelEditorViewport", () => {
 });
 
 describe("GpuEditorViewport", () => {
-    test("each session gets its own canvas, transferred to its worker; the first screen unit is its first frame", () => {
+    test("each session gets its own canvas, transferred to its worker, and shows every screen unit it receives", () => {
         const {viewport, canvases} = gpuViewport();
-        const events = new RecordedEvents();
-        const session = viewport.sessionDisplay(VISIBLE, events);
+        const session = viewport.sessionDisplay(VISIBLE, new RecordedEvents());
         expect(displayBackendOf(session)).toBe("gpu");
         if (!("transferCanvas" in session)) throw new Error("a gpu session display transfers a canvas");
         session.transferCanvas();
         session.showScreenUnit(SCREEN_UNIT_X, SCREEN_UNIT_Y);
         session.showScreenUnit(SCREEN_UNIT_X, SCREEN_UNIT_Y);
-        expect([canvases.length, canvases[0].transfers, events.firstFrames]).toEqual([1, 1, 1]);
+        expect([canvases.length, canvases[0].transfers]).toEqual([1, 1]);
         expect(canvases[0].screenUnits).toEqual([[SCREEN_UNIT_X, SCREEN_UNIT_Y], [SCREEN_UNIT_X, SCREEN_UNIT_Y]]);
         expect(viewport.cellArea()).toEqual(areaOf(1));
     });
@@ -438,13 +432,12 @@ describe("CellEditorViewport", () => {
     test("every cell session shares the one cell display; a hidden session acknowledges frames without drawing, and showing it shows the display", () => {
         const display = new FakeCellDisplay();
         const viewport = new CellEditorViewport(display, WEB_CELLS);
-        const events = new RecordedEvents();
-        const hidden = viewport.sessionDisplay(HIDDEN, events);
+        const hidden = viewport.sessionDisplay(HIDDEN, new RecordedEvents());
         expect(displayBackendOf(hidden)).toBe("cells");
         if (!("presentCells" in hidden)) throw new Error("a cell session display presents cells");
         let acknowledged = 0;
         hidden.presentCells(CELL_FRAME, () => acknowledged++);
-        expect([display.presented, acknowledged, events.firstFrames, display.visible]).toEqual([0, 1, 1, false]);
+        expect([display.presented, acknowledged, display.visible]).toEqual([0, 1, false]);
         hidden.show();
         hidden.presentCells(CELL_FRAME, () => acknowledged++);
         expect([display.presented, acknowledged, display.visible]).toEqual([1, 2, true]);

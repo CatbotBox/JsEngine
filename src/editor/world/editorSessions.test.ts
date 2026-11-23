@@ -12,6 +12,7 @@ import type {Harnessed} from "./editorServiceTestHarness";
 const SLOW_TICK_MS = 60_000;
 const SAVED_WAVE = 4;
 const PLAY_WAVE = 6;
+const NOT_REPORTED = -1;
 
 class Scoreboard extends Resource {
     public static readonly schema = resourceSchema(Scoreboard, "Scoreboard").integer("wave").build();
@@ -75,6 +76,40 @@ describe("editor events", () => {
         await ask(harnessed, {op: "setMode", mode: "edit"});
         expect(await waitUntil(() => eventsOfKind(harnessed, "modeChanged").length >= 2)).toBe(true);
         expect(eventsOfKind(harnessed, "modeChanged").map(event => event.mode)).toEqual(["play", "edit"]);
+    });
+});
+
+describe("editor readiness", () => {
+    test("the first tick is reported once, right after it ran, in a world with no camera to draw a frame", async () => {
+        let reports = 0;
+        let renderTicksAtReport = NOT_REPORTED;
+        const harnessed: Harnessed = editorWorld(() => undefined, {
+            onFirstTick: () => {
+                reports++;
+                renderTicksAtReport = harnessed.probe.frames;
+            },
+        });
+        expect(reports).toBe(0);
+        expect(await framesPass(harnessed)).toBe(true);
+        expect([reports, renderTicksAtReport]).toEqual([1, 1]);
+    });
+
+    test("a first tick that stops the world is still reported once, after the stop", async () => {
+        let reports = 0;
+        let stoppedAtReport: string | undefined;
+        FailingRenderSystem.failNext = true;
+        const harnessed: Harnessed = editorWorld(world => {
+            world.getOrCreateSystem(FailingRenderSystem);
+        }, {
+            onFirstTick: () => {
+                reports++;
+                stoppedAtReport = harnessed.service.worldStoppedError;
+            },
+        });
+        expect(await waitUntil(() => reports > 0)).toBe(true);
+        expect(stoppedAtReport).toBe("render exploded");
+        await sleep(TICK_MS * SETTLE_FRAMES);
+        expect(reports).toBe(1);
     });
 });
 

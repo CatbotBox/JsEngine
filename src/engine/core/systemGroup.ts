@@ -12,6 +12,7 @@ export abstract class SystemGroup extends System {
     private _systems: System[] = [];
     private readonly _order: System[] = [];
     private _orderChanged = false;
+    private _removedWhileUpdating = false;
     private readonly _running: RunningList = new RunningList(this);
 
     protected get runningList(): RunningList {
@@ -53,6 +54,17 @@ export abstract class SystemGroup extends System {
     public onUpdate(): void {
         if (!this._running.walking) this.applyOrderChanges();
         this._running.walk(this.world.presentationBarriers, NO_SYSTEM_RAN_YET);
+        this.applyRemovalsLeftByUpdate();
+    }
+
+    protected updatingSystems(): boolean {
+        return this._running.walking;
+    }
+
+    protected applyRemovalsLeftByUpdate(): void {
+        if (!this._removedWhileUpdating || this.updatingSystems()) return;
+        this._removedWhileUpdating = false;
+        this.applyOrderChanges();
     }
 
     public override destroy(): void {
@@ -134,7 +146,16 @@ export abstract class SystemGroup extends System {
         if (index == -1) throw new Error("Can't remove system instance because it does not exist in System Group");
         this._systems.splice(index, 1);
         this._orderChanged = true;
-
+        this.leaveUpdateOrder(systemInstance);
         systemInstance.destroy();
+    }
+
+    private leaveUpdateOrder(systemInstance: System): void {
+        if (!this.updatingSystems()) {
+            this.applyOrderChanges();
+            return;
+        }
+        this.runningListOf(systemInstance)?.remove(systemInstance);
+        this._removedWhileUpdating = true;
     }
 }

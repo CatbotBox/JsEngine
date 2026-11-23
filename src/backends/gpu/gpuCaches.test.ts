@@ -27,11 +27,12 @@ import {
 } from "./shaders/basicLitShader";
 import {LINEAR_TEXTURE_FILTERING, MULTISAMPLE_COUNT, NEAREST_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import type {GpuTextureFiltering} from "./gpuMeshPassSettings";
-import {compilationError, FakeGpuDevice, FakeGpuTextureView} from "./testing/fakeGpuDevice";
+import {compilationError, FakeGpuBuffer, FakeGpuDevice, FakeGpuTextureView} from "./testing/fakeGpuDevice";
 import type {FakeGpuShaderModule} from "./testing/fakeGpuDevice";
 import {ConsoleRecorder} from "./testing/consoleRecorder";
 
 const EVICT_AFTER_FRAMES = 3;
+const FRAME = 1;
 const FORMAT: GPUTextureFormat = "bgra8unorm";
 const OTHER_FORMAT: GPUTextureFormat = "rgba8unorm";
 const TEXTURE_SIDE = 2;
@@ -95,11 +96,11 @@ function codeOf(pipeline: GPURenderPipeline): string {
 }
 
 async function readyPipeline(cache: GpuPipelineCache, shader: GpuShader, culling: FaceCulling = FaceCulling.BackFaces): Promise<GPURenderPipeline> {
-    cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT);
+    cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT, FRAME);
     await settle();
-    cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT);
+    cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT, FRAME);
     await settle();
-    return cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT);
+    return cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT, FRAME);
 }
 
 function lineOf(code: string, token: string): number {
@@ -119,9 +120,29 @@ function texture(): Texture {
     return Texture.fromRgba(TEXTURE_SIDE, TEXTURE_SIDE, new Uint8Array(TEXTURE_SIDE * TEXTURE_SIDE * RGBA_BYTES).fill(0xFF));
 }
 
-function materialCache(device: FakeGpuDevice): GpuMaterialCache {
+interface MaterialCaches {
+    readonly materials: GpuMaterialCache;
+    readonly textures: GpuTextureCache;
+}
+
+function materialCaches(device: FakeGpuDevice): MaterialCaches {
     const layout = device.createBindGroupLayout({entries: []});
-    return new GpuMaterialCache(device, layout, new GpuTextureCache(device));
+    const textures = new GpuTextureCache(device);
+    return {materials: new GpuMaterialCache(device, layout, textures), textures};
+}
+
+function materialCache(device: FakeGpuDevice): GpuMaterialCache {
+    return materialCaches(device).materials;
+}
+
+function drawFramesUntilEviction({materials, textures}: MaterialCaches, drawn: Material): number {
+    const evictionFrame = FRAME + EVICT_AFTER_FRAMES + 1;
+    for (let frame = FRAME + 1; frame <= evictionFrame; frame++) {
+        materials.prepare(drawn, true, NEAREST_TEXTURE_FILTERING, frame);
+        materials.evictUnused(frame, EVICT_AFTER_FRAMES);
+        textures.evictUnused(frame, EVICT_AFTER_FRAMES);
+    }
+    return evictionFrame;
 }
 
 function boundResource(bindGroup: GPUBindGroup, binding: number): unknown {
@@ -183,8 +204,8 @@ describe("GpuMaterialCache", () => {
         a.diffuseTexture = shared;
         b.diffuseTexture = shared;
         b.specularTexture = shared;
-        cache.prepare(a, true, NEAREST_TEXTURE_FILTERING);
-        cache.prepare(b, true, NEAREST_TEXTURE_FILTERING);
+        cache.prepare(a, true, NEAREST_TEXTURE_FILTERING, FRAME);
+        cache.prepare(b, true, NEAREST_TEXTURE_FILTERING, FRAME);
         expect(device.textures.map(uploaded => uploaded.descriptor.label)).toEqual(["material texture", "white"]);
         expect(cache.size).toBe(2);
     });
@@ -194,17 +215,17 @@ describe("GpuMaterialCache", () => {
         const cache = materialCache(device);
         const material = new Material("m", 0x336699);
         material.diffuseTexture = texture();
-        const prepared = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING);
-        cache.prepare(material, true, NEAREST_TEXTURE_FILTERING);
+        const prepared = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME);
+        cache.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME);
         expect(device.queue.writesTo(prepared.uniformBuffer).length).toBe(1);
-        cache.prepare(material, false, NEAREST_TEXTURE_FILTERING);
-        cache.prepare(material, false, NEAREST_TEXTURE_FILTERING);
+        cache.prepare(material, false, NEAREST_TEXTURE_FILTERING, FRAME);
+        cache.prepare(material, false, NEAREST_TEXTURE_FILTERING, FRAME);
         const writes = device.queue.writesTo(prepared.uniformBuffer);
         expect(writes.length).toBe(2);
         expect((writes[0].data as Float32Array)[MATERIAL_TEXTURED_OFFSET]).toBe(MATERIAL_TEXTURED);
         expect((writes[1].data as Float32Array)[MATERIAL_TEXTURED_OFFSET]).toBe(MATERIAL_UNTEXTURED);
         material.diffuseColor = 0xFFFFFF;
-        cache.prepare(material, false, NEAREST_TEXTURE_FILTERING);
+        cache.prepare(material, false, NEAREST_TEXTURE_FILTERING, FRAME);
         expect(device.queue.writesTo(prepared.uniformBuffer).length).toBe(3);
     });
 
@@ -212,9 +233,9 @@ describe("GpuMaterialCache", () => {
         const device = new FakeGpuDevice();
         const cache = materialCache(device);
         const material = new Material("m");
-        const before = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING).bindGroup;
+        const before = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME).bindGroup;
         material.diffuseTexture = texture();
-        const after = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING);
+        const after = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME);
         expect(after.bindGroup).not.toBe(before);
         expect(device.buffers.length).toBe(1);
     });
@@ -247,29 +268,72 @@ describe("GpuMaterialCache", () => {
         const device = new FakeGpuDevice();
         const cache = materialCache(device);
         const material = new Material("m");
-        const plain = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING).bindGroup;
+        const plain = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME).bindGroup;
         expect(boundTexture(plain, MATERIAL_SPECULAR_TEXTURE_BINDING).label).toBe("white");
         material.specularTexture = texture();
-        const glossy = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING).bindGroup;
+        const glossy = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME).bindGroup;
         expect(glossy).not.toBe(plain);
         expect(boundTexture(glossy, MATERIAL_SPECULAR_TEXTURE_BINDING).label).toBe("material texture");
         expect(boundTexture(glossy, MATERIAL_TEXTURE_BINDING).label).toBe("white");
-        expect(cache.prepare(material, false, NEAREST_TEXTURE_FILTERING).bindGroup).toBe(glossy);
+        expect(cache.prepare(material, false, NEAREST_TEXTURE_FILTERING, FRAME).bindGroup).toBe(glossy);
     });
 
     test("a filtering change rebinds the material with that filtering's sampler, one sampler per filtering", () => {
         const device = new FakeGpuDevice();
         const cache = materialCache(device);
         const material = new Material("m");
-        const nearest = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING).bindGroup;
-        const linear = cache.prepare(material, true, LINEAR_TEXTURE_FILTERING).bindGroup;
+        const nearest = cache.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME).bindGroup;
+        const linear = cache.prepare(material, true, LINEAR_TEXTURE_FILTERING, FRAME).bindGroup;
         expect(linear).not.toBe(nearest);
-        expect(cache.prepare(material, true, LINEAR_TEXTURE_FILTERING).bindGroup).toBe(linear);
+        expect(cache.prepare(material, true, LINEAR_TEXTURE_FILTERING, FRAME).bindGroup).toBe(linear);
         expect((boundResource(nearest, MATERIAL_SAMPLER_BINDING) as GPUSamplerDescriptor).magFilter).toBe("nearest");
         expect((boundResource(linear, MATERIAL_SAMPLER_BINDING) as GPUSamplerDescriptor).magFilter).toBe("linear");
-        cache.prepare(new Material("other"), true, NEAREST_TEXTURE_FILTERING);
+        cache.prepare(new Material("other"), true, NEAREST_TEXTURE_FILTERING, FRAME);
         expect(device.samplers.length).toBe(2);
         expect(device.buffers.length).toBe(2);
+    });
+
+    test("evicts a material unused for more than the given frames, destroying its uniform buffer, and creates it again on return", () => {
+        const device = new FakeGpuDevice();
+        const caches = materialCaches(device);
+        const kept = new Material("kept"), dropped = new Material("dropped");
+        const droppedBuffer = caches.materials.prepare(dropped, true, NEAREST_TEXTURE_FILTERING, FRAME).uniformBuffer;
+        caches.materials.prepare(kept, true, NEAREST_TEXTURE_FILTERING, FRAME);
+        caches.materials.evictUnused(FRAME + EVICT_AFTER_FRAMES, EVICT_AFTER_FRAMES);
+        expect(caches.materials.size).toBe(2);
+        const evictionFrame = drawFramesUntilEviction(caches, kept);
+        expect(caches.materials.size).toBe(1);
+        expect((droppedBuffer as unknown as FakeGpuBuffer).destroyed).toBe(true);
+        expect(device.liveBuffers().length).toBe(1);
+        expect(caches.materials.prepare(dropped, true, NEAREST_TEXTURE_FILTERING, evictionFrame + 1).uniformBuffer).not.toBe(droppedBuffer);
+        expect(device.buffers.length).toBe(3);
+    });
+
+    test("a texture no material has bound for more than the given frames is destroyed; a kept material's texture and the white one survive", () => {
+        const device = new FakeGpuDevice();
+        const caches = materialCaches(device);
+        const kept = new Material("kept"), dropped = new Material("dropped");
+        dropped.diffuseTexture = texture();
+        kept.diffuseTexture = texture();
+        caches.materials.prepare(dropped, true, NEAREST_TEXTURE_FILTERING, FRAME);
+        caches.materials.prepare(kept, true, NEAREST_TEXTURE_FILTERING, FRAME);
+        expect(device.textures.map(uploaded => uploaded.descriptor.label)).toEqual(["material texture", "white", "material texture"]);
+        drawFramesUntilEviction(caches, kept);
+        expect(device.textures.map(uploaded => uploaded.destroyed)).toEqual([true, false, false]);
+        expect(caches.textures.size).toBe(1);
+    });
+
+    test("a texture a material stops binding is destroyed after the given frames, the one it binds now is kept", () => {
+        const device = new FakeGpuDevice();
+        const caches = materialCaches(device);
+        const material = new Material("m");
+        material.diffuseTexture = texture();
+        caches.materials.prepare(material, true, NEAREST_TEXTURE_FILTERING, FRAME);
+        material.diffuseTexture = texture();
+        const evictionFrame = drawFramesUntilEviction(caches, material);
+        expect(device.textures.map(uploaded => uploaded.destroyed)).toEqual([true, false, false]);
+        expect(boundTexture(caches.materials.prepare(material, true, NEAREST_TEXTURE_FILTERING, evictionFrame + 1).bindGroup, MATERIAL_TEXTURE_BINDING))
+            .toBe(device.textures[2].descriptor);
     });
 });
 
@@ -291,11 +355,11 @@ describe("GpuPipelineCache", () => {
     test("one pipeline per shader, culling, format and sample count; software culling and winding; one module per shader", () => {
         const device = new FakeGpuDevice();
         const cache = new GpuPipelineCache(device, device.createPipelineLayout({bindGroupLayouts: []}));
-        const back = cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT);
-        expect(cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT)).toBe(back);
-        cache.pipelineFor(BASIC_LIT, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT);
-        cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, FORMAT, SINGLE_SAMPLE_COUNT);
-        cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, OTHER_FORMAT, MULTISAMPLE_COUNT);
+        const back = cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME);
+        expect(cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)).toBe(back);
+        cache.pipelineFor(BASIC_LIT, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT, FRAME);
+        cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, FORMAT, SINGLE_SAMPLE_COUNT, FRAME);
+        cache.pipelineFor(BASIC_LIT, FaceCulling.BackFaces, OTHER_FORMAT, MULTISAMPLE_COUNT, FRAME);
         expect(cache.size).toBe(4);
         expect(device.shaderModules.length).toBe(1);
         expect(device.pipelines.map(pipeline => [pipeline.primitive?.cullMode, pipeline.primitive?.frontFace, pipeline.multisample?.count])).toEqual([
@@ -307,6 +371,25 @@ describe("GpuPipelineCache", () => {
         expect([cullModeOf(FaceCulling.BackFaces), cullModeOf(FaceCulling.FrontFaces), cullModeOf(FaceCulling.None)]).toEqual(["back", "front", "none"]);
         expect(device.pipelines[0].depthStencil?.depthCompare).toBe("greater");
     });
+
+    test("drops the pipelines of shaders and keys unused for more than the given frames, keeping the ones drawn, and recompiles a dropped shader on return", async () => {
+        const device = new FakeGpuDevice();
+        const cache = pipelineCache(device);
+        const library = new GpuShaderLibrary();
+        const toon = await readyPipeline(cache, library.register(TOON, TOON_SOURCE));
+        await readyPipeline(cache, library.register(PULSE, PULSE_SOURCE));
+        cache.pipelineFor(BASIC_LIT, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT, FRAME);
+        expect(cache.size).toBe(4);
+        const evictionFrame = FRAME + EVICT_AFTER_FRAMES + 1;
+        for (let frame = FRAME + 1; frame <= evictionFrame; frame++) {
+            expect(cache.pipelineFor(library.shaderNamed(TOON), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, frame)).toBe(toon);
+            cache.evictUnused(frame, EVICT_AFTER_FRAMES);
+        }
+        expect(cache.size).toBe(1);
+        const returning = cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, evictionFrame + 1);
+        expect(shaderNameOf(returning)).toBe(LIT_SURFACE_SHADER);
+        expect(device.shaderModules.filter(module => module.label === PULSE).length).toBe(2);
+    });
 });
 
 describe("GpuPipelineCache with custom surface shaders", () => {
@@ -314,13 +397,13 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         const device = new FakeGpuDevice();
         const cache = pipelineCache(device);
         const toon = assembleSurfaceShader(TOON, TOON_SOURCE);
-        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
         await settle();
-        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
         await settle();
-        const own = cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT);
+        const own = cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME);
         expect([shaderNameOf(own), codeOf(own)]).toEqual([TOON, toon.code]);
-        expect(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT)).toBe(own);
+        expect(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)).toBe(own);
         expect([device.asyncPipelines.length, cache.size]).toEqual([1, 2]);
         expect(device.shaderModules.map(module => module.label)).toEqual([TOON, LIT_SURFACE_SHADER]);
     });
@@ -331,7 +414,7 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         const library = new GpuShaderLibrary();
         const toon = await readyPipeline(cache, library.register(TOON, TOON_SOURCE));
         const pulse = await readyPipeline(cache, library.register(PULSE, PULSE_SOURCE));
-        const lit = cache.pipelineFor(library.shaderNamed(LIT_SURFACE_SHADER), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT);
+        const lit = cache.pipelineFor(library.shaderNamed(LIT_SURFACE_SHADER), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME);
         expect([shaderNameOf(toon), shaderNameOf(pulse), shaderNameOf(lit)]).toEqual([TOON, PULSE, LIT_SURFACE_SHADER]);
         expect(new Set([toon, pulse, lit]).size).toBe(3);
         const toonUnculled = await readyPipeline(cache, library.shaderNamed(TOON), FaceCulling.None);
@@ -347,7 +430,7 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         expect(codeOf(first).endsWith(PULSE_SOURCE)).toBe(true);
         const sizeBefore = cache.size;
         library.register(PULSE, PULSE_FASTER_SOURCE);
-        expect(shaderNameOf(cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+        expect(shaderNameOf(cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
         expect(cache.size).toBe(sizeBefore - 1);
         const second = await readyPipeline(cache, library.shaderNamed(PULSE));
         expect(second).not.toBe(first);
@@ -362,7 +445,7 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         const cache = pipelineCache(device);
         const broken = assembleSurfaceShader(BROKEN, BROKEN_SOURCE);
         for (let frame = 0; frame < MANY_FRAMES; frame++) {
-            expect(shaderNameOf(cache.pipelineFor(broken, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+            expect(shaderNameOf(cache.pipelineFor(broken, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
             await settle();
         }
         expect(recorder.errors.length).toBe(1);
@@ -380,8 +463,8 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         const cache = pipelineCache(device);
         const unlinkable = assembleSurfaceShader(UNLINKABLE, TOON_SOURCE);
         for (let frame = 0; frame < MANY_FRAMES; frame++) {
-            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
-            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT))).toBe(LIT_SURFACE_SHADER);
+            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
+            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
             await settle();
         }
         expect(recorder.errors.length).toBe(1);
