@@ -138,6 +138,9 @@ abstract class RecordingDisplay {
         this.statuses.push(text);
     }
 
+    public hideStatus(): void {
+    }
+
     public showError(text: string): void {
         this.errors.push(text);
     }

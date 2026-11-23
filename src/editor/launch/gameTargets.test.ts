@@ -5,6 +5,7 @@ import {CommandRegistry} from "../page/commandRegistry";
 import {filterPaletteEntries, paletteEntries} from "../page/commandPalette";
 import type {MenuAction, MenuItem, MenuSubmenu} from "../page/popupMenu";
 import {
+    addressKeepingBackendOverride,
     backendOverrideFromQuery,
     chooseGameTarget,
     gameTargetLabelText,
@@ -81,6 +82,12 @@ describe("game target choice", () => {
         expect(chooseGameTarget(TERMINAL, "?backend=cells", USABLE)).toEqual({gameTarget: WEB_CELLS});
         expect(chooseGameTarget(TERMINAL, "?backend=vulkan", USABLE)).toEqual({gameTarget: TERMINAL});
         expect(chooseGameTarget(TERMINAL, "?backend=gpu", UNUSABLE)).toEqual({gameTarget: WEB_PIXELS, fallbackReason: UNUSABLE.unusableReason});
+    });
+
+    test("closing a project returns to the start screen with the ?backend= override kept and every other parameter dropped", () => {
+        expect(addressKeepingBackendOverride("/editor/", "?project=demo%2F3d&backend=cells")).toBe("/editor/?backend=cells");
+        expect(addressKeepingBackendOverride("/editor/", "?project=demo%2F3d&backend=vulkan")).toBe("/editor/");
+        expect(addressKeepingBackendOverride("/editor/", NO_QUERY)).toBe("/editor/");
     });
 
     test("the label names the target, and the backend only when the target has more than one", () => {

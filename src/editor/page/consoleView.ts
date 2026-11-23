@@ -1,6 +1,6 @@
 import {EDITOR_CONSOLE_LEVELS} from "../editorProtocol";
 import type {EditorConsoleLevel} from "../editorProtocol";
-import {allConsoleLevels, consoleRows} from "./consoleLog";
+import {allConsoleLevels, consoleRows, countMatchingSearch} from "./consoleLog";
 import type {ConsoleRow} from "./consoleLog";
 import {createButton, createElement} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
@@ -90,6 +90,7 @@ export class ConsoleView {
         search.addEventListener("input", () => {
             this.search = search.value;
             this.render(SCROLL_TO_END);
+            this.showCounts();
         });
         toolbar.append(search);
         this.list = createElement(document, "div", "console-list");
@@ -259,7 +260,8 @@ export class ConsoleView {
     }
 
     private showCounts(): void {
-        const counts = this.workspace.consoleLog.levelCounts;
+        const log = this.workspace.consoleLog;
+        const counts = this.search.length === 0 ? log.levelCounts : countMatchingSearch(log.entries, this.search);
         for (const [level, {count}] of this.toggles) count.textContent = String(counts[level]);
         for (const listener of this.countListeners) listener();
     }
