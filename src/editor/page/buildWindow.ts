@@ -5,6 +5,8 @@ import type {BuildAction, BuildWindowServices, TargetReportView} from "./buildWi
 import {openModal} from "./dialogs";
 import type {Modal} from "./dialogs";
 import {createButton, createElement} from "./dom";
+import {BUILD_ACTION_HOOK, BUILD_TARGET_HOOK, BUILD_TARGET_STATE_HOOK} from "../project/editorUiHooks";
+import type {BuildTargetState, BuildWindowAction} from "../project/editorUiHooks";
 
 export interface BuildWindowHost {
     readonly document: Document;
@@ -34,6 +36,17 @@ const OK_CLASS = "ok";
 const FAILING_CLASS = "failing";
 const RUNNING_CLASS = "running";
 
+function buildActionButton(button: HTMLButtonElement, action: BuildWindowAction): HTMLButtonElement {
+    button.setAttribute(BUILD_ACTION_HOOK, action);
+    return button;
+}
+
+function targetState(report: TargetReportView | undefined, running: BuildAction | undefined): BuildTargetState {
+    if (running !== undefined) return "running";
+    if (report === undefined) return "idle";
+    return report.ok ? "ok" : "failing";
+}
+
 export class BuildWindow {
     private readonly model: BuildWindowModel;
     private readonly modal: Modal;
@@ -48,13 +61,13 @@ export class BuildWindow {
     private constructor(private readonly host: BuildWindowHost, private readonly onClosed: () => void) {
         const document = host.document;
         this.model = new BuildWindowModel(host.services);
-        this.modal = openModal(document, BUILD_WINDOW_TITLE, () => this.close());
+        this.modal = openModal(document, BUILD_WINDOW_TITLE, "build", () => this.close());
         this.modal.dialog.classList.add("build-dialog");
         this.notice = createElement(document, "p", "build-notice");
         this.list = createElement(document, "div", "build-targets", LOADING_TEXT);
         this.status = createElement(document, "span", "build-status", OUTPUT_HINT);
-        this.buildAllButton = createButton(document, {className: "primary", text: "Build all", title: "Run jsengine build for every listed target, one after another", onClick: () => void this.model.buildAll()});
-        const close = createButton(document, {className: "", text: "Close", title: "Close the Build window; a running build still finishes and logs to the console", onClick: () => this.close()});
+        this.buildAllButton = buildActionButton(createButton(document, {className: "primary", text: "Build all", title: "Run jsengine build for every listed target, one after another", onClick: () => void this.model.buildAll()}), "buildAll");
+        const close = buildActionButton(createButton(document, {className: "", text: "Close", title: "Close the Build window; a running build still finishes and logs to the console", onClick: () => this.close()}), "close");
         this.modal.buttons.append(this.status, this.buildAllButton, close);
         for (const element of [this.notice, this.list]) this.modal.dialog.insertBefore(element, this.modal.buttons);
         this.unsubscribe = this.model.onChange(() => this.modelChanged());
@@ -93,15 +106,15 @@ export class BuildWindow {
         this.list.replaceChildren();
         for (const target of this.model.targets) {
             const element = createElement(document, "section", "build-target");
-            element.dataset.target = target;
+            element.setAttribute(BUILD_TARGET_HOOK, target);
             const header = createElement(document, "div", "build-target-header");
             const name = createElement(document, "span", "build-target-name", target);
             header.append(name);
             const status = createElement(document, "span", "build-target-status");
-            const buildButton = createButton(document, {className: "", text: "Build", title: `Run ${buildCommandText(target)} and check the features its bundles use`, onClick: () => void this.model.build(target)});
+            const buildButton = buildActionButton(createButton(document, {className: "", text: "Build", title: `Run ${buildCommandText(target)} and check the features its bundles use`, onClick: () => void this.model.build(target)}), "build");
             header.append(status, buildButton);
             const packageButton = target === PACKAGED_TARGET
-                ? createButton(document, {className: "", text: "Package", title: `Run jsengine package --target ${PACKAGED_TARGET} to make the desktop app`, onClick: () => void this.model.packageWindow()})
+                ? buildActionButton(createButton(document, {className: "", text: "Package", title: `Run jsengine package --target ${PACKAGED_TARGET} to make the desktop app`, onClick: () => void this.model.packageWindow()}), "package")
                 : undefined;
             if (packageButton !== undefined) header.append(packageButton);
             const details = createElement(document, "div", "build-target-details");
@@ -124,6 +137,7 @@ export class BuildWindow {
             row.element.classList.toggle(OK_CLASS, report?.ok === true);
             row.element.classList.toggle(FAILING_CLASS, report?.ok === false);
             row.element.classList.toggle(RUNNING_CLASS, running !== undefined);
+            row.element.setAttribute(BUILD_TARGET_STATE_HOOK, targetState(report, running));
             row.status.textContent = this.statusText(target, report, running);
             row.buildButton.disabled = blocked;
             if (row.packageButton !== undefined) row.packageButton.disabled = blocked;

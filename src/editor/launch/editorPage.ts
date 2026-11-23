@@ -1,6 +1,7 @@
 import {errorFramesOf} from "../../engine/debugging/errorStack";
 import {installDomInput, keyOf} from "../../hosts/web/domInput";
 import {webGpuUsable} from "../../hosts/web/renderBackendBootstrap";
+import {askForText} from "../page/dialogs";
 import {createEditorShell} from "../page/editorShell";
 import type {ProjectBuildServices} from "../page/editorShell";
 import {DirectoryHandleProjectFileSystem} from "../project/directoryHandleProjectFileSystem";
@@ -58,6 +59,10 @@ const NO_FOLDER_ACCESS = "This browser cannot open folders (it has no File Syste
 const BUILD_WARNINGS_TITLE = "The game code built with warnings:";
 const PROJECT_QUERY_NEEDS_SERVER ="?project= opens a folder on the dev server or in the desktop editor, and neither is answering here.";
 const SWITCH_NEEDS_SERVER = "Switching the target rebuilds the game code, which needs the dev server (jsengine edit) or the desktop editor (jsengine edit --target window)";
+const NEW_PROJECT_TITLE = "New project";
+const PROJECT_NAME_LABEL = "Name of the new project";
+const CREATE_PROJECT_TEXT = "Create";
+const PROJECT_NAME_NEEDED = "Name the project";
 
 interface TargetSwitching {
     remember(gameTarget: GameTarget): Promise<void>;
@@ -141,6 +146,7 @@ class EditorStart {
 
     private backAction(): StartScreenAction {
         return {
+            id: "back",
             label: "Back",
             run: () => {
                 this.screen.clearMessage();
@@ -191,7 +197,13 @@ class EditorStart {
     }
 
     private async createProject(server: ProjectServerClient, path: string): Promise<void> {
-        const name = window.prompt("Name of the new project", folderName(path))?.trim();
+        const name = (await askForText(document, {
+            title: NEW_PROJECT_TITLE,
+            label: PROJECT_NAME_LABEL,
+            initialValue: folderName(path),
+            confirmText: CREATE_PROJECT_TEXT,
+            validate: value => value.trim().length === 0 ? PROJECT_NAME_NEEDED : undefined,
+        }))?.trim();
         if (name === undefined || name.length === 0) return;
         setPageState("loading");
         this.screen.showBusy(`Creating ${name} in ${path}…`);
@@ -209,7 +221,7 @@ class EditorStart {
         const validation = opened.validation;
         if (!validation.ok) {
             this.fail(`${opened.path} is not a JsEngine project`, validation.problems, [
-                {label: "Create project here", run: () => void this.createProject(server, opened.path)},
+                {id: "createProject", label: "Create project here", run: () => void this.createProject(server, opened.path)},
                 this.backAction(),
             ]);
             return;
@@ -227,7 +239,7 @@ class EditorStart {
         }
         if (!isBuildSuccess(built)) {
             this.fail(`Could not build ${manifest.name}`, built.errors, [
-                {label: "Try again", run: () => void this.openServerProject(opened.path)},
+                {id: "retry", label: "Try again", run: () => void this.openServerProject(opened.path)},
                 this.backAction(),
             ]);
             return;

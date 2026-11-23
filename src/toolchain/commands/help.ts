@@ -22,6 +22,7 @@ export const USAGE = `jsengine <command> [options] (runs under bun)
   serve     [--prod] [--no-build] [--no-coi]    dev server for the sample projects (PORT moves it from 8080)
   edit      [--project <dir>] [--target web|window] [--backend cells|pixels|gpu] [--no-build]
             [--smoke] [--screenshot <png>]      window only
+            [--flows <name,...>|none]           window --smoke only: which editor UI flows drive the page (default all)
   help
 
 Defaults: --target web; --backend from the manifest's "targets", else pixels on web and window, cells on the terminal; --simulate web.

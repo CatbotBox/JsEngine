@@ -57,7 +57,7 @@ export class ProjectSettingsWindow {
     private constructor(private readonly host: ProjectSettingsHost, private readonly onClosed: () => void) {
         const document = host.document;
         this.model = new ProjectSettingsModel(host.services);
-        this.modal = openModal(document, PROJECT_SETTINGS_TITLE, () => void this.close());
+        this.modal = openModal(document, PROJECT_SETTINGS_TITLE, "projectSettings", () => void this.close());
         const dialog = this.modal.dialog;
         dialog.classList.add("project-settings-dialog");
         const tabs = createElement(document, "div", "editor-tabs project-settings-tabs");

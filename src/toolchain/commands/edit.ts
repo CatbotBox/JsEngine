@@ -17,6 +17,7 @@ const OPTIONS = {
     "no-build": {kind: "flag"},
     smoke: {kind: "flag"},
     screenshot: {kind: "value"},
+    flows: {kind: "value"},
 } as const;
 
 const PARENT_SEGMENT = "..";
@@ -38,11 +39,12 @@ export async function editCommand(args: readonly string[]): Promise<CommandResul
     const target = targetOf(options.value("target"), HOST_TARGETS);
     const requestedBackend = options.value("backend");
     const backendOverride = requestedBackend === undefined ? "" : `?backend=${backendFor("editor", requestedBackend)}`;
-    requireScope(options, ["smoke", "screenshot"], target === "window", "--target window");
+    requireScope(options, ["smoke", "screenshot", "flows"], target === "window", "--target window");
+    requireScope(options, ["flows"], options.flag("smoke"), "--smoke");
     const folder = editedProjectFolder(options.value("project"));
     const page = withProjectQuery(`${EDITOR_PAGE}${backendOverride}`, folder === undefined ? undefined : serverProjectPath(folder));
     const build = !options.flag("no-build");
-    if (target === "window") return await launchWindow({page, build, smoke: options.flag("smoke"), screenshot: options.value("screenshot")});
+    if (target === "window") return await launchWindow({page, build, smoke: options.flag("smoke"), screenshot: options.value("screenshot"), flows: options.value("flows")});
     serveSite({prod: false, build, isolated: true, open: page});
     return KEEP_RUNNING;
 }

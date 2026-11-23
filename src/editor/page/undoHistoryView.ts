@@ -1,5 +1,7 @@
 import {createButton, createElement} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
+import {HISTORY_STATE_HOOK, HISTORY_STEP_HOOK} from "../project/editorUiHooks";
+import type {HistoryStepState} from "../project/editorUiHooks";
 
 export const INITIAL_STATE_LABEL = "Initial state";
 
@@ -36,7 +38,10 @@ export class UndoHistoryView {
             const classes = [ENTRY_CLASS, current ? CURRENT_CLASS : "", undone ? UNDONE_CLASS : ""].filter(name => name.length > 0).join(" ");
             const title = current ? CURRENT_TITLE : undone ? JUMP_FORWARD_TITLE : JUMP_BACK_TITLE;
             const row = createButton(document, {className: classes, text: label, title, onClick: () => void this.workspace.jumpToHistory(depth)});
+            const state: HistoryStepState = current ? "current" : undone ? "undone" : "done";
             row.setAttribute("role", "listitem");
+            row.setAttribute(HISTORY_STEP_HOOK, String(depth));
+            row.setAttribute(HISTORY_STATE_HOOK, state);
             if (current) row.setAttribute("aria-current", CURRENT_STEP);
             return row;
         }));

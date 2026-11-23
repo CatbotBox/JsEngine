@@ -1,8 +1,10 @@
 import {createElement, errorText, visualScaleOf} from "./dom";
+import {CHOICE_POPUP_HOOK, CHOICE_VALUE_HOOK} from "../project/editorUiHooks";
 
 export interface Choice<V> {
     readonly label: string;
     readonly value: V;
+    readonly key?: string;
 }
 
 export interface ChoicePopupOptions<V> {
@@ -32,6 +34,7 @@ export function showChoicePopup<V>(document: Document, anchor: HTMLElement, opti
     const popup = createElement(document, "div", "choice-popup");
     popup.setAttribute("role", "dialog");
     popup.setAttribute("aria-label", options.ariaLabel);
+    popup.setAttribute(CHOICE_POPUP_HOOK, "");
     const search = createElement(document, "input", "field-input choice-popup-search");
     search.type = "search";
     search.placeholder = options.searchPlaceholder;
@@ -91,6 +94,7 @@ export function showChoicePopup<V>(document: Document, anchor: HTMLElement, opti
             element.type = "button";
             element.title = choice.label;
             element.setAttribute("role", "option");
+            if (choice.key !== undefined) element.setAttribute(CHOICE_VALUE_HOOK, choice.key);
             element.addEventListener("pointerdown", event => event.preventDefault());
             element.addEventListener("click", () => choose(choice));
             return {choice, element};

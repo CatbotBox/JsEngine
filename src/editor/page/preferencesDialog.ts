@@ -32,7 +32,7 @@ export class PreferencesDialog {
 
     private constructor(private readonly host: PreferencesHost, private readonly onClosed: () => void) {
         const document = host.document;
-        this.modal = openModal(document, PREFERENCES_TITLE, () => this.close());
+        this.modal = openModal(document, PREFERENCES_TITLE, "preferences", () => this.close());
         const scaleField = createElement(document, "label", "editor-modal-field");
         this.scaleSelect = createElement(document, "select", "field-input");
         for (const choice of uiScaleChoices()) {

@@ -12,6 +12,7 @@ export interface WindowLaunchOptions {
     readonly smoke: boolean;
     readonly screenshot?: string;
     readonly project?: string;
+    readonly flows?: string;
 }
 
 export interface WindowSiteBuild {
@@ -37,7 +38,11 @@ export async function launchWindow(options: WindowLaunchOptions): Promise<number
     const mainProcess = options.build ? await checkedWindowSite(options.project) : await bundleMainProcess();
     if (options.project !== undefined) builtProjectSite(WEB_DIST, options.project);
     const electron = require("electron") as string;
-    const forwardedFlags = [...(options.smoke ? [SMOKE_FLAG] : []), ...(options.screenshot === undefined ? [] : [`--screenshot=${options.screenshot}`])];
+    const forwardedFlags = [
+        ...(options.smoke ? [SMOKE_FLAG] : []),
+        ...(options.screenshot === undefined ? [] : [`--screenshot=${options.screenshot}`]),
+        ...(options.flows === undefined ? [] : [`--flows=${options.flows}`]),
+    ];
     const child = Bun.spawn([electron, mainProcess, `--dist=${WEB_DIST}`, `--page=${options.page}`, `--repo=${REPO_ROOT}`, `--bun=${process.execPath}`, ...forwardedFlags], {
         stdio: ["inherit", "inherit", "inherit"],
         env: electronEnvironment(),

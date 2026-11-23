@@ -12,6 +12,7 @@ interface CheckStep {
     readonly label: string;
     readonly script: string;
     readonly runtime: Runtime;
+    readonly args?: readonly string[];
 }
 
 const STEPS: readonly CheckStep[] = [
@@ -23,6 +24,15 @@ const STEPS: readonly CheckStep[] = [
     {label: "frame hashes", script: "test:frame-hashes", runtime: "bun"},
     {label: "demo frame hashes", script: "test:demo-frame-hashes", runtime: "bun"},
     {label: "bundle baseline and target features", script: "test:bundles", runtime: "bun"},
+];
+
+const RELEASE_FLAG = "--release";
+
+const RELEASE_STEPS: readonly CheckStep[] = [
+    {label: "window smoke (cells, pixels)", script: "smoke", runtime: "bun", args: ["window"]},
+    {label: "window smoke (gpu)", script: "smoke", runtime: "bun", args: ["window", "--backend=gpu"]},
+    {label: "editor smoke (gpu)", script: "smoke", runtime: "bun", args: ["editor"]},
+    {label: "editor smoke (pixels)", script: "smoke", runtime: "bun", args: ["editor", "--backend=pixels"]},
 ];
 
 function realNodeIsInstalled(): boolean {
@@ -45,14 +55,14 @@ function seconds(ms: number): string {
 
 async function runStep(step: CheckStep): Promise<Outcome> {
     const started = performance.now();
-    const child = Bun.spawn([process.execPath, "run", step.script], {cwd: ROOT, stdout: "pipe", stderr: "pipe"});
+    const child = Bun.spawn([process.execPath, "run", step.script, ...(step.args ?? [])], {cwd: ROOT, stdout: "pipe", stderr: "pipe"});
     const [stdout, stderr, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     const elapsed = seconds(performance.now() - started);
     if (exitCode === 0) {
         console.log(`PASS     ${step.label} (${elapsed})`);
         return "PASS";
     }
-    console.log(`FAIL     ${step.label} (exit ${exitCode}, ${elapsed}): bun run ${step.script}`);
+    console.log(`FAIL     ${step.label} (exit ${exitCode}, ${elapsed}): bun run ${[step.script, ...(step.args ?? [])].join(" ")}`);
     const output = `${stdout}${stderr}`.trimEnd();
     if (output.length > 0) console.log(output.split(/\r?\n/).map(line => `    | ${line}`).join("\n"));
     if (step.script === "typecheck") {
@@ -65,7 +75,8 @@ async function runStep(step: CheckStep): Promise<Outcome> {
 async function main(): Promise<void> {
     const nodeInstalled = realNodeIsInstalled();
     const outcomes: Outcome[] = [];
-    for (const step of STEPS) {
+    const steps = process.argv.includes(RELEASE_FLAG) ? [...STEPS, ...RELEASE_STEPS] : STEPS;
+    for (const step of steps) {
         if (step.runtime === "node" && !nodeInstalled) {
             console.log(`SKIPPED  ${step.label} (node not installed)`);
             outcomes.push("SKIPPED");

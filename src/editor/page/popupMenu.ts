@@ -1,3 +1,4 @@
+import {CHOICE_HOOK, COMMAND_HOOK, POPUP_MENU_HOOK, SUBMENU_HOOK} from "../project/editorUiHooks";
 import {createElement, visualScaleOf} from "./dom";
 
 interface MenuEntry {
@@ -9,10 +10,13 @@ interface MenuEntry {
 export interface MenuAction extends MenuEntry {
     readonly shortcut?: string;
     readonly disabled?: boolean;
+    readonly commandId?: string;
+    readonly choiceIndex?: number;
     readonly run: () => void;
 }
 
 export interface MenuSubmenu extends MenuEntry {
+    readonly id?: string;
     readonly items: readonly MenuItem[];
 }
 
@@ -46,6 +50,7 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
     closePopupMenu(document);
     const menu = createElement(document, "div", "popup-menu");
     menu.setAttribute("role", "menu");
+    menu.setAttribute(POPUP_MENU_HOOK, "");
     menu.tabIndex = -1;
     const close = (): void => {
         menu.remove();
@@ -79,6 +84,7 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
         if (item.title !== undefined) entry.title = item.title;
         entry.append(createElement(document, "span", "popup-menu-label", item.label));
         if (isSubmenu(item)) {
+            if (item.id !== undefined) entry.setAttribute(SUBMENU_HOOK, item.id);
             entry.disabled = item.items.length === 0;
             entry.setAttribute("aria-haspopup", "menu");
             entry.append(createElement(document, "span", "popup-menu-shortcut", SUBMENU_ARROW));
@@ -88,6 +94,8 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
                 showPopupMenu(document, bounds.right, bounds.top, item.items);
             });
         } else {
+            if (item.commandId !== undefined) entry.setAttribute(COMMAND_HOOK, item.commandId);
+            if (item.choiceIndex !== undefined) entry.setAttribute(CHOICE_HOOK, String(item.choiceIndex));
             entry.disabled = item.disabled === true;
             if (item.shortcut !== undefined) entry.append(createElement(document, "span", "popup-menu-shortcut", item.shortcut));
             entry.addEventListener("click", () => {

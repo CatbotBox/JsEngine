@@ -527,7 +527,7 @@ export class ProjectServer {
             return await this.route(request);
         } catch (error) {
             if (error instanceof HttpError) return failure(error.status, error.message);
-            return failure(HTTP_INTERNAL_ERROR, describeError(error), errorFramesOf(error));
+            return failure(HTTP_INTERNAL_ERROR, describeError(error), errorFramesOf(error) ?? errorFramesOf(new Error()));
         }
     }
 

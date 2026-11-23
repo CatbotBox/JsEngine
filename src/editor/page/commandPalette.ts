@@ -1,9 +1,11 @@
 import type {CommandRegistry, RegisteredCommand} from "./commandRegistry";
+import {COMMAND_HOOK, COMMAND_PALETTE_HOOK, COMMAND_PALETTE_SEARCH_HOOK} from "../project/editorUiHooks";
 import {createElement} from "./dom";
 import {closePopupMenu} from "./popupMenu";
 
 export interface PaletteEntry {
     readonly key: string;
+    readonly commandId: string;
     readonly category: string;
     readonly label: string;
     readonly shortcutText: string | undefined;
@@ -27,6 +29,9 @@ const NO_MATCH_TEXT = "No command matches";
 const HIGHLIGHT_CLASS = "highlighted";
 const DISABLED_CLASS = "disabled";
 const ESCAPE_KEY = "Escape";
+const ARIA_SELECTED = "aria-selected";
+const HIGHLIGHTED = true;
+const NOT_HIGHLIGHTED = false;
 const openPalettes = new WeakMap<Document, () => void>();
 
 interface RankedEntry {
@@ -38,6 +43,7 @@ interface RankedEntry {
 export function paletteEntries(commands: readonly RegisteredCommand[]): PaletteEntry[] {
     return commands.flatMap(command => command.paletteChoices().map((choice, index): PaletteEntry => ({
         key: `${command.id}#${index}`,
+        commandId: command.id,
         category: command.category,
         label: choice.state.label,
         shortcutText: choice.state.shortcutText,
@@ -105,11 +111,13 @@ export function showCommandPalette(document: Document, registry: CommandRegistry
     const palette = createElement(document, "div", "command-palette");
     palette.setAttribute("role", "dialog");
     palette.setAttribute("aria-label", "Command palette");
+    palette.setAttribute(COMMAND_PALETTE_HOOK, "");
     const search = createElement(document, "input", "field-input command-palette-search");
     search.type = "search";
     search.spellcheck = false;
     search.placeholder = PALETTE_PLACEHOLDER;
     search.setAttribute("aria-label", PALETTE_PLACEHOLDER);
+    search.setAttribute(COMMAND_PALETTE_SEARCH_HOOK, "");
     const list = createElement(document, "div", "command-palette-list");
     list.setAttribute("role", "listbox");
     palette.append(search, list);
@@ -135,15 +143,19 @@ export function showCommandPalette(document: Document, registry: CommandRegistry
     };
     const highlight = (index: number): void => {
         shown[highlighted]?.element.classList.remove(HIGHLIGHT_CLASS);
+        shown[highlighted]?.element.setAttribute(ARIA_SELECTED, String(NOT_HIGHLIGHTED));
         highlighted = Math.max(0, Math.min(index, shown.length - 1));
         const current = shown[highlighted];
         current?.element.classList.add(HIGHLIGHT_CLASS);
+        current?.element.setAttribute(ARIA_SELECTED, String(HIGHLIGHTED));
         current?.element.scrollIntoView({block: "nearest"});
     };
     const itemElement = (entry: PaletteEntry): HTMLElement => {
         const element = createElement(document, "button", "command-palette-item");
         element.type = "button";
         element.setAttribute("role", "option");
+        element.setAttribute(COMMAND_HOOK, entry.commandId);
+        element.setAttribute(ARIA_SELECTED, String(NOT_HIGHLIGHTED));
         element.setAttribute("aria-disabled", String(!entry.enabled));
         element.classList.toggle(DISABLED_CLASS, !entry.enabled);
         const text = createElement(document, "span", "command-palette-text");

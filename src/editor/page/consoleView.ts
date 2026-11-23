@@ -5,6 +5,8 @@ import type {ConsoleRow} from "./consoleLog";
 import {createButton, createElement} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
 import type {StackLine} from "./sourceMaps";
+import {CONSOLE_ACTION_HOOK, CONSOLE_ENTRY_HOOK, CONSOLE_EXPANDER_HOOK, CONSOLE_LEVEL_HOOK, CONSOLE_REPEAT_HOOK, CONSOLE_SEARCH_HOOK, CONSOLE_STACK_HOOK} from "../project/editorUiHooks";
+import type {ConsoleAction} from "../project/editorUiHooks";
 
 export const CONSOLE_BOTTOM_SLACK_PX = 8;
 
@@ -25,6 +27,8 @@ const SEARCH_INPUT_TYPE = "search";
 const SINGLE_OCCURRENCE = 1;
 const SCROLL_TO_END = true;
 const KEEP_SCROLL = false;
+const CLEAR_ACTION: ConsoleAction = "clear";
+const COLLAPSE_ACTION: ConsoleAction = "collapse";
 
 interface RenderedRow {
     readonly element: HTMLElement;
@@ -62,14 +66,18 @@ export class ConsoleView {
     public constructor(container: HTMLElement, private readonly workspace: EditorWorkspace) {
         const document = container.ownerDocument;
         const toolbar = createElement(document, "div", "console-toolbar");
-        toolbar.append(createButton(document, {className: "", text: "Clear", title: "Remove every message", onClick: () => this.clear()}));
+        const clear = createButton(document, {className: "", text: "Clear", title: "Remove every message", onClick: () => this.clear()});
+        clear.setAttribute(CONSOLE_ACTION_HOOK, CLEAR_ACTION);
+        toolbar.append(clear);
         this.collapseButton = createButton(document, {className: "console-collapse", text: "Collapse", title: "Show identical messages as one row with a count", onClick: () => this.toggleCollapse()});
+        this.collapseButton.setAttribute(CONSOLE_ACTION_HOOK, COLLAPSE_ACTION);
         this.collapseButton.setAttribute("aria-pressed", "false");
         toolbar.append(this.collapseButton);
         for (const level of EDITOR_CONSOLE_LEVELS) {
             const count = createElement(document, "span", "console-count", "0");
             const button = createButton(document, {className: `console-filter level-${level} ${ACTIVE_CLASS}`, text: LEVEL_LABELS[level], title: `Show or hide ${LEVEL_LABELS[level].toLowerCase()}`, onClick: () => this.toggle(level)});
             button.setAttribute("aria-pressed", "true");
+            button.setAttribute(CONSOLE_LEVEL_HOOK, level);
             button.append(count);
             this.toggles.set(level, {button, count});
             toolbar.append(button);
@@ -78,6 +86,7 @@ export class ConsoleView {
         search.type = SEARCH_INPUT_TYPE;
         search.placeholder = SEARCH_PLACEHOLDER;
         search.setAttribute("aria-label", "Search messages");
+        search.setAttribute(CONSOLE_SEARCH_HOOK, "");
         search.addEventListener("input", () => {
             this.search = search.value;
             this.render(SCROLL_TO_END);
@@ -152,6 +161,9 @@ export class ConsoleView {
             shown: undefined,
             mappedStack: undefined,
         };
+        expander.setAttribute(CONSOLE_EXPANDER_HOOK, "");
+        row.repeat.setAttribute(CONSOLE_REPEAT_HOOK, "");
+        row.stack.setAttribute(CONSOLE_STACK_HOOK, "");
         element.append(row.expander, row.time, row.text, row.repeat, row.stack);
         element.addEventListener("click", () => {
             if (row.shown?.stack === undefined || document.getSelection()?.isCollapsed === false) return;
@@ -165,6 +177,7 @@ export class ConsoleView {
         const stackChanged = row.shown?.stack !== model.stack;
         row.shown = model;
         row.element.className = `console-entry level-${model.level}`;
+        row.element.setAttribute(CONSOLE_ENTRY_HOOK, model.level);
         row.time.textContent = timeText(model.timeMs);
         row.text.textContent = model.text;
         row.repeat.textContent = String(model.count);

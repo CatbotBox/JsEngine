@@ -10,6 +10,8 @@ import type {ProjectFileKind} from "./projectFiles";
 import type {RotationEulerCache} from "./rotationEulerCache";
 import {arrowStepDirection, scrubbedValue, wheelStepDirection} from "./scrubMath";
 import type {ScrubKind, StepDirection, StepModifiers} from "./scrubMath";
+import {FIELD_INPUT_HOOK} from "../project/editorUiHooks";
+import type {FieldInputKind} from "../project/editorUiHooks";
 
 export interface DraggedAsset {
     readonly path: string;
@@ -74,6 +76,7 @@ export const DECIMAL_INPUT_MODE = "decimal";
 export const NUMERIC_INPUT_MODE = "numeric";
 export const TYPING = true;
 
+const NUMBER_FIELD_INPUT: FieldInputKind = "number";
 const SCRUB_HINT = "Drag to change (Shift faster, Alt slower); Arrow keys and the wheel step while the field is focused";
 const SCRUBBING_CLASS = "scrubbing";
 const FIELD_NAME_CLASS = "field-name";
@@ -124,6 +127,7 @@ export function textInput(document: Document, ariaLabel: string): HTMLInputEleme
 
 export function numberInput(document: Document, ariaLabel: string, inputMode: string): HTMLInputElement {
     const input = textInput(document, ariaLabel);
+    input.setAttribute(FIELD_INPUT_HOOK, NUMBER_FIELD_INPUT);
     input.inputMode = inputMode;
     input.classList.add("number");
     return input;

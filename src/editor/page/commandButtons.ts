@@ -1,6 +1,7 @@
 import {showCommandMenu} from "./commandMenus";
 import type {MenuEntry} from "./commandMenus";
 import type {CommandRegistry, CommandState, RegisteredCommand} from "./commandRegistry";
+import {COMMAND_HOOK, DROPDOWN_HOOK} from "../project/editorUiHooks";
 import {createElement} from "./dom";
 import {closePopupMenu} from "./popupMenu";
 
@@ -11,6 +12,7 @@ export interface CommandButtonOptions {
 }
 
 export interface DropdownButtonOptions {
+    readonly id: string;
     readonly className: string;
     readonly title: string;
 
@@ -35,6 +37,7 @@ function commandTitle(state: CommandState, hint?: string): string {
 export function commandButton(document: Document, registry: CommandRegistry, command: RegisteredCommand, options: CommandButtonOptions): HTMLButtonElement {
     const button = createElement(document, "button", options.className);
     button.type = "button";
+    button.setAttribute(COMMAND_HOOK, command.id);
     button.addEventListener("click", () => void command.runAlone());
     const refresh = (): void => {
         const state = command.stateAlone();
@@ -54,6 +57,7 @@ export function dropdownButton(document: Document, registry: CommandRegistry, op
     const button = createElement(document, "button", `${options.className} ${DROPDOWN_CLASS}`);
     button.type = "button";
     button.title = options.title;
+    button.setAttribute(DROPDOWN_HOOK, options.id);
     button.setAttribute("aria-haspopup", "menu");
     let open = false;
     const closed = (): void => {

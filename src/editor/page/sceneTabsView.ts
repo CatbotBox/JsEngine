@@ -5,6 +5,7 @@ import {sceneTabMenu} from "./editorMenus";
 import type {EditorWorkspace} from "./editorWorkspace";
 import type {EditorSceneTab} from "./sceneDocuments";
 import {UNTITLED_SCENE_NAME} from "./sceneTabs";
+import {SCENE_TAB_CLOSE_HOOK, SCENE_TAB_HOOK} from "../project/editorUiHooks";
 
 const CLOSE_TEXT = "×";
 const ACTIVE_CLASS = "active";
@@ -45,6 +46,7 @@ export class SceneTabsView {
         const document = this.strip.ownerDocument;
         const element = createElement(document, "div", "scene-tab");
         element.setAttribute("role", "tab");
+        element.setAttribute(SCENE_TAB_HOOK, String(tab.key));
         element.setAttribute("aria-selected", String(active));
         element.classList.toggle(ACTIVE_CLASS, active);
         element.classList.toggle(PREFAB_CLASS, tab.kind === "prefab");
@@ -53,7 +55,7 @@ export class SceneTabsView {
         element.title = active || switchable ? path : `${path} (${SWITCH_WHILE_PLAYING_HINT})`;
         element.append(createElement(document, "span", "scene-tab-label", tab.label));
         if (closable) {
-            element.append(createButton(document, {
+            const close = createButton(document, {
                 className: "scene-tab-close",
                 text: CLOSE_TEXT,
                 title: `Close ${tab.name}`,
@@ -61,7 +63,9 @@ export class SceneTabsView {
                     event.stopPropagation();
                     this.commands.scene.closeTab.runWith(tab);
                 },
-            }));
+            });
+            close.setAttribute(SCENE_TAB_CLOSE_HOOK, "");
+            element.append(close);
         }
         element.addEventListener("click", () => void this.workspace.scenes.activate(tab));
         element.addEventListener("auxclick", event => {

@@ -1,7 +1,7 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../../engine/project/projectManifest";
-import {createProjectFiles, STARTER_SCENE_FILE} from "./projectTemplate";
+import {createProjectFiles, STARTER_CAMERA_NAME, STARTER_SCENE_FILE} from "./projectTemplate";
 
 describe("createProjectFiles", () => {
     test("writes only a manifest that starts the starter scene, and the scene", () => {
@@ -11,8 +11,9 @@ describe("createProjectFiles", () => {
         expect(validation).toEqual({ok: true, manifest: {name: "My Game", startScene: STARTER_SCENE_FILE}});
     });
 
-    test("the starter scene is an empty scene document", () => {
-        expect(parseSceneDocument(createProjectFiles("Game")[1].contents).entities).toEqual([]);
+    test("the starter scene holds just a camera, since a world with nothing to render never shows its first frame and the editor would wait for it forever", () => {
+        const entities = parseSceneDocument(createProjectFiles("Game")[1].contents).entities;
+        expect(entities.map(entity => [entity.name, Object.keys(entity.components).sort()])).toEqual([[STARTER_CAMERA_NAME, ["Camera", "LocalPosition"]]]);
     });
 
     test("an empty name throws", () => {

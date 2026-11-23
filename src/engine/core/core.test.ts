@@ -559,8 +559,8 @@ describe("trackComponent", () => {
         }
 
         const c = trackComponent(new HardPrivate(), () => void 0);
-        expect(() => c.bump()).toThrow(/private field/);
-        expect(() => c.n).toThrow(/private field/);
+        expect(() => c.bump()).toThrow(/private (field|member)/);
+        expect(() => c.n).toThrow(/private (field|member)/);
     });
 });
 

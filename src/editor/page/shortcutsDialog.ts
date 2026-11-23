@@ -1,6 +1,6 @@
 import type {RegisteredCommand} from "./commandRegistry";
 import {shortcutText} from "./commandRegistry";
-import {openModal} from "./dialogs";
+import {modalActionButton, openModal} from "./dialogs";
 import {createButton, createElement} from "./dom";
 
 export interface ShortcutRow {
@@ -21,7 +21,7 @@ export function shortcutRows(commands: readonly RegisteredCommand[]): ShortcutRo
 }
 
 export function showKeyboardShortcuts(document: Document, commands: readonly RegisteredCommand[]): void {
-    const modal = openModal(document, DIALOG_TITLE, () => modal.close());
+    const modal = openModal(document, DIALOG_TITLE, "shortcuts", () => modal.close());
     const table = createElement(document, "table", "shortcut-table");
     const body = createElement(document, "tbody");
     for (const row of shortcutRows(commands)) {
@@ -38,7 +38,7 @@ export function showKeyboardShortcuts(document: Document, commands: readonly Reg
     scroller.append(table);
     modal.dialog.classList.add("shortcuts-dialog");
     modal.dialog.insertBefore(scroller, modal.buttons);
-    const close = createButton(document, {className: "primary", text: CLOSE_TEXT, title: CLOSE_TEXT, onClick: () => modal.close()});
+    const close = modalActionButton(createButton(document, {className: "primary", text: CLOSE_TEXT, title: CLOSE_TEXT, onClick: () => modal.close()}), "close");
     modal.buttons.append(close);
     close.focus();
 }

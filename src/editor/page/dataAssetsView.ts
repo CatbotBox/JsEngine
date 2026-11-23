@@ -23,6 +23,8 @@ import {workspaceFieldServices} from "./fieldEditorServices";
 import {createFieldEditor} from "./fieldEditors";
 import {baseNameOf, normalizeProjectPath, parentFolderOf} from "./projectFiles";
 import type {RotationEulerCache} from "./rotationEulerCache";
+import {DATA_ASSET_DIRTY_HOOK, DATA_ASSET_FIELDS_HOOK, DATA_ASSET_HOOK, DATA_ASSETS_ACTION_HOOK} from "../project/editorUiHooks";
+import type {DataAssetsAction} from "../project/editorUiHooks";
 
 export const DIRTY_MARKER = " *";
 
@@ -42,6 +44,11 @@ interface OpenedEditors {
     readonly path: string;
     readonly description: EditorResourceDescription;
     readonly editors: ReadonlyMap<string, FieldEditor>;
+}
+
+function dataAssetsActionButton(button: HTMLButtonElement, action: DataAssetsAction): HTMLButtonElement {
+    button.setAttribute(DATA_ASSETS_ACTION_HOOK, action);
+    return button;
 }
 
 function unregisteredTypeText(type: string): string {
@@ -77,14 +84,14 @@ export class DataAssetsView {
         this.fieldServices = workspaceFieldServices(workspace, rotations);
         const toolbar = createElement(document, "div", "data-assets-toolbar");
         this.note = createElement(document, "span", "data-assets-note");
-        this.saveButton = createButton(document, {className: "", text: "Save", title: "Write the selected data asset to its file (Ctrl+S while this panel has focus)", onClick: () => void this.save()});
-        this.revertButton = createButton(document, {className: "", text: "Revert", title: "Discard your edits and load the file again", onClick: () => void this.revert()});
-        toolbar.append(this.note, this.saveButton, this.revertButton, createButton(document, {
+        this.saveButton = dataAssetsActionButton(createButton(document, {className: "", text: "Save", title: "Write the selected data asset to its file (Ctrl+S while this panel has focus)", onClick: () => void this.save()}), "save");
+        this.revertButton = dataAssetsActionButton(createButton(document, {className: "", text: "Revert", title: "Discard your edits and load the file again", onClick: () => void this.revert()}), "revert");
+        toolbar.append(this.note, this.saveButton, this.revertButton, dataAssetsActionButton(createButton(document, {
             className: "",
             text: "Refresh",
             title: "List the project's data assets again",
             onClick: () => this.markListingStale(),
-        }));
+        }), "refresh"));
         const body = createElement(document, "div", "data-assets-body");
         this.list = createElement(document, "div", "data-assets-list");
         this.list.setAttribute("role", "listbox");
@@ -312,6 +319,8 @@ export class DataAssetsView {
         item.classList.toggle(SELECTED_CLASS, selected);
         item.classList.toggle(DIRTY_CLASS, dirty);
         item.setAttribute("aria-selected", String(selected));
+        item.setAttribute(DATA_ASSET_HOOK, path);
+        if (dirty) item.setAttribute(DATA_ASSET_DIRTY_HOOK, "");
         item.title = path;
         const folder = parentFolderOf(path);
         item.append(createElement(document, "span", "data-assets-item-name", `${baseNameOf(path)}${dirty ? DIRTY_MARKER : ""}`));
@@ -371,6 +380,7 @@ export class DataAssetsView {
         const path = draft.path;
         const fields = createElement(document, "div", "data-assets-fields");
         fields.setAttribute("aria-label", `${draft.type} fields in ${path}`);
+        fields.setAttribute(DATA_ASSET_FIELDS_HOOK, path);
         if (description.fields.length === 0) fields.append(createElement(document, "p", "component-empty", NO_FIELDS_TEXT));
         const editors = new Map<string, FieldEditor>();
         for (const field of description.fields) {
