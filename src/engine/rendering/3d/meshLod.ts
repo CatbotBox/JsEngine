@@ -22,6 +22,15 @@ export const DEFAULT_LOD_BUILD_OPTIONS: LodBuildOptions = {
 const PROBE_RESOLUTION = 256;
 const TARGET_TOLERANCE = 1.4;
 const MAX_RESOLUTION_CORRECTIONS = 8;
+const UV_SPREAD_SLACK = 2;
+const UV_SPREAD_SLACK_SQUARED = UV_SPREAD_SLACK * UV_SPREAD_SLACK;
+const UV_MATCH_EPSILON = 1e-5;
+const UV_MATCH_EPSILON_SQUARED = UV_MATCH_EPSILON * UV_MATCH_EPSILON;
+const NO_CLUSTER = -1;
+const MAX_UV_CLUSTERS_PER_CELL = 8;
+const POSITION_STRIDE = 3;
+const UV_STRIDE = 3;
+const TRIANGLE_CORNERS = 3;
 
 export interface LodSourceMesh {
     readonly vertCount: number;
@@ -40,11 +49,12 @@ export function buildLodParts(source: LodSourceMesh, options: Partial<LodBuildOp
     const levels: MeshParts[] = [];
     if (source.triangleCount < settings.minTriangles) return levels;
 
+    const uvSpreadSquared = hasUniformUvs(source) ? undefined : squaredUvSpreadPerUnitLength(source);
     let previousTriangleCount = source.triangleCount;
     let resolution = Math.min(PROBE_RESOLUTION, settings.maxResolution);
     for (let level = 0; level < settings.maxLevels; level++) {
         const target = previousTriangleCount / settings.levelReduction;
-        let parts = clusterVertices(source, resolution);
+        let parts = clusterVertices(source, uvSpreadSquared, resolution);
         let lastProbeCount = -1;
         for (let correction = 0; correction < MAX_RESOLUTION_CORRECTIONS && parts.triangleCount > 0 && !withinTolerance(parts.triangleCount, target); correction++) {
             let corrected = resolutionToward(resolution, parts.triangleCount, target, settings.maxResolution);
@@ -53,7 +63,7 @@ export function buildLodParts(source: LodSourceMesh, options: Partial<LodBuildOp
             if (corrected < 1 || corrected === resolution) break;
             lastProbeCount = parts.triangleCount;
             resolution = corrected;
-            parts = clusterVertices(source, resolution);
+            parts = clusterVertices(source, uvSpreadSquared, resolution);
         }
         if (parts.triangleCount === 0 || parts.triangleCount * settings.minReduction > previousTriangleCount) break;
         levels.push(parts);
@@ -88,7 +98,49 @@ export function selectLodLevel(lods: readonly {readonly triangleCount: number}[]
     return level < 0 ? 0 : level > last ? last : level;
 }
 
-function clusterVertices(source: LodSourceMesh, resolution: number): MeshParts {
+function hasUniformUvs(source: LodSourceMesh): boolean {
+    const uvs = source.uvs.raw;
+    const firstU = uvs[0], firstV = uvs[1];
+    for (let t = 0; t < source.vertCount * UV_STRIDE; t += UV_STRIDE) {
+        if (uvs[t] !== firstU || uvs[t + 1] !== firstV) return false;
+    }
+    return true;
+}
+
+function squaredUvSpreadPerUnitLength(source: LodSourceMesh): Float32Array {
+    const positions = source.vertices.raw;
+    const uvs = source.uvs.raw;
+    const triangles = source.triangles.raw;
+    const spread = new Float32Array(source.vertCount);
+    for (let k = 0; k < triangles.length; k += TRIANGLE_CORNERS) {
+        for (let corner = 0; corner < TRIANGLE_CORNERS; corner++) {
+            const from = triangles[k + corner] | 0;
+            const to = triangles[k + (corner + 1) % TRIANGLE_CORNERS] | 0;
+            const p = from * POSITION_STRIDE, q = to * POSITION_STRIDE;
+            const dx = positions[q] - positions[p], dy = positions[q + 1] - positions[p + 1], dz = positions[q + 2] - positions[p + 2];
+            const lengthSquared = dx * dx + dy * dy + dz * dz;
+            if (lengthSquared === 0) continue;
+            const t = from * UV_STRIDE, u = to * UV_STRIDE;
+            const du = uvs[u] - uvs[t], dv = uvs[u + 1] - uvs[t + 1];
+            const ratioSquared = (du * du + dv * dv) / lengthSquared;
+            if (ratioSquared > spread[from]) spread[from] = ratioSquared;
+            if (ratioSquared > spread[to]) spread[to] = ratioSquared;
+        }
+    }
+    return spread;
+}
+
+function sharesSurfaceUv(positions: Float32Array, uvs: Float32Array, uvSpreadSquared: Float32Array, a: number, b: number): boolean {
+    const p = a * POSITION_STRIDE, q = b * POSITION_STRIDE;
+    const dx = positions[q] - positions[p], dy = positions[q + 1] - positions[p + 1], dz = positions[q + 2] - positions[p + 2];
+    const t = a * UV_STRIDE, u = b * UV_STRIDE;
+    const du = uvs[u] - uvs[t], dv = uvs[u + 1] - uvs[t + 1];
+    const spreadA = uvSpreadSquared[a], spreadB = uvSpreadSquared[b];
+    const allowedSpreadSquared = UV_SPREAD_SLACK_SQUARED * (spreadA > spreadB ? spreadA : spreadB);
+    return du * du + dv * dv <= allowedSpreadSquared * (dx * dx + dy * dy + dz * dz) + UV_MATCH_EPSILON_SQUARED;
+}
+
+function clusterVertices(source: LodSourceMesh, uvSpreadSquared: Float32Array | undefined, resolution: number): MeshParts {
     const vertCount = source.vertCount;
     const positions = source.vertices.raw;
     const normals = source.normals.raw;
@@ -111,6 +163,8 @@ function clusterVertices(source: LodSourceMesh, resolution: number): MeshParts {
     const sumUv = new Float32Array(vertCount * 2);
     const memberCount = new Int32Array(vertCount);
     const clusterMaterial = new Uint16Array(vertCount);
+    const clusterAnchor = new Int32Array(vertCount);
+    const nextClusterInCell = new Int32Array(vertCount);
     let clusterCount = 0;
 
     for (let v = 0, p = 0, t = 0; v < vertCount; v++, p += 3, t += 3) {
@@ -123,11 +177,19 @@ function clusterVertices(source: LodSourceMesh, resolution: number): MeshParts {
         const material = vertexMaterial[v];
         const key = ((gx * cellsY + gy) * cellsZ + gz) * materialCount + material;
 
-        let cluster = clusterByKey.get(key);
-        if (cluster === undefined) {
+        const firstInCell = clusterByKey.get(key) ?? NO_CLUSTER;
+        let cluster = firstInCell;
+        if (uvSpreadSquared !== undefined) {
+            for (let walked = 0; cluster !== NO_CLUSTER && walked < MAX_UV_CLUSTERS_PER_CELL && !sharesSurfaceUv(positions, uvs, uvSpreadSquared, clusterAnchor[cluster], v); walked++) {
+                cluster = nextClusterInCell[cluster];
+            }
+        }
+        if (cluster === NO_CLUSTER) {
             cluster = clusterCount++;
-            clusterByKey.set(key, cluster);
             clusterMaterial[cluster] = material;
+            clusterAnchor[cluster] = v;
+            nextClusterInCell[cluster] = firstInCell;
+            clusterByKey.set(key, cluster);
         }
         clusterOfVertex[v] = cluster;
         const c3 = cluster * 3, c2 = cluster * 2;

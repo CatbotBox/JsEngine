@@ -37,6 +37,61 @@ function tessellatedPlane(n: number, materialCount = 1): Mesh {
     return new Mesh(builder);
 }
 
+const MIRRORED_U_OFFSET = 1.5;
+const UV_MAPPING_TOLERANCE = 1e-4;
+const EXPECTED_LEVEL_REDUCTION = 4;
+const LEVEL_REDUCTION_TOLERANCE = 1.4;
+
+type UvOfPosition = (x: number) => number;
+
+const uvMatchesPosition: UvOfPosition = x => x;
+const mirroredUvOfPosition: UvOfPosition = x => MIRRORED_U_OFFSET - x;
+
+function seamedPlane(n: number): Mesh {
+    const builder = new MeshBuilder();
+    builder.materials.push(new Material("m0"));
+    const half = n / 2;
+    const stride = half + 1;
+    for (const [firstColumn, uOf] of [[0, uvMatchesPosition], [half, mirroredUvOfPosition]] as const) {
+        const base = builder.vertices.length;
+        for (let row = 0; row <= n; row++) {
+            for (let column = firstColumn; column <= firstColumn + half; column++) {
+                builder.vertices.push(Vec.alloc3(column / n, 0, row / n));
+                builder.normals.push(Vec.alloc3(0, 1, 0));
+                builder.uvs.push(Vec.alloc2(uOf(column / n), row / n));
+                builder.vertexMaterial.push(0);
+            }
+        }
+        for (let row = 0; row < n; row++) {
+            for (let column = 0; column < half; column++) {
+                const a = base + row * stride + column, b = a + 1, c = a + stride, d = c + 1;
+                builder.triangles.push(Vec.of<3>([a, c, b]));
+                builder.triangles.push(Vec.of<3>([b, c, d]));
+            }
+        }
+    }
+    return new Mesh(builder);
+}
+
+function uvSideOf(level: Mesh, vertex: number): UvOfPosition | undefined {
+    const x = level.vertices.raw[vertex * 3], z = level.vertices.raw[vertex * 3 + 2];
+    const u = level.uvs.raw[vertex * 3], v = level.uvs.raw[vertex * 3 + 1];
+    if (Math.abs(v - z) > UV_MAPPING_TOLERANCE) return undefined;
+    if (Math.abs(u - uvMatchesPosition(x)) <= UV_MAPPING_TOLERANCE) return uvMatchesPosition;
+    if (Math.abs(u - mirroredUvOfPosition(x)) <= UV_MAPPING_TOLERANCE) return mirroredUvOfPosition;
+    return undefined;
+}
+
+function expectReductionNearAQuarter(levels: readonly Mesh[], source: Mesh): void {
+    let previous = source;
+    for (const level of levels) {
+        const reduction = previous.triangleCount / level.triangleCount;
+        expect(reduction).toBeGreaterThan(EXPECTED_LEVEL_REDUCTION / LEVEL_REDUCTION_TOLERANCE);
+        expect(reduction).toBeLessThan(EXPECTED_LEVEL_REDUCTION * LEVEL_REDUCTION_TOLERANCE);
+        previous = level;
+    }
+}
+
 function planeObj(n: number): string {
     const lines: string[] = [];
     for (let row = 0; row <= n; row++) {
@@ -91,11 +146,9 @@ describe("mesh detail levels", () => {
         const plane = tessellatedPlane(64);
         const levels = Mesh.buildLods(plane, {minTriangles: 0, maxLevels: 3, minLevelTriangles: 0});
         expect(levels.length).toBe(3);
+        expectReductionNearAQuarter(levels, plane);
         let previous = plane;
         for (const level of levels) {
-            const reduction = previous.triangleCount / level.triangleCount;
-            expect(reduction).toBeGreaterThan(4 / 1.4);
-            expect(reduction).toBeLessThan(4 * 1.4);
             expect(level.vertCount).toBeLessThan(previous.vertCount);
             expectWellFormed(level, plane);
             previous = level;
@@ -103,6 +156,39 @@ describe("mesh detail levels", () => {
         plane.attachLods(levels);
         expect(plane.lods.length).toBe(levels.length + 1);
         expect(plane.lods[0]).toBe(plane);
+    });
+
+    test("a uv seam stays split in coarse levels: every vertex keeps its own side's uvs and no triangle spans both sides", () => {
+        const plane = seamedPlane(64);
+        const levels = Mesh.buildLods(plane, {minTriangles: 0, maxLevels: 3, minLevelTriangles: 0});
+        expect(levels.length).toBe(3);
+        expectReductionNearAQuarter(levels, plane);
+        for (const level of levels) {
+            expectWellFormed(level, plane);
+            const sides = new Set<UvOfPosition>();
+            for (let v = 0; v < level.vertCount; v++) {
+                const side = uvSideOf(level, v);
+                expect(side).toBeDefined();
+                sides.add(side!);
+            }
+            expect(sides.size).toBe(2);
+            const corners = level.triangles.raw;
+            for (let k = 0; k < corners.length; k += 3) {
+                const side = uvSideOf(level, corners[k]);
+                expect(uvSideOf(level, corners[k + 1])).toBe(side);
+                expect(uvSideOf(level, corners[k + 2])).toBe(side);
+            }
+        }
+    });
+
+    test("a seamless mesh reduces to about a quarter per level and keeps uvs that follow its positions", () => {
+        const plane = tessellatedPlane(64);
+        const levels = Mesh.buildLods(plane, {minTriangles: 0, maxLevels: 3, minLevelTriangles: 0});
+        expect(levels.length).toBe(3);
+        expectReductionNearAQuarter(levels, plane);
+        for (const level of levels) {
+            for (let v = 0; v < level.vertCount; v++) expect(uvSideOf(level, v)).toBe(uvMatchesPosition);
+        }
     });
 
     test("a mesh too small to reduce ends with no levels", () => {

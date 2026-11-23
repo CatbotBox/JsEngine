@@ -79,11 +79,12 @@ export type WorldToPageMessage =
     | PixelFrameMessage
     | StatusMessage
     | ScreenUnitMessage
+    | {readonly type: "ready"}
     | {readonly type: "quit"}
     | {readonly type: "error", readonly message: string};
 
 const PAGE_TO_WORLD_TYPES: ReadonlySet<string> = new Set(["init", "inputEvents", "resize", "presented", "exit"]);
-const WORLD_TO_PAGE_TYPES: ReadonlySet<string> = new Set(["frame", "pixelFrame", "status", "screenUnit", "quit", "error"]);
+const WORLD_TO_PAGE_TYPES: ReadonlySet<string> = new Set(["frame", "pixelFrame", "status", "screenUnit", "ready", "quit", "error"]);
 
 function hasType(message: unknown, types: ReadonlySet<string>): boolean {
     return typeof message === "object" && message !== null && types.has((message as {type?: unknown}).type as string);

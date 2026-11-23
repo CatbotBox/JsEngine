@@ -10,9 +10,10 @@ const MIN_MIP_SIDE = 1;
 const WHITE_TEXTURE_SIDE = 1;
 const OPAQUE_WHITE_TEXEL = (CHANNEL_MAX << ALPHA_SHIFT) | WHITE_RGB;
 
-interface UploadedTexture {
+export interface GpuTexture {
     readonly texture: GPUTexture;
     readonly view: GPUTextureView;
+    lastUsedFrame: number;
 }
 
 export function packTextureLevel(level: TextureLevel): Uint8Array {
@@ -39,8 +40,8 @@ function mipChainLength(levels: readonly TextureLevel[]): number {
 }
 
 export class GpuTextureCache {
-    private readonly uploads = new Map<Texture, UploadedTexture>();
-    private white: UploadedTexture | undefined;
+    private readonly uploads = new Map<Texture, GpuTexture>();
+    private white: GpuTexture | undefined;
 
     public constructor(private readonly device: GpuTextureDevice) {
     }
@@ -49,14 +50,23 @@ export class GpuTextureCache {
         return this.uploads.size;
     }
 
-    public viewOf(texture: Texture | undefined): GPUTextureView {
-        if (texture === undefined) return this.whiteTexture().view;
+    public ensure(texture: Texture | undefined, frame: number): GpuTexture {
+        if (texture === undefined) return this.whiteTexture(frame);
         let uploaded = this.uploads.get(texture);
         if (uploaded === undefined) {
-            uploaded = this.uploadLevels("material texture", texture.levels);
+            uploaded = this.uploadLevels("material texture", texture.levels, frame);
             this.uploads.set(texture, uploaded);
         }
-        return uploaded.view;
+        uploaded.lastUsedFrame = frame;
+        return uploaded;
+    }
+
+    public evictUnused(frame: number, maxUnusedFrames: number): void {
+        for (const [texture, uploaded] of this.uploads) {
+            if (frame - uploaded.lastUsedFrame <= maxUnusedFrames) continue;
+            uploaded.texture.destroy();
+            this.uploads.delete(texture);
+        }
     }
 
     public dispose(): void {
@@ -66,13 +76,13 @@ export class GpuTextureCache {
         this.white = undefined;
     }
 
-    private whiteTexture(): UploadedTexture {
+    private whiteTexture(frame: number): GpuTexture {
         if (this.white !== undefined) return this.white;
         const white: TextureLevel = {width: WHITE_TEXTURE_SIDE, height: WHITE_TEXTURE_SIDE, texels: new Int32Array([OPAQUE_WHITE_TEXEL])};
-        return this.white = this.uploadLevels("white", [white]);
+        return this.white = this.uploadLevels("white", [white], frame);
     }
 
-    private uploadLevels(label: string, levels: readonly TextureLevel[]): UploadedTexture {
+    private uploadLevels(label: string, levels: readonly TextureLevel[], frame: number): GpuTexture {
         const mipLevelCount = mipChainLength(levels);
         const texture = this.device.createTexture({
             label,
@@ -90,6 +100,6 @@ export class GpuTextureCache {
                 {width: level.width, height: level.height},
             );
         }
-        return {texture, view: texture.createView()};
+        return {texture, view: texture.createView(), lastUsedFrame: frame};
     }
 }

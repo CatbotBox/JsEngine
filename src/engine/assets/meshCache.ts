@@ -1,7 +1,7 @@
 import type {Mesh} from "../rendering/3d/mesh";
 import type {FileSource} from "../platform";
 
-export const MESH_CACHE_FORMAT_VERSION = 3;
+export const MESH_CACHE_FORMAT_VERSION = 4;
 export const MESH_CACHE_EXTENSION = ".meshcache";
 
 const MAGIC = "JSENGINE_MESHCACHE";

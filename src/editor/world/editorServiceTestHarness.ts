@@ -94,6 +94,7 @@ export interface EditorWorldOptions {
     readonly tickMs?: number;
     readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
     readonly gameplaySystems?: readonly SystemCtor<System>[];
+    readonly onFirstTick?: () => void;
 }
 
 const HARNESS_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [GameplayCounterSystem, SwitchedOffGameplaySystem];
@@ -137,6 +138,7 @@ export function editorWorld(populate: (world: World) => void = () => undefined, 
     }, world, registry, {
         tickIntervalMs: options.tickMs ?? TICK_MS,
         refetchFiles: options.refetchFiles,
+        onFirstTick: options.onFirstTick,
         gameplaySystems: [...HARNESS_GAMEPLAY_SYSTEMS, ...options.gameplaySystems ?? NO_EXTRA_GAMEPLAY_SYSTEMS],
         preloadAssets: async paths => {
             preloaded.push([...paths]);

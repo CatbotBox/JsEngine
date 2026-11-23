@@ -356,9 +356,11 @@ describe("world worker protocol", () => {
         expect(isPageToWorldMessage({type: "presented", returnedBuffer: null})).toBe(false);
         expect(isPageToWorldMessage({type: "frame", frame})).toBe(false);
         expect(isPageToWorldMessage({type: "pixelFrame", frame: pixelFrame(1, 1)})).toBe(false);
+        expect(isPageToWorldMessage({type: "ready"})).toBe(false);
         expect(isWorldToPageMessage({type: "frame", frame})).toBe(true);
         expect(isWorldToPageMessage({type: "pixelFrame", frame: pixelFrame(1, 1)})).toBe(true);
         expect(isWorldToPageMessage({type: "status", text: "Loading"})).toBe(true);
+        expect(isWorldToPageMessage({type: "ready"})).toBe(true);
         expect(isWorldToPageMessage({type: "inputEvents", events: []})).toBe(false);
         expect(isWorldToPageMessage(null)).toBe(false);
         expect(isWorldToPageMessage("frame")).toBe(false);
@@ -589,6 +591,15 @@ describe("PageConnection (the world worker's platform)", () => {
         const {platform} = await openConnection(scope);
         platform.quit();
         expect(scope.posted).toEqual([{type: "quit"}]);
+    });
+
+    test("ready is posted once, however often it is reported, with no frame needed first", async () => {
+        const scope = new FakeScope();
+        const connection = await openConnection(scope);
+        connection.reportReady();
+        connection.cellPresenter().present(frameWithText(1, 1), "full");
+        connection.reportReady();
+        expect(scope.posted.map(message => message.type)).toEqual(["ready", "frame"]);
     });
 
     test("the presenter is backlogged while two frames wait for the page to present them", async () => {
@@ -949,6 +960,25 @@ describe("connectWorldWorker (the page's end)", () => {
         connectWorldWorker(new FakeDisplay(), failing, {name: "the demo", onQuit: () => quits++});
         failing.emit({type: "error", message: "kaboom"});
         expect(quits).toBe(0);
+    });
+
+    test("ready runs onReady without waiting for a frame; frames do not, and a closed page ignores it", () => {
+        const display = new FakeDisplay();
+        const worker = new FakeWorldWorker();
+        let readies = 0;
+        connectWorldWorker(display, worker, {name: "the demo", onReady: () => readies++});
+        worker.emit({type: "ready"});
+        expect([readies, display.frames.length]).toEqual([1, 0]);
+        worker.emit({type: "frame", frame: frameWithText(2, 1)});
+        expect([readies, display.frames.length]).toEqual([1, 1]);
+        worker.emit({type: "quit"});
+        worker.emit({type: "ready"});
+        expect(readies).toBe(1);
+
+        const gamePage = new FakeWorldWorker();
+        connectWorldWorker(new FakeDisplay(), gamePage, {name: "the demo"});
+        gamePage.emit({type: "ready"});
+        expect(gamePage.terminated).toBe(false);
     });
 
     test("a startup failure is shown as an error and ends the worker; an uncaught error is shown", () => {

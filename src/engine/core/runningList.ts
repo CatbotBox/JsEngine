@@ -80,6 +80,7 @@ export class RunningList {
             }
         } finally {
             this._walking = false;
+            this._lastWalked = undefined;
         }
         return ranAny;
     }

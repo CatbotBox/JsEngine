@@ -51,6 +51,7 @@ export class PageConnection {
     private readonly resizeListeners = new Set<() => void>();
     private readonly exitCallbacks = new Set<() => void>();
     private framesInFlight = 0;
+    private readyReported = false;
     private readonly returnedPixelBuffers = new PixelFrameBufferPool(MAX_FRAMES_IN_FLIGHT);
 
     private constructor(private readonly scope: WorldWorkerScope, init: InitMessage, files: FileSource) {
@@ -145,6 +146,12 @@ export class PageConnection {
 
     public showStatus(text: string): void {
         this.scope.postMessage({type: "status", text});
+    }
+
+    public reportReady(): void {
+        if (this.readyReported) return;
+        this.readyReported = true;
+        this.scope.postMessage({type: "ready"});
     }
 
     public quit(): void {

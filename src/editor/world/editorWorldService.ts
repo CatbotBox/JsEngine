@@ -99,6 +99,7 @@ export interface EditorWorldServiceOptions {
     readonly tickIntervalMs?: number;
     readonly scenes?: SceneManager;
     readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
+    readonly onFirstTick?: () => void;
 }
 
 const SCENE_TEXT_INDENT_SPACES = 2;
@@ -150,6 +151,7 @@ export class EditorWorldService {
     private pendingRequests: Promise<void> = Promise.resolve();
     private attached = true;
     private stoppedError: string | undefined;
+    private firstTickListener: (() => void) | undefined;
     private readonly gate: GameplaySystemGate;
     private readonly tickCounter: GameplayTickCounterSystem;
     private readonly scenes: SceneManager;
@@ -176,6 +178,7 @@ export class EditorWorldService {
         this.views = new EditorViews(world);
         this.prefabs = new PrefabLibrary(world, registry, this.assets);
         this.consoleForwarder = new ConsoleForwarder(event => this.postEvent(event));
+        this.firstTickListener = options.onFirstTick;
     }
 
     public get mode(): EditorMode {
@@ -738,6 +741,18 @@ export class EditorWorldService {
     }
 
     private tick(): void {
+        this.stepWorld();
+        this.reportFirstTick();
+    }
+
+    private reportFirstTick(): void {
+        const listener = this.firstTickListener;
+        if (listener === undefined) return;
+        this.firstTickListener = undefined;
+        listener();
+    }
+
+    private stepWorld(): void {
         if (this.stoppedError !== undefined) return;
         const playing = this._mode === "play";
         const startedMs = performance.now();

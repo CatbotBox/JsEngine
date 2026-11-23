@@ -19,7 +19,6 @@ const TERMINAL_TARGET: SimulatedTarget = "terminal";
 const VISIBLE = true;
 
 export interface SessionDisplayEvents {
-    firstFrame(): void;
     failed(text: string): void;
 }
 
@@ -64,8 +63,6 @@ export type SharedPixelDisplay = Pick<PixelCanvasDisplay, "surfaceSize" | "onRes
 export type SharedCellDisplay = Pick<CellCanvasDisplay, "surfaceSize" | "onResize" | "presentCells" | "showStatus" | "showError" | "cellArea" | "show" | "dispose">;
 
 abstract class SharedSessionDisplay<Surface> implements SessionDisplayControls {
-    private firstFrameSeen = false;
-
     protected constructor(private readonly shared: SharedDisplay<Surface>, private visible: boolean, private readonly events: SessionDisplayEvents) {
     }
 
@@ -101,9 +98,6 @@ abstract class SharedSessionDisplay<Surface> implements SessionDisplayControls {
     protected presentWhenVisible(draw: () => void, onPresented: () => void): void {
         if (this.visible) draw();
         else onPresented();
-        if (this.firstFrameSeen) return;
-        this.firstFrameSeen = true;
-        this.events.firstFrame();
     }
 }
 
@@ -187,8 +181,6 @@ interface GpuSessionHost {
 }
 
 export class GpuSessionDisplay implements GpuWorldDisplay, SessionDisplayControls {
-    private firstFrameSeen = false;
-
     public constructor(
         private readonly canvas: SessionGpuCanvas,
         private visible: boolean,
@@ -227,9 +219,6 @@ export class GpuSessionDisplay implements GpuWorldDisplay, SessionDisplayControl
 
     public showScreenUnit(pixelsPerScreenUnitX: number, pixelsPerScreenUnitY: number): void {
         this.canvas.showScreenUnit(pixelsPerScreenUnitX, pixelsPerScreenUnitY);
-        if (this.firstFrameSeen) return;
-        this.firstFrameSeen = true;
-        this.events.firstFrame();
     }
 
     public showStatus(text: string): void {

@@ -83,6 +83,7 @@ export const generatedSchemas: readonly SchemaEntry[] = [
             {key: "fpsLines", kind: "textLines"},
             {key: "pacingWithCpuLimitFormat", kind: "string", nullable: false},
             {key: "statsLines", kind: "textLines"},
+            {key: "rasterWorkersLine", kind: "string", nullable: false},
             {key: "lodLevelsFormat", kind: "string", nullable: false},
             {key: "lodLevelsShown", kind: "integer"},
             {key: "lodLevelSeparator", kind: "string", nullable: false},
