@@ -404,7 +404,7 @@ describe("GpuMeshPassSystem", () => {
         expect(rig.errors).toEqual([]);
     });
 
-    test("a GpuSurfaceShader draws its entities with the registered shader once its pipeline is ready, in a batch of their own with their params", async () => {
+    test("a GpuSurfaceShader skips its entities until its pipeline is ready, then draws them with the registered shader in a batch of their own with their params", async () => {
         const rig = gpuWorld();
         const {world, device, errors} = rig;
         world.resources.getOrCreate(GpuShaderLibrary).register(TOON, TOON_SOURCE);
@@ -413,7 +413,9 @@ describe("GpuMeshPassSystem", () => {
         addQuads(world, mesh, 2);
         addShadedQuads(world, mesh, 1, () => new GpuSurfaceShader(TOON, TOON_PARAMS));
         await step(rig);
-        expect(drawsWithLitOnly(lastScenePass(device)!)).toBe(true);
+        const compiling = lastScenePass(device)!;
+        expect(drawsWithLitOnly(compiling)).toBe(true);
+        expect(compiling.callsOf("drawIndexed").map(call => call.args[1])).toEqual([2]);
         await step(rig, SETTLE_STEPS);
         expect(errors).toEqual([]);
         const scene = lastScenePass(device)!;

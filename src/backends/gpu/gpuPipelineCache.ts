@@ -96,12 +96,17 @@ export class GpuPipelineCache {
         return size;
     }
 
-    public pipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline {
-        if (shader !== this.fallback) {
-            const custom = this.customPipelineFor(shader, culling, format, sampleCount, frame);
-            if (custom !== undefined) return custom;
+    public pipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline | undefined {
+        if (shader === this.fallback) return this.fallbackPipelineFor(culling, format, sampleCount, frame);
+        const entry = this.customEntryFor(shader, frame);
+        switch (entry.state) {
+            case SHADER_FAILED:
+                return this.fallbackPipelineFor(culling, format, sampleCount, frame);
+            case SHADER_COMPILING:
+                return undefined;
+            case SHADER_READY:
+                return this.customPipelineFor(entry, culling, format, sampleCount, frame);
         }
-        return this.fallbackPipelineFor(culling, format, sampleCount, frame);
     }
 
     public evictUnused(frame: number, maxUnusedFrames: number): void {
@@ -125,15 +130,13 @@ export class GpuPipelineCache {
         return fallback.pipeline;
     }
 
-    private customPipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline | undefined {
-        const entry = this.customEntryFor(shader, frame);
-        if (entry.state !== SHADER_READY) return undefined;
+    private customPipelineFor(entry: CustomShaderEntry, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline | undefined {
         const key = pipelineKey(culling, format, sampleCount);
         let custom = entry.pipelines.get(key);
         if (custom === undefined) {
             const created: CustomPipeline = {pipeline: undefined, lastUsedFrame: frame};
             entry.pipelines.set(key, created);
-            this.device.createRenderPipelineAsync(this.descriptorFor(shader, entry.module, key, culling, format, sampleCount)).then(
+            this.device.createRenderPipelineAsync(this.descriptorFor(entry.shader, entry.module, key, culling, format, sampleCount)).then(
                 pipeline => created.pipeline = pipeline,
                 error => this.fail(entry, `its pipeline could not be created: ${messageOf(error)}`),
             );

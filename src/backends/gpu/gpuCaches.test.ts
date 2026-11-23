@@ -100,7 +100,7 @@ async function readyPipeline(cache: GpuPipelineCache, shader: GpuShader, culling
     await settle();
     cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT, FRAME);
     await settle();
-    return cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT, FRAME);
+    return cache.pipelineFor(shader, culling, FORMAT, MULTISAMPLE_COUNT, FRAME)!;
 }
 
 function lineOf(code: string, token: string): number {
@@ -379,33 +379,32 @@ describe("GpuPipelineCache", () => {
         const toon = await readyPipeline(cache, library.register(TOON, TOON_SOURCE));
         await readyPipeline(cache, library.register(PULSE, PULSE_SOURCE));
         cache.pipelineFor(BASIC_LIT, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT, FRAME);
-        expect(cache.size).toBe(4);
+        expect(cache.size).toBe(3);
         const evictionFrame = FRAME + EVICT_AFTER_FRAMES + 1;
         for (let frame = FRAME + 1; frame <= evictionFrame; frame++) {
             expect(cache.pipelineFor(library.shaderNamed(TOON), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, frame)).toBe(toon);
             cache.evictUnused(frame, EVICT_AFTER_FRAMES);
         }
         expect(cache.size).toBe(1);
-        const returning = cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, evictionFrame + 1);
-        expect(shaderNameOf(returning)).toBe(LIT_SURFACE_SHADER);
+        expect(cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, evictionFrame + 1)).toBeUndefined();
         expect(device.shaderModules.filter(module => module.label === PULSE).length).toBe(2);
     });
 });
 
 describe("GpuPipelineCache with custom surface shaders", () => {
-    test("a custom shader draws with the built-in lit pipeline until its module compiles and its pipeline resolves, then with its own", async () => {
+    test("a custom shader has no pipeline until its module compiles and its pipeline resolves, then draws with its own", async () => {
         const device = new FakeGpuDevice();
         const cache = pipelineCache(device);
         const toon = assembleSurfaceShader(TOON, TOON_SOURCE);
-        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
+        expect(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)).toBeUndefined();
         await settle();
-        expect(shaderNameOf(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
+        expect(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)).toBeUndefined();
         await settle();
-        const own = cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME);
+        const own = cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)!;
         expect([shaderNameOf(own), codeOf(own)]).toEqual([TOON, toon.code]);
         expect(cache.pipelineFor(toon, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)).toBe(own);
-        expect([device.asyncPipelines.length, cache.size]).toEqual([1, 2]);
-        expect(device.shaderModules.map(module => module.label)).toEqual([TOON, LIT_SURFACE_SHADER]);
+        expect([device.asyncPipelines.length, cache.size]).toEqual([1, 1]);
+        expect(device.shaderModules.map(module => module.label)).toEqual([TOON]);
     });
 
     test("the key includes the shader: two shaders at the same culling, format and samples get their own pipelines, one module each", async () => {
@@ -414,7 +413,7 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         const library = new GpuShaderLibrary();
         const toon = await readyPipeline(cache, library.register(TOON, TOON_SOURCE));
         const pulse = await readyPipeline(cache, library.register(PULSE, PULSE_SOURCE));
-        const lit = cache.pipelineFor(library.shaderNamed(LIT_SURFACE_SHADER), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME);
+        const lit = cache.pipelineFor(library.shaderNamed(LIT_SURFACE_SHADER), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)!;
         expect([shaderNameOf(toon), shaderNameOf(pulse), shaderNameOf(lit)]).toEqual([TOON, PULSE, LIT_SURFACE_SHADER]);
         expect(new Set([toon, pulse, lit]).size).toBe(3);
         const toonUnculled = await readyPipeline(cache, library.shaderNamed(TOON), FaceCulling.None);
@@ -422,7 +421,7 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         expect(device.shaderModules.filter(module => module.label === TOON).length).toBe(1);
     });
 
-    test("re-registering a name replaces its shader: its pipelines are dropped, it draws lit while the new one compiles, then with the new code", async () => {
+    test("re-registering a name replaces its shader: its pipelines are dropped, it has none while the new one compiles, then draws with the new code", async () => {
         const device = new FakeGpuDevice();
         const cache = pipelineCache(device);
         const library = new GpuShaderLibrary();
@@ -430,7 +429,7 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         expect(codeOf(first).endsWith(PULSE_SOURCE)).toBe(true);
         const sizeBefore = cache.size;
         library.register(PULSE, PULSE_FASTER_SOURCE);
-        expect(shaderNameOf(cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
+        expect(cache.pipelineFor(library.shaderNamed(PULSE), FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)).toBeUndefined();
         expect(cache.size).toBe(sizeBefore - 1);
         const second = await readyPipeline(cache, library.shaderNamed(PULSE));
         expect(second).not.toBe(first);
@@ -444,8 +443,10 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         device.compilationMessages = code => code.includes(BROKEN_TOKEN) ? [compilationError(`unresolved value '${BROKEN_TOKEN}'`, lineOf(code, BROKEN_TOKEN), BROKEN_COLUMN)] : [];
         const cache = pipelineCache(device);
         const broken = assembleSurfaceShader(BROKEN, BROKEN_SOURCE);
+        expect(cache.pipelineFor(broken, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)).toBeUndefined();
+        await settle();
         for (let frame = 0; frame < MANY_FRAMES; frame++) {
-            expect(shaderNameOf(cache.pipelineFor(broken, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
+            expect(shaderNameOf(cache.pipelineFor(broken, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME)!)).toBe(LIT_SURFACE_SHADER);
             await settle();
         }
         expect(recorder.errors.length).toBe(1);
@@ -462,9 +463,13 @@ describe("GpuPipelineCache with custom surface shaders", () => {
         device.pipelineCreationFailure = descriptor => descriptor.label?.startsWith(UNLINKABLE) ? PIPELINE_FAILURE : undefined;
         const cache = pipelineCache(device);
         const unlinkable = assembleSurfaceShader(UNLINKABLE, TOON_SOURCE);
+        const pipelinesOf = () => [FaceCulling.BackFaces, FaceCulling.None].map(culling => cache.pipelineFor(unlinkable, culling, FORMAT, MULTISAMPLE_COUNT, FRAME));
+        expect(pipelinesOf()).toEqual([undefined, undefined]);
+        await settle();
+        expect(pipelinesOf()).toEqual([undefined, undefined]);
+        await settle();
         for (let frame = 0; frame < MANY_FRAMES; frame++) {
-            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.BackFaces, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
-            expect(shaderNameOf(cache.pipelineFor(unlinkable, FaceCulling.None, FORMAT, MULTISAMPLE_COUNT, FRAME))).toBe(LIT_SURFACE_SHADER);
+            expect(pipelinesOf().map(pipeline => shaderNameOf(pipeline!))).toEqual([LIT_SURFACE_SHADER, LIT_SURFACE_SHADER]);
             await settle();
         }
         expect(recorder.errors.length).toBe(1);
