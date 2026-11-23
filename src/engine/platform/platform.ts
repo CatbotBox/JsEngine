@@ -17,8 +17,13 @@ export type FramePacing =
 
 export type FrameCallback = (frameTimeMs: number) => void;
 
+export interface PresentationBacklog {
+    backlogged(): boolean;
+    onPresented(listener: () => void): () => void;
+}
+
 export interface FrameScheduler {
-    start(pacing: FramePacing, onFrame: FrameCallback): () => void;
+    start(pacing: FramePacing, onFrame: FrameCallback, backlog?: PresentationBacklog): () => void;
 }
 
 export interface FileStat {

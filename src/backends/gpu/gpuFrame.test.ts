@@ -155,6 +155,23 @@ describe("GpuCanvasPixelPresenter", () => {
         expect([presenter.backlogged(), frame.framesInFlight]).toEqual([false, 0]);
     });
 
+    test("tells its presented listeners each time a submitted frame finishes on the GPU, until they stop listening", async () => {
+        const {device, frame} = rig();
+        const presenter = new GpuCanvasPixelPresenter(new MemoryPixelPresenter(), new GpuDeviceResource(device, frame), () => {});
+        const inFlightWhenHeard: number[] = [];
+        const stopListening = presenter.onPresented(() => inFlightWhenHeard.push(frame.framesInFlight));
+        presenter.present(pixelFrame());
+        presenter.present(pixelFrame());
+        device.queue.completeSubmittedWork();
+        await nextTask();
+        expect(inFlightWhenHeard).toEqual([1, 0]);
+        stopListening();
+        presenter.present(pixelFrame());
+        device.queue.completeSubmittedWork();
+        await nextTask();
+        expect(inFlightWhenHeard).toEqual([1, 0]);
+    });
+
     test("dispose releases the device once", () => {
         const {device, frame} = rig();
         let releases = 0;

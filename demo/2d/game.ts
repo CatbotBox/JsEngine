@@ -3,7 +3,7 @@ import type {Component, ComponentCtor, Entity, EntityCommandBuffer, EntityQuery,
 import {PanCameraSystem} from "@jsengine/engine/cameraControllers/2d";
 import {Input, resolveInputActions} from "@jsengine/engine/input";
 import type {InputAction, ResolvedInputActions} from "@jsengine/engine/input";
-import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, RED_SHIFT, RenderingSystemGroup, RenderPasses} from "@jsengine/engine/rendering";
+import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, HudElement, PresentationStats, RED_SHIFT, RenderingSystemGroup, RenderPasses} from "@jsengine/engine/rendering";
 import {Sprite} from "@jsengine/engine/rendering/2d";
 import {LocalPosition, LocalToWorld} from "@jsengine/engine/translation";
 import {Random, Vec} from "@jsengine/engine/math";
@@ -20,6 +20,8 @@ const DEMO_NAME = "The 2D demo";
 const TUNING_FILE = "assets/demo2d.asset.json";
 const BLUE_SHIFT = 0;
 const MS_PER_SECOND = 1000;
+const BYTES_PER_KB = 1024;
+const NO_SUBMITS = 0;
 const HALF = 0.5;
 const NO_STEP = 0;
 const NO_OFFSET = 0;
@@ -253,6 +255,11 @@ export class Demo2dHudSystem extends System {
     private _fpsCounter = new HudLabel();
     private _fps: AverageStat | undefined;
     private _fpsAverageFrames = UNSET;
+    private _presentationWindowStartMs = 0;
+    private _presentationWindowSubmits = NO_SUBMITS;
+    private _presentationWindowUploadedBytes = 0;
+    private _submitsPerSecond = 0;
+    private _uploadedBytesPerSubmit = 0;
     private _visible = true;
     private _actions!: Demo2dActions;
 
@@ -263,6 +270,7 @@ export class Demo2dHudSystem extends System {
     protected onCreate(): void {
         this.requireResourceForUpdate(Demo2dTuning);
         this._actions = resolveInputActions(this.world, Demo2dAction);
+        this._presentationWindowStartMs = this.world.time.elapsedTimeMs;
     }
 
     onUpdate(): void {
@@ -280,9 +288,30 @@ export class Demo2dHudSystem extends System {
         this._entityCounter.bindTo(this.world, hud?.entityCounter ?? NULL_ENTITY);
         this._fpsCounter.show([formatHudText(tuning.fpsFormat, {fps: fps.getAvg().toFixed(tuning.fpsDecimals)})]);
         const fadeSystem = this.world.tryGetSystem(FadeSystem);
-        this._entityCounter.show([fadeSystem === undefined
+        const lines = [fadeSystem === undefined
             ? tuning.fadeSystemInactiveText
-            : formatHudText(tuning.entitiesFormat, {entities: fadeSystem.count().toFixed(tuning.entitiesDecimals)})]);
+            : formatHudText(tuning.entitiesFormat, {entities: fadeSystem.count().toFixed(tuning.entitiesDecimals)})];
+        const presentation = this.world.resources.tryGet(PresentationStats);
+        if (presentation !== undefined) {
+            this.measurePresentation(presentation, tuning.presentationWindowMs);
+            lines.push(formatHudText(tuning.presentationFormat, {
+                submits: this._submitsPerSecond.toFixed(tuning.presentationDecimals),
+                upload: (this._uploadedBytesPerSubmit / BYTES_PER_KB).toFixed(tuning.presentationDecimals),
+            }));
+        }
+        this._entityCounter.show(lines);
+    }
+
+    private measurePresentation(stats: PresentationStats, windowMs: number): void {
+        const nowMs = this.world.time.elapsedTimeMs;
+        const elapsedMs = nowMs - this._presentationWindowStartMs;
+        if (elapsedMs < windowMs) return;
+        const submits = stats.submittedFrames - this._presentationWindowSubmits;
+        this._submitsPerSecond = submits * MS_PER_SECOND / elapsedMs;
+        this._uploadedBytesPerSubmit = submits === NO_SUBMITS ? 0 : (stats.uploadedBytes - this._presentationWindowUploadedBytes) / submits;
+        this._presentationWindowStartMs = nowMs;
+        this._presentationWindowSubmits = stats.submittedFrames;
+        this._presentationWindowUploadedBytes = stats.uploadedBytes;
     }
 
     private fpsAveragedOver(frames: number): AverageStat {

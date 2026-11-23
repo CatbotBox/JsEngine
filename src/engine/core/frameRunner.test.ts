@@ -197,6 +197,7 @@ describe("World loop pacing", () => {
         const rig = renderedLoopRig(workSystem({name: "tick", priority: 1}));
         rig.world.startLoop();
         expect(rig.scheduler.pacing).toEqual({kind: "interval", intervalMs: TICK_MS});
+        expect(rig.scheduler.backlog).toBe(rig.world.presenterBacklogs);
         for (let frame = 1; frame <= 3; frame++) rig.frameAt(frame * TICK_MS);
         expect(rig.record).toEqual(["tick", frameEntry(TICK_MS), "tick", frameEntry(TICK_MS), "tick", frameEntry(TICK_MS)]);
         expect([rig.world.time.tickCount, rig.world.time.frameCount]).toEqual([3, 3]);
@@ -246,6 +247,7 @@ describe("World loop pacing", () => {
         rig.world.entityManager.createEntity("frameLoop", [settings]);
         rig.frameAt(TICK_MS);
         expect([rig.scheduler.starts, rig.scheduler.pacing]).toEqual([2, {kind: "uncapped"}]);
+        expect(rig.scheduler.backlog).toBe(rig.world.presenterBacklogs);
         settings.simulationTickRate = TICK_RATE / 2;
         rig.frameAt(2 * TICK_MS);
         expect(rig.scheduler.starts).toBe(2);

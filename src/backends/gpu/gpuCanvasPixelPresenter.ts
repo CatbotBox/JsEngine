@@ -28,6 +28,10 @@ export class GpuCanvasPixelPresenter implements PixelPresenter {
         return this.gpu.frame.framesInFlight >= MAX_GPU_FRAMES_IN_FLIGHT;
     }
 
+    public onPresented(listener: () => void): () => void {
+        return this.gpu.frame.onPresented(listener);
+    }
+
     public start(): void {
     }
 

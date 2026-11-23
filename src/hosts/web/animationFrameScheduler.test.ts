@@ -1,5 +1,6 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {ManualFrameScheduler} from "../../engine/testing/manualFrameScheduler";
+import {PresenterBacklogs} from "../../engine/core/presenterBacklogs";
 import {displayPacing, intervalPacing, UNCAPPED_PACING} from "../../engine/platform/framePacing";
 import {animationFrameHostOf, animationFrameScheduler, displayFrameScheduler} from "./animationFrameScheduler";
 import type {AnimationFrameHost} from "./animationFrameScheduler";
@@ -87,6 +88,19 @@ describe("animationFrameScheduler", () => {
         scheduler.start(UNCAPPED_PACING, () => undefined);
         expect(fallback.pacing).toEqual(UNCAPPED_PACING);
         expect(display.waiting).toBe(0);
+    });
+
+    test("the fallback scheduler gets the presentation backlog, display frames ignore it", () => {
+        const display = new FakeAnimationFrames();
+        const fallback = new ManualFrameScheduler();
+        const backlog = new PresenterBacklogs();
+        const scheduler = animationFrameScheduler(display, fallback);
+        scheduler.start(UNCAPPED_PACING, () => undefined, backlog);
+        expect(fallback.backlog).toBe(backlog);
+        let frames = 0;
+        scheduler.start(displayPacing(), () => frames++, backlog);
+        refreshFor(display, SIXTY_HZ_MS, MS_PER_SECOND);
+        expect(frames).toBe(60);
     });
 
     test("stopping cancels the pending refresh, also from inside a frame", () => {

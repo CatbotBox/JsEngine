@@ -1,4 +1,4 @@
-import type {FrameCallback, FramePacing, FrameScheduler} from "../../engine/platform/platform";
+import type {FrameCallback, FramePacing, FrameScheduler, PresentationBacklog} from "../../engine/platform/platform";
 import {ASSUMED_DISPLAY_INTERVAL_MS} from "../../engine/platform/framePacing";
 import {timerFrameScheduler} from "../../engine/platform/timerFrameScheduler";
 
@@ -32,8 +32,8 @@ export function displayFrameScheduler(host: MaybeAnimationFrameHost, now: () => 
 
 export function animationFrameScheduler(host: AnimationFrameHost, fallback: FrameScheduler): FrameScheduler {
     return {
-        start(pacing: FramePacing, onFrame: FrameCallback): () => void {
-            if (pacing.kind !== "display") return fallback.start(pacing, onFrame);
+        start(pacing: FramePacing, onFrame: FrameCallback, backlog?: PresentationBacklog): () => void {
+            if (pacing.kind !== "display") return fallback.start(pacing, onFrame, backlog);
             return startDisplayFrames(host, pacing.capIntervalMs, onFrame);
         },
     };

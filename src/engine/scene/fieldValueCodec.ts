@@ -281,9 +281,9 @@ function decodeList(element: FieldType, json: SceneJsonValue, context: FieldDeco
     return json.map((item, i) => decodeFieldValue(element, item, context, `${path}[${i}]`));
 }
 
-type NumberSlots = {[index: number]: number, readonly length: number};
+export type NumberSlots = {[index: number]: number, readonly length: number};
 
-function isNumberSlots(value: unknown): value is NumberSlots {
+export function isNumberSlots(value: unknown): value is NumberSlots {
     return value instanceof Float32Array || Array.isArray(value);
 }
 
@@ -296,11 +296,14 @@ function isOwnDataField(target: object, key: string): boolean {
     return descriptor !== undefined && "value" in descriptor;
 }
 
+export function copiesVectorInPlace(target: object, field: FieldSchema): boolean {
+    return isVectorKind(field.kind) && isOwnDataField(target, field.key);
+}
+
 export function assignFieldValue(target: object, field: FieldSchema, value: unknown): void {
     const values = target as Record<string, unknown>;
     const current = values[field.key];
-    const copiesInPlace = isVectorKind(field.kind) && isOwnDataField(target, field.key);
-    if (copiesInPlace && isNumberSlots(current) && isNumberSlots(value) && current.length === value.length) {
+    if (copiesVectorInPlace(target, field) && isNumberSlots(current) && isNumberSlots(value) && current.length === value.length) {
         for (let i = 0; i < current.length; i++) current[i] = value[i];
         return;
     }

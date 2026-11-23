@@ -1,4 +1,5 @@
 import type {PixelFrame} from "../pixels/pixelFrame";
+import {PresentationStats} from "../../engine/rendering/presentationStats";
 import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, RED_SHIFT} from "../../engine/rendering/packedRgb";
 import {GPU_TEXTURE_USAGE} from "./gpuTypes";
 import type {GpuCanvasContext, GpuCanvasSurface, GpuDevice} from "./gpuTypes";
@@ -30,12 +31,14 @@ interface SceneTargets {
 }
 
 export class GpuFrame {
+    public readonly stats = new PresentationStats();
     private readonly overlay: GpuOverlayPass;
     private encoder: GPUCommandEncoder | undefined;
     private canvasTexture: GPUTexture | undefined;
     private sceneDrawn = false;
     private targets: SceneTargets | undefined;
     private _framesInFlight = 0;
+    private readonly presentedListeners = new Set<() => void>();
 
     public constructor(
         private readonly device: GpuDevice,
@@ -52,6 +55,14 @@ export class GpuFrame {
 
     public get canvasFormat(): GPUTextureFormat {
         return this.format;
+    }
+
+    public onPresented(listener: () => void): () => void {
+        const entry = (): void => listener();
+        this.presentedListeners.add(entry);
+        return () => {
+            this.presentedListeners.delete(entry);
+        };
     }
 
     public beginScene(clearRgb: number, sampleCount: number, widthPx: number, heightPx: number): GPURenderPassEncoder {
@@ -86,7 +97,7 @@ export class GpuFrame {
         }
         if (this.sizeCanvas(frame.widthPx, frame.heightPx)) this.abandonFrame();
         const canvasView = this.currentCanvasTexture().createView();
-        this.overlay.upload(frame);
+        const uploadedBytes = this.overlay.upload(frame);
         const encoder = this.currentEncoder();
         const pass = encoder.beginRenderPass({
             label: "overlay",
@@ -102,6 +113,7 @@ export class GpuFrame {
         this.device.queue.submit([encoder.finish()]);
         this.abandonFrame();
         this.trackSubmittedWork();
+        this.stats.recordSubmittedFrame(uploadedBytes);
     }
 
     public dispose(): void {
@@ -159,9 +171,11 @@ export class GpuFrame {
 
     private trackSubmittedWork(): void {
         this._framesInFlight++;
-        const release = (): void => {
-            this._framesInFlight--;
-        };
-        void this.device.queue.onSubmittedWorkDone().then(release, release);
+        void this.device.queue.onSubmittedWorkDone().then(this.releaseSubmittedFrame, this.releaseSubmittedFrame);
     }
+
+    private readonly releaseSubmittedFrame = (): void => {
+        this._framesInFlight--;
+        for (const listener of this.presentedListeners) listener();
+    };
 }

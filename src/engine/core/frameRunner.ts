@@ -1,4 +1,4 @@
-import type {FrameScheduler} from "../platform/platform";
+import type {FrameScheduler, PresentationBacklog} from "../platform/platform";
 import {interleavedFrameIntervalMs, samePacing} from "../platform/framePacing";
 import {FrameLoop, MAX_FRAME_DELTA_MS} from "./frameLoop";
 import type {LoopTiming} from "./frameLoopSettings";
@@ -12,6 +12,7 @@ export interface FrameRunnerHost {
     readonly now: () => number;
     readonly scheduler: FrameScheduler;
     readonly barriers: PresentationBarriers;
+    readonly presentationBacklog: PresentationBacklog;
     loopTiming(): LoopTiming;
     simulate(tickDeltaMs: number): void;
     present(frameDeltaMs: number, tickAlpha: number): void;
@@ -45,7 +46,7 @@ export class FrameRunner {
         const nowMs = this.host.now();
         this._frameLoop.start(nowMs);
         this._lastPresentationAtMs = nowMs;
-        this._stopScheduler = this.host.scheduler.start(this._timing.pacing, this.onFrame);
+        this._stopScheduler = this.host.scheduler.start(this._timing.pacing, this.onFrame, this.host.presentationBacklog);
     }
 
     public stop(): void {
@@ -109,7 +110,7 @@ export class FrameRunner {
         this.retime(timing);
         if (!pacingChanged) return;
         this._stopScheduler?.();
-        this._stopScheduler = this.host.scheduler.start(timing.pacing, this.onFrame);
+        this._stopScheduler = this.host.scheduler.start(timing.pacing, this.onFrame, this.host.presentationBacklog);
     }
 
     private retime(timing: LoopTiming): void {

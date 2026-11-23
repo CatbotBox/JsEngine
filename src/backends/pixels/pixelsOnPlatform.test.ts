@@ -30,6 +30,25 @@ class PixelPassProbeSystem extends System {
     }
 }
 
+class PresentationReportingPresenter extends MemoryPixelPresenter {
+    private readonly presentedListeners = new Set<() => void>();
+
+    public onPresented(listener: () => void): () => void {
+        this.presentedListeners.add(listener);
+        return () => {
+            this.presentedListeners.delete(listener);
+        };
+    }
+
+    public get presentedListenerCount(): number {
+        return this.presentedListeners.size;
+    }
+
+    public reportPresented(): void {
+        for (const listener of [...this.presentedListeners]) listener();
+    }
+}
+
 function worldPresentingOn(presenter: MemoryPixelPresenter): World {
     const world = new World({platform: new MemoryPlatform()});
     world.resources.insert(new PixelPresenterResource(presenter));
@@ -123,6 +142,32 @@ describe("PixelRenderSystemGroup frames", () => {
         } finally {
             group.enabled = false;
         }
+    });
+
+    test("a presenter that reports presented frames paces the loop through the world's presenter backlogs while the group is enabled", () => {
+        const presenter = new PresentationReportingPresenter();
+        const world = worldPresentingOn(presenter);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const backlogs = world.presenterBacklogs;
+        let presented = 0;
+        backlogs.onPresented(() => presented++);
+        expect([backlogs.count, backlogs.backlogged()]).toEqual([1, false]);
+        presenter.isBacklogged = true;
+        expect(backlogs.backlogged()).toBe(true);
+        presenter.reportPresented();
+        expect(presented).toBe(1);
+        group.enabled = false;
+        expect([backlogs.count, backlogs.backlogged(), presenter.presentedListenerCount]).toEqual([0, false, 0]);
+        group.enabled = true;
+        expect(backlogs.count).toBe(1);
+        group.destroy();
+        expect(backlogs.count).toBe(0);
+    });
+
+    test("a presenter without presented frames leaves the loop unpaced", () => {
+        const world = worldPresentingOn(new MemoryPixelPresenter());
+        world.getOrCreateSystem(PixelRenderSystemGroup);
+        expect(world.presenterBacklogs.count).toBe(0);
     });
 
     test("a backlogged presenter gets no frame and the passes skip", () => {

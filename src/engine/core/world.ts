@@ -7,6 +7,7 @@ import {RootSystemGroup} from "./rootSystemGroup";
 import {Time} from "./time";
 import {PresentationBarriers} from "./presentationBarriers";
 import {ActiveRenderers} from "./activeRenderers";
+import {PresenterBacklogs} from "./presenterBacklogs";
 import {GcSystem} from "./gcSystem";
 import {InputSystem} from "../input/inputSystem";
 import {WorldSource} from "./worldSource";
@@ -45,6 +46,7 @@ export class World extends WorldSource {
     public time: Time = new Time();
     public readonly presentationBarriers: PresentationBarriers = new PresentationBarriers();
     public readonly renderers: ActiveRenderers = new ActiveRenderers();
+    public readonly presenterBacklogs: PresenterBacklogs = new PresenterBacklogs();
 
     get archetypes(): EntityArchetypeMap {
         return this._archetypes;
@@ -216,6 +218,7 @@ export class World extends WorldSource {
             now,
             scheduler: platform.frameScheduler ?? timerFrameScheduler(now),
             barriers: this.presentationBarriers,
+            presentationBacklog: this.presenterBacklogs,
             loopTiming: () => this.loopTiming,
             simulate: tickDeltaMs => this.simulateTick(tickDeltaMs),
             present: (frameDeltaMs, tickAlpha) => this.presentFrame(frameDeltaMs, tickAlpha),

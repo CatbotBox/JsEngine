@@ -1,5 +1,5 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 184 modules, 228336 bytes minified
+demo/2d terminal cells main: 187 modules, 233639 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -59,6 +59,7 @@ demo/2d terminal cells main: 184 modules, 228336 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -114,6 +115,7 @@ demo/2d terminal cells main: 184 modules, 228336 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -148,6 +150,7 @@ demo/2d terminal cells main: 184 modules, 228336 bytes minified
   src/engine/scene/inputMapSchema.ts
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -215,7 +218,7 @@ demo/2d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 180 modules, 221978 bytes minified
+demo/2d web cells worker: 183 modules, 227263 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -276,6 +279,7 @@ demo/2d web cells worker: 180 modules, 221978 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -328,6 +332,7 @@ demo/2d web cells worker: 180 modules, 221978 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -362,6 +367,7 @@ demo/2d web cells worker: 180 modules, 221978 bytes minified
   src/engine/scene/inputMapSchema.ts
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -414,7 +420,7 @@ demo/2d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 179 modules, 218997 bytes minified
+demo/2d web pixels worker: 183 modules, 225705 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -434,6 +440,7 @@ demo/2d web pixels worker: 179 modules, 218997 bytes minified
   src/backends/pixels/2d/spritePixelRasterizer.ts
   src/backends/pixels/hudTextSpritePixelPassSystem.ts
   src/backends/pixels/pixelCameraSizingSystem.ts
+  src/backends/pixels/pixelDrawnTiles.ts
   src/backends/pixels/pixelFrame.ts
   src/backends/pixels/pixelFramebuffer.ts
   src/backends/pixels/pixelPresenterResource.ts
@@ -474,6 +481,7 @@ demo/2d web pixels worker: 179 modules, 218997 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -526,6 +534,7 @@ demo/2d web pixels worker: 179 modules, 218997 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -560,6 +569,7 @@ demo/2d web pixels worker: 179 modules, 218997 bytes minified
   src/engine/scene/inputMapSchema.ts
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -612,7 +622,7 @@ demo/2d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 196 modules, 236423 bytes minified
+demo/2d web gpu worker: 201 modules, 247724 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -633,6 +643,7 @@ demo/2d web gpu worker: 196 modules, 236423 bytes minified
   src/backends/gpu/gpuMeshPacking.ts
   src/backends/gpu/gpuMeshPassSettings.ts
   src/backends/gpu/gpuOverlayPass.ts
+  src/backends/gpu/gpuOverlayUploadPlan.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
@@ -648,6 +659,7 @@ demo/2d web gpu worker: 196 modules, 236423 bytes minified
   src/backends/pixels/2d/spritePixelRasterizer.ts
   src/backends/pixels/hudTextSpritePixelPassSystem.ts
   src/backends/pixels/pixelCameraSizingSystem.ts
+  src/backends/pixels/pixelDrawnTiles.ts
   src/backends/pixels/pixelFrame.ts
   src/backends/pixels/pixelFramebuffer.ts
   src/backends/pixels/pixelPresenterResource.ts
@@ -687,6 +699,7 @@ demo/2d web gpu worker: 196 modules, 236423 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -740,6 +753,7 @@ demo/2d web gpu worker: 196 modules, 236423 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -774,6 +788,7 @@ demo/2d web gpu worker: 196 modules, 236423 bytes minified
   src/engine/scene/inputMapSchema.ts
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -809,7 +824,7 @@ demo/2d web gpu worker: 196 modules, 236423 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 208 modules, 298750 bytes minified
+demo/3d terminal cells main: 211 modules, 303676 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -874,6 +889,7 @@ demo/3d terminal cells main: 208 modules, 298750 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -944,6 +960,7 @@ demo/3d terminal cells main: 208 modules, 298750 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -980,6 +997,7 @@ demo/3d terminal cells main: 208 modules, 298750 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -1049,7 +1067,7 @@ demo/3d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 204 modules, 292158 bytes minified
+demo/3d web cells worker: 207 modules, 297066 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1115,6 +1133,7 @@ demo/3d web cells worker: 204 modules, 292158 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1182,6 +1201,7 @@ demo/3d web cells worker: 204 modules, 292158 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -1218,6 +1238,7 @@ demo/3d web cells worker: 204 modules, 292158 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -1272,7 +1293,7 @@ demo/3d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 204 modules, 290614 bytes minified
+demo/3d web pixels worker: 208 modules, 296941 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1295,6 +1316,7 @@ demo/3d web pixels worker: 204 modules, 290614 bytes minified
   src/backends/pixels/3d/schemas.ts
   src/backends/pixels/hudTextSpritePixelPassSystem.ts
   src/backends/pixels/pixelCameraSizingSystem.ts
+  src/backends/pixels/pixelDrawnTiles.ts
   src/backends/pixels/pixelFrame.ts
   src/backends/pixels/pixelFramebuffer.ts
   src/backends/pixels/pixelPresenterResource.ts
@@ -1338,6 +1360,7 @@ demo/3d web pixels worker: 204 modules, 290614 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1405,6 +1428,7 @@ demo/3d web pixels worker: 204 modules, 290614 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -1441,6 +1465,7 @@ demo/3d web pixels worker: 204 modules, 290614 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -1495,7 +1520,7 @@ demo/3d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 218 modules, 303648 bytes minified
+demo/3d web gpu worker: 223 modules, 314550 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
   demo/3d/components.ts
@@ -1525,6 +1550,7 @@ demo/3d web gpu worker: 218 modules, 303648 bytes minified
   src/backends/gpu/gpuMeshPassSystem.ts
   src/backends/gpu/gpuMeshPasses.ts
   src/backends/gpu/gpuOverlayPass.ts
+  src/backends/gpu/gpuOverlayUploadPlan.ts
   src/backends/gpu/gpuPipelineCache.ts
   src/backends/gpu/gpuShaderLibrary.ts
   src/backends/gpu/gpuSurfaceShader.ts
@@ -1537,6 +1563,7 @@ demo/3d web gpu worker: 218 modules, 303648 bytes minified
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/hudTextSpritePixelPassSystem.ts
   src/backends/pixels/pixelCameraSizingSystem.ts
+  src/backends/pixels/pixelDrawnTiles.ts
   src/backends/pixels/pixelFrame.ts
   src/backends/pixels/pixelFramebuffer.ts
   src/backends/pixels/pixelPresenterResource.ts
@@ -1579,6 +1606,7 @@ demo/3d web gpu worker: 218 modules, 303648 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1641,6 +1669,7 @@ demo/3d web gpu worker: 218 modules, 303648 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -1677,6 +1706,7 @@ demo/3d web gpu worker: 218 modules, 303648 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -1714,7 +1744,7 @@ demo/3d web gpu worker: 218 modules, 303648 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 187 modules, 247264 bytes minified
+demo/swarm terminal cells main: 189 modules, 251203 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1772,6 +1802,7 @@ demo/swarm terminal cells main: 187 modules, 247264 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1866,6 +1897,7 @@ demo/swarm terminal cells main: 187 modules, 247264 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -1933,7 +1965,7 @@ demo/swarm web cells page: 19 modules, 25057 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 183 modules, 240919 bytes minified
+demo/swarm web cells worker: 185 modules, 244840 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1992,6 +2024,7 @@ demo/swarm web cells worker: 183 modules, 240919 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -2083,6 +2116,7 @@ demo/swarm web cells worker: 183 modules, 240919 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -2135,7 +2169,7 @@ demo/swarm web pixels page: 17 modules, 17208 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 183 modules, 238489 bytes minified
+demo/swarm web pixels worker: 186 modules, 243833 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2158,6 +2192,7 @@ demo/swarm web pixels worker: 183 modules, 238489 bytes minified
   src/backends/pixels/2d/spritePixelRasterizer.ts
   src/backends/pixels/hudTextSpritePixelPassSystem.ts
   src/backends/pixels/pixelCameraSizingSystem.ts
+  src/backends/pixels/pixelDrawnTiles.ts
   src/backends/pixels/pixelFrame.ts
   src/backends/pixels/pixelFramebuffer.ts
   src/backends/pixels/pixelPresenterResource.ts
@@ -2194,6 +2229,7 @@ demo/swarm web pixels worker: 183 modules, 238489 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -2285,6 +2321,7 @@ demo/swarm web pixels worker: 183 modules, 238489 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts
@@ -2337,7 +2374,7 @@ demo/swarm web gpu page: 17 modules, 16748 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 200 modules, 255915 bytes minified
+demo/swarm web gpu worker: 205 modules, 266088 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2361,6 +2398,7 @@ demo/swarm web gpu worker: 200 modules, 255915 bytes minified
   src/backends/gpu/gpuMeshPacking.ts
   src/backends/gpu/gpuMeshPassSettings.ts
   src/backends/gpu/gpuOverlayPass.ts
+  src/backends/gpu/gpuOverlayUploadPlan.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
@@ -2376,6 +2414,7 @@ demo/swarm web gpu worker: 200 modules, 255915 bytes minified
   src/backends/pixels/2d/spritePixelRasterizer.ts
   src/backends/pixels/hudTextSpritePixelPassSystem.ts
   src/backends/pixels/pixelCameraSizingSystem.ts
+  src/backends/pixels/pixelDrawnTiles.ts
   src/backends/pixels/pixelFrame.ts
   src/backends/pixels/pixelFramebuffer.ts
   src/backends/pixels/pixelPresenterResource.ts
@@ -2411,6 +2450,7 @@ demo/swarm web gpu worker: 200 modules, 255915 bytes minified
   src/engine/core/ownership.ts
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
+  src/engine/core/presenterBacklogs.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -2468,6 +2508,7 @@ demo/swarm web gpu worker: 200 modules, 255915 bytes minified
   src/engine/rendering/camera.ts
   src/engine/rendering/hudElement.ts
   src/engine/rendering/packedRgb.ts
+  src/engine/rendering/presentationStats.ts
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
@@ -2503,6 +2544,7 @@ demo/swarm web gpu worker: 200 modules, 255915 bytes minified
   src/engine/scene/prefabAsset.ts
   src/engine/scene/prefabAssetType.ts
   src/engine/scene/prefabInstance.ts
+  src/engine/scene/prefabSpawnPlan.ts
   src/engine/scene/prefabSpawner.ts
   src/engine/scene/sceneAssets.ts
   src/engine/scene/sceneDocument.ts

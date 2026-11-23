@@ -768,6 +768,7 @@ export class EditorWorldService {
             now,
             scheduler: this.reportingFrameErrors(platform.frameScheduler ?? timerFrameScheduler(now)),
             barriers: world.presentationBarriers,
+            presentationBacklog: world.presenterBacklogs,
             loopTiming: () => world.loopTiming,
             simulate: tickDeltaMs => this.simulateTick(tickDeltaMs),
             present: (frameDeltaMs, tickAlpha) => world.renderFrame(frameDeltaMs, tickAlpha),
@@ -777,7 +778,7 @@ export class EditorWorldService {
 
     private reportingFrameErrors(scheduler: FrameScheduler): FrameScheduler {
         return {
-            start: (pacing, onFrame) => scheduler.start(pacing, frameTimeMs => this.runFrame(onFrame, frameTimeMs)),
+            start: (pacing, onFrame, backlog) => scheduler.start(pacing, frameTimeMs => this.runFrame(onFrame, frameTimeMs), backlog),
         };
     }
 

@@ -1,10 +1,12 @@
 import {SystemGroup} from "../../engine/core";
+import type {PresentationBacklog} from "../../engine/platform/platform";
 import {Camera} from "../../engine/rendering/camera";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {ScreenSize} from "../../engine/rendering/screenSize";
 import {TextColor} from "../../engine/rendering/textColor";
 import {PixelCameraSizingSystem} from "./pixelCameraSizingSystem";
 import {OPAQUE_ALPHA, PixelFramebuffer, TRANSPARENT_ALPHA} from "./pixelFramebuffer";
+import type {PixelPresenter} from "./pixelPresenter";
 import {PixelPresenterResource} from "./pixelPresenterResource";
 import {backgroundColorOf, PixelRenderSettings, pixelsPerScreenUnitXOf} from "./pixelRenderSettings";
 import {PixelTextRasterizer} from "./pixelTextRasterizer";
@@ -14,12 +16,17 @@ const ERROR_TEXT_LEFT_PX = 0;
 const ERROR_TEXT_DEPTH = Number.NEGATIVE_INFINITY;
 const NO_WALKS = 0;
 
+function reportsPresentation(presenter: PixelPresenter): presenter is PixelPresenter & PresentationBacklog {
+    return presenter.backlogged !== undefined && presenter.onPresented !== undefined;
+}
+
 export class PixelRenderSystemGroup extends SystemGroup {
 
     private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
     private _settingsQuery = this.createEntityQuery([PixelRenderSettings]);
     private _errorText = new PixelTextRasterizer();
     private _walkCount = NO_WALKS;
+    private _presenterBacklog: PresentationBacklog | undefined;
 
     public get walkCount(): number {
         return this._walkCount;
@@ -81,12 +88,21 @@ export class PixelRenderSystemGroup extends SystemGroup {
     override onEnable(): void {
         this.world.renderers.add("cpu");
         super.onEnable();
-        PixelPresenterResource.presenterOf(this.world).start();
+        const presenter = PixelPresenterResource.presenterOf(this.world);
+        presenter.start();
+        if (reportsPresentation(presenter)) {
+            this._presenterBacklog = presenter;
+            this.world.presenterBacklogs.add(presenter);
+        }
         this.update();
     }
 
     override onDisable(): void {
         PixelPresenterResource.presenterOf(this.world).stop();
+        if (this._presenterBacklog !== undefined) {
+            this.world.presenterBacklogs.remove(this._presenterBacklog);
+            this._presenterBacklog = undefined;
+        }
         super.onDisable();
         this.world.renderers.remove("cpu");
     }

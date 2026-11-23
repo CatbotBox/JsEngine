@@ -10,6 +10,7 @@ export type {
     FramePacing,
     FrameCallback,
     FrameScheduler,
+    PresentationBacklog,
     PlatformFeature,
 } from "./platform";
 export {hasFeature, optionalFeature, PLATFORM_FEATURE_CONSTANTS, PLATFORM_FEATURES, WORKER_ENTRY_POINT} from "./platform";

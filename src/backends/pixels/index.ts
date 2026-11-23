@@ -1,5 +1,6 @@
 export {RGBA_BYTES_PER_PIXEL, copyPixelFrame, isPixelFrame, pixelFrameBuffers} from "./pixelFrame";
-export type {PixelFrame} from "./pixelFrame";
+export type {PixelFrame, PixelFrameDrawnTiles} from "./pixelFrame";
+export {DRAWN_TILE_SIZE_PX, PixelDrawnTiles} from "./pixelDrawnTiles";
 export type {PixelPresenter, PixelPresenterSize} from "./pixelPresenter";
 export {PixelPresenterResource} from "./pixelPresenterResource";
 export {MemoryPixelPresenter} from "./memoryPixelPresenter";

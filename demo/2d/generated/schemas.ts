@@ -54,6 +54,9 @@ export const generatedSchemas: readonly SchemaEntry[] = [
             {key: "entitiesFormat", kind: "string", nullable: false},
             {key: "entitiesDecimals", kind: "integer"},
             {key: "fadeSystemInactiveText", kind: "string", nullable: false},
+            {key: "presentationWindowMs", kind: "number"},
+            {key: "presentationFormat", kind: "string", nullable: false},
+            {key: "presentationDecimals", kind: "integer"},
         ]},
     ]},
 ];

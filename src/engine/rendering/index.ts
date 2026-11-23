@@ -28,6 +28,7 @@ export {
     isRenderBackendKind,
 } from './renderBackend'
 export type {RenderBackendKind} from './renderBackend'
+export {PresentationStats} from './presentationStats'
 export {RenderPasses, createRenderPasses} from './renderPasses'
 export type {RenderPassCtor, RenderPassKind} from './renderPasses'
 export {
