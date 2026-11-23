@@ -12,6 +12,7 @@ export const USAGE = `jsengine <command> [options] (runs under bun)
             web and window write the project to dist/web/<folder name>/, its page from <dir>/web/index.html
             or made from the manifest; without --project, every sample project and the landing page
             [--prod] [--with-editor]            web only
+            [--no-generate]                     web only: bundles generated/ as it is (jsengine serve regenerates it in-process first)
             [--simulate web|window|terminal] [--backend cells|pixels|gpu]
                                                 editor only: the editor worker with that target's features and backend
             [--report json]                     the result as JSON on the last line

@@ -26,7 +26,7 @@ export async function packageCommand(args: readonly string[]): Promise<CommandRe
     const defaults = declaredTargetDefaults(folder, PACKAGED_TARGET);
     const page = projectPagePath(folder, backendFor(PACKAGED_TARGET, options.value("backend"), defaults.backend), defaults.pixelScale);
     checkWindowPackageInputs();
-    if (!options.flag("no-build")) requireTargetFeatures(await buildWebSite({prod: false, withEditor: true, target: PACKAGED_TARGET, project: folder}));
+    if (!options.flag("no-build")) requireTargetFeatures(await buildWebSite({prod: false, withEditor: true, target: PACKAGED_TARGET, project: folder, regenerate: true}));
     await packageWindow({project: folder, page, zip: !options.flag("no-zip")});
     return EXIT_SUCCESS;
 }

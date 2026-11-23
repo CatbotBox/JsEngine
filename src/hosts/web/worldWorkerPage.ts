@@ -49,6 +49,7 @@ export interface WorldWorkerPageOptions {
 export interface WorldWorkerPage {
     readonly input: InputEventSink;
     exit(): void;
+    reloadDataAssets(paths: readonly string[]): boolean;
 
     close(): void;
 }
@@ -158,6 +159,10 @@ export function connectWorldWorker(display: WorldDisplay, worker: WorldWorker, o
     return {
         input,
         exit: () => post({type: "exit"}),
+        reloadDataAssets: paths => {
+            if (paths.length > 0) post({type: "reloadDataAssets", paths: [...paths]});
+            return !closed;
+        },
         close,
     };
 }

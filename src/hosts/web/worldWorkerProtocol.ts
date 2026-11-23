@@ -46,11 +46,17 @@ export interface PresentedMessage {
     readonly returnedBuffer?: ArrayBuffer;
 }
 
+export interface ReloadDataAssetsMessage {
+    readonly type: "reloadDataAssets";
+    readonly paths: readonly string[];
+}
+
 export type PageToWorldMessage =
     | InitMessage
     | InputEventsMessage
     | ResizeMessage
     | PresentedMessage
+    | ReloadDataAssetsMessage
     | {readonly type: "exit"};
 
 export interface FrameMessage {
@@ -83,7 +89,7 @@ export type WorldToPageMessage =
     | {readonly type: "quit"}
     | {readonly type: "error", readonly message: string};
 
-const PAGE_TO_WORLD_TYPES: ReadonlySet<string> = new Set(["init", "inputEvents", "resize", "presented", "exit"]);
+const PAGE_TO_WORLD_TYPES: ReadonlySet<string> = new Set(["init", "inputEvents", "resize", "presented", "reloadDataAssets", "exit"]);
 const WORLD_TO_PAGE_TYPES: ReadonlySet<string> = new Set(["frame", "pixelFrame", "status", "screenUnit", "ready", "quit", "error"]);
 
 function hasType(message: unknown, types: ReadonlySet<string>): boolean {
@@ -117,7 +123,7 @@ export function isSurfaceSize(value: unknown): value is SurfaceSize {
 
 export function isPageToWorldMessage(message: unknown): message is PageToWorldMessage {
     if (!hasType(message, PAGE_TO_WORLD_TYPES)) return false;
-    const fields = message as {type: string, events?: unknown, surface?: unknown, returnedBuffer?: unknown, canvas?: unknown};
+    const fields = message as {type: string, events?: unknown, surface?: unknown, returnedBuffer?: unknown, canvas?: unknown, paths?: unknown};
     switch (fields.type) {
         case "inputEvents":
             return Array.isArray(fields.events) && fields.events.every(isInputEvent);
@@ -127,6 +133,8 @@ export function isPageToWorldMessage(message: unknown): message is PageToWorldMe
             return isSurfaceSize(fields.surface);
         case "presented":
             return fields.returnedBuffer === undefined || fields.returnedBuffer instanceof ArrayBuffer;
+        case "reloadDataAssets":
+            return Array.isArray(fields.paths) && fields.paths.every(path => typeof path === "string");
         default:
             return true;
     }

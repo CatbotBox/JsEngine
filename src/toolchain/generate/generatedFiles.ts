@@ -3,7 +3,8 @@ import {dirname, join} from "path";
 import {REPO_ROOT} from "../repoPaths";
 import {generatedFileStamp} from "./generatedHeader";
 import type {GeneratedSource, ProjectGenerator} from "./generatedHeader";
-import {ProjectSources} from "./projectSources";
+import {ONE_SHOT_PROGRAM_HOST, ProjectSources} from "./projectSources";
+import type {ProjectProgramHost} from "./projectSources";
 import {GAME_GENERATOR} from "./gameModule";
 import {MAINS_GENERATOR} from "./mains";
 import {SCHEMAS_GENERATOR} from "./schemas";
@@ -41,8 +42,8 @@ function checkGeneratedSource(projectFolder: string, generator: ProjectGenerator
     return {generator, path, source: generated.source, ...stateOf(generator, existing, generated.source)};
 }
 
-export function checkGeneratedFiles(projectFolder: string): GeneratedFiles {
-    const sources = ProjectSources.read(projectFolder, REPO_ROOT);
+export function checkGeneratedFiles(projectFolder: string, programHost: ProjectProgramHost = ONE_SHOT_PROGRAM_HOST): GeneratedFiles {
+    const sources = ProjectSources.read(projectFolder, REPO_ROOT, programHost);
     const files: GeneratedFile[] = [];
     const warnings: string[] = [];
     for (const generator of PROJECT_GENERATORS) {
@@ -53,8 +54,8 @@ export function checkGeneratedFiles(projectFolder: string): GeneratedFiles {
     return {files, warnings};
 }
 
-export function writeGeneratedFiles(projectFolder: string): GeneratedFiles {
-    const generated = checkGeneratedFiles(projectFolder);
+export function writeGeneratedFiles(projectFolder: string, programHost: ProjectProgramHost = ONE_SHOT_PROGRAM_HOST): GeneratedFiles {
+    const generated = checkGeneratedFiles(projectFolder, programHost);
     for (const file of generated.files.filter(each => each.state !== "upToDate")) {
         mkdirSync(dirname(file.path), {recursive: true});
         writeFileSync(file.path, file.source);

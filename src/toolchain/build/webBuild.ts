@@ -1,5 +1,5 @@
 import {copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from "fs";
-import {dirname, extname, join, posix, relative, resolve} from "path";
+import {dirname, extname, join, posix, relative} from "path";
 import {gzipSync} from "zlib";
 import {nodePlatform} from "../../hosts/terminal";
 import {QUERY_OR_FRAGMENT} from "../../hosts/desktop";
@@ -27,7 +27,7 @@ import {
     webWorkerBundle,
     webWorkerMainFile,
 } from "../projectLayout";
-import {sampleProjectFolders} from "../projectSites";
+import {sampleProjectFolders, siteProjectFolders} from "../projectSites";
 import {repoRelative, slashed, SOURCE_ROOT, webDistOf} from "../repoPaths";
 import {featureDefines} from "../targets";
 import type {HostTarget} from "../targets";
@@ -46,6 +46,7 @@ export interface WebBuildOptions {
     readonly withEditor: boolean;
     readonly target: HostTarget;
     readonly project?: string;
+    readonly regenerate: boolean;
 }
 
 const WEB = join(SOURCE_ROOT, "hosts", "web");
@@ -447,7 +448,7 @@ export function regenerateSampleProjects(): void {
 }
 
 export async function buildWebSite(options: WebBuildOptions): Promise<TargetFeatureReport> {
-    const folders = options.project === undefined ? sampleProjectFolders() : [resolve(options.project)];
-    regenerate(folders);
+    const folders = siteProjectFolders(options.project);
+    if (options.regenerate) regenerate(folders);
     return await new WebSiteBuild(options, siteProjectsOf(folders), options.project === undefined).run();
 }

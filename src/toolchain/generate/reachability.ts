@@ -71,6 +71,23 @@ function uniqueSorted(names: Iterable<string>): string[] {
     return [...new Set(names)].sort(compareText);
 }
 
+function engineClassNamesIn(sources: ProjectSources, file: string): readonly string[] {
+    const sourceFile = sources.program.getSourceFile(file);
+    if (sourceFile === undefined) return [];
+    const names = new Set<string>();
+    const visit = (node: ts.Node): void => {
+        if (ts.isIdentifier(node)) {
+            const symbol = sources.checker.getSymbolAtLocation(node);
+            const resolved = symbol === undefined ? undefined : sources.resolveAlias(symbol);
+            const isClass = resolved !== undefined && (resolved.flags & ts.SymbolFlags.Class) !== 0;
+            if (isClass && sources.isEngineOrBackendSymbol(resolved)) names.add(resolved.name);
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return [...names];
+}
+
 class ReachabilityAnalysis {
     private readonly names = new Set<string>();
     private readonly warnings: string[] = [];
@@ -152,19 +169,8 @@ class ReachabilityAnalysis {
 
     private codeClassNames(): Set<string> {
         const names = new Set<string>();
-        const checker = this.sources.checker;
-        const visit = (node: ts.Node): void => {
-            if (ts.isIdentifier(node)) {
-                const symbol = checker.getSymbolAtLocation(node);
-                const resolved = symbol === undefined ? undefined : this.sources.resolveAlias(symbol);
-                const isClass = resolved !== undefined && (resolved.flags & ts.SymbolFlags.Class) !== 0;
-                if (isClass && this.sources.isEngineOrBackendSymbol(resolved)) names.add(resolved.name);
-            }
-            ts.forEachChild(node, visit);
-        };
         for (const file of this.sources.files) {
-            const sourceFile = this.sources.program.getSourceFile(file);
-            if (sourceFile !== undefined) visit(sourceFile);
+            for (const name of this.sources.extractFromFile(file, engineClassNamesIn)) names.add(name);
         }
         return names;
     }
