@@ -6,10 +6,9 @@ import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup"
 import {resourceSchema} from "../../engine/scene";
 import type {ComponentSchemaRegistry} from "../../engine/scene";
 import type {EditorEvent} from "../editorProtocol";
-import {ask, byName, disposeEditorWorlds, editorWorld, failureOf, fieldsOf, framesPass, SETTLE_FRAMES, sleep, TICK_MS, waitUntil} from "./editorServiceTestHarness";
+import {ask, byName, disposeEditorWorlds, editorWorld, failureOf, fieldsOf, FRAME_INTERVAL_MS, framesPass, SETTLE_FRAMES, sleep, waitUntil} from "./editorServiceTestHarness";
 import type {Harnessed} from "./editorServiceTestHarness";
 
-const SLOW_TICK_MS = 60_000;
 const SAVED_WAVE = 4;
 const PLAY_WAVE = 6;
 const NOT_REPORTED = -1;
@@ -66,7 +65,7 @@ describe("editor events", () => {
         expect(eventsOfKind(harnessed, "console").every(event => event.timeMs > 0)).toBe(true);
         harnessed.service.detach();
         console.info("after detach");
-        await sleep(TICK_MS * SETTLE_FRAMES);
+        await sleep(FRAME_INTERVAL_MS * SETTLE_FRAMES);
         expect(eventsOfKind(harnessed, "console").length).toBe(2);
     });
 
@@ -80,11 +79,11 @@ describe("editor events", () => {
 });
 
 describe("editor readiness", () => {
-    test("the first tick is reported once, right after it ran, in a world with no camera to draw a frame", async () => {
+    test("the first frame is reported once, right after it ran, in a world with no camera to draw a frame", async () => {
         let reports = 0;
         let renderTicksAtReport = NOT_REPORTED;
         const harnessed: Harnessed = editorWorld(() => undefined, {
-            onFirstTick: () => {
+            onFirstFrame: () => {
                 reports++;
                 renderTicksAtReport = harnessed.probe.frames;
             },
@@ -94,21 +93,21 @@ describe("editor readiness", () => {
         expect([reports, renderTicksAtReport]).toEqual([1, 1]);
     });
 
-    test("a first tick that stops the world is still reported once, after the stop", async () => {
+    test("a first frame that stops the world is still reported once, after the stop", async () => {
         let reports = 0;
         let stoppedAtReport: string | undefined;
         FailingRenderSystem.failNext = true;
         const harnessed: Harnessed = editorWorld(world => {
             world.getOrCreateSystem(FailingRenderSystem);
         }, {
-            onFirstTick: () => {
+            onFirstFrame: () => {
                 reports++;
                 stoppedAtReport = harnessed.service.worldStoppedError;
             },
         });
         expect(await waitUntil(() => reports > 0)).toBe(true);
         expect(stoppedAtReport).toBe("render exploded");
-        await sleep(TICK_MS * SETTLE_FRAMES);
+        await sleep(FRAME_INTERVAL_MS * SETTLE_FRAMES);
         expect(reports).toBe(1);
     });
 });
@@ -138,7 +137,7 @@ describe("editor robustness", () => {
         expect((await ask(harnessed, {op: "setMode", mode: "play"})).worldStoppedError).toBe(null);
     });
 
-    test("an error thrown out of a plain World's tick stops ticking and posts worldStopped", async () => {
+    test("an error thrown out of a plain World's frame stops the loop and posts worldStopped", async () => {
         const harnessed = editorWorld(world => {
             world.getOrCreateSystem(FailingRenderSystem);
         });
@@ -153,7 +152,7 @@ describe("editor robustness", () => {
     });
 
     test("stopping discards command-buffer work queued during play", async () => {
-        const harnessed = editorWorld(() => undefined, {tickMs: SLOW_TICK_MS});
+        const harnessed = editorWorld(() => undefined, {drivenFrames: false});
         await ask(harnessed, {op: "setMode", mode: "play"});
         const buffer = harnessed.world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer();
         const late = buffer.createEntity("late", [new LocalPosition()]);
@@ -246,7 +245,7 @@ describe("editor snapshots", () => {
         expect(resources.map(resource => resource.typeName)).toEqual(["ActiveScene", "InputMap", "Scoreboard"]);
         expect(resources.find(resource => resource.typeName === "InputMap")?.fields.map(field => [field.key, field.kind])).toEqual([["actions", "list"]]);
         expect(resources.filter(resource => resource.typeName !== "InputMap")).toEqual([
-            {typeName: "ActiveScene", fields: [{key: "sceneId", kind: "integer"}, {key: "path", kind: "string", nullable: true}]},
+            {typeName: "ActiveScene", category: "Scene", fields:[{key: "sceneId", kind: "integer"}, {key: "path", kind: "string", nullable: true}]},
             {typeName: "Scoreboard", fields: [{key: "wave", kind: "integer"}]},
         ]);
     });

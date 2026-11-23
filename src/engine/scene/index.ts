@@ -49,6 +49,7 @@ export type {
     IntegerFieldBuildOptions,
     KeysOfType,
     ListKey,
+    NullableStructKey,
     NumberFieldBuildOptions,
     StructFieldBuildOptions,
     StructKey,

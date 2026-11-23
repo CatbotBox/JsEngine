@@ -5,9 +5,13 @@ import type {Platform} from "../platform/platform";
 
 const NOT_FOUND = -1;
 const ONE_WORLD = 1;
+const HANDLED_BY_OWNER: RequestedQuitHandling = "handled";
+
+export type RequestedQuitHandling = "handled" | "proceed";
 
 export interface AppOptions {
     readonly platform: Platform;
+    readonly handleRequestedQuit?: () => RequestedQuitHandling;
 }
 
 function runQuitGroup(world: World): void {
@@ -29,12 +33,14 @@ function stopLoggingErrors(world: World): void {
 export class App {
     public readonly platform: Platform;
     private readonly _worlds: World[] = [];
+    private readonly handleRequestedQuit: (() => RequestedQuitHandling) | undefined;
     private _quitRequested = false;
     private _quitStarted = false;
     private readonly stopWatchingExit: () => void;
 
     public constructor(options: AppOptions) {
         this.platform = options.platform;
+        this.handleRequestedQuit = options.handleRequestedQuit;
         this.stopWatchingExit = options.platform.onExit(() => this.runQuitGroupsAndStop());
     }
 
@@ -76,18 +82,46 @@ export class App {
 
     public quitAfterFrame(): void {
         if (!this.quitPending) return;
-        this.runQuitGroupsAndStop();
+        const handleRequestedQuit = this.handleRequestedQuit;
+        if (handleRequestedQuit === undefined) {
+            this.runQuitGroupsAndStop();
+            this.platform.quit();
+            return;
+        }
+        this.quitThroughOwner(handleRequestedQuit);
+    }
+
+    private quitThroughOwner(handleRequestedQuit: () => RequestedQuitHandling): void {
+        for (const world of [...this._worlds]) runQuitGroup(world);
+        this._quitRequested = false;
+        if (handleRequestedQuit() === HANDLED_BY_OWNER) return;
+        this.stopAfterQuitGroups();
         this.platform.quit();
     }
 
     private runQuitGroupsAndStop(): void {
         if (this._quitStarted) return;
-        this._quitStarted = true;
-        this.stopWatchingExit();
+        this.startStopping();
         for (const world of [...this._worlds]) {
             world.pause();
             runQuitGroup(world);
         }
+        this.stopWorlds();
+    }
+
+    private stopAfterQuitGroups(): void {
+        if (this._quitStarted) return;
+        this.startStopping();
+        for (const world of [...this._worlds]) world.pause();
+        this.stopWorlds();
+    }
+
+    private startStopping(): void {
+        this._quitStarted = true;
+        this.stopWatchingExit();
+    }
+
+    private stopWorlds(): void {
         for (const world of [...this._worlds]) stopLoggingErrors(world);
     }
 }

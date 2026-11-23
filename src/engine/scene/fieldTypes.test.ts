@@ -63,6 +63,7 @@ const field = {
     ranges: {key: "value", kind: "list", element: {kind: "struct", typeName: "Range", fields: RANGE_FIELDS, create: () => new Range()}},
     range: {key: "value", kind: "struct", typeName: "Range", fields: RANGE_FIELDS, create: () => new Range()},
     plainRange: {key: "value", kind: "struct", fields: RANGE_FIELDS},
+    maybeRange: {key: "value", kind: "struct", nullable: true, typeName: "Range", fields: RANGE_FIELDS, create: () => new Range()},
     curve: {key: "value", kind: "custom", typeName: "Curve"},
     prefab: {key: "value", kind: "asset", assetType: "prefab"},
     shader: {key: "value", kind: "asset", assetType: "shader"},
@@ -189,6 +190,21 @@ describe("field codec: new kinds", () => {
         expect(() => encode(field.range, {min: 1})).toThrow(`Scene field ${PATH}.max: expected a number, got nothing`);
     });
 
+    test("a nullable struct saves undefined as null and loads null as undefined; a plain one refuses both", () => {
+        const range = new Range();
+        range.max = 5;
+        expect(encode(field.maybeRange, undefined)).toBe(null);
+        expect(encode(field.maybeRange, range)).toEqual({min: 0, max: 5});
+        expect(decode(field.maybeRange, null)).toBeUndefined();
+        const decoded = decode(field.maybeRange, {max: 3}) as Range;
+        expect(decoded).toBeInstanceOf(Range);
+        expect([decoded.min, decoded.max]).toEqual([0, 3]);
+        expect(() => encode(field.maybeRange, 2)).toThrow(`Scene field ${PATH}: expected an object holding Range's fields or undefined, got 2`);
+        expect(() => decode(field.maybeRange, 2)).toThrow(`Scene field ${PATH}: expected an object of Range's fields or null, got 2`);
+        expect(() => encode(field.range, undefined)).toThrow(`Scene field ${PATH}: expected an object holding Range's fields, got nothing`);
+        expect(() => decode(field.range, null)).toThrow(`Scene field ${PATH}: expected an object of Range's fields, got null`);
+    });
+
     test("unknown struct keys throw by default and are reported when the context reports schema changes", () => {
         expect(() => decode(field.range, {min: 1, mn: 2, mx: 3})).toThrow(`Scene field ${PATH}: Range has no fields "mn", "mx"`);
         expect(() => decode(field.plainRange, {extra: 1})).toThrow(`Scene field ${PATH}: the struct has no field "extra"`);
@@ -251,7 +267,7 @@ describe("defaultFieldValue", () => {
             {kind: "number"}, {kind: "integer"}, field.nullableNumber, field.nullableInteger, {kind: "boolean"}, {kind: "string", nullable: false},
             {kind: "string", nullable: true}, {kind: "textLines"}, {kind: "vec2"}, {kind: "vec3"}, {kind: "rotation"}, {kind: "rgb"}, {kind: "textColor"},
             {kind: "enum", members: [{name: "Low", value: 1}, {name: "High", value: 2}]}, {kind: "entity", nullable: true}, field.prefab,
-            field.numbers, field.range, field.plainRange, field.curve,
+            field.numbers, field.range, field.plainRange, field.maybeRange, field.curve,
         ];
         for (const type of types) expect(() => encode(type, defaultFieldValue(type, registry), registry)).not.toThrow();
     });
@@ -267,6 +283,7 @@ describe("defaultFieldValue", () => {
         expect(defaultFieldValue({kind: "entity", nullable: false})).toBe(NULL_ENTITY);
         expect(defaultFieldValue(field.numbers)).not.toBe(defaultFieldValue(field.numbers));
         expect(defaultFieldValue(field.range)).toBeInstanceOf(Range);
+        expect(defaultFieldValue(field.maybeRange)).toBeUndefined();
         expect(createStructValue(field.plainRange)).toEqual({min: 0, max: 0});
         expect(defaultFieldValue(field.curve, registry)).toBeInstanceOf(Curve);
         expect(() => defaultFieldValue(field.curve)).toThrow(`the custom field type "Curve" is not registered`);

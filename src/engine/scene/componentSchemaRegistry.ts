@@ -410,6 +410,9 @@ export class ComponentSchemaRegistry implements FieldTypeResolver {
         if (!isNonEmptyString(schema.name)) throw new Error("Resource schema: the name must be a non-empty string");
         const label = `Resource schema "${schema.name}"`;
         if (typeof schema.ctor !== "function") throw new Error(`${label}: ctor must be a resource class`);
+        if (schema.category !== undefined && !isNonEmptyString(schema.category)) {
+            throw new Error(`${label}: the category must be a non-empty string`);
+        }
         validateFieldShapes(schema.fields, label, "");
         const resolved = this.withResolvedFields(schema, label);
         this.validateCreatedInstance(resolved, label);

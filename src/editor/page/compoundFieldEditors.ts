@@ -18,7 +18,7 @@ import {
 } from "./compoundValues";
 import type {MoveDirection} from "./compoundValues";
 import {createButton, createElement} from "./dom";
-import {FieldEditorBase, fieldLabelElement, MIXED_CLASS, nestedFieldContext} from "./fieldEditorBase";
+import {FieldEditorBase, fieldLabelElement, isNullValue, MIXED_CLASS, nestedFieldContext, showToggle, toggleControl} from "./fieldEditorBase";
 import type {FieldEditor, FieldEditorContext, FieldEditorFactory} from "./fieldEditorBase";
 
 const DIFFERENT_LENGTHS_TEXT = "— (the lists differ in length)";
@@ -28,7 +28,9 @@ const MOVE_UP_TEXT = "↑";
 const MOVE_DOWN_TEXT = "↓";
 const REMOVE_TEXT = "✕";
 const ADD_TEXT = "+ Add";
+const NONE_TOGGLE_TEXT = "None";
 const NO_VALUE: SceneJsonValue = null;
+const EMPTY_STRUCT: SceneJsonValue = {};
 
 interface ListRow {
     readonly element: HTMLElement;
@@ -144,11 +146,13 @@ export class ListFieldEditor extends CompoundFieldEditor {
 
 export class StructFieldEditor extends CompoundFieldEditor {
     private readonly members: {readonly key: string, readonly editor: FieldEditor}[];
+    private readonly foldout: HTMLDetailsElement;
+    private readonly noneToggle: HTMLInputElement | undefined;
 
     public constructor(context: FieldEditorContext, document: Document, struct: StructFieldDescription, create: FieldEditorFactory) {
         super(context, document);
-        const foldout = createElement(document, "details", "struct-foldout");
-        foldout.open = !isListItemPath(context.field.key);
+        this.foldout = createElement(document, "details", "struct-foldout");
+        this.foldout.open = !isListItemPath(context.field.key);
         const summary = createElement(document, "summary", "struct-summary", struct.typeName ?? UNNAMED_STRUCT_TEXT);
         const body = createElement(document, "div", "struct-members");
         this.members = struct.fields.map(member => {
@@ -161,8 +165,18 @@ export class StructFieldEditor extends CompoundFieldEditor {
             return {key: member.key, editor};
         });
         if (struct.fields.length === 0) body.append(createElement(document, "p", "component-empty", NO_MEMBERS_TEXT));
-        foldout.append(summary, body);
-        this.element.append(foldout);
+        this.foldout.append(summary, body);
+        if (struct.nullable === true) {
+            const toggle = toggleControl(document, NONE_TOGGLE_TEXT, `${this.fieldLabel} has no value`);
+            const presentDefault = struct.presentDefault ?? EMPTY_STRUCT;
+            toggle.input.addEventListener("change", () => {
+                const value = toggle.input.checked ? NO_VALUE : presentDefault;
+                this.commitStructure(() => value);
+            });
+            this.noneToggle = toggle.input;
+            this.element.append(toggle.element);
+        }
+        this.element.append(this.foldout);
     }
 
     public override showEntityChoices(): void {
@@ -170,6 +184,9 @@ export class StructFieldEditor extends CompoundFieldEditor {
     }
 
     protected render(values: readonly EditorFieldValue[]): void {
+        const none = this.noneToggle !== undefined && showToggle(this.noneToggle, values, isNullValue);
+        this.foldout.hidden = none;
+        if (none) return;
         for (const {key, editor} of this.members) editor.show(values.map(value => structMemberOf(value, key)));
     }
 

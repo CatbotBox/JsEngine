@@ -1,7 +1,8 @@
 import {expect} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
-import {DebugWorld, EntityCommandBufferSystem, System, World} from "../../engine/core";
-import type {Entity, SystemCtor} from "../../engine/core";
+import {ManualFrameScheduler} from "../../engine/testing/manualFrameScheduler";
+import {App, EntityCommandBufferSystem, System} from "../../engine/core";
+import type {Entity, RequestedQuitHandling, SystemCtor, World} from "../../engine/core";
 import {Children} from "../../engine/translation/children";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {encodePpm} from "../../engine/assets/image/ppm";
@@ -13,7 +14,7 @@ import {EditorClient, EditorRequestError} from "../page/editorClient";
 import {attachEditorWorldService} from "./editorWorldService";
 import type {EditorWorldService} from "./editorWorldService";
 
-export const TICK_MS = 2;
+export const FRAME_INTERVAL_MS = 2;
 export const SETTLE_FRAMES = 5;
 export const SPRITE_PATH = "sprites/dot.ppm";
 export const RED_PIXEL_RGBA = new Uint8Array([255, 0, 0, 255]);
@@ -75,6 +76,8 @@ export class MessagePipe {
 
 export interface Harnessed {
     readonly world: World;
+    readonly platform: MemoryPlatform;
+    readonly scheduler: ManualFrameScheduler;
     readonly registry: ComponentSchemaRegistry;
     readonly service: EditorWorldService;
     readonly client: EditorClient;
@@ -85,35 +88,54 @@ export interface Harnessed {
     readonly toPage: MessagePipe;
     readonly preloaded: string[][];
     readonly events: EditorEvent[];
+    frameAfter(elapsedMs: number): void;
 }
 
 export interface EditorWorldOptions {
     readonly debugWorld?: boolean;
     readonly register?: (registry: ComponentSchemaRegistry) => void;
     readonly files?: Readonly<Record<string, string | Uint8Array>>;
-    readonly tickMs?: number;
+    readonly drivenFrames?: boolean;
     readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
     readonly gameplaySystems?: readonly SystemCtor<System>[];
-    readonly onFirstTick?: () => void;
+    readonly onFirstFrame?: () => void;
+}
+
+interface RunningEditorWorld {
+    readonly harnessed: Harnessed;
+    readonly stopDrivingFrames: () => void;
 }
 
 const HARNESS_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [GameplayCounterSystem, SwitchedOffGameplaySystem];
 const NO_EXTRA_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [];
+const NO_FRAME_DRIVER = (): void => undefined;
+const QUIT_WITHOUT_EDITOR: RequestedQuitHandling = "proceed";
 
-const running: Harnessed[] = [];
+const running: RunningEditorWorld[] = [];
 
 export const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 
 export function disposeEditorWorlds(): void {
-    for (const harnessed of running.splice(0)) {
+    for (const {harnessed, stopDrivingFrames} of running.splice(0)) {
+        stopDrivingFrames();
         harnessed.client.close();
         harnessed.service.detach();
     }
 }
 
+function driveOneTickPerFrame(harnessed: Harnessed): () => void {
+    const driver = setInterval(() => {
+        if (harnessed.scheduler.running) harnessed.frameAfter(harnessed.world.loopTiming.tickDeltaMs);
+    }, FRAME_INTERVAL_MS);
+    return () => clearInterval(driver);
+}
+
 export function editorWorld(populate: (world: World) => void = () => undefined, options: EditorWorldOptions = {}): Harnessed {
-    const platform = new MemoryPlatform({files: {[SPRITE_PATH]: encodePpm(1, 1, RED_PIXEL_RGBA), ...options.files}});
-    const world = options.debugWorld === true ? new DebugWorld({platform}) : new World({platform});
+    const scheduler = new ManualFrameScheduler();
+    const platform = new MemoryPlatform({files: {[SPRITE_PATH]: encodePpm(1, 1, RED_PIXEL_RGBA), ...options.files}, frameScheduler: scheduler});
+    let attachedService: EditorWorldService | undefined;
+    const app = new App({platform, handleRequestedQuit: () => attachedService?.handleRequestedQuit() ?? QUIT_WITHOUT_EDITOR});
+    const world = options.debugWorld === true ? app.createDebugWorld() : app.createWorld();
     world.ensureSystemExists(EntityCommandBufferSystem);
     const probe = world.getOrCreateSystem(RenderProbeSystem);
     const counter = world.getOrCreateSystem(GameplayCounterSystem);
@@ -136,21 +158,28 @@ export function editorWorld(populate: (world: World) => void = () => undefined, 
         postMessage: message => toPage.deliver(message),
         addEventListener: (_type, listener) => toWorld.listen(listener),
     }, world, registry, {
-        tickIntervalMs: options.tickMs ?? TICK_MS,
         refetchFiles: options.refetchFiles,
-        onFirstTick: options.onFirstTick,
+        onFirstFrame: options.onFirstFrame,
         gameplaySystems: [...HARNESS_GAMEPLAY_SYSTEMS, ...options.gameplaySystems ?? NO_EXTRA_GAMEPLAY_SYSTEMS],
         preloadAssets: async paths => {
             preloaded.push([...paths]);
             await sleep(PRELOAD_DELAY_MS);
         },
     });
+    attachedService = service;
     const client = new EditorClient({
         postMessage: message => toWorld.deliver(message),
         addEventListener: (_type, listener) => toPage.listen(listener),
     });
-    const harnessed = {world, registry, service, client, counter, switchedOff, probe, toWorld, toPage, preloaded, events};
-    running.push(harnessed);
+    const harnessed: Harnessed = {
+        world, platform, scheduler, registry, service, client, counter, switchedOff, probe, toWorld, toPage, preloaded, events,
+        frameAfter(elapsedMs: number): void {
+            platform.advance(elapsedMs);
+            scheduler.frame(platform.now());
+        },
+    };
+    const stopDrivingFrames = options.drivenFrames === false ? NO_FRAME_DRIVER : driveOneTickPerFrame(harnessed);
+    running.push({harnessed, stopDrivingFrames});
     return harnessed;
 }
 

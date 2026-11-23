@@ -1,8 +1,16 @@
 import {ENGINE_COMPONENT_CATEGORIES} from "../../engine/scene/componentCategories";
-import type {EditorComponentDescription} from "../editorProtocol";
+import type {EditorComponentDescription, EditorResourceDescription} from "../editorProtocol";
 
-export const HIDDEN_COMPONENT_CATEGORIES: ReadonlySet<string> = new Set([ENGINE_COMPONENT_CATEGORIES.scene]);
+export const HIDDEN_SCHEMA_CATEGORIES: ReadonlySet<string> = new Set([ENGINE_COMPONENT_CATEGORIES.scene]);
+
+function isHiddenCategory(category: string | undefined): boolean {
+    return category !== undefined && HIDDEN_SCHEMA_CATEGORIES.has(category);
+}
 
 export function isHiddenComponent(schema: Pick<EditorComponentDescription, "category"> | undefined): boolean {
-    return schema !== undefined && HIDDEN_COMPONENT_CATEGORIES.has(schema.category);
+    return isHiddenCategory(schema?.category);
+}
+
+export function isHiddenResource(schema: Pick<EditorResourceDescription, "category"> | undefined): boolean {
+    return isHiddenCategory(schema?.category);
 }

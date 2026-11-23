@@ -264,10 +264,39 @@ export class Structs extends Component {
     public pair: [number, number] = [0, 0];
     public lookup: {[key: string]: number} = {};
     public maybeRange: Range | undefined = undefined;
+    public optionalTint?: Tint;
+    public nullOffset: Offset | null = null;
     public samples = new Float32Array(4);
     public registry!: ComponentSchemaRegistry;
     public namedPair: Pair = [0, 0];
     public namedLookup: Lookup = new Map();
+}
+`,
+};
+
+const READONLY_VECTOR_FIXTURE: FixtureFiles = {
+    "anchored.ts": `
+import {Component} from "@jsengine/engine/core";
+import {Vec2, Vec3, Vec4} from "@jsengine/engine/math/types/vec";
+import type {Quat} from "@jsengine/engine/scene";
+
+export interface Waypoint {
+    readonly at: Vec3;
+    readonly label: string;
+}
+
+export class Anchored extends Component {
+    public readonly position = Vec3.alloc();
+    public readonly flat: Vec2 = Vec2.alloc();
+    public readonly rotation = Vec4.alloc(0, 0, 0, 1);
+    public readonly quat: Quat = Vec4.alloc(0, 0, 0, 1);
+    public readonly fixed = 0;
+    public readonly names: string[] = [];
+    public readonly maybePosition?: Vec3;
+    public readonly nullablePosition: Vec3 | undefined = undefined;
+    public waypoint: Waypoint = {at: Vec3.alloc(), label: ""};
+    private readonly hidden = Vec3.alloc();
+    public static readonly shared = Vec3.alloc();
 }
 `,
 };
@@ -445,6 +474,22 @@ describe("generateProjectSchemas field filtering", () => {
     test("skips filtered members without warnings", () => {
         expect(skipping().warnings).toEqual([]);
     });
+
+    test("keeps read-only vector fields and skips other read-only members", () => {
+        const result = generateFixture(READONLY_VECTOR_FIXTURE);
+        expect(registrationBlock(result.source, "Anchored").split("\n")).toEqual([
+            `{kind: "component", ctor: Anchored, name: "Anchored", fields: [`,
+            `{key: "position", kind: "vec3"},`,
+            `{key: "flat", kind: "vec2"},`,
+            `{key: "rotation", kind: "rotation"},`,
+            `{key: "quat", kind: "rotation"},`,
+            `{key: "waypoint", kind: "struct", typeName: "Waypoint", fields: [`,
+            `{key: "at", kind: "vec3"},`,
+            `]},`,
+            `]},`,
+        ]);
+        expect(result.warnings).toEqual([]);
+    });
 });
 
 describe("generateProjectSchemas structs", () => {
@@ -489,6 +534,15 @@ describe("generateProjectSchemas structs", () => {
         expect(fieldLine(source, "Structs", "namedLookup")).toBe(`{key: "namedLookup", kind: "custom", typeName: "Lookup"},`);
     });
 
+    test("maps a struct that may be undefined or null to a nullable struct", () => {
+        const source = structs().source;
+        expect(registrationBlock(source, "Structs").split("\n").filter(line => line.includes("nullable: true"))).toEqual([
+            `{key: "maybeRange", kind: "struct", nullable: true, typeName: "Range", create: () => new Range(), fields: [`,
+            `{key: "optionalTint", kind: "struct", nullable: true, typeName: "Tint", fields: [`,
+            `{key: "nullOffset", kind: "struct", nullable: true, typeName: "Offset", fields: [`,
+        ]);
+    });
+
     test("guards self-referential structs with a warning", () => {
         expect(fieldLine(structs().source, "Structs", "tree")).toBe(`{key: "tree", kind: "struct", typeName: "TreeNode", create: () => new TreeNode(), fields: [`);
         expect(structs().warnings.includes("Structs.tree.children[]: recursive type TreeNode skipped")).toBe(true);
@@ -500,11 +554,10 @@ describe("generateProjectSchemas structs", () => {
             "Structs.anything: unsupported type any",
             "Structs.pair: unsupported type [number, number]",
             "Structs.lookup: unsupported type {[key: string]: number}",
-            "Structs.maybeRange: unsupported type Range | undefined",
             "Structs.samples: unsupported type Float32Array<ArrayBuffer>",
             "Structs.registry: unsupported type ComponentSchemaRegistry",
         ]);
-        for (const key of ["table", "anything", "pair", "lookup", "maybeRange", "samples", "registry"]) {
+        for (const key of ["table", "anything", "pair", "lookup", "samples", "registry"]) {
             expect(fieldLine(structs().source, "Structs", key)).toBeUndefined();
         }
     });

@@ -12,6 +12,7 @@ import {
     installScrub,
     installStepping,
     InvalidFieldText,
+    isNullValue,
     MIXED_CLASS,
     MIXED_OPTION_VALUE,
     numberInput,
@@ -19,6 +20,7 @@ import {
     NUMERIC_INPUT_MODE,
     selectValue,
     showText,
+    showToggle,
     stepperButtons,
     textInput,
     toggleControl,
@@ -101,23 +103,8 @@ function textAreaRows(text: string | undefined): number {
     return Math.max(MIN_TEXTAREA_ROWS, Math.min(MAX_TEXTAREA_ROWS, (text ?? "").split(LINE_SEPARATOR).length));
 }
 
-function isEveryValue(values: readonly EditorFieldValue[], test: (value: EditorFieldValue) => boolean): boolean {
-    return values.length > 0 && values.every(test);
-}
-
-function isNullValue(value: EditorFieldValue): boolean {
-    return value === null;
-}
-
 function isUncappedValue(value: EditorFieldValue): boolean {
     return value === POSITIVE_INFINITY_WIRE;
-}
-
-function showToggle(input: HTMLInputElement, values: readonly EditorFieldValue[], test: (value: EditorFieldValue) => boolean): boolean {
-    const all = isEveryValue(values, test);
-    input.checked = all;
-    input.indeterminate = !all && values.some(test);
-    return all;
 }
 
 class NumberFieldEditor extends FieldEditorBase {

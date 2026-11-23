@@ -1,6 +1,6 @@
 import {registerBuiltinImageDecoders} from "../../engine/assets/image/builtinDecoders";
 import {App} from "../../engine/core";
-import type {DebugWorld, System, SystemCtor} from "../../engine/core";
+import type {DebugWorld, RequestedQuitHandling, System, SystemCtor} from "../../engine/core";
 import type {Platform} from "../../engine/platform/platform";
 import {Mesh} from "../../engine/rendering/3d/mesh";
 import {Input} from "../../engine/input";
@@ -11,7 +11,7 @@ import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
 import {TerminalInputChannel} from "./terminalInputChannel";
 import {EDITOR_SCHEMAS} from "../world/editorSchemas";
 import {attachEditorWorldService} from "../world/editorWorldService";
-import type {EditorServiceScope} from "../world/editorWorldService";
+import type {EditorServiceScope, EditorWorldService} from "../world/editorWorldService";
 import {ProjectFileSource} from "../project/projectFileSource";
 import type {StartProject} from "../../engine/project/startGame";
 import type {ProjectFilesChannel} from "../project/projectFileSource";
@@ -39,6 +39,7 @@ const SKIPPED_UNKNOWN_TYPES = "skip";
 const TERMINAL_MOUSE_REPORTING = true;
 const TERMINAL_KEY_REPORTING: KeyReporting = "legacy";
 const REPORTED_SCHEMA_CHANGES = "report";
+const QUIT_WITHOUT_EDITOR: RequestedQuitHandling = "proceed";
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -105,7 +106,9 @@ async function startProjectWorld(
     installBackend: EditorBackendInstaller,
 ): Promise<void> {
     registerBuiltinImageDecoders();
-    const world = new App({platform: page.platform}).createDebugWorld();
+    let editorService: EditorWorldService | undefined;
+    const app = new App({platform: page.platform, handleRequestedQuit: () => editorService?.handleRequestedQuit() ?? QUIT_WITHOUT_EDITOR});
+    const world = app.createDebugWorld();
     await installBackend(world, page);
     const backendSystems = systemLists.backend;
     await files.whenListed();
@@ -129,12 +132,12 @@ async function startProjectWorld(
         schemaChanges: REPORTED_SCHEMA_CHANGES,
     });
     assetFiles.stopReporting();
-    attachEditorWorldService(scope, world, game.registry, {
+    editorService = attachEditorWorldService(scope, world, game.registry, {
         preloadAssets,
         scenes: game.scenes,
         gameplaySystems: [...backendSystems, ...systemLists.shared],
         refetchFiles: paths => files.refetch(paths),
-        onFirstTick: () => page.reportReady(),
+        onFirstFrame: () => page.reportReady(),
     });
 }
 

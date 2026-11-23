@@ -99,8 +99,10 @@ function describeFieldType(registry: ComponentSchemaRegistry, type: FieldType, p
             const elementPath = path + LIST_ELEMENT_PATH_SUFFIX;
             return {kind: type.kind, element: describeFieldType(registry, type.element, elementPath), elementDefault: encodedDefaultValue(registry, type.element, elementPath)};
         }
-        case "struct":
-            return withoutUndefined({kind: type.kind, typeName: type.typeName, fields: describeFields(registry, type.fields, path)});
+        case "struct": {
+            const presentDefault = type.nullable === true ? encodedDefaultValue(registry, {...type, nullable: false}, path) : undefined;
+            return withoutUndefined({kind: type.kind, nullable: type.nullable, typeName: type.typeName, fields: describeFields(registry, type.fields, path), presentDefault});
+        }
         case "custom":
             return {kind: type.kind, typeName: type.typeName};
         default:
@@ -144,7 +146,7 @@ export function describeSchemas(world: World, registry: ComponentSchemaRegistry)
         .sort((a, b) => a.name.localeCompare(b.name));
     return {
         components: [...registry.schemas, ...inferred].map(schema => describeComponent(registry, schema)),
-        resources: registry.resourceSchemas.map(schema => ({typeName: schema.name, fields: describeFields(registry, schema.fields, schema.name)})),
+        resources: registry.resourceSchemas.map(schema => withoutUndefined({typeName: schema.name, fields: describeFields(registry, schema.fields, schema.name), category: schema.category})),
     };
 }
 

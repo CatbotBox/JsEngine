@@ -3,6 +3,7 @@ import {isSceneJsonObject, sceneJsonEquals} from "../../engine/scene/sceneDocume
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
 import type {EditorFieldDescription, EditorFieldTypeDescription, EditorResourceDescription} from "../editorProtocol";
 import {projectRelativePath} from "../../engine/project/projectPaths";
+import {isHiddenResource} from "./componentVisibility";
 
 export interface DataAssetFieldChanges {
     readonly addedKeys: readonly string[];
@@ -86,7 +87,7 @@ export function holdsEntityFields(fields: readonly EditorFieldTypeDescription[])
 }
 
 export function isCreatableDataAssetType(description: EditorResourceDescription | undefined): boolean {
-    return description !== undefined && !holdsEntityFields(description.fields);
+    return description !== undefined && !isHiddenResource(description) && !holdsEntityFields(description.fields);
 }
 
 export function knownFields(description: EditorResourceDescription, values: SceneJsonObject, defaults: SceneJsonObject): SceneJsonObject {

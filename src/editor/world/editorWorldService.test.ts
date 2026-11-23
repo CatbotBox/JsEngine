@@ -1,8 +1,9 @@
 import {afterEach, describe, expect, test} from "../../engine/testing/harness";
 import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
 import {errorFrames} from "../../engine/debugging/errorStack";
-import {Component, NULL_ENTITY, System, SystemGroup, World} from "../../engine/core";
+import {Component, FrameLoopSettings, NULL_ENTITY, System, SystemGroup, World} from "../../engine/core";
 import type {Entity} from "../../engine/core";
+import {intervalPacing} from "../../engine/platform";
 import {Children} from "../../engine/translation/children";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
@@ -22,15 +23,23 @@ import {
     editorWorld,
     failureOf,
     fieldsOf,
+    FRAME_INTERVAL_MS,
     framesPass,
     SETTLE_FRAMES,
     sleep,
     SPRITE_PATH,
-    TICK_MS,
     waitUntil,
 } from "./editorServiceTestHarness";
 
 const PLAY_RUNS = 3;
+const MS_PER_SECOND = 1000;
+const SLOW_TICK_RATE = 30;
+const FAST_RENDER_RATE = 120;
+const CHANGED_RENDER_RATE = 60;
+const CATCH_UP_LIMIT = 2;
+const FRAMES_PER_TICK = FAST_RENDER_RATE / SLOW_TICK_RATE;
+const STALL_MS = 200;
+const STALLED_TICKS = STALL_MS * SLOW_TICK_RATE / MS_PER_SECOND;
 const INLINE_SPRITE_WIDTH = 2;
 const INLINE_SPRITE_HEIGHT = 3;
 const GREEN_RGB = 0x00FF00;
@@ -350,7 +359,7 @@ describe("EditorWorldService requests", () => {
         harnessed.toWorld.deliver({type: "init", surface: {kind: "pixels", widthPx: 1, heightPx: 1}});
         harnessed.toWorld.deliver({type: EDITOR_MESSAGE_TYPE, requestId: 100, ok: true, result: {}});
         expect(await waitUntil(() => answers.length > 0)).toBe(true);
-        await sleep(SETTLE_FRAMES * TICK_MS);
+        await sleep(SETTLE_FRAMES * FRAME_INTERVAL_MS);
         expect(answers).toEqual([{type: EDITOR_MESSAGE_TYPE, requestId: 99, ok: false, error: "Malformed editor request"}]);
     });
 });
@@ -396,6 +405,48 @@ describe("EditorWorldService modes", () => {
         await ask(harnessed, {op: "setMode", mode: "edit"});
         service.detach();
         expect([counter.enabled, switchedOff.enabled]).toEqual([true, false]);
+    });
+
+    test("every mode runs on the engine frame loop, which follows FrameLoopSettings: render pacing, tick rate, catch-up limit and live edits", async () => {
+        let settingsEntity = NULL_ENTITY;
+        const harnessed = editorWorld(world => {
+            const settings = new FrameLoopSettings();
+            settings.simulationTickRate = SLOW_TICK_RATE;
+            settings.renderRate = FAST_RENDER_RATE;
+            settings.maxCatchUpTicks = CATCH_UP_LIMIT;
+            settingsEntity = world.entityManager.createEntity("frameLoop", [settings]);
+        }, {drivenFrames: false});
+        const {counter, probe, scheduler, world} = harnessed;
+        const renderIntervalMs = MS_PER_SECOND / FAST_RENDER_RATE;
+        const tickDeltaMs = MS_PER_SECOND / SLOW_TICK_RATE;
+        const runFramesOfOneTick = (): void => {
+            for (let frame = 0; frame < FRAMES_PER_TICK; frame++) harnessed.frameAfter(renderIntervalMs);
+        };
+        expect(scheduler.pacing).toEqual(intervalPacing(renderIntervalMs));
+
+        runFramesOfOneTick();
+        expect([world.time.tickCount, probe.frames, counter.runs]).toEqual([1, FRAMES_PER_TICK, 0]);
+
+        await ask(harnessed, {op: "setMode", mode: "play"});
+        runFramesOfOneTick();
+        expect([world.time.tickCount, probe.frames, counter.runs]).toEqual([2, 2 * FRAMES_PER_TICK, 1]);
+        expect(world.time.tickDeltaTimeMs).toBeCloseTo(tickDeltaMs);
+
+        expect(STALLED_TICKS).toBeGreaterThan(CATCH_UP_LIMIT);
+        harnessed.frameAfter(STALL_MS);
+        expect(counter.runs).toBe(1 + CATCH_UP_LIMIT);
+
+        await ask(harnessed, {op: "setMode", mode: "paused"});
+        runFramesOfOneTick();
+        expect(counter.runs).toBe(1 + CATCH_UP_LIMIT);
+        await ask(harnessed, {op: "step"});
+        expect(counter.runs).toBe(2 + CATCH_UP_LIMIT);
+        expect(world.time.tickDeltaTimeMs).toBeCloseTo(tickDeltaMs);
+
+        await ask(harnessed, {op: "setMode", mode: "play"});
+        await ask(harnessed, {op: "setField", entity: settingsEntity, typeName: "FrameLoopSettings", key: "renderRate", value: CHANGED_RENDER_RATE});
+        harnessed.frameAfter(renderIntervalMs);
+        expect(scheduler.pacing).toEqual(intervalPacing(MS_PER_SECOND / CHANGED_RENDER_RATE));
     });
 
     test("only the listed gameplay systems are suspended while editing: an unlisted root system keeps running, a listed group holds its children", async () => {

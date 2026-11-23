@@ -51,7 +51,7 @@ export function defaultFieldValue(type: FieldType, fieldTypes?: FieldTypeResolve
         case "list":
             return [];
         case "struct":
-            return createStructValue(type, fieldTypes, path);
+            return type.nullable === true ? undefined : createStructValue(type, fieldTypes, path);
         case "custom":
             return customFieldTypeOf(fieldTypes, type.typeName, path).defaultValue();
     }

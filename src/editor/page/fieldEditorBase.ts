@@ -174,6 +174,17 @@ export function toggleControl(document: Document, text: string, title: string): 
     return {element, input};
 }
 
+export function isNullValue(value: EditorFieldValue): boolean {
+    return value === null;
+}
+
+export function showToggle(input: HTMLInputElement, values: readonly EditorFieldValue[], test: (value: EditorFieldValue) => boolean): boolean {
+    const all = values.length > 0 && values.every(test);
+    input.checked = all;
+    input.indeterminate = !all && values.some(test);
+    return all;
+}
+
 export interface ScrubSpec {
     readonly kind: ScrubKind;
     readonly unitsPerPixel?: number;

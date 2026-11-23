@@ -1,6 +1,9 @@
 import {EntityCommandBufferSystem} from "../../engine/core";
 import type {ResourceCtor} from "../../engine/core/resource";
-import type {Entity, Resource, System, SystemCtor, World, WorldStoppedEvent} from "../../engine/core";
+import {FrameRunner} from "../../engine/core/frameRunner";
+import type {Entity, RequestedQuitHandling, Resource, System, SystemCtor, World, WorldStoppedEvent} from "../../engine/core";
+import {timerFrameScheduler} from "../../engine/platform";
+import type {FrameCallback, FrameScheduler} from "../../engine/platform";
 import {errorFramesOf} from "../../engine/debugging/errorStack";
 import {
     applySceneInPlace,
@@ -96,10 +99,9 @@ export interface EditorServiceScope {
 export interface EditorWorldServiceOptions {
     readonly preloadAssets?: ScenePreload;
     readonly gameplaySystems?: readonly SystemCtor<System>[];
-    readonly tickIntervalMs?: number;
     readonly scenes?: SceneManager;
     readonly refetchFiles?: (paths: readonly string[]) => Promise<void>;
-    readonly onFirstTick?: () => void;
+    readonly onFirstFrame?: () => void;
 }
 
 const SCENE_TEXT_INDENT_SPACES = 2;
@@ -113,6 +115,8 @@ const OPENED_SCENE_MODE = "single";
 const ADDED_SCENE_MODE = "additive";
 const OPENED_SCENE_PERSISTENT_ENTITIES = "destroy";
 const NO_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [];
+const QUIT_HANDLED_BY_EDITOR: RequestedQuitHandling = "handled";
+const QUIT_LEFT_TO_APP: RequestedQuitHandling = "proceed";
 
 export function editorSceneManager(world: World, registry: ComponentSchemaRegistry, preload?: ScenePreload): SceneManager {
     return new SceneManager(world, registry, {preload, unknownComponentTypes: SKIPPED_UNKNOWN_TYPES, schemaChanges: REPORTED_SCHEMA_CHANGES});
@@ -144,14 +148,14 @@ export class EditorWorldService {
     private _mode: EditorMode = "edit";
     private snapshot: SceneSnapshot | undefined;
     private viewBeforePlay: EditorView | undefined;
-    private ticker: ReturnType<typeof setInterval> | undefined;
-    private lastPlayTickMs = 0;
+    private frames: FrameRunner | undefined;
     private tickCount = 0;
     private tickMsTotal = 0;
     private pendingRequests: Promise<void> = Promise.resolve();
     private attached = true;
+    private stepping = false;
     private stoppedError: string | undefined;
-    private firstTickListener: (() => void) | undefined;
+    private firstFrameListener: (() => void) | undefined;
     private readonly gate: GameplaySystemGate;
     private readonly tickCounter: GameplayTickCounterSystem;
     private readonly scenes: SceneManager;
@@ -178,7 +182,7 @@ export class EditorWorldService {
         this.views = new EditorViews(world);
         this.prefabs = new PrefabLibrary(world, registry, this.assets);
         this.consoleForwarder = new ConsoleForwarder(event => this.postEvent(event));
-        this.firstTickListener = options.onFirstTick;
+        this.firstFrameListener = options.onFirstFrame;
     }
 
     public get mode(): EditorMode {
@@ -204,19 +208,25 @@ export class EditorWorldService {
         this.consoleForwarder.attach();
         this.reportDataAssetSchemaChanges();
         this.views.apply();
-        this.startTicking();
+        this.startLoop();
         this.scope.addEventListener("message", event => this.receive(event.data));
     }
 
     public detach(): void {
         this.attached = false;
-        this.stopTicking();
+        this.stopLoop();
         this.world.onStopped.remove(this.onWorldStopped);
         this.world.resources.tryGet(DataAssets)?.onSchemaChanged.remove(this.onDataAssetSchemaChanged);
         this.consoleForwarder.detach();
         this.views.dispose();
         this.world.pause();
         this.gate.resume();
+    }
+
+    public handleRequestedQuit(): RequestedQuitHandling {
+        if (!this.attached) return QUIT_LEFT_TO_APP;
+        if (this.stoppedError === undefined) this.stopGameplayThatQuit();
+        return QUIT_HANDLED_BY_EDITOR;
     }
 
     private receive(data: unknown): void {
@@ -669,7 +679,6 @@ export class EditorWorldService {
         this.gate.resume();
         this.views.setView("game");
         this._mode = "play";
-        this.lastPlayTickMs = performance.now() - this.tickIntervalMs();
     }
 
     private pause(): void {
@@ -696,15 +705,22 @@ export class EditorWorldService {
         this.requireRunningWorld("step");
         this.pause();
         this.gate.resume();
+        this.stepping = true;
         try {
             this.world.step();
         } catch (error) {
             this.worldStopped(error);
             throw new Error(`The step failed and the world stopped: ${errorText(error)}`);
         } finally {
+            this.stepping = false;
             this.gate.suspend();
         }
         return this.state();
+    }
+
+    private stopGameplayThatQuit(): void {
+        if (this.stepping) this.stop();
+        else if (this._mode === "play") this.inGameView(() => this.changeMode(() => this.stop()));
     }
 
     private discardPendingCommands(): void {
@@ -714,7 +730,7 @@ export class EditorWorldService {
     private worldStopped(error: unknown): void {
         if (this.stoppedError !== undefined) return;
         this.stoppedError = error === undefined ? PLAIN_STOP_TEXT : errorText(error);
-        this.stopTicking();
+        this.stopLoop();
         const stack = errorFramesOf(error);
         this.postEvent(stack === undefined ? {kind: "worldStopped", error: this.stoppedError} : {kind: "worldStopped", error: this.stoppedError, stack});
     }
@@ -722,58 +738,64 @@ export class EditorWorldService {
     private clearWorldStop(): void {
         if (this.stoppedError === undefined) return;
         this.stoppedError = undefined;
-        this.startTicking();
+        this.startLoop();
     }
 
-    private startTicking(): void {
-        if (this.ticker !== undefined) return;
-        this.ticker = setInterval(() => this.tick(), this.tickIntervalMs());
+    private startLoop(): void {
+        const frames = this.frames ??= this.createFrameRunner();
+        frames.start();
     }
 
-    private tickIntervalMs(): number {
-        return this.options.tickIntervalMs ?? this.world.loopTiming.tickDeltaMs;
+    private stopLoop(): void {
+        this.frames?.stop();
     }
 
-    private stopTicking(): void {
-        if (this.ticker === undefined) return;
-        clearInterval(this.ticker);
-        this.ticker = undefined;
+    private createFrameRunner(): FrameRunner {
+        const world = this.world;
+        const platform = world.platform;
+        const now = (): number => platform.now();
+        return new FrameRunner({
+            now,
+            scheduler: this.reportingFrameErrors(platform.frameScheduler ?? timerFrameScheduler(now)),
+            barriers: world.presentationBarriers,
+            loopTiming: () => world.loopTiming,
+            simulate: tickDeltaMs => this.simulateTick(tickDeltaMs),
+            present: (frameDeltaMs, tickAlpha) => world.renderFrame(frameDeltaMs, tickAlpha),
+            finishFrame: () => world.app?.quitAfterFrame(),
+        });
     }
 
-    private tick(): void {
-        this.stepWorld();
-        this.reportFirstTick();
+    private reportingFrameErrors(scheduler: FrameScheduler): FrameScheduler {
+        return {
+            start: (pacing, onFrame) => scheduler.start(pacing, frameTimeMs => this.runFrame(onFrame, frameTimeMs)),
+        };
     }
 
-    private reportFirstTick(): void {
-        const listener = this.firstTickListener;
+    private runFrame(onFrame: FrameCallback, frameTimeMs: number): void {
+        try {
+            onFrame(frameTimeMs);
+        } catch (error) {
+            console.error(`Editor: a ${this._mode} frame failed, so the editor stopped running the world: ${errorText(error)}`);
+            this.worldStopped(error);
+        }
+        this.reportFirstFrame();
+    }
+
+    private reportFirstFrame(): void {
+        const listener = this.firstFrameListener;
         if (listener === undefined) return;
-        this.firstTickListener = undefined;
+        this.firstFrameListener = undefined;
         listener();
     }
 
-    private stepWorld(): void {
-        if (this.stoppedError !== undefined) return;
-        const playing = this._mode === "play";
+    private simulateTick(tickDeltaMs: number): void {
         const startedMs = performance.now();
-        try {
-            this.views.apply();
-            if (playing) {
-                this.gate.resume();
-                const now = performance.now();
-                const deltaTimeMs = now - this.lastPlayTickMs;
-                this.lastPlayTickMs = now;
-                this.world.step(deltaTimeMs);
-            } else {
-                this.gate.suspend();
-                this.world.step();
-            }
-            this.tickCount++;
-            this.tickMsTotal += performance.now() - startedMs;
-        } catch (error) {
-            console.error(`Editor: the ${this._mode} tick failed, so the editor stopped ticking the world: ${errorText(error)}`);
-            this.worldStopped(error);
-        }
+        this.views.apply();
+        if (this._mode === "play") this.gate.resume();
+        else this.gate.suspend();
+        this.world.stepSimulation(tickDeltaMs);
+        this.tickCount++;
+        this.tickMsTotal += performance.now() - startedMs;
     }
 }
 

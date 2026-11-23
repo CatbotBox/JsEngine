@@ -17,6 +17,7 @@ import type {
     NumberFieldType,
     PlainFieldKind,
     ResourceSchema,
+    StructFieldType,
 } from "./fieldSchema";
 import type {PrefabAsset} from "./prefabAsset";
 
@@ -39,6 +40,10 @@ export type ListKey<T> = {
 
 export type StructKey<T> = {
     [K in keyof T]-?: T[K] extends object ? K : never
+}[keyof T] & WritableKeys<T> & string;
+
+export type NullableStructKey<T> = {
+    [K in keyof T]-?: undefined extends T[K] ? (Exclude<T[K], undefined> extends object ? K : never) : never
 }[keyof T] & WritableKeys<T> & string;
 
 export interface EntityFieldOptions {
@@ -86,6 +91,16 @@ function integerFieldType(nullable: boolean, {typeName, ...options}: IntegerFiel
         ...(nullable ? {nullable} : {}),
         ...(typeName === undefined ? {} : {typeName}),
         ...(hasNumberOptions(options) ? {options} : {}),
+    };
+}
+
+function structFieldType(nullable: boolean, fields: readonly FieldSchema[], {typeName, create}: StructFieldBuildOptions): StructFieldType {
+    return {
+        kind: "struct",
+        ...(nullable ? {nullable} : {}),
+        ...(typeName === undefined ? {} : {typeName}),
+        fields: Object.freeze([...fields]),
+        ...(create === undefined ? {} : {create}),
     };
 }
 
@@ -164,12 +179,11 @@ export abstract class FieldListBuilder<T extends object> {
     }
 
     public struct(key: StructKey<T>, fields: readonly FieldSchema[], options: StructFieldBuildOptions = NO_STRUCT_OPTIONS): this {
-        return this.field(key, {
-            kind: "struct",
-            ...(options.typeName === undefined ? {} : {typeName: options.typeName}),
-            fields: Object.freeze([...fields]),
-            ...(options.create === undefined ? {} : {create: options.create}),
-        });
+        return this.field(key, structFieldType(NOT_NULLABLE, fields, options));
+    }
+
+    public nullableStruct(key: NullableStructKey<T>, fields: readonly FieldSchema[], options: StructFieldBuildOptions = NO_STRUCT_OPTIONS): this {
+        return this.field(key, structFieldType(NULLABLE, fields, options));
     }
 
     public asset(key: WritableKeys<T> & string, assetType: string): this {
@@ -252,11 +266,17 @@ export class ComponentSchemaBuilder<T extends Component> extends FieldListBuilde
 }
 
 export class ResourceSchemaBuilder<T extends Resource> extends FieldListBuilder<T> {
+    private _category: string | undefined;
     private _create: () => T;
 
     public constructor(private readonly _ctor: ResourceCtor<T>, private readonly _name: string) {
         super();
         this._create = () => new _ctor();
+    }
+
+    public category(category: string): this {
+        this._category = category;
+        return this;
     }
 
     public create(factory: () => T): this {
@@ -269,6 +289,7 @@ export class ResourceSchemaBuilder<T extends Resource> extends FieldListBuilder<
             name: this._name,
             ctor: this._ctor,
             fields: Object.freeze([...this._fields]),
+            ...(this._category === undefined ? {} : {category: this._category}),
             create: this._create,
         });
     }

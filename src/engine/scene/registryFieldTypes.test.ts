@@ -47,6 +47,7 @@ class Mover extends Component {
     public path: Vec2 = Vec2.alloc();
     public falloff = new Curve();
     public spread = new Range();
+    public maybeSpread: Range | undefined = undefined;
     public ranges: Range[] = [];
     public targets: Entity[] = [];
     public limit: number | undefined = undefined;
@@ -136,6 +137,18 @@ describe("ComponentSchemaRegistry field types", () => {
         expect(byKey.get("model")).toEqual({key: "model", kind: "asset", assetType: "mesh"});
         const registry = new ComponentSchemaRegistry();
         registry.registerResource(resourceSchema(Tuning, "Tuning").number("speed").build());
+        registry.register(schema);
+        expect(registry.byName("Mover")).toBe(schema);
+    });
+
+    test("nullableStruct emits a nullable struct that registers with an undefined default", () => {
+        const rangeFields = structFields<Range>().number("min").number("max").build();
+        const schema = componentSchema(Mover, "Mover")
+            .nullableStruct("maybeSpread", rangeFields, {typeName: "Range", create: () => new Range()})
+            .build();
+        const field = schema.fields[0];
+        expect(field.kind === "struct" ? [field.key, field.nullable, field.typeName, field.fields.map(member => member.key)] : []).toEqual(["maybeSpread", true, "Range", ["min", "max"]]);
+        const registry = new ComponentSchemaRegistry();
         registry.register(schema);
         expect(registry.byName("Mover")).toBe(schema);
     });

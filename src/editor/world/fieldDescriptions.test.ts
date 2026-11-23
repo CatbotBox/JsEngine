@@ -5,7 +5,17 @@ import type {Entity} from "../../engine/core";
 import {NULL_ENTITY} from "../../engine/core/entity";
 import {Vec2} from "../../engine/math/types/vec";
 import type {Mesh} from "../../engine/rendering/3d/mesh";
-import {ComponentSchemaRegistry, componentSchema, resourceSchema, structFields} from "../../engine/scene";
+import {
+    ACTIVE_SCENE_RESOURCE_NAME,
+    ComponentSchemaRegistry,
+    componentSchema,
+    ENGINE_COMPONENT_CATEGORIES,
+    registerSchemaEntries,
+    resourceSchema,
+    SCENE_INSTANCE_COMPONENT_NAME,
+    SCENE_MANAGER_SCHEMAS,
+    structFields,
+} from "../../engine/scene";
 import type {FieldTypeDefinition, PrefabAsset} from "../../engine/scene";
 import {describeSchemas, entityDetails} from "./entityInspection";
 
@@ -72,6 +82,14 @@ class Lists extends Component {
     public grid: number[][] = [];
 }
 
+class MaybeSpread extends Component {
+    public static readonly schema = componentSchema(MaybeSpread, "MaybeSpread")
+        .nullableStruct("spread", structFields<Range>().number("min").number("max").build(), {typeName: "Range", create: () => new Range()})
+        .build();
+
+    public spread: Range | undefined = undefined;
+}
+
 function registry(): ComponentSchemaRegistry {
     const result = new ComponentSchemaRegistry();
     result.registerFieldType(CURVE_TYPE);
@@ -116,6 +134,32 @@ describe("editor field descriptions", () => {
         });
         const grid = lists.fields.find(field => field.key === "grid")!;
         expect(grid.kind === "list" && grid.element.kind === "list" ? grid.element.elementDefault : undefined).toBe(0);
+    });
+
+    test("a nullable struct carries the encoded value it starts from when it gets one", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        const schemas = registry();
+        schemas.registerComponentClass(MaybeSpread);
+        const described = describeSchemas(world, schemas).components.find(component => component.typeName === "MaybeSpread")!;
+        expect(described.fields).toEqual([{
+            key: "spread",
+            kind: "struct",
+            nullable: true,
+            typeName: "Range",
+            fields: [{key: "min", kind: "number"}, {key: "max", kind: "number"}],
+            presentDefault: {min: 0, max: 1},
+        }]);
+        const entity = world.entityManager.createEntity("maybe", [new MaybeSpread()]);
+        expect(entityDetails(world, schemas, entity).components[0].fields.spread).toBe(null);
+    });
+
+    test("the active scene resource is described in the Scene category, like SceneInstance", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        const schemas = new ComponentSchemaRegistry();
+        registerSchemaEntries(schemas, SCENE_MANAGER_SCHEMAS);
+        const described = describeSchemas(world, schemas);
+        expect(described.resources.find(resource => resource.typeName === ACTIVE_SCENE_RESOURCE_NAME)?.category).toBe(ENGINE_COMPONENT_CATEGORIES.scene);
+        expect(described.components.find(component => component.typeName === SCENE_INSTANCE_COMPONENT_NAME)?.category).toBe(ENGINE_COMPONENT_CATEGORIES.scene);
     });
 
     test("entity details encode nested and custom values through the registry", () => {

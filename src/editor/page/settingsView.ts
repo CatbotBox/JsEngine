@@ -1,6 +1,7 @@
 import type {Entity} from "../../engine/core";
 import type {SceneJsonValue} from "../../engine/scene";
 import type {EditorMode, EditorResourceDescription, EditorResourceDetails, EditorSettingsEntity, SetFieldResult} from "../editorProtocol";
+import {isHiddenResource} from "./componentVisibility";
 import {createButton, createElement} from "./dom";
 import {CoalescedRefresh, ENTITY_LIST_POLL_INTERVAL_MS, SELECTED_ENTITY_PLAY_POLL_INTERVAL_MS} from "./editorRefresh";
 import type {EditorWorkspace} from "./editorWorkspace";
@@ -184,7 +185,8 @@ export class SettingsView {
         const generation = this.editGeneration;
         try {
             const listed = await workspace.request({op: "listSettings"});
-            const details = await Promise.all(listed.resources.map(resource => this.resourceDetails(resource.typeName)));
+            const shown = listed.resources.filter(resource => !isHiddenResource(workspace.resourceSchemas.get(resource.typeName)));
+            const details = await Promise.all(shown.map(resource => this.resourceDetails(resource.typeName)));
             if (generation !== this.editGeneration) return;
             this.showEntities(listed.entities);
             this.showResources(details.filter((entry): entry is EditorResourceDetails => entry !== undefined));

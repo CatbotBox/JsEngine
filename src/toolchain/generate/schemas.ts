@@ -20,7 +20,7 @@ import {projectReachability} from "./reachability";
 import type {ProjectReachability, ProjectSchemaSummary} from "./reachability";
 
 export const SCHEMAS_GENERATOR_NAME = "schemas";
-export const SCHEMAS_GENERATOR_VERSION = 3;
+export const SCHEMAS_GENERATOR_VERSION = 4;
 export const GENERATED_HEADER = generatedFileHeader(SCHEMAS_GENERATOR_NAME, SCHEMAS_GENERATOR_VERSION);
 export const UNSUPPORTED_TYPE_WARNING = "unsupported type";
 export const RECURSIVE_TYPE_WARNING = "recursive type";
@@ -68,7 +68,7 @@ type GeneratedType =
     | {readonly kind: "entity"; readonly nullable: boolean}
     | {readonly kind: "asset"; readonly assetType: string}
     | {readonly kind: "list"; readonly element: GeneratedType}
-    | {readonly kind: "struct"; readonly typeName?: string; readonly create?: ExportReference; readonly fields: readonly GeneratedField[]}
+    | {readonly kind: "struct"; readonly nullable?: boolean; readonly typeName?: string; readonly create?: ExportReference; readonly fields: readonly GeneratedField[]}
     | {readonly kind: "custom"; readonly typeName: string};
 
 type GeneratedField = GeneratedType & {readonly key: string};
@@ -141,7 +141,8 @@ const UNMAPPABLE_TYPE_FLAGS = ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeF
     | ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.ESSymbolLike | ts.TypeFlags.BigIntLike;
 const NULLISH_TYPE_FLAGS = ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.Void;
 const LITERAL_TYPE_FLAGS = ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral;
-const EXCLUDED_MEMBER_MODIFIERS = ts.ModifierFlags.Private | ts.ModifierFlags.Protected | ts.ModifierFlags.Static | ts.ModifierFlags.Readonly;
+const EXCLUDED_MEMBER_MODIFIERS = ts.ModifierFlags.Private | ts.ModifierFlags.Protected | ts.ModifierFlags.Static;
+const VECTOR_KINDS: ReadonlySet<GeneratedType["kind"]> = new Set<GeneratedType["kind"]>(["vec2", "vec3", "rotation"]);
 const ACCESSOR_PAIR = ts.SymbolFlags.GetAccessor | ts.SymbolFlags.SetAccessor;
 
 function isNullishTypeNode(node: ts.TypeNode): boolean {
@@ -193,6 +194,10 @@ function isDataMember(symbol: ts.Symbol): boolean {
     return (modifierFlagsOf(symbol) & EXCLUDED_MEMBER_MODIFIERS) === 0;
 }
 
+function isReadonlyMember(symbol: ts.Symbol): boolean {
+    return (modifierFlagsOf(symbol) & ts.ModifierFlags.Readonly) !== 0;
+}
+
 function supportsTypeName(type: GeneratedType): boolean {
     switch (type.kind) {
         case "number":
@@ -216,6 +221,7 @@ function asNullable(mapped: Mapped): Mapped {
         case "number":
         case "integer":
         case "string":
+        case "struct":
             return {...mapped, nullable: true};
         case "asset":
         case "entity":
@@ -436,6 +442,7 @@ class SchemaGenerator {
         const isOptional = (symbol.flags & ts.SymbolFlags.Optional) !== 0;
         const isFunction = this.checker.getSignaturesOfType(this.checker.getNonNullableType(type), ts.SignatureKind.Call).length > 0;
         if (isFunction) return undefined;
+        if (isReadonlyMember(symbol)) return this.readonlyVectorField(symbol, type, isOptional);
         const path = `${ownerPath}.${symbol.name}`;
         const node = typeNodeOf(symbol);
         const mapped = isOptional ? asNullable(this.mapNode(node, this.checker.getNonNullableType(type), path)) : this.mapNode(node, type, path);
@@ -446,6 +453,11 @@ class SchemaGenerator {
             return undefined;
         }
         return {key: symbol.name, ...mapped};
+    }
+
+    private readonlyVectorField(symbol: ts.Symbol, type: ts.Type, isOptional: boolean): GeneratedField | undefined {
+        const vector = isOptional ? undefined : this.namedTypeOf(type);
+        return vector !== undefined && VECTOR_KINDS.has(vector.kind) ? {key: symbol.name, ...vector} : undefined;
     }
 
     private mapNode(node: ts.TypeNode | undefined, type: ts.Type, path: string): Mapped {

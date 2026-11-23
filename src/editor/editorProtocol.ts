@@ -341,8 +341,10 @@ export interface ListFieldDescription {
 
 export interface StructFieldDescription {
     readonly kind: "struct";
+    readonly nullable?: boolean;
     readonly typeName?: string;
     readonly fields: readonly EditorFieldDescription[];
+    readonly presentDefault?: SceneJsonValue;
 }
 
 export interface CustomFieldDescription {
@@ -374,6 +376,7 @@ export interface EditorComponentDescription {
 export interface EditorResourceDescription {
     readonly typeName: string;
     readonly fields: readonly EditorFieldDescription[];
+    readonly category?: string;
 }
 
 export interface DescribeSchemasResult {

@@ -4,6 +4,7 @@ import {ManualFrameScheduler} from "../testing/manualFrameScheduler";
 import {consoleOverride} from "../debugging";
 import {originalConsole} from "../debugging/originalConsole";
 import {App} from "./app";
+import type {RequestedQuitHandling} from "./app";
 import {World} from "./world";
 import {DebugWorld} from "./debugWorld";
 import {System} from "./system";
@@ -126,6 +127,17 @@ class MarkerOnQuit extends System {
     }
 }
 
+class RequestQuitOnQuit extends System {
+    override systemGroup() {
+        return QuitSystemGroup;
+    }
+
+    public onUpdate(): void {
+        note(this.world, "quit again");
+        this.world.requestQuit();
+    }
+}
+
 const PLAYED_SYSTEMS: readonly SystemCtor<System>[] = [Gameplay, LateGameplay, Draw];
 const QUIT_SYSTEMS: readonly SystemCtor<System>[] = [SaveOnQuit, CloseOnQuit];
 
@@ -138,6 +150,13 @@ function journaled(world: World, name: string, entries: string[], systems: reado
 
 function sameWorlds(actual: readonly World[], expected: readonly World[]): boolean {
     return actual.length === expected.length && actual.every((world, index) => world === expected[index]);
+}
+
+function owner(entries: string[], handling: RequestedQuitHandling): () => RequestedQuitHandling {
+    return () => {
+        entries.push("owner");
+        return handling;
+    };
 }
 
 function ignore(): void {
@@ -323,5 +342,115 @@ describe("App quit", () => {
         expect(sameWorlds(other.worlds, [world])).toBe(true);
         expect(() => app.addWorld(world)).toThrow("another app");
         expect(app.worlds.length).toBe(0);
+    });
+});
+
+describe("App quit through an owner", () => {
+    test("an owner that handles a requested quit is asked after every world's quit groups ran; no world stops, the platform does not quit and the request clears", () => {
+        const entries: string[] = [];
+        const platform = new MemoryPlatform();
+        const app = new App({platform, handleRequestedQuit: owner(entries, "handled")});
+        const first = journaled(app.createWorld(), "first", entries, [...PLAYED_SYSTEMS, ...QUIT_SYSTEMS]);
+        const second = journaled(app.createDebugWorld(), "second", entries, QUIT_SYSTEMS);
+        first.resources.insert(new QuitNow());
+        first.step();
+
+        expect(entries).toEqual([
+            "first gameplay", "first late gameplay", "first present",
+            "first save", "first close", "second save", "second close",
+            "owner",
+        ]);
+        expect(platform.quitCount).toBe(0);
+        expect(sameWorlds(app.worlds, [first, second])).toBe(true);
+        expect([app.quitting, app.quitPending]).toEqual([false, false]);
+    });
+
+    test("after a handled quit the worlds play on, a later request goes to the owner again, and an external exit still runs the quit groups and stops every world", () => {
+        const entries: string[] = [];
+        const platform = new MemoryPlatform();
+        const app = new App({platform, handleRequestedQuit: owner(entries, "handled")});
+        const first = journaled(app.createWorld(), "first", entries, [...PLAYED_SYSTEMS, ...QUIT_SYSTEMS]);
+        const second = journaled(app.createWorld(), "second", entries, QUIT_SYSTEMS);
+        first.requestQuit();
+        first.step();
+        entries.length = 0;
+
+        first.step();
+        expect(entries).toEqual(["first gameplay", "first late gameplay", "first present"]);
+        entries.length = 0;
+
+        second.requestQuit();
+        second.step();
+        expect(entries).toEqual(["first save", "first close", "second save", "second close", "owner"]);
+        entries.length = 0;
+
+        platform.exit();
+        expect(entries).toEqual(["first save", "first close", "second save", "second close", "first stopped", "second stopped"]);
+        expect(platform.quitCount).toBe(0);
+        expect(app.quitting).toBe(true);
+    });
+
+    test("in the frame loop a handled quit keeps the loop running and the next frame plays on", () => {
+        const entries: string[] = [];
+        const scheduler = new ManualFrameScheduler();
+        const platform = new MemoryPlatform({frameScheduler: scheduler});
+        const app = new App({platform, handleRequestedQuit: owner(entries, "handled")});
+        const world = journaled(app.createWorld(), "world", entries, [Gameplay, Draw, SaveOnQuit]);
+        world.resources.insert(new QuitNow());
+        world.startLoop();
+        const frameTimeMs = CATCH_UP_TICKS * TICK_MS;
+        platform.setNow(frameTimeMs);
+        scheduler.frame(frameTimeMs);
+
+        expect(entries).toEqual(["world gameplay", "world gameplay", "world gameplay", "world present", "world save", "owner"]);
+        expect(scheduler.running).toBe(true);
+        entries.length = 0;
+
+        world.resources.remove(QuitNow);
+        const nextFrameTimeMs = frameTimeMs + TICK_MS;
+        platform.setNow(nextFrameTimeMs);
+        scheduler.frame(nextFrameTimeMs);
+        expect(entries).toEqual(["world gameplay", "world present"]);
+        expect(platform.quitCount).toBe(0);
+        world.pause();
+    });
+
+    test("a quit that a quit system requests during a handled quit belongs to that quit", () => {
+        const entries: string[] = [];
+        const platform = new MemoryPlatform();
+        const app = new App({platform, handleRequestedQuit: owner(entries, "handled")});
+        const world = journaled(app.createWorld(), "world", entries, [RequestQuitOnQuit]);
+        world.requestQuit();
+        world.step();
+        world.step();
+
+        expect(entries).toEqual(["world quit again", "owner"]);
+        expect(app.quitPending).toBe(false);
+    });
+
+    test("an owner that lets the quit proceed is asked after the quit groups, then every world stops and the platform quits once, as without an owner", () => {
+        const entries: string[] = [];
+        const platform = new MemoryPlatform();
+        const app = new App({platform, handleRequestedQuit: owner(entries, "proceed")});
+        const first = journaled(app.createWorld(), "first", entries, [...PLAYED_SYSTEMS, ...QUIT_SYSTEMS]);
+        journaled(app.createDebugWorld(), "second", entries, QUIT_SYSTEMS);
+        platform.onExit(() => entries.push("platform exit"));
+        first.resources.insert(new QuitNow());
+        first.step();
+        first.requestQuit();
+        first.step();
+        app.quitAfterFrame();
+        platform.exit();
+
+        expect(entries).toEqual([
+            "first gameplay", "first late gameplay", "first present",
+            "first save", "first close", "second save", "second close",
+            "owner",
+            "first stopped", "second stopped",
+            "platform exit",
+        ]);
+        expect(platform.quitCount).toBe(1);
+        expect(app.worlds.length).toBe(0);
+        expect([app.quitting, app.quitPending]).toEqual([true, false]);
     });
 });

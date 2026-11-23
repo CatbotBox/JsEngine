@@ -90,6 +90,7 @@ export interface ListFieldType {
 
 export interface StructFieldType {
     readonly kind: "struct";
+    readonly nullable?: boolean;
     readonly typeName?: string;
     readonly fields: readonly FieldSchema[];
     readonly create?: () => object;
@@ -168,6 +169,7 @@ export interface ResourceSchema<T extends Resource = Resource> {
     readonly name: string;
     readonly ctor: ResourceCtor<T>;
     readonly fields: readonly FieldSchema[];
+    readonly category?: string;
 
     create(): T;
 }

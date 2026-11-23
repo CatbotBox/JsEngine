@@ -238,8 +238,12 @@ function structLabel(field: StructFieldType): string {
     return field.typeName ?? "the struct";
 }
 
+function orAbsent(field: StructFieldType, expectation: string, absent: string): string {
+    return field.nullable === true ? `${expectation} or ${absent}` : expectation;
+}
+
 function encodeStruct(field: StructFieldType, value: unknown, context: FieldEncodeContext, path: string): SceneJsonValue {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) throw fieldValueError(path, `an object holding ${structLabel(field)}'s fields`, value);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) throw fieldValueError(path, orAbsent(field, `an object holding ${structLabel(field)}'s fields`, "undefined"), value);
     const values = value as Record<string, unknown>;
     const encoded: SceneJsonObject = {};
     for (const member of field.fields) encoded[member.key] = encodeFieldValue(member, values[member.key], context, `${path}.${member.key}`);
@@ -247,7 +251,7 @@ function encodeStruct(field: StructFieldType, value: unknown, context: FieldEnco
 }
 
 function decodeStruct(field: StructFieldType, json: SceneJsonValue, context: FieldDecodeContext, path: string): object {
-    if (!isSceneJsonObject(json)) throw fieldValueError(path, `an object of ${structLabel(field)}'s fields`, json);
+    if (!isSceneJsonObject(json)) throw fieldValueError(path, orAbsent(field, `an object of ${structLabel(field)}'s fields`, "null"), json);
     const unknownKeys = Object.keys(json).filter(key => !field.fields.some(member => member.key === key));
     if (context.reportSchemaChange === undefined) {
         if (unknownKeys.length > 0) {
@@ -320,6 +324,7 @@ export function encodeFieldValue(field: FieldType, value: unknown, context: Fiel
         case "list":
             return encodeList(field.element, value, context, path);
         case "struct":
+            if (field.nullable === true && value === undefined) return null;
             return encodeStruct(field, value, context, path);
         case "custom":
             return customFieldTypeOf(context.fieldTypes, field.typeName, path).encode(value, path);
@@ -372,6 +377,7 @@ export function decodeFieldValue(field: FieldType, json: SceneJsonValue, context
         case "list":
             return decodeList(field.element, json, context, path);
         case "struct":
+            if (field.nullable === true && json === null) return undefined;
             return decodeStruct(field, json, context, path);
         case "custom":
             return customFieldTypeOf(context.fieldTypes, field.typeName, path).decode(json, path);
