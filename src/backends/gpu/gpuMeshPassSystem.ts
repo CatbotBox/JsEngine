@@ -354,6 +354,7 @@ export class GpuMeshPassSystem extends System {
         let currentPipeline: GPURenderPipeline | undefined;
         for (const batch of this._batcher.batches) {
             const pipeline = this._pipelines.pipelineFor(library.shaderNamed(batch.surfaceShader), batch.culling, format, sampleCount, this._frameNumber);
+            if (pipeline === undefined) continue;
             if (pipeline !== currentPipeline) {
                 pass.setPipeline(pipeline);
                 currentPipeline = pipeline;
