@@ -30,11 +30,11 @@ import type {ModuleImport} from "./generatedModule";
 import type {ProjectSources} from "./projectSources";
 
 export const MAINS_GENERATOR_NAME = "mains";
-export const MAINS_GENERATOR_VERSION = 4;
+export const MAINS_GENERATOR_VERSION = 5;
 export const MAINS_GENERATED_HEADER = generatedFileHeader(MAINS_GENERATOR_NAME, MAINS_GENERATOR_VERSION);
 
 interface ModuleExport {
-    readonly path: readonly string[];
+    readonly entryPoint: string;
     readonly name: string;
 }
 
@@ -54,35 +54,41 @@ const TERMINAL_PROJECT_DIRECTORY = "`${__dirname}/..`";
 const PRESENTER_FROM_PAGE = "presenter";
 const WEB_TARGET: ProjectTarget = "web";
 const PAGE_DEFAULT_BACKEND_FUNCTION = "pageDefaultRenderBackend";
+const ENGINE_CORE_ENTRY_POINT = "engine/core";
+const TERMINAL_HOST_ENTRY_POINT = "hosts/terminal";
+const WEB_PAGE_ENTRY_POINT = "hosts/web";
+const WEB_BOOTSTRAP_ENTRY_POINT = "hosts/web/bootstrap";
+const WEB_WORKER_ENTRY_POINT = "hosts/web/worker";
+const EDITOR_LAUNCH_ENTRY_POINT = "editor/launch";
 
 const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
     cells: {
-        installer: {path: ["backends", "cells", "cellsBackend"], name: "installCellsBackend"},
-        editorPasses: {path: ["backends", "cells", "cellsStandardPasses"], name: "CELLS_STANDARD_PASSES"},
-        display: {path: ["hosts", "web", "cellCanvasDisplay"], name: "cellCanvasDisplayFromQuery"},
+        installer: {entryPoint: "backends/cells", name: "installCellsBackend"},
+        editorPasses: {entryPoint: "backends/cells", name: "CELLS_STANDARD_PASSES"},
+        display: {entryPoint: "hosts/web/cells", name: "cellCanvasDisplayFromQuery"},
         presenterSetup: ["const presenter = page.cellPresenter();"],
         installArguments: PRESENTER_FROM_PAGE,
         setupImports: [],
     },
     pixels: {
-        installer: {path: ["backends", "pixels", "pixelsBackend"], name: "installPixelsBackend"},
-        editorPasses: {path: ["backends", "pixels", "pixelsStandardPasses"], name: "PIXELS_STANDARD_PASSES"},
-        display: {path: ["hosts", "web", "pixelCanvasDisplay"], name: "pixelCanvasDisplayFromQuery"},
-        scaledDisplay: {path: ["hosts", "web", "pixelCanvasDisplay"], name: "pixelCanvasDisplayScaledBy"},
+        installer: {entryPoint: "backends/pixels", name: "installPixelsBackend"},
+        editorPasses: {entryPoint: "backends/pixels", name: "PIXELS_STANDARD_PASSES"},
+        display: {entryPoint: "hosts/web/pixels", name: "pixelCanvasDisplayFromQuery"},
+        scaledDisplay: {entryPoint: "hosts/web/pixels", name: "pixelCanvasDisplayScaledBy"},
         presenterSetup: ["const presenter = page.pixelPresenter();"],
         installArguments: PRESENTER_FROM_PAGE,
         setupImports: [],
     },
     gpu: {
-        installer: {path: ["backends", "gpu", "gpuBackend"], name: "installGpuBackend"},
-        editorPasses: {path: ["backends", "gpu", "gpuStandardPasses"], name: "GPU_STANDARD_PASSES"},
-        display: {path: ["hosts", "web", "gpuCanvasDisplay"], name: "gpuCanvasDisplayFromQuery"},
-        scaledDisplay: {path: ["hosts", "web", "gpuCanvasDisplay"], name: "gpuCanvasDisplayScaledBy"},
+        installer: {entryPoint: "backends/gpu", name: "installGpuBackend"},
+        editorPasses: {entryPoint: "backends/gpu", name: "GPU_STANDARD_PASSES"},
+        display: {entryPoint: "hosts/web/gpu", name: "gpuCanvasDisplayFromQuery"},
+        scaledDisplay: {entryPoint: "hosts/web/gpu", name: "gpuCanvasDisplayScaledBy"},
         presenterSetup: ["const device = await requestGpuDevice(page);", "const presenter = gpuCanvasPresenter(page, device);"],
         installArguments: `device, ${PRESENTER_FROM_PAGE}`,
         setupImports: [
-            {path: ["hosts", "web", "gpuWorldDevice"], name: "requestGpuDevice"},
-            {path: ["hosts", "web", "gpuWorldDevice"], name: "gpuCanvasPresenter"},
+            {entryPoint: "hosts/web/worker/gpu", name: "requestGpuDevice"},
+            {entryPoint: "hosts/web/worker/gpu", name: "gpuCanvasPresenter"},
         ],
     },
 };
@@ -114,7 +120,7 @@ class MainsWriter {
     }
 
     private exported(module: ModuleExport): ModuleImport {
-        return {names: [module.name], module: this.sources.sourceModule(...module.path)};
+        return {names: [module.name], module: this.sources.entryPointModule(module.entryPoint)};
     }
 
     private startProjectImport(): ModuleImport {
@@ -140,7 +146,7 @@ class MainsWriter {
         const backend = BACKEND_MAINS[TERMINAL_BACKEND];
         return this.source(TERMINAL_MAIN_FILE, [
             this.exported(backend.installer),
-            {names: ["runTerminalGame"], module: this.sources.sourceModule("hosts", "terminal", "terminalGame")},
+            {names: ["runTerminalGame"], module: this.sources.entryPointModule(TERMINAL_HOST_ENTRY_POINT)},
             this.startProjectImport(),
             ...this.backendHostImports(TERMINAL_BACKEND),
         ], [
@@ -159,8 +165,7 @@ class MainsWriter {
         const bootstrapNames = projectBackend === undefined ? ["loadRenderBackendScript", PAGE_DEFAULT_BACKEND_FUNCTION] : ["loadRenderBackendScript"];
         const defaultBackend = projectBackend === undefined ? `${PAGE_DEFAULT_BACKEND_FUNCTION}(document)` : JSON.stringify(projectBackend);
         return this.source(WEB_PAGE_BOOTSTRAP_FILE, [
-            {names: ["connectDevReload"], module: this.sources.sourceModule("hosts", "web", "devReload")},
-            {names: bootstrapNames, module: this.sources.sourceModule("hosts", "web", "renderBackendBootstrap")},
+            {names: ["connectDevReload", ...bootstrapNames], module: this.sources.entryPointModule(WEB_BOOTSTRAP_ENTRY_POINT)},
         ], [
             `loadRenderBackendScript({${scripts}}, {defaultBackend: ${defaultBackend}});`,
             "connectDevReload();",
@@ -180,7 +185,7 @@ class MainsWriter {
         const worker = JSON.stringify(webBundleFile(webWorkerBundle(this.slug, kind)));
         return this.source(webPageMainFile(kind), [
             this.exported(display.module),
-            {names: ["startWorldPage"], module: this.sources.sourceModule("hosts", "web", "worldPage")},
+            {names: ["startWorldPage"], module: this.sources.entryPointModule(WEB_PAGE_ENTRY_POINT)},
         ], [
             `startWorldPage(${worker}, ${JSON.stringify(this.gameName)}, ${display.expression});`,
         ]);
@@ -189,11 +194,10 @@ class MainsWriter {
     private webWorkerMain(kind: RenderBackendKind): GeneratedSource {
         const backend = BACKEND_MAINS[kind];
         return this.source(webWorkerMainFile(kind), [
-            {names: ["App"], module: this.sources.engineModule("core")},
+            {names: ["App"], module: this.sources.entryPointModule(ENGINE_CORE_ENTRY_POINT)},
             this.exported(backend.installer),
             ...backend.setupImports.map(module => this.exported(module)),
-            {names: ["runProjectInWorker"], module: this.sources.sourceModule("hosts", "web", "projectWorker")},
-            {names: ["runWorldWorker"], module: this.sources.sourceModule("hosts", "web", "worldWorker")},
+            {names: ["runProjectInWorker", "runWorldWorker"], module: this.sources.entryPointModule(WEB_WORKER_ENTRY_POINT)},
             this.startProjectImport(),
             ...this.backendHostImports(kind),
         ], [
@@ -214,7 +218,7 @@ class MainsWriter {
             this.exported(backend.installer),
             this.exported(backend.editorPasses),
             ...backend.setupImports.map(module => this.exported(module)),
-            {names: ["runProjectEditorWorker"], module: this.sources.sourceModule("editor", "launch", "projectEditorWorker")},
+            {names: ["runProjectEditorWorker"], module: this.sources.entryPointModule(EDITOR_LAUNCH_ENTRY_POINT)},
             this.startProjectImport(),
             {names: [GENERATED_SYSTEMS_EXPORT], module: this.sources.projectModule(GENERATED_SYSTEMS_FILE)},
             this.backendSystemsImport(kind),

@@ -1,6 +1,6 @@
-import {Resource} from "../../src/engine/core";
-import {TextColor} from "../../src/engine/rendering";
-import type {Int, PrefabAsset, Rgb, TextLines} from "../../src/engine/scene";
+import {Resource} from "@jsengine/engine/core";
+import {TextColor} from "@jsengine/engine/rendering";
+import type {Int, PrefabAsset, Rgb, TextLines} from "@jsengine/engine/scene";
 
 export const MS_PER_SECOND = 1000;
 export const SWARM_TUNING_FILE = "assets/swarm.tuning.asset.json";

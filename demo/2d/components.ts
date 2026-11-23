@@ -1,7 +1,7 @@
-import {Component, NULL_ENTITY} from "../../src/engine/core";
-import type {Entity} from "../../src/engine/core";
-import {WHITE_RGB} from "../../src/engine/rendering";
-import type {Rgb} from "../../src/engine/scene";
+import {Component, NULL_ENTITY} from "@jsengine/engine/core";
+import type {Entity} from "@jsengine/engine/core";
+import {WHITE_RGB} from "@jsengine/engine/rendering";
+import type {Rgb} from "@jsengine/engine/scene";
 
 const DEMO_2D_CATEGORY = "Demo 2D";
 

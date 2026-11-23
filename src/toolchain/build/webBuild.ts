@@ -36,7 +36,7 @@ import {buildProjectAssetManifest, projectAssetRegistry} from "./projectAssets";
 import {reportGeneratedFiles} from "../generate/generatedFilesReport";
 import {bundleInputsOf, requireMetafile} from "./bundleMetafile";
 import type {MetafileBuildConfig, MetafileBuildOutput} from "./bundleMetafile";
-import {ENGINE_IMPORTS} from "./editorBuild";
+import {ENGINE_IMPORT_CHECK} from "./editorBuild";
 import {checkBundleFeatures, targetFeatureReport} from "./featureDetection";
 import type {FeatureCheckBundle, TargetFeatureReport} from "./featureDetection";
 import {projectPageHtml} from "./projectPage";
@@ -428,7 +428,7 @@ class WebSiteBuild {
                 metafile: true,
                 throw: false,
                 define: {[DEV_RELOAD_DEFINE]: JSON.stringify(!this.options.prod), ...featureDefines(this.options.target)},
-                plugins: [ENGINE_IMPORTS],
+                plugins: [ENGINE_IMPORT_CHECK],
             };
             const result: MetafileBuildOutput = await Bun.build(config);
             const bundle = this.siteRelative(this.bundlePath(entry));

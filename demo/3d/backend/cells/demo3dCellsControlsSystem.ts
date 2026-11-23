@@ -1,8 +1,8 @@
-import {System} from "../../../../src/engine/core";
-import {Input, resolveInputActions} from "../../../../src/engine/input";
-import type {ResolvedInputActions} from "../../../../src/engine/input";
-import {CellsRenderBackend} from "../../../../src/engine/rendering/renderBackend";
-import {MeshCellPassSettings} from "../../../../src/backends/cells/3d/meshCellPassSettings";
+import {System} from "@jsengine/engine/core";
+import {Input, resolveInputActions} from "@jsengine/engine/input";
+import type {ResolvedInputActions} from "@jsengine/engine/input";
+import {CellsRenderBackend} from "@jsengine/engine/rendering";
+import {MeshCellPassSettings} from "@jsengine/backends/cells/3d";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";
 import {Demo3dTuning} from "../../tuning";
 

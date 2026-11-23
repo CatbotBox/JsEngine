@@ -32,7 +32,7 @@ export class FrameRunner {
         const timing = host.loopTiming();
         this._timing = timing;
         this._interleaveIntervalMs = interleavedFrameIntervalMs(timing.pacing);
-        this._frameLoop = new FrameLoop(timing.tickDeltaMs, timing.maxCatchUpTicks);
+        this._frameLoop = new FrameLoop(timing.tickDeltaMs, timing.maxTicksPerFrame);
     }
 
     public get running(): boolean {
@@ -115,6 +115,6 @@ export class FrameRunner {
     private retime(timing: LoopTiming): void {
         this._timing = timing;
         this._interleaveIntervalMs = interleavedFrameIntervalMs(timing.pacing);
-        this._frameLoop.configure(timing.tickDeltaMs, timing.maxCatchUpTicks);
+        this._frameLoop.configure(timing.tickDeltaMs, timing.maxTicksPerFrame);
     }
 }

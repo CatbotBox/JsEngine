@@ -1,5 +1,5 @@
-import {Resource} from "../../src/engine/core";
-import type {Int} from "../../src/engine/scene";
+import {Resource} from "@jsengine/engine/core";
+import type {Int} from "@jsengine/engine/scene";
 
 export const SwarmPhase = {
     Title: "title",

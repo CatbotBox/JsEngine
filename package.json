@@ -3,15 +3,20 @@
   "version": "0.1.0",
   "description": "Console-rendered ECS game engine, runs on node and bun",
   "author": "Xavier Tay",
+  "private": true,
   "type": "commonjs",
   "main": "dist/engine/index.js",
   "types": "dist/engine/index.d.ts",
   "engines": {
     "node": ">=22.0.0"
   },
-  "bin": {
-    "jsengine": "src/toolchain/cli.ts"
-  },
+  "workspaces": [
+    "src/engine",
+    "src/backends",
+    "src/hosts",
+    "src/editor",
+    "src/toolchain"
+  ],
   "scripts": {
     "check": "bun scripts/runChecks.ts",
     "check:release": "bun scripts/runChecks.ts --release",
@@ -32,6 +37,13 @@
     "web:serve": "bun src/toolchain/cli.ts serve",
     "web:deploy": "bun src/toolchain/cli.ts build --target web --prod && bunx wrangler pages deploy",
     "window:package": "bun src/toolchain/cli.ts package --target window"
+  },
+  "dependencies": {
+    "@jsengine/backends": "workspace:*",
+    "@jsengine/editor": "workspace:*",
+    "@jsengine/engine": "workspace:*",
+    "@jsengine/hosts": "workspace:*",
+    "@jsengine/toolchain": "workspace:*"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",

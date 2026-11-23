@@ -1,53 +1,40 @@
-import * as cells2dSchemas from "../../backends/cells/2d/schemas";
-import * as cellsHudSpritePasses from "../../backends/cells/2d/cellsHudSpritePasses";
-import * as cellsSpritePasses from "../../backends/cells/2d/cellsSpritePasses";
-import * as cellsWorldTextPasses from "../../backends/cells/2d/cellsWorldTextPasses";
-import * as cells3dSchemas from "../../backends/cells/3d/schemas";
-import * as cellsMeshPasses from "../../backends/cells/3d/cellsMeshPasses";
+import * as cells from "../../backends/cells";
+import * as cells2d from "../../backends/cells/2d";
+import * as cells3d from "../../backends/cells/3d";
 import {CELLS_SCHEMAS} from "../../backends/cells/cellsComponentSchemas";
-import * as cellsHudTextPasses from "../../backends/cells/cellsHudTextPasses";
 import {CELLS_PASS_LISTS} from "../../backends/cells/cellsStandardPasses";
-import * as cellsSchemas from "../../backends/cells/schemas";
+import * as gpu from "../../backends/gpu";
 import {GPU_HOST_SCHEMAS, GPU_SCHEMAS} from "../../backends/gpu/gpuComponentSchemas";
-import * as gpuMeshPasses from "../../backends/gpu/gpuMeshPasses";
 import {GPU_PASS_LISTS} from "../../backends/gpu/gpuStandardPasses";
-import * as gpuSchemas from "../../backends/gpu/schemas";
-import * as pixels2dSchemas from "../../backends/pixels/2d/schemas";
-import * as pixelsHudSpritePasses from "../../backends/pixels/2d/pixelsHudSpritePasses";
-import * as pixelsSpritePasses from "../../backends/pixels/2d/pixelsSpritePasses";
-import * as pixels3dSchemas from "../../backends/pixels/3d/schemas";
-import * as pixelsMeshPasses from "../../backends/pixels/3d/pixelsMeshPasses";
+import * as pixels from "../../backends/pixels";
+import * as pixels2d from "../../backends/pixels/2d";
+import * as pixels3d from "../../backends/pixels/3d";
 import {PIXELS_SCHEMAS} from "../../backends/pixels/pixelsComponentSchemas";
-import * as pixelsHudTextPasses from "../../backends/pixels/pixelsHudTextPasses";
 import {PIXELS_PASS_LISTS} from "../../backends/pixels/pixelsStandardPasses";
-import * as pixelsWorldTextPasses from "../../backends/pixels/pixelsWorldTextPasses";
-import * as pixelsSchemas from "../../backends/pixels/schemas";
+import * as assets from "../../engine/assets";
 import {BUILTIN_IMAGE_DECODERS} from "../../engine/assets/image/builtinDecoders";
 import type {ImageDecoderEntry} from "../../engine/assets/image/decodedImage";
-import * as jpegDecoder from "../../engine/assets/image/jpeg";
-import * as pngDecoder from "../../engine/assets/image/png";
-import * as ppmDecoder from "../../engine/assets/image/ppm";
-import * as cameraControllerSchemas from "../../engine/cameraControllers/schemas";
-import * as coreSchemas from "../../engine/core/schemas";
-import * as inputSchemas from "../../engine/input/schemas";
-import * as randomSchema from "../../engine/math/randomSchema";
+import * as cameraControllers2d from "../../engine/cameraControllers/2d";
+import * as cameraControllers3d from "../../engine/cameraControllers/3d";
+import * as core from "../../engine/core";
+import * as input from "../../engine/input";
+import * as math from "../../engine/math";
 import {RANDOM_SCHEMA_ENTRY} from "../../engine/math/randomSchema";
-import * as motionSchemas from "../../engine/motion/schemas";
-import * as rendering2dSchemas from "../../engine/rendering/2d/schemas";
-import * as lightingSchemas from "../../engine/rendering/3d/lighting/schemas";
-import * as rendering3dSchemas from "../../engine/rendering/3d/schemas";
+import * as motion from "../../engine/motion";
+import * as rendering from "../../engine/rendering";
+import * as rendering2d from "../../engine/rendering/2d";
+import * as rendering3d from "../../engine/rendering/3d";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 import type {RenderPassCtor} from "../../engine/rendering/renderPasses";
 import {RENDER_PASS_REQUIRED_TYPES} from "../../engine/rendering/renderPassTypes";
-import * as renderingSchemas from "../../engine/rendering/schemas";
+import * as scene from "../../engine/scene";
 import {ENGINE_SCHEMAS} from "../../engine/scene/engineComponentSchemas";
 import type {FieldSchema, FieldType} from "../../engine/scene/fieldSchema";
 import type {SchemaEntry} from "../../engine/scene/schemaEntries";
-import * as sceneSchemas from "../../engine/scene/schemas";
-import * as translationSchemas from "../../engine/translation/schemas";
+import * as translation from "../../engine/translation";
 
 export interface SourceExport {
-    readonly path: readonly string[];
+    readonly entryPoint: string;
     readonly name: string;
 }
 
@@ -79,52 +66,46 @@ export interface CatalogImageDecoder {
 }
 
 interface SourceModule {
-    readonly path: readonly string[];
+    readonly entryPoint: string;
     readonly exports: object;
 }
 
 const ENGINE_SCHEMA_MODULES: readonly SourceModule[] = [
-    {path: ["engine", "cameraControllers", "schemas"], exports: cameraControllerSchemas},
-    {path: ["engine", "core", "schemas"], exports: coreSchemas},
-    {path: ["engine", "input", "schemas"], exports: inputSchemas},
-    {path: ["engine", "math", "randomSchema"], exports: randomSchema},
-    {path: ["engine", "motion", "schemas"], exports: motionSchemas},
-    {path: ["engine", "rendering", "2d", "schemas"], exports: rendering2dSchemas},
-    {path: ["engine", "rendering", "3d", "lighting", "schemas"], exports: lightingSchemas},
-    {path: ["engine", "rendering", "3d", "schemas"], exports: rendering3dSchemas},
-    {path: ["engine", "rendering", "schemas"], exports: renderingSchemas},
-    {path: ["engine", "scene", "schemas"], exports: sceneSchemas},
-    {path: ["engine", "translation", "schemas"], exports: translationSchemas},
+    {entryPoint: "engine/cameraControllers/2d", exports: cameraControllers2d},
+    {entryPoint: "engine/cameraControllers/3d", exports: cameraControllers3d},
+    {entryPoint: "engine/core", exports: core},
+    {entryPoint: "engine/input", exports: input},
+    {entryPoint: "engine/math", exports: math},
+    {entryPoint: "engine/motion", exports: motion},
+    {entryPoint: "engine/rendering/2d", exports: rendering2d},
+    {entryPoint: "engine/rendering/3d", exports: rendering3d},
+    {entryPoint: "engine/rendering", exports: rendering},
+    {entryPoint: "engine/scene", exports: scene},
+    {entryPoint: "engine/translation", exports: translation},
 ];
 
 const BACKEND_SCHEMA_MODULES: readonly SourceModule[] = [
-    {path: ["backends", "cells", "schemas"], exports: cellsSchemas},
-    {path: ["backends", "cells", "2d", "schemas"], exports: cells2dSchemas},
-    {path: ["backends", "cells", "3d", "schemas"], exports: cells3dSchemas},
-    {path: ["backends", "pixels", "schemas"], exports: pixelsSchemas},
-    {path: ["backends", "pixels", "2d", "schemas"], exports: pixels2dSchemas},
-    {path: ["backends", "pixels", "3d", "schemas"], exports: pixels3dSchemas},
-    {path: ["backends", "gpu", "schemas"], exports: gpuSchemas},
+    {entryPoint: "backends/cells", exports: cells},
+    {entryPoint: "backends/cells/2d", exports: cells2d},
+    {entryPoint: "backends/cells/3d", exports: cells3d},
+    {entryPoint: "backends/pixels", exports: pixels},
+    {entryPoint: "backends/pixels/2d", exports: pixels2d},
+    {entryPoint: "backends/pixels/3d", exports: pixels3d},
+    {entryPoint: "backends/gpu", exports: gpu},
 ];
 
 const PASS_LIST_MODULES: readonly SourceModule[] = [
-    {path: ["backends", "cells", "3d", "cellsMeshPasses"], exports: cellsMeshPasses},
-    {path: ["backends", "cells", "2d", "cellsSpritePasses"], exports: cellsSpritePasses},
-    {path: ["backends", "cells", "2d", "cellsWorldTextPasses"], exports: cellsWorldTextPasses},
-    {path: ["backends", "cells", "2d", "cellsHudSpritePasses"], exports: cellsHudSpritePasses},
-    {path: ["backends", "cells", "cellsHudTextPasses"], exports: cellsHudTextPasses},
-    {path: ["backends", "pixels", "3d", "pixelsMeshPasses"], exports: pixelsMeshPasses},
-    {path: ["backends", "pixels", "2d", "pixelsSpritePasses"], exports: pixelsSpritePasses},
-    {path: ["backends", "pixels", "pixelsWorldTextPasses"], exports: pixelsWorldTextPasses},
-    {path: ["backends", "pixels", "2d", "pixelsHudSpritePasses"], exports: pixelsHudSpritePasses},
-    {path: ["backends", "pixels", "pixelsHudTextPasses"], exports: pixelsHudTextPasses},
-    {path: ["backends", "gpu", "gpuMeshPasses"], exports: gpuMeshPasses},
+    {entryPoint: "backends/cells/2d", exports: cells2d},
+    {entryPoint: "backends/cells/3d", exports: cells3d},
+    {entryPoint: "backends/cells", exports: cells},
+    {entryPoint: "backends/pixels/2d", exports: pixels2d},
+    {entryPoint: "backends/pixels/3d", exports: pixels3d},
+    {entryPoint: "backends/pixels", exports: pixels},
+    {entryPoint: "backends/gpu", exports: gpu},
 ];
 
 const IMAGE_DECODER_MODULES: readonly SourceModule[] = [
-    {path: ["engine", "assets", "image", "png"], exports: pngDecoder},
-    {path: ["engine", "assets", "image", "ppm"], exports: ppmDecoder},
-    {path: ["engine", "assets", "image", "jpeg"], exports: jpegDecoder},
+    {entryPoint: "engine/assets", exports: assets},
 ];
 
 const NAMED_BY_CODE = true;
@@ -147,9 +128,9 @@ const BACKEND_PASS_LISTS: Readonly<Record<RenderBackendKind, readonly (readonly 
 function sourceExportOf(modules: readonly SourceModule[], value: unknown, label: string): SourceExport {
     for (const module of modules) {
         const name = Object.keys(module.exports).find(key => (module.exports as Readonly<Record<string, unknown>>)[key] === value);
-        if (name !== undefined) return {path: module.path, name};
+        if (name !== undefined) return {entryPoint: module.entryPoint, name};
     }
-    throw new Error(`the toolchain catalog lists no module exporting ${label}; add its module to engineCatalog.ts`);
+    throw new Error(`no engine entry point exports ${label}; export it from its area's barrel and list that barrel in engineCatalog.ts`);
 }
 
 function collectAssetKinds(type: FieldType, kinds: Set<string>): void {

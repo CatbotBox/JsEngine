@@ -7,3 +7,5 @@ export {AnsiCellEncoder, glyphText} from "./ansi/ansiCellEncoder";
 export {AnsiCellPresenter} from "./ansi/ansiCellPresenter";
 export {ansiTextRows, ansiTextSprite} from "./ansi/ansiTextRows";
 export type {AnsiTextOptions} from "./ansi/ansiTextRows";
+export {exitAfterLaunchFailure, exitUnlessInteractiveTerminal, runTerminalGame} from "./terminalGame";
+export type {TerminalGameStart} from "./terminalGame";

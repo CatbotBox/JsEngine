@@ -9,9 +9,12 @@ import type {ProjectSources} from "./projectSources";
 import {projectReachabilityOf} from "./schemas";
 
 export const GAME_GENERATOR_NAME = "game";
-export const GAME_GENERATOR_VERSION = 2;
+export const GAME_GENERATOR_VERSION = 3;
 export const GAME_GENERATED_HEADER = generatedFileHeader(GAME_GENERATOR_NAME, GAME_GENERATOR_VERSION);
 
+const ENGINE_ASSETS_ENTRY_POINT = "engine/assets";
+const ENGINE_CORE_ENTRY_POINT = "engine/core";
+const ENGINE_PROJECT_ENTRY_POINT = "engine/project";
 const RESOURCES_CONSTANT = "projectResources";
 const START_SCENE_CONSTANT = "projectStartScene";
 const IMAGE_DECODERS_CONSTANT = "projectImageDecoders";
@@ -37,12 +40,11 @@ function startSceneLine(startScene: string | undefined): string {
 
 function gameImports(sources: ProjectSources, decoders: readonly CatalogImageDecoder[]): ModuleImport[] {
     return [
-        ...decoders.map(decoder => ({names: [decoder.source.name], module: sources.sourceModule(...decoder.source.path)})),
-        {names: ["ImageDecoderEntry"], module: sources.engineModule("assets", "image", "decodedImage"), typeOnly: true},
-        {names: ["World"], module: sources.engineModule("core"), typeOnly: true},
-        {names: ["ProjectResourceBinding"], module: sources.engineModule("project", "projectManifest"), typeOnly: true},
-        {names: ["startGame"], module: sources.engineModule("project", "startGame")},
-        {names: ["ProjectHost", "StartedGame"], module: sources.engineModule("project", "startGame"), typeOnly: true},
+        ...decoders.map(decoder => ({names: [decoder.source.name], module: sources.entryPointModule(decoder.source.entryPoint)})),
+        {names: ["ImageDecoderEntry"], module: sources.entryPointModule(ENGINE_ASSETS_ENTRY_POINT), typeOnly: true},
+        {names: ["World"], module: sources.entryPointModule(ENGINE_CORE_ENTRY_POINT), typeOnly: true},
+        {names: ["startGame"], module: sources.entryPointModule(ENGINE_PROJECT_ENTRY_POINT)},
+        {names: ["ProjectHost", "ProjectResourceBinding", "StartedGame"], module: sources.entryPointModule(ENGINE_PROJECT_ENTRY_POINT), typeOnly: true},
         {names: [GENERATED_SCHEMAS_EXPORT], module: sources.projectModule(GENERATED_SCHEMAS_FILE)},
         {names: [GENERATED_SYSTEMS_EXPORT], module: sources.projectModule(GENERATED_SYSTEMS_FILE)},
     ];

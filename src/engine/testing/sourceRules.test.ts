@@ -21,7 +21,7 @@ const BUN_TEST_IMPORT = /from\s+["']bun:test["']|require\(\s*["']bun:test["']\s*
 const HARNESS = path.join(SRC, "engine", "testing", "harness.ts");
 const SUITE_ROOTS = [SRC, DEMO];
 
-const RELATIVE_IMPORT = /(?:from|import|require)\s*\(?\s*["'](\.{1,2}(?:\/[^"']*)?)["']/g;
+const SOURCE_IMPORT = /(?:from|import|require)\s*\(?\s*["'](\.{1,2}(?:\/[^"']*)?|@jsengine\/[^"']*)["']/g;
 const RESOLVE_SUFFIXES = ["", ".ts", ".js", "/index.ts"];
 
 const BACKENDS = ["backends/cells", "backends/pixels", "backends/gpu"];
@@ -79,6 +79,37 @@ const DECLARATION_STATEMENT_KINDS: ReadonlySet<TypeScript.SyntaxKind> = new Set(
 ]);
 const ENGINE_WORLD_SOURCE = "src/engine/core/world.ts";
 const ENGINE_START_GAME_SOURCE = "src/engine/project/startGame.ts";
+const SOURCE_PREFIX = "src/";
+const PACKAGE_MANIFEST_FILE = "package.json";
+const PACKAGE_SCOPE = "@jsengine/";
+const PACKAGE_ROOT_EXPORT = ".";
+const BARREL_FILE = "index.ts";
+
+interface PackageManifest {
+    readonly name: string;
+    readonly workspaces?: readonly string[];
+    readonly exports?: Readonly<Record<string, string>>;
+}
+
+interface DemoImport {
+    readonly importer: string;
+    readonly specifier: string;
+    readonly target: string | undefined;
+}
+
+function readPackageManifest(folder: string): PackageManifest {
+    return JSON.parse(fs.readFileSync(path.join(folder, PACKAGE_MANIFEST_FILE), "utf8")) as PackageManifest;
+}
+
+function exportedBarrels(): ReadonlyMap<string, string> {
+    return new Map((readPackageManifest(ROOT).workspaces ?? []).flatMap(workspace => {
+        const folder = path.join(ROOT, workspace);
+        const {name, exports} = readPackageManifest(folder);
+        return Object.entries(exports ?? {}).map(([subpath, target]): [string, string] => [name + subpath.slice(PACKAGE_ROOT_EXPORT.length), path.join(folder, target)]);
+    }));
+}
+
+const EXPORTED_BARRELS = exportedBarrels();
 
 function typeScriptFilesUnder(directory: string): string[] {
     return fs.readdirSync(directory, {withFileTypes: true}).flatMap(entry => {
@@ -112,6 +143,7 @@ function layerOf(file: string): string | undefined {
 }
 
 function resolvedImport(importer: string, specifier: string): string | undefined {
+    if (specifier.startsWith(PACKAGE_SCOPE)) return EXPORTED_BARRELS.get(specifier);
     const base = path.resolve(path.dirname(importer), specifier);
     return RESOLVE_SUFFIXES.map(suffix => base + suffix).find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
 }
@@ -125,7 +157,7 @@ function wrongDirectionImports(): string[] {
     return importers.flatMap(importer => {
         const allowed = ALLOWED_LAYERS[layerOf(importer)!];
         const text = fs.readFileSync(importer, "utf8");
-        return [...text.matchAll(RELATIVE_IMPORT)].flatMap(match => {
+        return [...text.matchAll(SOURCE_IMPORT)].flatMap(match => {
             const target = resolvedImport(importer, match[1]);
             if (target === undefined || allowed.includes(layerOfTarget(target))) return [];
             return [`${fromRoot(importer)} -> ${fromRoot(target)}`];
@@ -133,19 +165,22 @@ function wrongDirectionImports(): string[] {
     }).filter((entry, index, all) => all.indexOf(entry) === index);
 }
 
-function relativeImportsOf(file: string): string[] {
-    const text = fs.readFileSync(file, "utf8");
-    return [...text.matchAll(RELATIVE_IMPORT)].flatMap(match => {
-        const target = resolvedImport(file, match[1]);
+function specifiersOf(file: string): string[] {
+    return [...fs.readFileSync(file, "utf8").matchAll(SOURCE_IMPORT)].map(match => match[1]);
+}
+
+function importsOf(file: string): string[] {
+    return specifiersOf(file).flatMap(specifier => {
+        const target = resolvedImport(file, specifier);
         return target === undefined ? [] : [target];
     });
 }
 
-function relativeImportClosure(entries: readonly string[]): string[] {
+function importClosure(entries: readonly string[]): string[] {
     const reached = [...entries];
     const seen = new Set(reached);
     for (let i = 0; i < reached.length; i++) {
-        for (const target of relativeImportsOf(reached[i])) {
+        for (const target of importsOf(reached[i])) {
             if (seen.has(target)) continue;
             seen.add(target);
             reached.push(target);
@@ -175,6 +210,22 @@ function generatedGameMains(demo: string): string[] {
     return fs.readdirSync(folder)
         .filter(name => name.startsWith(GENERATED_MAIN_PREFIX) && name.endsWith(TYPESCRIPT_EXTENSION) && !name.startsWith(GENERATED_EDITOR_MAIN_PREFIX))
         .map(name => path.join(folder, name));
+}
+
+function demoImports(): DemoImport[] {
+    return typeScriptFilesUnder(DEMO).flatMap(importer => specifiersOf(importer).map(specifier => ({importer, specifier, target: resolvedImport(importer, specifier)})));
+}
+
+function isPackageImport(demoImport: DemoImport): boolean {
+    return demoImport.specifier.startsWith(PACKAGE_SCOPE);
+}
+
+function describeDemoImport({importer, specifier}: DemoImport): string {
+    return `${fromRoot(importer)} -> ${specifier}`;
+}
+
+function isSourceBarrel(file: string): boolean {
+    return fs.existsSync(file) && path.basename(file) === BARREL_FILE && fromRoot(file).startsWith(SOURCE_PREFIX);
 }
 
 function gameEntries(): string[] {
@@ -221,15 +272,29 @@ describe("source rules", () => {
         expect(NODE_API_HOSTS.some(host => `src/${TERMINAL_INPUT}/`.startsWith(host))).toBe(false);
     });
 
-    test("no game entry reaches src/editor through its relative imports", () => {
+    test("no game entry reaches src/editor through its relative and package imports", () => {
         const entries = gameEntries();
         expect(entries.filter(file => !fs.existsSync(file)).map(fromRoot)).toEqual([]);
         expect(entries.some(file => fromRoot(file).endsWith(`/${DEMO_LAUNCH_ENTRY}`))).toBe(true);
         expect(entries.some(file => path.basename(file).startsWith(GENERATED_MAIN_PREFIX))).toBe(true);
-        const reached = relativeImportClosure(entries).map(fromRoot);
+        const reached = importClosure(entries).map(fromRoot);
         expect(reached.includes(ENGINE_WORLD_SOURCE)).toBe(true);
         expect(reached.includes(ENGINE_START_GAME_SOURCE)).toBe(true);
         expect(reached.filter(file => file.startsWith(EDITOR_SOURCES))).toEqual([]);
+    });
+
+    test("demo files, generated ones included, import src/ only through the engine packages' exports", () => {
+        const imports = demoImports();
+        const packageImports = imports.filter(isPackageImport);
+        expect(packageImports.length).toBeGreaterThan(0);
+        expect(packageImports.filter(({target}) => target === undefined).map(describeDemoImport)).toEqual([]);
+        const relativeIntoSource = imports.filter(demoImport => !isPackageImport(demoImport) && demoImport.target !== undefined && fromRoot(demoImport.target).startsWith(SOURCE_PREFIX));
+        expect(relativeIntoSource.map(describeDemoImport)).toEqual([]);
+    });
+
+    test("every exports target is an index.ts barrel under src/, so the layer rules see a package import as an import of that barrel", () => {
+        expect(EXPORTED_BARRELS.size).toBeGreaterThan(0);
+        expect([...EXPORTED_BARRELS].filter(([, barrel]) => !isSourceBarrel(barrel)).map(([specifier]) => specifier)).toEqual([]);
     });
 
     test("src/engine and src/backends run no code when imported: their top-level statements are declarations and exports only", () => {

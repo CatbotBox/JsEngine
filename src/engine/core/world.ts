@@ -154,7 +154,7 @@ export class World extends WorldSource {
 
     public get loopTiming(): LoopTiming {
         const settings = this._frameLoopSettingsQuery.tryGetSingleton({settings: FrameLoopSettings})?.settings ?? this._defaultFrameLoopSettings;
-        return this._loopTimingResolver.resolve(settings, this.renderers.framesRenderedOnCpu);
+        return this._loopTimingResolver.resolve(settings, this.renderers.frameRenderer);
     }
 
     public step(deltaTimeMs: number = this.loopTiming.tickDeltaMs): void {

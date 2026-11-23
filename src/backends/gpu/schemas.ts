@@ -16,7 +16,7 @@ export const GPU_MESH_PASS_SETTINGS_SCHEMA_ENTRY: SchemaEntry = {
         .enum("textureFiltering", {nearest: NEAREST_TEXTURE_FILTERING, linear: LINEAR_TEXTURE_FILTERING})
         .enum("sampleCount", {single: SINGLE_SAMPLE_COUNT, multisample4: MULTISAMPLE_COUNT})
         .number("orthographicDepthRange")
-        .integer("evictUnusedMeshAfterFrames")
+        .integer("evictUnusedAfterFrames")
         .number("lodTrianglesPerPixel")
         .category(ENGINE_COMPONENT_CATEGORIES.settings)
         .build(),

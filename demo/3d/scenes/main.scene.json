@@ -1,6 +1,6 @@
 {
   "format": "jsengine-scene",
-  "version": 1,
+  "version": 2,
   "entities": [
     {
       "id": 1,
@@ -55,7 +55,7 @@
           "textureFiltering": "nearest",
           "sampleCount": "multisample4",
           "orthographicDepthRange": 1000,
-          "evictUnusedMeshAfterFrames": 600,
+          "evictUnusedAfterFrames": 600,
           "lodTrianglesPerPixel": 0.25
         }
       }

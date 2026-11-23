@@ -6,6 +6,7 @@ import type {PixelPresenterSize} from "../src/backends/pixels";
 import {createProjectServer} from "../src/hosts/desktop";
 import type {ProjectServer} from "../src/hosts/desktop";
 import {PROJECT_MANIFEST_FILE, validateProjectManifest} from "../src/engine/project/projectManifest";
+import {SCENE_DOCUMENT_VERSION} from "../src/engine/scene";
 import {EditorClient} from "../src/editor/page/editorClient";
 import type {EditorChannel} from "../src/editor/page/editorClient";
 import type {EditorRequest, EditorResultOf} from "../src/editor/editorProtocol";
@@ -51,7 +52,7 @@ const ADDED_ACTION = "dash";
 const MANIFEST = {name: "Settings fixture", startScene: MAIN_SCENE, resources: [{type: "InputMap", path: INPUT_PATH}]};
 
 function sceneText(name: string): string {
-    return JSON.stringify({format: "jsengine-scene", version: 1, entities: [
+    return JSON.stringify({format: "jsengine-scene", version: SCENE_DOCUMENT_VERSION, entities: [
         {id: 1, name: CAMERA_NAME, enabled: true, components: {LocalPosition: {xyz: [0, 0, 0]}, Camera: {nearPlaneDistance: 0.1, farPlaneDistance: 100}, LocalToWorld: {}, RenderBounds: {}}},
         {id: 2, name, enabled: true, components: {LocalPosition: {xyz: [1, 2, 0]}}},
     ]}, null, 2) + "\n";

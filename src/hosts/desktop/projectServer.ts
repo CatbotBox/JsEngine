@@ -125,6 +125,7 @@ const EDITOR_BUILD_ARGUMENTS: readonly string[] = ["build", "--target", "editor"
 const GENERATE_ARGUMENTS: readonly string[] = ["generate", "--report", "json"];
 const BUILD_COMMAND = "build";
 const PACKAGE_COMMAND = "package";
+const LINK_COMMAND = "link";
 const TARGET_ARGUMENT = "--target";
 const REPORT_JSON_ARGUMENTS: readonly string[] = ["--report", "json"];
 const EXIT_SUCCESS = 0;
@@ -830,7 +831,18 @@ export class ProjectServer {
             await mkdir(dirname(target), RECURSIVE);
             await writeFile(target, file.contents, EXCLUSIVE_WRITE);
         }
+        await this.linkEnginePackages(folder);
         return await this.open(folder);
+    }
+
+    private async linkEnginePackages(folder: string): Promise<void> {
+        const repoRoot = this.options.repoRoot;
+        const bun = this.options.bun;
+        if (repoRoot === undefined || !("path" in bun)) return;
+        const run = await this.runToolchain(repoRoot, bun.path, [LINK_COMMAND, PROJECT_ARGUMENT, folder]);
+        if (run.exitCode === EXIT_SUCCESS) return;
+        const output = linesOf(`${run.stdout}\n${run.stderr}`).join("\n");
+        throw new HttpError(HTTP_INTERNAL_ERROR, `jsengine ${LINK_COMMAND} exited with ${run.exitCode}, so ${folder} cannot resolve the engine packages${output.length > 0 ? `: ${output}` : ""}`);
     }
 
     private build(project: OpenProject, requested?: GameTarget): Promise<BuildProjectResult> {

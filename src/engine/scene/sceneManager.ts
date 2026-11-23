@@ -99,7 +99,7 @@ export class SceneManager {
 
     public async load(path: string, request: SceneLoadRequest = {}): Promise<SceneHandle> {
         await this.preload([path]);
-        const document = parseSceneDocument(this.files.readText(path));
+        const document = parseSceneDocument(this.files.readText(path), path);
         await this.preloadAssets(sceneAssetPaths(document, this.registry));
         return this.loadDocument(document, {...request, path}).handle;
     }

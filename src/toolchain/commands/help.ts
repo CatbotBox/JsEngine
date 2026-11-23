@@ -23,6 +23,10 @@ export const USAGE = `jsengine <command> [options] (runs under bun)
   edit      [--project <dir>] [--target web|window] [--backend cells|pixels|gpu] [--no-build]
             [--smoke] [--screenshot <png>]      window only
             [--flows <name,...>|none]           window --smoke only: which editor UI flows drive the page (default all)
+  migrate   [--project <dir>] [--check]         rewrites the project's older .scene.json, .prefab.json and .asset.json
+            files at the current version and lists them; --check lists them and fails instead of writing
+  link      [--project <dir>]                   points the project's package.json at this checkout's engine packages
+            (link:), writes a tsconfig.json if it has none and runs bun install
   help
 
 Defaults: --target web; --backend from the manifest's "targets", else pixels on web and window, cells on the terminal; --simulate web.

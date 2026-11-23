@@ -44,7 +44,7 @@ import {SceneInstance} from "./sceneInstance";
 import {platformSceneAssetLoader, sceneAssetPaths} from "./sceneAssets";
 import type {SceneAssetLoader} from "./sceneAssets";
 import {MESH_ASSET_TYPE_NAME} from "./fieldSchema";
-import {parseSceneDocument, SCENE_DOCUMENT_FORMAT} from "./sceneDocument";
+import {parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "./sceneDocument";
 import type {SceneDocument, SceneFieldValues, SceneJsonValue} from "./sceneDocument";
 import {applySceneInPlace, deserializeInto, serializeWorld} from "./sceneSerialization";
 
@@ -57,7 +57,7 @@ const FILLER_ENTITIES = 5;
 const SETTLE_STEPS = 3;
 const MATRIX_DIGITS = 4;
 const IMPLIED_TYPE_NAMES = ["ParentTransform", "Children", "WorldSpaceRenderBounds", "ScreenSize"];
-const UNSUPPORTED_VERSION = 2;
+const UNSUPPORTED_VERSION = SCENE_DOCUMENT_VERSION + 1;
 const MISSING_SCENE_ID = 42;
 const INLINE_RGBA = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0, 9, 8, 7, 255]);
 const INLINE_SIZE = 2;
@@ -362,7 +362,7 @@ describe("scene serialization", () => {
 
     test("a reference to an id the document lacks loads as dangling", () => {
         const document = parseSceneDocument({
-            format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [
+            format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [
                 {id: 1, name: "lost", enabled: true, components: {LocalPosition: {xyz: [1, 2, 3]}, Parent: {entity: MISSING_SCENE_ID}}},
             ],
         });
@@ -390,7 +390,7 @@ describe("scene serialization", () => {
 
     test("unknown component types throw before touching the world, or are skipped and reported", () => {
         const document = parseSceneDocument(JSON.stringify({
-            format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [
+            format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [
                 {id: 1, name: "first", enabled: true, components: {LocalPosition: {xyz: [1, 2, 3]}}},
                 {id: 2, name: "second", enabled: true, components: {Mystery: {power: 9}, LocalScale: {xyz: [2, 2, 2]}}},
             ],
@@ -408,7 +408,7 @@ describe("scene serialization", () => {
 
     test("another backend's types are skipped silently under the throwing policy; an unknown type names the keep list as the fix", () => {
         const document = parseSceneDocument(JSON.stringify({
-            format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [
+            format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [
                 {id: 1, name: "settings", enabled: true, components: {LocalPosition: {xyz: [1, 2, 3]}, SpriteCellPassSettings: {maxDepthFade: 3}}},
             ],
         }));
@@ -425,12 +425,12 @@ describe("scene serialization", () => {
     test("bad field values and unknown fields throw naming the path, before touching the world", () => {
         const registry = engineRegistry();
         const world = newWorld(memoryPlatform());
-        const badValue = parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [
+        const badValue = parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [
             {id: 1, name: "a", enabled: true, components: {LocalPosition: {xyz: [1, 2, 3]}}},
             {id: 2, name: "b", enabled: true, components: {Camera: {nearPlaneDistance: "near"}}},
         ]});
         expect(() => deserializeInto(world, registry, badValue)).toThrow("Scene field entities[1].components.Camera.nearPlaneDistance: expected a number");
-        const unknownField = parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [
+        const unknownField = parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [
             {id: 1, name: "a", enabled: true, components: {LocalPosition: {xyz: [1, 2, 3], w: 1}}},
         ]});
         expect(() => deserializeInto(world, registry, unknownField)).toThrow(`entities[0].components.LocalPosition: LocalPosition has no field "w"`);
@@ -439,12 +439,12 @@ describe("scene serialization", () => {
 
     test("parseSceneDocument rejects newer versions and malformed documents", () => {
         expect(() => parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: UNSUPPORTED_VERSION, entities: []}))
-            .toThrow("version 2 is newer than the supported version 1");
-        expect(() => parseSceneDocument({format: "other", version: 1, entities: []})).toThrow(`format must be "jsengine-scene"`);
-        expect(() => parseSceneDocument(JSON.stringify({format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [{id: 1}, {id: 1}]})))
+            .toThrow(`version ${UNSUPPORTED_VERSION} is newer than the supported version ${SCENE_DOCUMENT_VERSION}`);
+        expect(() => parseSceneDocument({format: "other", version: SCENE_DOCUMENT_VERSION, entities: []})).toThrow(`format must be "jsengine-scene"`);
+        expect(() => parseSceneDocument(JSON.stringify({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [{id: 1}, {id: 1}]})))
             .toThrow("entities[1].id 1 repeats the id of entities[0]");
-        expect(() => parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [{id: 0}]})).toThrow("entities[0].id must be a whole number >= 1");
-        expect(parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: 1, entities: [{id: 4}]}).entities)
+        expect(() => parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [{id: 0}]})).toThrow("entities[0].id must be a whole number >= 1");
+        expect(parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [{id: 4}]}).entities)
             .toEqual([{id: 4, name: null, enabled: true, components: {}}]);
     });
 

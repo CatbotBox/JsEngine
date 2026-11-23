@@ -1,8 +1,8 @@
-import {System} from "../../../../src/engine/core";
-import {Input, resolveInputActions} from "../../../../src/engine/input";
-import type {ResolvedInputActions} from "../../../../src/engine/input";
-import {CellsRenderBackend} from "../../../../src/engine/rendering/renderBackend";
-import {SpriteCellPassSettings} from "../../../../src/backends/cells/2d/spriteCellPassSettings";
+import {System} from "@jsengine/engine/core";
+import {Input, resolveInputActions} from "@jsengine/engine/input";
+import type {ResolvedInputActions} from "@jsengine/engine/input";
+import {CellsRenderBackend} from "@jsengine/engine/rendering";
+import {SpriteCellPassSettings} from "@jsengine/backends/cells/2d";
 
 const CELLS_CONTROLS_PRIORITY = -20;
 const INCLUDING_DISABLED = {includeDisabled: true} as const;

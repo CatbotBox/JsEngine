@@ -1,6 +1,6 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {Entity} from "../../engine/core";
-import {parseSceneDocument} from "../../engine/scene/sceneDocument";
+import {parseSceneDocument, SCENE_DOCUMENT_VERSION} from "../../engine/scene/sceneDocument";
 import type {EditorComponentDetails, EditorEntityDetails, EditorEntitySummary} from "../editorProtocol";
 import {componentOfIndex, fieldValuesOf, missingInSome, mixedValueOf, sharedBoolean, sharedComponents} from "./multiSelection";
 import {
@@ -94,7 +94,7 @@ describe("prefab instance paths", () => {
     test("a prefab document counts its roots and drops instance data", () => {
         const document = parseSceneDocument({
             format: "jsengine-scene",
-            version: 1,
+            version: SCENE_DOCUMENT_VERSION,
             entities: [
                 {id: 1, name: "ship", enabled: true, components: {PrefabInstance: {sourcePath: "a", overrides: []}}},
                 {id: 2, name: "gun", enabled: true, components: {Parent: {entity: 1}}},

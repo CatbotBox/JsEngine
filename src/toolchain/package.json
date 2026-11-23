@@ -1,0 +1,19 @@
+{
+  "name": "@jsengine/toolchain",
+  "version": "0.1.0",
+  "description": "The jsengine CLI: generate, run, build, serve, edit and package projects (TypeScript sources, bun only)",
+  "type": "commonjs",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "bin": {
+    "jsengine": "./cli.ts"
+  },
+  "exports": {},
+  "dependencies": {
+    "@jsengine/backends": "workspace:*",
+    "@jsengine/editor": "workspace:*",
+    "@jsengine/engine": "workspace:*",
+    "@jsengine/hosts": "workspace:*"
+  }
+}

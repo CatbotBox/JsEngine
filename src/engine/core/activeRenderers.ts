@@ -18,7 +18,12 @@ export class ActiveRenderers {
         return this._counts[kind];
     }
 
+    public get frameRenderer(): RendererKind | undefined {
+        if (this._counts.gpu > NO_RENDERERS) return "gpu";
+        return this._counts.cpu > NO_RENDERERS ? "cpu" : undefined;
+    }
+
     public get framesRenderedOnCpu(): boolean {
-        return this._counts.cpu > NO_RENDERERS && this._counts.gpu === NO_RENDERERS;
+        return this.frameRenderer === "cpu";
     }
 }

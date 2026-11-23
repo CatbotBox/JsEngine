@@ -1,7 +1,7 @@
-import type {World} from "../../src/engine/core";
-import {AssetFiles} from "../../src/engine/project/assetFiles";
-import {PARENT_COMPONENT_NAME} from "../../src/engine/scene";
-import type {PrefabAsset, PrefabSpawner, PrefabTemplate} from "../../src/engine/scene";
+import type {World} from "@jsengine/engine/core";
+import {AssetFiles} from "@jsengine/engine/project";
+import {PARENT_COMPONENT_NAME} from "@jsengine/engine/scene";
+import type {PrefabAsset, PrefabSpawner, PrefabTemplate} from "@jsengine/engine/scene";
 import type {ModelEntry} from "./tuning";
 
 export const DEMO_3D_TUNING_FILE = "assets/demo3d.asset.json";

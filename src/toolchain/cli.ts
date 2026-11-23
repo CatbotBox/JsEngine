@@ -11,6 +11,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
     generate: async args => (await import("./commands/generate")).generateCommand(args),
     serve: async args => (await import("./commands/serve")).serveCommand(args),
     edit: async args => (await import("./commands/edit")).editCommand(args),
+    migrate: async args => (await import("./commands/migrate")).migrateCommand(args),
+    link: async args => (await import("./commands/link")).linkCommand(args),
     help: helpCommand,
 };
 

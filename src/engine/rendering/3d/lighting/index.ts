@@ -6,3 +6,4 @@ export {SceneLights, LIGHT_KIND_DIRECTIONAL, LIGHT_KIND_POINT} from "./sceneLigh
 export {SceneLightsGatherSystem} from "./sceneLightsGatherSystem";
 export {VertexLighting} from "./vertexLighting";
 export type {VertexShading} from "./vertexLighting";
+export {AMBIENT_LIGHT_SCHEMA_ENTRY, DIRECTIONAL_LIGHT_SCHEMA_ENTRY, POINT_LIGHT_SCHEMA_ENTRY} from "./schemas";

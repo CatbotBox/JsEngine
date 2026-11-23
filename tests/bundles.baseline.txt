@@ -1,5 +1,5 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 182 modules, 222270 bytes minified
+demo/2d terminal cells main: 184 modules, 228336 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -85,6 +85,7 @@ demo/2d terminal cells main: 182 modules, 222270 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -138,6 +139,7 @@ demo/2d terminal cells main: 182 modules, 222270 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -193,7 +195,7 @@ demo/2d web all bootstrap: 10 modules, 4505 bytes minified
   src/hosts/web/devReload.ts
   src/hosts/web/renderBackendBootstrap.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells page: 18 modules, 24366 bytes minified
+demo/2d web cells page: 18 modules, 24460 bytes minified
   demo/2d/generated/main.web-cells.ts
   src/backends/cells/canvas/canvasCellColors.ts
   src/backends/cells/canvas/canvasCellPresenter.ts
@@ -212,7 +214,7 @@ demo/2d web cells page: 18 modules, 24366 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 178 modules, 214574 bytes minified
+demo/2d web cells worker: 180 modules, 220771 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -296,6 +298,7 @@ demo/2d web cells worker: 178 modules, 214574 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -349,6 +352,7 @@ demo/2d web cells worker: 178 modules, 214574 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -391,7 +395,7 @@ demo/2d web cells worker: 178 modules, 214574 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels page: 16 modules, 16512 bytes minified
+demo/2d web pixels page: 16 modules, 16609 bytes minified
   demo/2d/generated/main.web-pixels.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/canvas/canvasPixelPresenter.ts
@@ -408,7 +412,7 @@ demo/2d web pixels page: 16 modules, 16512 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 177 modules, 211606 bytes minified
+demo/2d web pixels worker: 179 modules, 217790 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -491,6 +495,7 @@ demo/2d web pixels worker: 177 modules, 211606 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -544,6 +549,7 @@ demo/2d web pixels worker: 177 modules, 211606 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -586,7 +592,7 @@ demo/2d web pixels worker: 177 modules, 211606 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu page: 16 modules, 16052 bytes minified
+demo/2d web gpu page: 16 modules, 16149 bytes minified
   demo/2d/generated/main.web-gpu.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/pixelFrame.ts
@@ -603,7 +609,7 @@ demo/2d web gpu page: 16 modules, 16052 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 194 modules, 229044 bytes minified
+demo/2d web gpu worker: 196 modules, 235216 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -701,6 +707,7 @@ demo/2d web gpu worker: 194 modules, 229044 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -755,6 +762,7 @@ demo/2d web gpu worker: 194 modules, 229044 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -798,7 +806,7 @@ demo/2d web gpu worker: 194 modules, 229044 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 206 modules, 292485 bytes minified
+demo/3d terminal cells main: 208 modules, 298750 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -813,6 +821,7 @@ demo/3d terminal cells main: 206 modules, 292485 bytes minified
   demo/3d/supersamplePresetKeys.ts
   demo/3d/tuning.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
+  src/backends/cells/2d/hudSpriteCellPassSystem.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
   src/backends/cells/3d/cellResolveTarget.ts
   src/backends/cells/3d/cellsMeshPasses.ts
@@ -958,6 +967,7 @@ demo/3d terminal cells main: 206 modules, 292485 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -1016,7 +1026,7 @@ demo/3d web all bootstrap: 10 modules, 4505 bytes minified
   src/hosts/web/devReload.ts
   src/hosts/web/renderBackendBootstrap.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells page: 18 modules, 24366 bytes minified
+demo/3d web cells page: 18 modules, 24460 bytes minified
   demo/3d/generated/main.web-cells.ts
   src/backends/cells/canvas/canvasCellColors.ts
   src/backends/cells/canvas/canvasCellPresenter.ts
@@ -1035,7 +1045,7 @@ demo/3d web cells page: 18 modules, 24366 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 202 modules, 284573 bytes minified
+demo/3d web cells worker: 204 modules, 290953 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1050,6 +1060,7 @@ demo/3d web cells worker: 202 modules, 284573 bytes minified
   demo/3d/supersamplePresetKeys.ts
   demo/3d/tuning.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
+  src/backends/cells/2d/hudSpriteCellPassSystem.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
   src/backends/cells/3d/cellResolveTarget.ts
   src/backends/cells/3d/cellsMeshPasses.ts
@@ -1193,6 +1204,7 @@ demo/3d web cells worker: 202 modules, 284573 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -1238,7 +1250,7 @@ demo/3d web cells worker: 202 modules, 284573 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels page: 16 modules, 16512 bytes minified
+demo/3d web pixels page: 16 modules, 16609 bytes minified
   demo/3d/generated/main.web-pixels.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/canvas/canvasPixelPresenter.ts
@@ -1255,7 +1267,7 @@ demo/3d web pixels page: 16 modules, 16512 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 202 modules, 282983 bytes minified
+demo/3d web pixels worker: 204 modules, 289407 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1270,6 +1282,7 @@ demo/3d web pixels worker: 202 modules, 282983 bytes minified
   demo/3d/supersamplePresetKeys.ts
   demo/3d/tuning.ts
   src/backends/cells/cellFrame.ts
+  src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/3d/meshPixelPassSettings.ts
   src/backends/pixels/3d/meshPixelPassSystem.ts
   src/backends/pixels/3d/pixelResolveTarget.ts
@@ -1413,6 +1426,7 @@ demo/3d web pixels worker: 202 modules, 282983 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -1458,7 +1472,7 @@ demo/3d web pixels worker: 202 modules, 282983 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu page: 16 modules, 16052 bytes minified
+demo/3d web gpu page: 16 modules, 16149 bytes minified
   demo/3d/generated/main.web-gpu.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/pixelFrame.ts
@@ -1475,7 +1489,7 @@ demo/3d web gpu page: 16 modules, 16052 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 217 modules, 294888 bytes minified
+demo/3d web gpu worker: 218 modules, 302441 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
   demo/3d/components.ts
@@ -1647,6 +1661,7 @@ demo/3d web gpu worker: 217 modules, 294888 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -1693,7 +1708,7 @@ demo/3d web gpu worker: 217 modules, 294888 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 185 modules, 241198 bytes minified
+demo/swarm terminal cells main: 187 modules, 247264 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1776,6 +1791,7 @@ demo/swarm terminal cells main: 185 modules, 241198 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -1834,6 +1850,7 @@ demo/swarm terminal cells main: 185 modules, 241198 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -1890,7 +1907,7 @@ demo/swarm web all bootstrap: 10 modules, 4514 bytes minified
   src/hosts/web/devReload.ts
   src/hosts/web/renderBackendBootstrap.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells page: 18 modules, 24358 bytes minified
+demo/swarm web cells page: 18 modules, 24452 bytes minified
   demo/swarm/generated/main.web-cells.ts
   src/backends/cells/canvas/canvasCellColors.ts
   src/backends/cells/canvas/canvasCellPresenter.ts
@@ -1909,7 +1926,7 @@ demo/swarm web cells page: 18 modules, 24358 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 181 modules, 233512 bytes minified
+demo/swarm web cells worker: 183 modules, 239712 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1990,6 +2007,7 @@ demo/swarm web cells worker: 181 modules, 233512 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -2048,6 +2066,7 @@ demo/swarm web cells worker: 181 modules, 233512 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -2091,7 +2110,7 @@ demo/swarm web cells worker: 181 modules, 233512 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels page: 16 modules, 16504 bytes minified
+demo/swarm web pixels page: 16 modules, 16601 bytes minified
   demo/swarm/generated/main.web-pixels.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/canvas/canvasPixelPresenter.ts
@@ -2108,7 +2127,7 @@ demo/swarm web pixels page: 16 modules, 16504 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 181 modules, 231090 bytes minified
+demo/swarm web pixels worker: 183 modules, 237282 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2189,6 +2208,7 @@ demo/swarm web pixels worker: 181 modules, 231090 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -2247,6 +2267,7 @@ demo/swarm web pixels worker: 181 modules, 231090 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts
@@ -2290,7 +2311,7 @@ demo/swarm web pixels worker: 181 modules, 231090 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu page: 16 modules, 16044 bytes minified
+demo/swarm web gpu page: 16 modules, 16141 bytes minified
   demo/swarm/generated/main.web-gpu.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/pixelFrame.ts
@@ -2307,7 +2328,7 @@ demo/swarm web gpu page: 16 modules, 16044 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 198 modules, 248516 bytes minified
+demo/swarm web gpu worker: 200 modules, 254708 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2403,6 +2424,7 @@ demo/swarm web gpu worker: 198 modules, 248516 bytes minified
   src/engine/input/pointerButton.ts
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
+  src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
   src/engine/math/types/vec.ts
@@ -2462,6 +2484,7 @@ demo/swarm web gpu worker: 198 modules, 248516 bytes minified
   src/engine/scene/componentSchemaRegistry.ts
   src/engine/scene/dataAssetDocument.ts
   src/engine/scene/dataAssets.ts
+  src/engine/scene/documentMigrations.ts
   src/engine/scene/editorOnly.ts
   src/engine/scene/fieldDefaults.ts
   src/engine/scene/fieldSchema.ts

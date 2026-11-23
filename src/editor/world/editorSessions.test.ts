@@ -3,7 +3,7 @@ import {EntityCommandBufferSystem, Resource, System} from "../../engine/core";
 import type {Entity} from "../../engine/core";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
-import {resourceSchema} from "../../engine/scene";
+import {resourceSchema, SCENE_DOCUMENT_VERSION} from "../../engine/scene";
 import type {ComponentSchemaRegistry} from "../../engine/scene";
 import type {EditorEvent} from "../editorProtocol";
 import {ask, byName, disposeEditorWorlds, editorWorld, failureOf, fieldsOf, FRAME_INTERVAL_MS, framesPass, SETTLE_FRAMES, sleep, waitUntil} from "./editorServiceTestHarness";
@@ -228,7 +228,7 @@ describe("editor snapshots", () => {
         const target = editorWorld();
         const documentText = JSON.stringify({
             format: "jsengine-scene",
-            version: 1,
+            version: SCENE_DOCUMENT_VERSION,
             entities: [{id: 1, name: "old", enabled: true, components: {LocalPosition: {xyz: [1, 2, 3], retired: true}, Gone: {}}}],
             resources: {Vanished: {count: 1}},
         });

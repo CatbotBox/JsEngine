@@ -1,10 +1,10 @@
-import {Component, System} from "../../src/engine/core";
-import type {World} from "../../src/engine/core";
-import {Input, Key} from "../../src/engine/input";
-import {startGame} from "../../src/engine/project/startGame";
-import {componentSchema, ENGINE_SCHEMAS} from "../../src/engine/scene";
-import type {SceneActivation, SchemaEntry} from "../../src/engine/scene";
-import {LocalPosition} from "../../src/engine/translation";
+import {Component, System} from "@jsengine/engine/core";
+import type {World} from "@jsengine/engine/core";
+import {Input, Key} from "@jsengine/engine/input";
+import {startGame} from "@jsengine/engine/project";
+import {componentSchema, ENGINE_SCHEMAS} from "@jsengine/engine/scene";
+import type {SceneActivation, SchemaEntry} from "@jsengine/engine/scene";
+import {LocalPosition} from "@jsengine/engine/translation";
 
 export const LIBRARY_ONLY_START_SCENE = "scenes/main.scene.json";
 

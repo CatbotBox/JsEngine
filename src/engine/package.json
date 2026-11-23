@@ -1,0 +1,30 @@
+{
+  "name": "@jsengine/engine",
+  "version": "0.1.0",
+  "description": "JsEngine's ECS core, rendering data, assets and platform interface (TypeScript sources, bun only)",
+  "type": "commonjs",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "exports": {
+    ".": "./index.ts",
+    "./assets": "./assets/index.ts",
+    "./cameraControllers/2d": "./cameraControllers/2d/index.ts",
+    "./cameraControllers/3d": "./cameraControllers/3d/index.ts",
+    "./core": "./core/index.ts",
+    "./datatypes": "./datatypes/index.ts",
+    "./debugging": "./debugging/index.ts",
+    "./input": "./input/index.ts",
+    "./math": "./math/index.ts",
+    "./motion": "./motion/index.ts",
+    "./platform": "./platform/index.ts",
+    "./project": "./project/index.ts",
+    "./rendering": "./rendering/index.ts",
+    "./rendering/2d": "./rendering/2d/index.ts",
+    "./rendering/3d": "./rendering/3d/index.ts",
+    "./rendering/text": "./rendering/text/index.ts",
+    "./scene": "./scene/index.ts",
+    "./testing": "./testing/index.ts",
+    "./translation": "./translation/index.ts"
+  }
+}

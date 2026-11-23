@@ -11,7 +11,6 @@ export const ROOT_INSTANCE_PATH = "";
 
 const PATH_SEPARATOR = "/";
 const FIELD_SEPARATOR = ".";
-const DOCUMENT_INDENT_SPACES = 2;
 const PARENT_ENTITY_KEY = "entity";
 
 export function prefabInstanceRootOf(entity: Entity, summaryOf: SummaryLookup): Entity | undefined {
@@ -78,8 +77,4 @@ export function withoutPrefabInstances(document: SceneDocument): SceneDocument {
             return {...record, components};
         }),
     };
-}
-
-export function sceneDocumentText(document: SceneDocument): string {
-    return JSON.stringify(document, null, DOCUMENT_INDENT_SPACES);
 }

@@ -5,3 +5,4 @@ export {SpritePixelRasterizer, spriteHeightPx, spriteWidthPx} from "./spritePixe
 export type {SpritePixelRasterizerConfig, SpritePixelSource} from "./spritePixelRasterizer";
 export {PIXELS_SPRITE_PASSES} from "./pixelsSpritePasses";
 export {PIXELS_HUD_SPRITE_PASSES} from "./pixelsHudSpritePasses";
+export {SPRITE_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY} from "./schemas";

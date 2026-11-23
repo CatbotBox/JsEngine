@@ -60,7 +60,7 @@ export function platformSceneAssetLoader(options: MeshLoadOptions, dataAssets?: 
         loadPrefab(path: string): PrefabAsset {
             let prefab = prefabs.get(path);
             if (prefab === undefined) {
-                prefab = new PrefabAsset(path, parseSceneDocument(options.files.readText(path)));
+                prefab = new PrefabAsset(path, parseSceneDocument(options.files.readText(path), path));
                 prefabs.set(path, prefab);
             }
             return prefab;
@@ -145,7 +145,7 @@ function nestedAssetReferences(reference: SceneAssetReference, registry: Compone
     if (!isPrefab && !isDataAsset) return [];
     try {
         const text = files.readText(reference.path);
-        if (isPrefab) return sceneAssetPaths(parseSceneDocument(text), registry);
+        if (isPrefab) return sceneAssetPaths(parseSceneDocument(text, reference.path), registry);
         const document = parseDataAssetDocument(text, reference.path);
         const schema = registry.resourceByName(document.type);
         return schema === undefined ? [] : assetReferencesOfFields(schema.fields, document.fields);

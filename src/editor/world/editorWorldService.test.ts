@@ -415,6 +415,7 @@ describe("EditorWorldService modes", () => {
             settings.renderRate = FAST_RENDER_RATE;
             settings.maxCatchUpTicks = CATCH_UP_LIMIT;
             settingsEntity = world.entityManager.createEntity("frameLoop", [settings]);
+            world.renderers.add("gpu");
         }, {drivenFrames: false});
         const {counter, probe, scheduler, world} = harnessed;
         const renderIntervalMs = MS_PER_SECOND / FAST_RENDER_RATE;

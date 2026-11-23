@@ -8,6 +8,7 @@ import {DATA_ASSET_FORMAT, DATA_ASSET_VERSION} from "../../engine/scene/dataAsse
 import {GENERATED_SCHEMAS_FILE, generatedBackendSchemasFile, generatedBackendSystemsFile} from "../projectLayout";
 import type {GeneratorOutput} from "./generatedHeader";
 import {ProjectSources} from "./projectSources";
+import {linkEnginePackages} from "../enginePackageLinks";
 import {UNKNOWN_DATA_TYPE_WARNING, UNMATCHED_KEEP_WARNING} from "./reachability";
 import {SCHEMAS_GENERATOR} from "./schemas";
 import {SYSTEMS_GENERATOR} from "./systems";
@@ -38,6 +39,7 @@ function dataAssetOf(type: string): string {
 function generate(files: FixtureFiles, manifest: object = {name: "Reach"}): Generated {
     const folder = mkdtempSync(FIXTURE_PREFIX);
     try {
+        linkEnginePackages(folder);
         for (const [path, text] of Object.entries({...files, [PROJECT_MANIFEST_FILE]: JSON.stringify(manifest)})) {
             mkdirSync(dirname(join(folder, path)), {recursive: true});
             writeFileSync(join(folder, path), text);
@@ -77,13 +79,13 @@ describe("reachable engine and backend schemas", () => {
     });
 
     test("an engine class the project's code uses is reachable, and so are the asset types its fields load", () => {
-        const code = `import {RenderMesh} from "@jsengine/engine/rendering/3d/renderMesh";\nexport const MESH_HOLDER = RenderMesh;\n`;
+        const code = `import {RenderMesh} from "@jsengine/engine/rendering/3d";\nexport const MESH_HOLDER = RenderMesh;\n`;
         const engine = sourceOf(generate({[CODE_FILE]: code}).schemas, GENERATED_SCHEMAS_FILE);
         expect(listed(engine, "RENDER_MESH_SCHEMA_ENTRY") && listed(engine, "MESH_ASSET_TYPE_ENTRY")).toBe(true);
     });
 
     test("Random is reachable only when the project's data names it, not when code uses it", () => {
-        const code = `import {Random} from "@jsengine/engine/math/random";\nexport const DICE = new Random();\n`;
+        const code = `import {Random} from "@jsengine/engine/math";\nexport const DICE = new Random();\n`;
         expect(sourceOf(generate({[CODE_FILE]: code}).schemas, GENERATED_SCHEMAS_FILE).includes("RANDOM_SCHEMA_ENTRY")).toBe(false);
         expect(listed(sourceOf(generate({[DATA_ASSET_FILE]: dataAssetOf("Random")}).schemas, GENERATED_SCHEMAS_FILE), "RANDOM_SCHEMA_ENTRY")).toBe(true);
         const bound = generate({}, {name: "Reach", resources: [{type: "Random", path: DATA_ASSET_FILE}]});

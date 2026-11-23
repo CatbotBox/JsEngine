@@ -3,8 +3,10 @@ import {tmpdir} from "os";
 import {dirname, join, resolve} from "path";
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {GeneratedSource, GeneratorOutput} from "./generatedHeader";
+import {isInside} from "./projectSources";
 import {generateProjectSystems, SYSTEMS_GENERATED_HEADER} from "./systems";
 import {SCRIPT_EXTENSION, scriptTemplate} from "../../editor/page/projectTemplates";
+import {linkEnginePackages} from "../enginePackageLinks";
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
 const LINE_BREAK = "\r\n";
@@ -22,6 +24,7 @@ type FixtureFiles = Readonly<Record<string, string>>;
 function generateFixture(files: FixtureFiles, folderPrefix = OUTSIDE_REPO_FIXTURE_PREFIX, exclude = NO_EXCLUDED_NAMES): GeneratorOutput {
     const projectFolder = mkdtempSync(folderPrefix);
     try {
+        if (!isInside(REPO_ROOT, projectFolder)) linkEnginePackages(projectFolder);
         for (const [path, text] of Object.entries(files)) {
             const target = join(projectFolder, path);
             mkdirSync(dirname(target), {recursive: true});
@@ -214,7 +217,7 @@ describe("generateProjectSystems output", () => {
     test("writes an empty list for a backend without systems", () => {
         expect(sourceOf(generateFixture({"empty.ts": "export const NOTHING = 0;\n"}), PIXELS_LIST).split(LINE_BREAK).slice(1)).toEqual([
             `import type {System, SystemCtor} from "@jsengine/engine/core";`,
-            `import type {RenderPassCtor} from "@jsengine/engine/rendering/renderPasses";`,
+            `import type {RenderPassCtor} from "@jsengine/engine/rendering";`,
             "",
             "export const generatedPixelsSystems: readonly SystemCtor<System>[] = [];",
             "",
@@ -223,10 +226,10 @@ describe("generateProjectSystems output", () => {
         ]);
     });
 
-    test("imports the engine relatively when the project is inside the repo", () => {
-        const output = generateFixture({"inside.ts": `import {System} from "../../../engine/core";\nexport class InsideSystem extends System {\n}\n`}, INSIDE_REPO_FIXTURE_PREFIX);
+    test("imports the engine through @jsengine/ when the project is inside the repo too", () => {
+        const output = generateFixture({"inside.ts": `import {System} from "@jsengine/engine/core";\nexport class InsideSystem extends System {\n}\n`}, INSIDE_REPO_FIXTURE_PREFIX);
         expect(sourceOf(output, SHARED_LIST).split(LINE_BREAK).slice(1, 3)).toEqual([
-            `import type {System, SystemCtor} from "../../../../engine/core";`,
+            `import type {System, SystemCtor} from "@jsengine/engine/core";`,
             `import {InsideSystem} from "../inside";`,
         ]);
     });

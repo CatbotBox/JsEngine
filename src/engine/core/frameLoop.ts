@@ -22,26 +22,26 @@ export function snapToWholeTicks(deltaMs: number, tickDeltaMs: number): number {
 
 export class FrameLoop {
     private _tickDeltaMs: number;
-    private _maxCatchUpTicks: number;
+    private _maxTicksPerFrame: number;
     private _accumulatorMs = NO_TIME_MS;
     private _lastFrameAtMs = NO_TIME_MS;
 
-    public constructor(tickDeltaMs: number, maxCatchUpTicks: number) {
+    public constructor(tickDeltaMs: number, maxTicksPerFrame: number) {
         this._tickDeltaMs = tickDeltaMs;
-        this._maxCatchUpTicks = maxCatchUpTicks;
+        this._maxTicksPerFrame = maxTicksPerFrame;
     }
 
     public get tickDeltaMs(): number {
         return this._tickDeltaMs;
     }
 
-    public get maxCatchUpTicks(): number {
-        return this._maxCatchUpTicks;
+    public get maxTicksPerFrame(): number {
+        return this._maxTicksPerFrame;
     }
 
-    public configure(tickDeltaMs: number, maxCatchUpTicks: number): void {
+    public configure(tickDeltaMs: number, maxTicksPerFrame: number): void {
         this._tickDeltaMs = tickDeltaMs;
-        this._maxCatchUpTicks = maxCatchUpTicks;
+        this._maxTicksPerFrame = maxTicksPerFrame;
     }
 
     public start(nowMs: number): void {
@@ -57,7 +57,7 @@ export class FrameLoop {
         this._accumulatorMs += snapToWholeTicks(frameDeltaMs, tickDeltaMs);
         const dueTicks = Math.floor(this._accumulatorMs / tickDeltaMs + TICK_COUNT_EPSILON);
         this._accumulatorMs = Math.max(this._accumulatorMs - dueTicks * tickDeltaMs, NO_TIME_MS);
-        const ticks = Math.min(dueTicks, this._maxCatchUpTicks);
+        const ticks = Math.min(dueTicks, this._maxTicksPerFrame);
         return {ticks, frameDeltaMs, alpha: this._accumulatorMs / tickDeltaMs};
     }
 }

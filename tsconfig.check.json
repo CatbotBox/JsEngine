@@ -3,6 +3,8 @@
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
     "paths": {"@electron/fuses": ["./node_modules/@electron/fuses/dist/index.d.ts"]}
   },
   "exclude": ["node_modules", "dist"],

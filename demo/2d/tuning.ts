@@ -1,5 +1,5 @@
-import {Resource} from "../../src/engine/core";
-import type {Int, PrefabAsset} from "../../src/engine/scene";
+import {Resource} from "@jsengine/engine/core";
+import type {Int, PrefabAsset} from "@jsengine/engine/scene";
 
 export class Demo2dHudTuning {
     public fpsAverageFrames: Int = 0;

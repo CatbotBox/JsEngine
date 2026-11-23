@@ -1,0 +1,24 @@
+{
+  "name": "@jsengine/backends",
+  "version": "0.1.0",
+  "description": "JsEngine's cells, pixels and WebGPU render backends (TypeScript sources, bun only)",
+  "type": "commonjs",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "exports": {
+    "./cells": "./cells/index.ts",
+    "./cells/2d": "./cells/2d/index.ts",
+    "./cells/3d": "./cells/3d/index.ts",
+    "./cells/canvas": "./cells/canvas/index.ts",
+    "./gpu": "./gpu/index.ts",
+    "./gpu/testing": "./gpu/testing/index.ts",
+    "./pixels": "./pixels/index.ts",
+    "./pixels/2d": "./pixels/2d/index.ts",
+    "./pixels/3d": "./pixels/3d/index.ts",
+    "./pixels/canvas": "./pixels/canvas/index.ts"
+  },
+  "dependencies": {
+    "@jsengine/engine": "workspace:*"
+  }
+}

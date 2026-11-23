@@ -1,8 +1,8 @@
-import {EntityCommandBuffer, System} from "../../../../src/engine/core";
-import type {ShaderSource} from "../../../../src/engine/rendering";
-import {RenderMesh} from "../../../../src/engine/rendering/3d";
-import {GpuRenderBackend} from "../../../../src/engine/rendering/renderBackend";
-import {GpuShaderLibrary, GpuSurfaceShader} from "../../../../src/backends/gpu";
+import {EntityCommandBuffer, System} from "@jsengine/engine/core";
+import {GpuRenderBackend} from "@jsengine/engine/rendering";
+import type {ShaderSource} from "@jsengine/engine/rendering";
+import {RenderMesh} from "@jsengine/engine/rendering/3d";
+import {GpuShaderLibrary, GpuSurfaceShader} from "@jsengine/backends/gpu";
 import {Demo3dTuning} from "../../tuning";
 import type {SurfaceShaderChoice} from "../../tuning";
 

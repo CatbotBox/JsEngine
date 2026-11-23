@@ -20,7 +20,7 @@ import {projectReachability} from "./reachability";
 import type {ProjectReachability, ProjectSchemaSummary} from "./reachability";
 
 export const SCHEMAS_GENERATOR_NAME = "schemas";
-export const SCHEMAS_GENERATOR_VERSION = 4;
+export const SCHEMAS_GENERATOR_VERSION = 5;
 export const GENERATED_HEADER = generatedFileHeader(SCHEMAS_GENERATOR_NAME, SCHEMAS_GENERATOR_VERSION);
 export const UNSUPPORTED_TYPE_WARNING = "unsupported type";
 export const RECURSIVE_TYPE_WARNING = "recursive type";
@@ -34,7 +34,7 @@ export const UNMATCHED_EXCLUDE_WARNING = "matches no component, resource, field 
 
 const LINE_BREAK = "\r\n";
 const INDENT = "    ";
-const ENGINE_SCENE_MODULE = "scene";
+const ENGINE_SCENE_ENTRY_POINT = "engine/scene";
 const PRIVATE_NAME_PREFIX = "_";
 const ARRAY_ELEMENT_SUFFIX = "[]";
 const SCHEMA_ENTRY_TYPE = "SchemaEntry";
@@ -688,7 +688,7 @@ function summaryOf(schemas: readonly GeneratedSchema[]): ProjectSchemaSummary {
 }
 
 function sourceReference(sources: ProjectSources, source: SourceExport): ExportReference {
-    return {fileName: sources.sourceModule(...source.path), exportName: source.name};
+    return {fileName: sources.entryPointModule(source.entryPoint), exportName: source.name};
 }
 
 function importTableFor(sources: ProjectSources, file: string, exportName: string): ImportTable {
@@ -696,7 +696,7 @@ function importTableFor(sources: ProjectSources, file: string, exportName: strin
 }
 
 function schemaListText(sources: ProjectSources, file: string, exportName: string, imports: ImportTable, entries: readonly string[]): string {
-    const engineScene = sources.importSpecifier(file, sources.engineModule(ENGINE_SCENE_MODULE));
+    const engineScene = sources.importSpecifier(file, sources.entryPointModule(ENGINE_SCENE_ENTRY_POINT));
     const declaration = `export const ${exportName}: readonly ${SCHEMA_ENTRY_TYPE}[] = [`;
     const list = entries.length === 0 ? [`${declaration}];`] : [declaration, ...entries, "];"];
     const lines = [

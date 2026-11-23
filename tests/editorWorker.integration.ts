@@ -21,7 +21,7 @@ import type {
     ExportSnapshotResult,
     ImportSnapshotRequest,
 } from "../src/editor/editorProtocol";
-import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_INSTANCE_COMPONENT_NAME} from "../src/engine/scene";
+import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_DOCUMENT_VERSION, SCENE_INSTANCE_COMPONENT_NAME} from "../src/engine/scene";
 import type {SceneEntityRecord} from "../src/engine/scene";
 import {createProjectServer} from "../src/hosts/desktop";
 import type {ProjectServer} from "../src/hosts/desktop";
@@ -72,7 +72,7 @@ const PREFAB_TAB_EDITED_XYZ = [1, 2, 0];
 const NO_SCENE = 0;
 const ADDED_SCENE_TEXT = JSON.stringify({
     format: "jsengine-scene",
-    version: 1,
+    version: SCENE_DOCUMENT_VERSION,
     entities: [{id: 1, name: ADDED_ROOT_NAME, enabled: true, components: {LocalPosition: {xyz: [0, 0, 0]}}}],
 });
 const OVERRIDDEN_TINT = "#123456";

@@ -6,12 +6,12 @@ const MS_PER_SECOND = 1000;
 const TICK_RATE = 60;
 const TICK_MS = MS_PER_SECOND / TICK_RATE;
 const ROUND_TICK_MS = 10;
-const MAX_CATCH_UP_TICKS = 5;
+const MAX_TICKS_PER_FRAME = 5;
 const START_MS = 1000;
 const ALPHA_DIGITS = 6;
 
-function loopStartedAt(startMs: number, tickMs: number = TICK_MS, maxCatchUpTicks: number = MAX_CATCH_UP_TICKS): FrameLoop {
-    const loop = new FrameLoop(tickMs, maxCatchUpTicks);
+function loopStartedAt(startMs: number, tickMs: number = TICK_MS, maxTicksPerFrame: number = MAX_TICKS_PER_FRAME): FrameLoop {
+    const loop = new FrameLoop(tickMs, maxTicksPerFrame);
     loop.start(startMs);
     return loop;
 }
@@ -85,7 +85,7 @@ describe("FrameLoop", () => {
         const loop = loopStartedAt(START_MS, ROUND_TICK_MS);
         const clock = {nowMs: START_MS};
         const behind = advanceBy(loop, clock, 73);
-        expect(behind.ticks).toBe(MAX_CATCH_UP_TICKS);
+        expect(behind.ticks).toBe(MAX_TICKS_PER_FRAME);
         expect(behind.alpha).toBeCloseTo(0.3, ALPHA_DIGITS);
         const next = advanceBy(loop, clock, ROUND_TICK_MS);
         expect(next.ticks).toBe(1);
@@ -117,10 +117,10 @@ describe("FrameLoop", () => {
     test("reconfiguring the tick keeps the carried time", () => {
         const loop = loopStartedAt(START_MS, ROUND_TICK_MS);
         loop.advance(START_MS + 7);
-        loop.configure(ROUND_TICK_MS / 2, MAX_CATCH_UP_TICKS);
+        loop.configure(ROUND_TICK_MS / 2, MAX_TICKS_PER_FRAME);
         const advance = loop.advance(START_MS + 10);
         expect(advance.ticks).toBe(2);
-        expect([loop.tickDeltaMs, loop.maxCatchUpTicks]).toEqual([ROUND_TICK_MS / 2, MAX_CATCH_UP_TICKS]);
+        expect([loop.tickDeltaMs, loop.maxTicksPerFrame]).toEqual([ROUND_TICK_MS / 2, MAX_TICKS_PER_FRAME]);
     });
 
     test("a second at the tick rate runs as many ticks as the rate, whatever the frame rate", () => {

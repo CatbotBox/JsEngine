@@ -1,6 +1,6 @@
-import {Resource} from "../../src/engine/core";
-import type {Entity} from "../../src/engine/core";
-import type {Sprite} from "../../src/engine/rendering/2d";
+import {Resource} from "@jsengine/engine/core";
+import type {Entity} from "@jsengine/engine/core";
+import type {Sprite} from "@jsengine/engine/rendering/2d";
 import type {Enemy} from "./components";
 
 const INITIAL_ENEMY_CAPACITY = 1024;

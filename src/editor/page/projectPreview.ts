@@ -154,7 +154,7 @@ export class ProjectFilePreview {
             }
             case "scene":
             case "prefab": {
-                const parsed = parseSceneDocument(await files.readText(entry.path));
+                const parsed = parseSceneDocument(await files.readText(entry.path), entry.path);
                 return {facts: [["Entities", String(parsed.entities.length)], ["Root entities", String(documentRootCount(parsed))]], body: []};
             }
             default:

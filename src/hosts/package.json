@@ -1,0 +1,25 @@
+{
+  "name": "@jsengine/hosts",
+  "version": "0.1.0",
+  "description": "JsEngine's terminal, browser and Electron hosts (TypeScript sources, bun only)",
+  "type": "commonjs",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "exports": {
+    "./desktop": "./desktop/index.ts",
+    "./terminal": "./terminal/index.ts",
+    "./terminalInput": "./terminalInput/index.ts",
+    "./web": "./web/index.ts",
+    "./web/bootstrap": "./web/bootstrap/index.ts",
+    "./web/cells": "./web/cells/index.ts",
+    "./web/gpu": "./web/gpu/index.ts",
+    "./web/pixels": "./web/pixels/index.ts",
+    "./web/worker": "./web/worker/index.ts",
+    "./web/worker/gpu": "./web/worker/gpu/index.ts"
+  },
+  "dependencies": {
+    "@jsengine/backends": "workspace:*",
+    "@jsengine/engine": "workspace:*"
+  }
+}

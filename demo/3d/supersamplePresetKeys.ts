@@ -1,6 +1,6 @@
-import type {World} from "../../src/engine/core";
-import {Input, resolveInputAction} from "../../src/engine/input";
-import type {InputAction} from "../../src/engine/input";
+import type {World} from "@jsengine/engine/core";
+import {Input, resolveInputAction} from "@jsengine/engine/input";
+import type {InputAction} from "@jsengine/engine/input";
 import {Demo3dTuning} from "./tuning";
 import type {SupersamplePreset} from "./tuning";
 

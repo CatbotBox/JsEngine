@@ -133,6 +133,21 @@ describe("project server", () => {
         expect((await again.json()).error.includes(PROJECT_MANIFEST_FILE)).toBe(true);
     });
 
+    test("create links the new project to the engine packages through jsengine link when it can run the toolchain", async () => {
+        const runs = serverWithToolchain(async () => ({stdout: "", stderr: "", exitCode: EXIT_SUCCESS}));
+        const created = await (await post("create", {path: folder, name: "Linked"})).json() as OpenProjectResult;
+        expect(created.validation.ok).toBe(true);
+        expect(runs).toEqual([["link", "--project", folder]]);
+    });
+
+    test("create reports a link that fails, with the toolchain's output", async () => {
+        serverWithToolchain(async () => ({stdout: "", stderr: "bun install could not reach the engine checkout\n", exitCode: EXIT_FAILURE}));
+        const created = await post("create", {path: folder, name: "Unlinked"});
+        expect(created.status).toBe(HTTP_INTERNAL_ERROR);
+        expect((await created.json()).error.includes("bun install could not reach the engine checkout")).toBe(true);
+        expect(fs.existsSync(path.join(folder, PROJECT_MANIFEST_FILE))).toBe(true);
+    });
+
     test("files can be listed, written, read, renamed and removed inside the folder", async () => {
         const {id} = await opened(folder);
         expect((await request(`${id}/file/assets/a%20b.txt`, {method: "PUT", body: "hello"})).status).toBe(HTTP_OK);

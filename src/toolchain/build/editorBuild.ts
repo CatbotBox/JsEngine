@@ -1,7 +1,6 @@
 import {createHash} from "crypto";
-import {mkdirSync, rmSync, statSync, writeFileSync} from "fs";
+import {mkdirSync, rmSync, writeFileSync} from "fs";
 import {dirname, isAbsolute, join, relative, resolve, sep} from "path";
-import {pathToFileURL} from "url";
 import type {BuildConfig, BuildOutput, BunPlugin} from "bun";
 import type {ProjectManifest} from "../../engine/project/projectManifest";
 import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensions";
@@ -10,7 +9,8 @@ import {CliError} from "../cliArguments";
 import {PROJECT_GENERATED_FILES, writeGeneratedFiles} from "../generate/generatedFiles";
 import {DEFAULT_ENTRY_FILE, editorWorkerMainFile, ENGINE_IMPORT_PREFIX, GENERATED_FOLDER, START_PROJECT_EXPORT} from "../projectLayout";
 import {readProjectManifest} from "../project";
-import {EDITOR_PROJECTS_DIST, REPO_ROOT, slashed, SOURCE_ROOT} from "../repoPaths";
+import {closestPublicEntryPoints, isPublicEntryPoint} from "../publicEntryPoints";
+import {EDITOR_PROJECTS_DIST, REPO_ROOT, slashed} from "../repoPaths";
 import {featureDefines} from "../targets";
 import type {EditorSimulation} from "../targets";
 
@@ -27,7 +27,6 @@ export interface EditorBuildPaths {
     readonly editorMain: string;
 }
 
-const RESOLVE_SUFFIXES: readonly string[] = ["", ".ts", ".tsx", ".js", ".mjs", "/index.ts", "/index.tsx", "/index.js"];
 const ENGINE_IMPORT_FILTER = new RegExp(`^${ENGINE_IMPORT_PREFIX.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}`);
 const DRIVE_PATH = /[A-Za-z]:[\\/]/;
 const MISSING_EXPORT = /No matching export in "(.+?)" for import "(.+?)"/;
@@ -44,14 +43,6 @@ function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function isFile(path: string): boolean {
-    try {
-        return statSync(path).isFile();
-    } catch {
-        return false;
-    }
-}
-
 function samePath(a: string, b: string): boolean {
     const left = resolve(a);
     const right = resolve(b);
@@ -63,27 +54,20 @@ function isInsideDirectory(root: string, path: string): boolean {
     return inside === "" || (!isAbsolute(inside) && inside.split(sep)[0] !== PARENT_SEGMENT);
 }
 
-function engineImportPath(specifier: string): string | undefined {
-    const base = join(SOURCE_ROOT, specifier.slice(ENGINE_IMPORT_PREFIX.length));
-    return RESOLVE_SUFFIXES.map(suffix => base + suffix).find(isFile);
+export function engineImportError(specifier: string): string | undefined {
+    const entryPoint = specifier.slice(ENGINE_IMPORT_PREFIX.length);
+    if (isPublicEntryPoint(entryPoint)) return undefined;
+    const closest = closestPublicEntryPoints(entryPoint).map(each => ENGINE_IMPORT_PREFIX + each).join(", ");
+    return `${specifier} is not an engine entry point; import from the closest entry point instead: ${closest}`;
 }
 
-export const ENGINE_IMPORTS: BunPlugin = {
-    name: "jsengine-imports",
+export const ENGINE_IMPORT_CHECK: BunPlugin = {
+    name: "jsengine-import-check",
     setup(build) {
         build.onResolve({filter: ENGINE_IMPORT_FILTER}, args => {
-            const path = engineImportPath(args.path);
-            return path === undefined ? undefined : {path};
-        });
-    },
-};
-
-export const EXTERNAL_ENGINE_IMPORTS: BunPlugin = {
-    name: "jsengine-external-imports",
-    setup(build) {
-        build.onResolve({filter: ENGINE_IMPORT_FILTER}, args => {
-            const path = engineImportPath(args.path);
-            return path === undefined ? undefined : {path: pathToFileURL(path).href, external: true};
+            const error = engineImportError(args.path);
+            if (error !== undefined) throw new Error(error);
+            return undefined;
         });
     },
 };
@@ -127,7 +111,7 @@ async function bundle(entryModule: string, outFile: string, define: Readonly<Rec
         metafile: true,
         throw: false,
         define,
-        plugins: [ENGINE_IMPORTS],
+        plugins: [ENGINE_IMPORT_CHECK],
     };
     const result = await Bun.build(config as BuildConfig) as MetafileBuildOutput;
     if (!result.success) return {ok: false, inputs: [], errors: result.logs.filter(log => log.level === "error").map(buildError)};

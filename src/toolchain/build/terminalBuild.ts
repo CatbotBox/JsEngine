@@ -8,7 +8,7 @@ import {featureDefines} from "../targets";
 import type {RunTarget} from "../targets";
 import {bundleInputsOf, requireMetafile} from "./bundleMetafile";
 import type {MetafileBuildConfig, MetafileBuildOutput} from "./bundleMetafile";
-import {ENGINE_IMPORTS} from "./editorBuild";
+import {ENGINE_IMPORT_CHECK} from "./editorBuild";
 import {checkBundleFeatures, targetFeatureReport} from "./featureDetection";
 import type {TargetFeatureReport} from "./featureDetection";
 
@@ -26,7 +26,7 @@ export async function checkTerminalBuild(projectFolder: string): Promise<TargetF
         metafile: true,
         throw: false,
         define: featureDefines(TERMINAL_TARGET),
-        plugins: [ENGINE_IMPORTS],
+        plugins: [ENGINE_IMPORT_CHECK],
     };
     const result: MetafileBuildOutput = await Bun.build(config);
     if (!result.success) throw new CliError(`bundling ${displayPath(entry)} for the ${TERMINAL_TARGET} failed:`, result.logs.map(String));

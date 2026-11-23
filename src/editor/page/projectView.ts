@@ -2,7 +2,7 @@ import type {Entity} from "../../engine/core";
 import type {DecodedImage} from "../../engine/assets/image/decodedImage";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
-import {SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene/sceneDocument";
+import {SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION, sceneDocumentText} from "../../engine/scene/sceneDocument";
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {PROJECT_ITEM_HOOK} from "../project/editorUiHooks";
 import {askForChoice, askForText} from "./dialogs";
@@ -27,7 +27,6 @@ import type {FileMove, FileTreeSnapshot} from "./fileUndo";
 import {parentLookupOf, topmostEntities} from "./hierarchyDrop";
 import {clickedSelection, emptyListSelection, PLAIN_CLICK, retainedSelection, selectionModifiersOf} from "./listSelection";
 import type {ListSelection, SelectionModifiers} from "./listSelection";
-import {sceneDocumentText} from "./prefabInstancePaths";
 import {
     allProjectPaths,
     baseNameOf,

@@ -18,7 +18,7 @@ import type {ExportedClass, ExportReference} from "./projectSources";
 import {projectReachabilityOf} from "./schemas";
 
 export const SYSTEMS_GENERATOR_NAME = "systems";
-export const SYSTEMS_GENERATOR_VERSION = 2;
+export const SYSTEMS_GENERATOR_VERSION = 3;
 export const SYSTEMS_GENERATED_HEADER = generatedFileHeader(SYSTEMS_GENERATOR_NAME, SYSTEMS_GENERATOR_VERSION);
 export const UNMATCHED_SYSTEM_EXCLUDE_WARNING = "matches no system";
 export const SYSTEM_CONSTRUCTOR_ARGUMENTS_WARNING = "takes constructor arguments, so the system list cannot create it";
@@ -27,12 +27,12 @@ export const OUTSIDE_BACKEND_FOLDERS_WARNING = "is outside the render backend fo
 const LINE_BREAK = "\r\n";
 const INDENT = "    ";
 const PATH_SEPARATOR = "/";
-const ENGINE_CORE_MODULE = "core";
+const ENGINE_CORE_ENTRY_POINT = "engine/core";
 const ENGINE_SYSTEM_CLASS = "System";
 const SYSTEM_TYPE = "System";
 const SYSTEM_CTOR_TYPE = "SystemCtor";
 const RENDER_PASS_CTOR_TYPE = "RenderPassCtor";
-const ENGINE_RENDER_PASSES_MODULE = ["rendering", "renderPasses"];
+const ENGINE_RENDERING_ENTRY_POINT = "engine/rendering";
 const SPREAD = "...";
 const NO_EXCLUDED_NAMES: readonly string[] = [];
 const BACKEND_KIND_SEGMENT = 1;
@@ -137,14 +137,14 @@ class SystemsGenerator {
         const reserved = [SYSTEM_TYPE, SYSTEM_CTOR_TYPE, RENDER_PASS_CTOR_TYPE, list.exportName, ...(list.passes === undefined ? [] : [list.passes.exportName])];
         const imports = new ImportTable(reference => specifierOf(reference.fileName.replace(SOURCE_EXTENSION_PATTERN, "")), reserved);
         for (const system of list.systems) imports.add(system.exported.reference);
-        const passReferences = (list.passes?.lists ?? []).map((pass): ExportReference => ({fileName: this.sources.sourceModule(...pass.source.path), exportName: pass.source.name}));
+        const passReferences = (list.passes?.lists ?? []).map((pass): ExportReference => ({fileName: this.sources.entryPointModule(pass.source.entryPoint), exportName: pass.source.name}));
         for (const reference of passReferences) imports.add(reference);
-        const engineCore = specifierOf(this.sources.engineModule(ENGINE_CORE_MODULE));
+        const engineCore = specifierOf(this.sources.entryPointModule(ENGINE_CORE_ENTRY_POINT));
         const systemEntries = list.systems.map(system => imports.localName(system.exported.reference));
         const typeImports = [`import type {${SYSTEM_TYPE}, ${SYSTEM_CTOR_TYPE}} from ${JSON.stringify(engineCore)};`];
         const declarations = [...listDeclaration(`export const ${list.exportName}: readonly ${SYSTEM_CTOR_TYPE}<${SYSTEM_TYPE}>[] = [`, systemEntries)];
         if (list.passes !== undefined) {
-            const renderPasses = specifierOf(this.sources.engineModule(...ENGINE_RENDER_PASSES_MODULE));
+            const renderPasses = specifierOf(this.sources.entryPointModule(ENGINE_RENDERING_ENTRY_POINT));
             typeImports.push(`import type {${RENDER_PASS_CTOR_TYPE}} from ${JSON.stringify(renderPasses)};`);
             const passEntries = passReferences.map(reference => SPREAD + imports.localName(reference));
             declarations.push("", ...listDeclaration(`export const ${list.passes.exportName}: readonly ${RENDER_PASS_CTOR_TYPE}[] = [`, passEntries));

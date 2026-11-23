@@ -39,14 +39,14 @@ describe("gpu component schemas", () => {
         const settings = new GpuMeshPassSettings();
         settings.sampleCount = SINGLE_SAMPLE_COUNT;
         settings.orthographicDepthRange = DEPTH_RANGE;
-        settings.evictUnusedMeshAfterFrames = EVICT_AFTER_FRAMES;
+        settings.evictUnusedAfterFrames = EVICT_AFTER_FRAMES;
         settings.textureFiltering = LINEAR_TEXTURE_FILTERING;
         settings.lodTrianglesPerPixel = LOD_TRIANGLES_PER_PIXEL;
         const source = new World({platform: new MemoryPlatform()});
         source.entityManager.createEntity("settings", [settings]);
         const saved = serializeWorld(source, registry);
         expect(saved.document.entities[0].components.GpuMeshPassSettings).toEqual({
-            textureFiltering: "linear", sampleCount: "single", orthographicDepthRange: DEPTH_RANGE, evictUnusedMeshAfterFrames: EVICT_AFTER_FRAMES, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL,
+            textureFiltering: "linear", sampleCount: "single", orthographicDepthRange: DEPTH_RANGE, evictUnusedAfterFrames: EVICT_AFTER_FRAMES, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL,
         });
 
         const target = new World({platform: new MemoryPlatform()});

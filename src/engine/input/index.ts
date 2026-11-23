@@ -22,3 +22,4 @@ export type {
     TextTypedEvent,
     WheelScrollEvent,
 } from "./inputEvent"
+export {INPUT_MAP_SCHEMA_ENTRY} from "./schemas"

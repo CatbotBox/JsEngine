@@ -1,7 +1,7 @@
-import {NULL_ENTITY, System} from "../../src/engine/core";
-import {formatHudLines, formatHudText, HudLabel} from "../../src/engine/rendering/text";
-import type {HudValues} from "../../src/engine/rendering/text";
-import {AverageStat} from "../../src/engine/datatypes";
+import {NULL_ENTITY, System} from "@jsengine/engine/core";
+import {formatHudLines, formatHudText, HudLabel} from "@jsengine/engine/rendering/text";
+import type {HudValues} from "@jsengine/engine/rendering/text";
+import {AverageStat} from "@jsengine/engine/datatypes";
 import {Enemy, SwarmHud} from "./components";
 import {SwarmPhase, SwarmState} from "./resources";
 import {MS_PER_SECOND, SwarmTuning} from "./tuning";

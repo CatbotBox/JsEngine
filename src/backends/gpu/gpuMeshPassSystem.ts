@@ -197,7 +197,7 @@ export class GpuMeshPassSystem extends System {
         const pass = this._gpu.frame.beginScene(background, sampleCount, widthPx, heightPx);
         this.drawBatches(pass, settings, meshSettings, sampleCount, this.world.resources.getOrCreate(GpuShaderLibrary));
         pass.end();
-        this.evictUnused(settings.evictUnusedMeshAfterFrames);
+        this.evictUnused(settings.evictUnusedAfterFrames);
     }
 
     private evictUnused(maxUnusedFrames: number): void {

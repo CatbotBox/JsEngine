@@ -1,12 +1,11 @@
-import {existsSync, mkdirSync, readdirSync, writeFileSync} from "fs";
-import {dirname, join, relative} from "path";
+import {existsSync} from "fs";
+import {join} from "path";
 import {registerBuiltinImageDecoders} from "../../engine/assets/image/builtinDecoders";
 import type {AssetLoadOptions, FileSource, FileStat} from "../../engine/platform";
 import {joinPath, normalizePath} from "../../engine/platform";
 import {Mesh} from "../../engine/rendering/3d";
 import {
     assetReferencesOfFields,
-    DATA_ASSET_FILE_SUFFIX,
     MESH_ASSET_TYPE_NAME,
     PARENT_COMPONENT_NAME,
     parseDataAssetDocument,
@@ -15,18 +14,14 @@ import {
     sceneAssetPaths,
 } from "../../engine/scene";
 import type {ComponentSchemaRegistry, SceneAssetReference, SceneDocument, SchemaEntry} from "../../engine/scene";
-import {SCENE_FILE_SUFFIX} from "../../engine/project/projectManifest";
 import {createProjectSchemaRegistry} from "../../engine/project/projectSchemas";
 import {EDITOR_SCHEMAS} from "../../editor/world/editorSchemas";
 import type {AssetManifestFile, AssetManifestPrefab, ProjectAssetManifest} from "../../hosts/web/webProjectAssets";
-import {CliError} from "../cliArguments";
-import {GENERATED_FOLDER, GENERATED_SCHEMAS_FILE} from "../projectLayout";
-import {compareText, isInside} from "../generate/projectSources";
-import {REPO_ROOT} from "../repoPaths";
-import {EXTERNAL_ENGINE_IMPORTS, projectBuildDirectory} from "./editorBuild";
+import {documentPathsUnder, isSceneOrPrefab} from "../projectDocuments";
+import {GENERATED_SCHEMAS_FILE} from "../projectLayout";
+import {compareText} from "../generate/projectSources";
 import {isWebProjectDataFile} from "./webDistFiles";
 
-const ASSET_SCHEMAS_BUNDLE_FILE = "assetSchemas.js";
 const WRITABLE = true;
 const BYTES_PER_MB = 1024 * 1024;
 export const ON_DEMAND_PREFAB_BYTES = 16 * BYTES_PER_MB;
@@ -35,7 +30,6 @@ const NO_SCHEMAS: readonly SchemaEntry[] = [];
 interface GeneratedSchemasModule {
     readonly generatedSchemas?: readonly SchemaEntry[];
 }
-const SKIPPED_FOLDERS: ReadonlySet<string> = new Set([".jsengine", "node_modules", GENERATED_FOLDER]);
 
 export class RecordingFileSource implements FileSource {
     public readonly read = new Set<string>();
@@ -84,23 +78,6 @@ interface RecordedFiles {
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
-}
-
-function isSceneOrPrefab(path: string): boolean {
-    const lower = path.toLowerCase();
-    return lower.endsWith(SCENE_FILE_SUFFIX) || lower.endsWith(PREFAB_FILE_SUFFIX);
-}
-
-function isDocument(path: string): boolean {
-    return isSceneOrPrefab(path) || path.toLowerCase().endsWith(DATA_ASSET_FILE_SUFFIX);
-}
-
-function documentPathsUnder(folder: string, directory: string = folder): string[] {
-    return readdirSync(directory, {withFileTypes: true}).flatMap(entry => {
-        const path = join(directory, entry.name);
-        if (entry.isDirectory()) return SKIPPED_FOLDERS.has(entry.name) ? [] : documentPathsUnder(folder, path);
-        return isDocument(entry.name) ? [relative(folder, path).replace(/\\/g, "/")] : [];
-    }).sort(compareText);
 }
 
 function isPrefab(document: ProjectDocument): boolean {
@@ -167,7 +144,7 @@ class ProjectAssetRecorder {
     private parsedDocument(path: string): ProjectDocument {
         const text = this.base.files.readText(joinPath(this.root, this.sitePath(path)));
         if (isSceneOrPrefab(path)) {
-            const scene = parseSceneDocument(text);
+            const scene = parseSceneDocument(text, path);
             return {path, scene, references: sceneAssetPaths(scene, this.registry)};
         }
         const asset = parseDataAssetDocument(text, path);
@@ -226,20 +203,10 @@ export function buildProjectAssetManifest(
     return new ProjectAssetRecorder(root, projectDirectory, base, registry, onDemandPrefabBytes).manifest();
 }
 
-async function engineSharingSchemasModule(projectFolder: string, schemasModule: string): Promise<string> {
-    if (isInside(REPO_ROOT, projectFolder)) return schemasModule;
-    const result = await Bun.build({entrypoints: [schemasModule], target: "bun", format: "esm", throw: false, plugins: [EXTERNAL_ENGINE_IMPORTS]});
-    if (!result.success) throw new CliError(`bundling ${schemasModule} to find the project's asset references failed:`, result.logs.map(String));
-    const bundled = join(projectBuildDirectory(projectFolder), ASSET_SCHEMAS_BUNDLE_FILE);
-    mkdirSync(dirname(bundled), {recursive: true});
-    writeFileSync(bundled, await result.outputs[0].text());
-    return bundled;
-}
-
 export async function projectAssetRegistry(projectFolder: string): Promise<ComponentSchemaRegistry> {
     const schemasModule = join(projectFolder, GENERATED_SCHEMAS_FILE);
     const generated = existsSync(schemasModule)
-        ? await import(await engineSharingSchemasModule(projectFolder, schemasModule)) as GeneratedSchemasModule
+        ? await import(schemasModule) as GeneratedSchemasModule
         : {};
     return createProjectSchemaRegistry({hostSchemas: EDITOR_SCHEMAS, schemas: generated.generatedSchemas ?? NO_SCHEMAS});
 }

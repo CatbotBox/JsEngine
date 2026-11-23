@@ -8,6 +8,15 @@ Supported runtimes
 
 currently runs in console
 
+## Install
+
+The engine ships as packages of TypeScript sources and is installed and built with **bun only**: `bun install` links
+`@jsengine/engine`, `@jsengine/backends`, `@jsengine/hosts`, `@jsengine/editor` and `@jsengine/toolchain` (the
+`jsengine` CLI), the folders under `src/`, whose `package.json` `exports` are their public entry points. A project
+outside this checkout depends on them through `link:` paths: the editor's "Create project here" writes them, and
+`jsengine link --project <dir>` adds them to an existing project and runs `bun install`; `bun jsengine <command>` then
+runs from the project. Node only runs this repository's tests and `run --node` (through `ts-node`).
+
 ## 3D
 
 Renders `.obj` meshes with their `.mtl` materials (`Kd`/`map_Kd` diffuse, `Ks`/`Ns`/`map_Ks` Blinn-Phong specular,

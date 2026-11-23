@@ -45,3 +45,14 @@ export type {PixelFontGlyph} from './text'
 
 export * as TwoD from './2d';
 export * as ThreeD from './3d';
+export {
+    CAMERA_SCHEMA_ENTRY,
+    HUD_ELEMENT_SCHEMA_ENTRY,
+    RENDER_BOUNDS_OFFSET_SCHEMA_ENTRY,
+    RENDER_BOUNDS_SCHEMA_ENTRY,
+    SCREEN_ANCHOR_SCHEMA_ENTRY,
+    SCREEN_SIZE_SCHEMA_ENTRY,
+    SHADER_ASSET_TYPE_ENTRY,
+    TEXT_SPRITE_SCHEMA_ENTRY,
+    WORLD_SPACE_RENDER_BOUNDS_SCHEMA_ENTRY,
+} from './schemas';

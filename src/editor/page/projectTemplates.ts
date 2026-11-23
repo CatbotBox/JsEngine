@@ -1,5 +1,4 @@
-import {FIRST_SCENE_ENTITY_ID, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene/sceneDocument";
-import {sceneDocumentText} from "./prefabInstancePaths";
+import {FIRST_SCENE_ENTITY_ID, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION, sceneDocumentText} from "../../engine/scene/sceneDocument";
 
 export interface ScriptTemplate {
     readonly fileStem: string;

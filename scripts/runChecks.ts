@@ -44,9 +44,10 @@ function realNodeIsInstalled(): boolean {
     }
 }
 
-function missingDevDependencies(): string[] {
-    const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {devDependencies?: Record<string, string>};
-    return Object.keys(manifest.devDependencies ?? {}).filter(name => !existsSync(join(ROOT, "node_modules", name, "package.json")));
+function missingDependencies(): string[] {
+    const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {dependencies?: Record<string, string>, devDependencies?: Record<string, string>};
+    const names = [...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.devDependencies ?? {})];
+    return names.filter(name => !existsSync(join(ROOT, "node_modules", name, "package.json")));
 }
 
 function seconds(ms: number): string {
@@ -66,8 +67,8 @@ async function runStep(step: CheckStep): Promise<Outcome> {
     const output = `${stdout}${stderr}`.trimEnd();
     if (output.length > 0) console.log(output.split(/\r?\n/).map(line => `    | ${line}`).join("\n"));
     if (step.script === "typecheck") {
-        const missing = missingDevDependencies();
-        if (missing.length > 0) console.log(`    devDependencies not installed (run bun install): ${missing.join(", ")}`);
+        const missing = missingDependencies();
+        if (missing.length > 0) console.log(`    dependencies not installed (run bun install): ${missing.join(", ")}`);
     }
     return "FAIL";
 }

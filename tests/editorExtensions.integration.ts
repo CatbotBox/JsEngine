@@ -28,7 +28,7 @@ const QUERY_START = "?";
 
 const MANIFEST: ProjectManifest = {name: "Extensions fixture", editorExtensions: EXTENSIONS_MODULE};
 const EXTENSIONS_SOURCE = [
-    `import type {EditorExtensions} from "@jsengine/editor/project/editorExtensions";`,
+    `import type {EditorExtensions} from "@jsengine/editor/extensions";`,
     ``,
     `const MARKER = "${EXTENSION_MARKER}";`,
     ``,

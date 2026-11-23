@@ -12,7 +12,7 @@ import {ViewSpaceMesh} from "../src/engine/rendering/3d/viewSpaceMesh";
 import {SceneLights, VertexLighting} from "../src/engine/rendering/3d/lighting";
 import {Texture} from "../src/engine/rendering/3d/texture";
 import {CellRenderSettings} from "../src/backends/cells/cellRenderSettings";
-import {browserWorkerFactory} from "../src/hosts/web";
+import {browserWorkerFactory} from "../src/hosts/web/worker";
 import {AnsiCellEncoder, nodePlatform} from "../src/hosts/terminal";
 import type {WorkerFactory} from "../src/engine/platform";
 import {WHITE_RGB, PACKED_RGB_MASK} from "../src/engine/rendering/packedRgb";

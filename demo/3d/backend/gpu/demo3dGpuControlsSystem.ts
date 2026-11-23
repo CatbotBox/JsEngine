@@ -1,15 +1,15 @@
-import {System} from "../../../../src/engine/core";
-import {Input, resolveInputActions} from "../../../../src/engine/input";
-import type {ResolvedInputActions} from "../../../../src/engine/input";
-import {GpuRenderBackend} from "../../../../src/engine/rendering/renderBackend";
+import {System} from "@jsengine/engine/core";
+import {Input, resolveInputActions} from "@jsengine/engine/input";
+import type {ResolvedInputActions} from "@jsengine/engine/input";
+import {GpuRenderBackend} from "@jsengine/engine/rendering";
 import {
     GpuMeshPassSettings,
     LINEAR_TEXTURE_FILTERING,
     MULTISAMPLE_COUNT,
     NEAREST_TEXTURE_FILTERING,
     SINGLE_SAMPLE_COUNT,
-} from "../../../../src/backends/gpu/gpuMeshPassSettings";
-import type {GpuSampleCount, GpuTextureFiltering} from "../../../../src/backends/gpu/gpuMeshPassSettings";
+} from "@jsengine/backends/gpu";
+import type {GpuSampleCount, GpuTextureFiltering} from "@jsengine/backends/gpu";
 import {Demo3dTuning} from "../../tuning";
 import type {SupersamplePreset} from "../../tuning";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";

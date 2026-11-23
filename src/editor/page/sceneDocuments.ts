@@ -1,14 +1,14 @@
 import type {Entity} from "../../engine/core";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {NO_SCENE_ID} from "../../engine/scene/sceneInstance";
-import {parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene/sceneDocument";
+import {parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION, sceneDocumentText} from "../../engine/scene/sceneDocument";
 import type {EditorSceneRef, ListEntitiesResult} from "../editorProtocol";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {askForChoice, askForSavePath} from "./dialogs";
 import {readStorage, writeStorage} from "./dom";
 import {sceneLoadStatus, sceneSaveStatus} from "./editorToolbar";
 import type {EditorWorkspace} from "./editorWorkspace";
-import {documentRootCount, sceneDocumentText} from "./prefabInstancePaths";
+import {documentRootCount} from "./prefabInstancePaths";
 import {
     allProjectPaths,
     fileNameProblem,

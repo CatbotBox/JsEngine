@@ -1,7 +1,7 @@
-import {EntityCommandBuffer, EntityCommandBufferSystem, Resource, System, World} from "../../src/engine/core";
-import type {Entity} from "../../src/engine/core";
-import {Input, resolveInputActions} from "../../src/engine/input";
-import type {InputAction, ResolvedInputActions} from "../../src/engine/input";
+import {EntityCommandBuffer, EntityCommandBufferSystem, Resource, System, World} from "@jsengine/engine/core";
+import type {Entity} from "@jsengine/engine/core";
+import {Input, resolveInputActions} from "@jsengine/engine/input";
+import type {InputAction, ResolvedInputActions} from "@jsengine/engine/input";
 import {
     Camera,
     RenderPasses,
@@ -9,13 +9,13 @@ import {
     ScreenSize,
     SPRITE_PIXELS_PER_SCREEN_UNIT_X,
     SPRITE_PIXELS_PER_SCREEN_UNIT_Y,
-} from "../../src/engine/rendering";
-import {Sprite} from "../../src/engine/rendering/2d";
-import {LocalPosition} from "../../src/engine/translation";
-import {DataAssets, dataAssetPathOf, PrefabSpawner} from "../../src/engine/scene";
-import type {PrefabAsset} from "../../src/engine/scene";
-import {Random} from "../../src/engine/math/random";
-import {Lifetime, LifetimeSystem, MotionSystem, Velocity} from "../../src/engine/motion";
+} from "@jsengine/engine/rendering";
+import {Sprite} from "@jsengine/engine/rendering/2d";
+import {LocalPosition} from "@jsengine/engine/translation";
+import {DataAssets, dataAssetPathOf, PrefabSpawner} from "@jsengine/engine/scene";
+import type {PrefabAsset} from "@jsengine/engine/scene";
+import {Random} from "@jsengine/engine/math";
+import {Lifetime, LifetimeSystem, MotionSystem, Velocity} from "@jsengine/engine/motion";
 import {Bullet, Enemy, Ship, Spark} from "./components";
 import {EnemyGrid} from "./enemyGrid";
 import {SwarmPhase, SwarmState} from "./resources";

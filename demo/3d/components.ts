@@ -1,7 +1,7 @@
-import {Component, NULL_ENTITY} from "../../src/engine/core";
-import type {Entity} from "../../src/engine/core";
-import {Vec3} from "../../src/engine/math/types/vec";
-import type {Int} from "../../src/engine/scene";
+import {Component, NULL_ENTITY} from "@jsengine/engine/core";
+import type {Entity} from "@jsengine/engine/core";
+import {Vec3} from "@jsengine/engine/math";
+import type {Int} from "@jsengine/engine/scene";
 
 const DEMO_3D_CATEGORY = "Demo 3D";
 const UNIT_SCALE = 1;

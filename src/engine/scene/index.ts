@@ -71,7 +71,13 @@ export type {
     ResourceSchemaEntry,
     SchemaEntry,
 } from "./schemaEntries";
-export {SCENE_MANAGER_SCHEMAS} from "./schemas";
+export {
+    ACTIVE_SCENE_SCHEMA_ENTRY,
+    PREFAB_ASSET_TYPE_ENTRY,
+    PREFAB_INSTANCE_SCHEMA_ENTRY,
+    SCENE_INSTANCE_SCHEMA_ENTRY,
+    SCENE_MANAGER_SCHEMAS,
+} from "./schemas";
 export {
     ENGINE_ASSET_TYPES,
     MESH_ASSET_TYPE,
@@ -91,9 +97,11 @@ export type {PrefabSpawnerSettings} from "./prefabSpawner";
 export {
     DATA_ASSET_FILE_SUFFIX,
     DATA_ASSET_FORMAT,
+    DATA_ASSET_MIGRATIONS,
     DATA_ASSET_VERSION,
     dataAssetDocumentText,
     dataAssetPathOf,
+    migrateDataAssetJson,
     newDataAssetDocument,
     parseDataAssetDocument,
 } from "./dataAssetDocument";
@@ -158,11 +166,16 @@ export type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 export {
     FIRST_SCENE_ENTITY_ID,
     SCENE_DOCUMENT_FORMAT,
+    SCENE_DOCUMENT_MIGRATIONS,
     SCENE_DOCUMENT_VERSION,
     isSceneJsonObject,
+    migrateSceneJson,
     parseSceneDocument,
+    sceneDocumentText,
     sceneJsonEquals,
 } from "./sceneDocument";
+export {migrateDocumentJson, oldestMigratedVersion, withRenamedKey} from "./documentMigrations";
+export type {DocumentMigration, DocumentMigrations} from "./documentMigrations";
 export type {SceneDocument, SceneEntityRecord, SceneFieldValues, SceneJsonObject, SceneJsonValue} from "./sceneDocument";
 export {assetReferencesOfFields, LOAD_ON_DEMAND_FIELD_KEY, platformSceneAssetLoader, preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
 export type {AssetPreload, DataAssetSource, SceneAssetKind, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";

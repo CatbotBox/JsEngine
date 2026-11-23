@@ -1,12 +1,11 @@
-import {ComponentType, EntityQuery, persistentTrackComponent} from "../../src/engine/core";
-import type {Component, ComponentCtor, Entity, EntityCommandBuffer, World} from "../../src/engine/core";
-import {getEntityCreationOrder} from "../../src/engine/core/ownership";
-import {Quaternions} from "../../src/engine/math/quaternions";
-import type {Vec3, Vec4} from "../../src/engine/math/types/vec";
-import {RenderMesh} from "../../src/engine/rendering/3d";
-import {untrackedComponentOf} from "../../src/engine/scene";
-import type {PrefabTemplate} from "../../src/engine/scene";
-import {LocalPosition, LocalRotation, LocalScale} from "../../src/engine/translation";
+import {ComponentType, EntityQuery, getEntityCreationOrder, persistentTrackComponent} from "@jsengine/engine/core";
+import type {Component, ComponentCtor, Entity, EntityCommandBuffer, World} from "@jsengine/engine/core";
+import {Quaternions} from "@jsengine/engine/math";
+import type {Vec3, Vec4} from "@jsengine/engine/math";
+import {RenderMesh} from "@jsengine/engine/rendering/3d";
+import {untrackedComponentOf} from "@jsengine/engine/scene";
+import type {PrefabTemplate} from "@jsengine/engine/scene";
+import {LocalPosition, LocalRotation, LocalScale} from "@jsengine/engine/translation";
 import {GridModel} from "./components";
 import type {ModelGrid} from "./components";
 

@@ -1,6 +1,6 @@
-import {Resource} from "../../src/engine/core";
-import type {ShaderSource} from "../../src/engine/rendering";
-import type {Int, PrefabAsset, TextLines} from "../../src/engine/scene";
+import {Resource} from "@jsengine/engine/core";
+import type {ShaderSource} from "@jsengine/engine/rendering";
+import type {Int, PrefabAsset, TextLines} from "@jsengine/engine/scene";
 
 const UNSCALED = 1;
 

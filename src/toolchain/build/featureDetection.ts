@@ -5,6 +5,7 @@ import {optionalFeature, PLATFORM_FEATURE_CONSTANTS, PLATFORM_FEATURES} from "..
 import type {PlatformFeature} from "../../engine/platform/platform";
 import {CliError} from "../cliArguments";
 import {isInside, projectCompilerOptions} from "../generate/projectSources";
+import {AMBIENT_TYPE_PACKAGES, FEATURE_CONSTANTS_DECLARATION, TYPE_ROOTS} from "../projectPackage";
 import {REPO_ROOT, repoRelative, slashed, SOURCE_ROOT} from "../repoPaths";
 import {featureConstantValues, TARGET_FEATURES} from "../targets";
 import type {RunTarget} from "../targets";
@@ -103,11 +104,8 @@ const REQUIRE_FUNCTION = "require";
 const BOOLEAN_TYPEOF = "boolean";
 const ANALYZED_EXTENSIONS: ReadonlySet<string> = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 const DECLARATION_FILE = /\.d\.[cm]?ts$/;
-const FEATURE_CONSTANTS_DECLARATION = join(SOURCE_ROOT, "engine", "platform", "features.d.ts");
 const OPTIONAL_FEATURE_SOURCE = join(SOURCE_ROOT, "engine", "platform", "platform.ts");
 const WEBGPU_TYPES_DECLARATION = join(REPO_ROOT, "node_modules", "@webgpu", "types", "dist", "index.d.ts");
-const TYPE_ROOTS: readonly string[] = [join(REPO_ROOT, "node_modules", "@types")];
-const AMBIENT_TYPE_PACKAGES: readonly string[] = ["node", "bun"];
 const FEATURE_CONSTANT_NAMES: ReadonlySet<string> = new Set(Object.values(PLATFORM_FEATURE_CONSTANTS));
 const EQUALITY_OPERATORS: ReadonlySet<ts.SyntaxKind> = new Set([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken]);
 const INEQUALITY_OPERATORS: ReadonlySet<ts.SyntaxKind> = new Set([ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken]);
@@ -242,7 +240,7 @@ class FeatureDetector {
     private readonly foldingByTarget = new Map<RunTarget, TargetFolding>();
 
     public constructor(modules: readonly string[]) {
-        const options: ts.CompilerOptions = {...projectCompilerOptions(REPO_ROOT), allowJs: true, types: [...AMBIENT_TYPE_PACKAGES], typeRoots: [...TYPE_ROOTS]};
+        const options: ts.CompilerOptions = {...projectCompilerOptions(), allowJs: true, types: [...AMBIENT_TYPE_PACKAGES], typeRoots: [...TYPE_ROOTS]};
         const rootNames = [...new Set(modules.filter(isAnalyzedModule)), FEATURE_CONSTANTS_DECLARATION, WEBGPU_TYPES_DECLARATION];
         this.program = ts.createProgram({rootNames, options});
         this.checker = this.program.getTypeChecker();

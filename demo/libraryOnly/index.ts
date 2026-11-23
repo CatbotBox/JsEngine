@@ -1,6 +1,6 @@
-import {installCellsBackend} from "../../src/backends/cells/cellsBackend";
-import {CELLS_WORLD_TEXT_PASSES} from "../../src/backends/cells/2d/cellsWorldTextPasses";
-import {runTerminalGame} from "../../src/hosts/terminal/terminalGame";
+import {installCellsBackend} from "@jsengine/backends/cells";
+import {CELLS_WORLD_TEXT_PASSES} from "@jsengine/backends/cells/2d";
+import {runTerminalGame} from "@jsengine/hosts/terminal";
 import {startLibraryOnlyGame} from "./game";
 
 const DEMO_NAME = "The library-only example";

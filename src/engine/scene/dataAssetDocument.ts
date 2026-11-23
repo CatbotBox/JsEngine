@@ -2,7 +2,9 @@ import type {Resource} from "../core";
 import type {AssetType} from "./assetTypes";
 import type {ResourceSchema} from "./fieldSchema";
 import {describeJson, isSceneJsonObject} from "./sceneDocument";
-import type {SceneFieldValues} from "./sceneDocument";
+import type {SceneFieldValues, SceneJsonObject} from "./sceneDocument";
+import {migrateDocumentJson} from "./documentMigrations";
+import type {DocumentMigrations} from "./documentMigrations";
 
 export const DATA_ASSET_FORMAT = "jsengine-asset";
 export const DATA_ASSET_VERSION = 1;
@@ -11,6 +13,8 @@ export const DATA_ASSET_FILE_SUFFIX = ".asset.json";
 const DATA_ASSET_FILE_SUFFIXES: readonly string[] = [DATA_ASSET_FILE_SUFFIX];
 const DATA_ASSET_TEXT_INDENT_SPACES = 2;
 const DATA_ASSET_TEXT_END = "\n";
+
+export const DATA_ASSET_MIGRATIONS: DocumentMigrations = {currentVersion: DATA_ASSET_VERSION, steps: []};
 
 export interface DataAssetDocument {
     format: typeof DATA_ASSET_FORMAT;
@@ -37,7 +41,7 @@ function documentError(path: string | undefined, key: string, expectation: strin
     return new Error(`${documentLabel(path)}: ${key} must be ${expectation}, got ${describeJson(actual)}`);
 }
 
-export function parseDataAssetDocument(source: unknown, path?: string): DataAssetDocument {
+export function migrateDataAssetJson(source: unknown, path?: string): SceneJsonObject {
     let value: unknown;
     try {
         value = typeof source === "string" ? JSON.parse(source) as unknown : source;
@@ -47,12 +51,12 @@ export function parseDataAssetDocument(source: unknown, path?: string): DataAsse
     if (!isSceneJsonObject(value)) throw documentError(path, "the document", "an object", value);
     if (value.format !== DATA_ASSET_FORMAT) throw documentError(path, "format", JSON.stringify(DATA_ASSET_FORMAT), value.format);
     const version = value.version;
-    if (typeof version !== "number" || !Number.isSafeInteger(version) || version < DATA_ASSET_VERSION) {
-        throw documentError(path, "version", `a whole number >= ${DATA_ASSET_VERSION}`, version);
-    }
-    if (version > DATA_ASSET_VERSION) {
-        throw new Error(`${documentLabel(path)}: version ${version} is newer than the supported version ${DATA_ASSET_VERSION}`);
-    }
+    if (typeof version !== "number" || !Number.isSafeInteger(version)) throw documentError(path, "version", "a whole number", version);
+    return migrateDocumentJson(value, version, DATA_ASSET_MIGRATIONS, documentLabel(path));
+}
+
+export function parseDataAssetDocument(source: unknown, path?: string): DataAssetDocument {
+    const value = migrateDataAssetJson(source, path);
     const type = value.type;
     if (typeof type !== "string" || type.length === 0) throw documentError(path, "type", "a resource type name", type);
     const fields = value.fields ?? {};
@@ -60,7 +64,7 @@ export function parseDataAssetDocument(source: unknown, path?: string): DataAsse
     return {format: DATA_ASSET_FORMAT, version: DATA_ASSET_VERSION, type, fields};
 }
 
-export function dataAssetDocumentText(document: DataAssetDocument): string {
+export function dataAssetDocumentText(document: DataAssetDocument | SceneJsonObject): string {
     return JSON.stringify(document, null, DATA_ASSET_TEXT_INDENT_SPACES) + DATA_ASSET_TEXT_END;
 }
 

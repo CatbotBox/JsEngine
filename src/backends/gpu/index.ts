@@ -39,3 +39,4 @@ export {GPU_HOST_SCHEMAS, GPU_SCHEMAS, registerGpuComponentSchemas} from "./gpuC
 export {installGpuBackend} from "./gpuBackend";
 export {GPU_MESH_PASSES} from "./gpuMeshPasses";
 export {GPU_STANDARD_PASSES} from "./gpuStandardPasses";
+export {GPU_MESH_PASS_SETTINGS_SCHEMA_ENTRY, GPU_SURFACE_SHADER_SCHEMA_ENTRY} from "./schemas";

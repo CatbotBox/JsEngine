@@ -26,3 +26,4 @@ export {RenderMeshBoundsSystem} from './renderMeshBoundsSystem';
 export {ViewSpaceMesh} from './viewSpaceMesh';
 export * from './lighting';
 export * from './software';
+export {FIELD_OF_VIEW_SCHEMA_ENTRY, MESH_ASSET_TYPE_ENTRY, MESH_RENDER_SETTINGS_SCHEMA_ENTRY, RENDER_MESH_SCHEMA_ENTRY} from './schemas';

@@ -7,7 +7,8 @@ import {editorWorkerMainFile, GENERATED_GAME_FILE, TERMINAL_MAIN_FILE, WEB_PAGE_
 import {GAME_GENERATED_HEADER, GAME_GENERATOR} from "./gameModule";
 import type {GeneratedSource, GeneratorOutput, ProjectGenerator} from "./generatedHeader";
 import {MAINS_GENERATED_HEADER, MAINS_GENERATOR} from "./mains";
-import {ProjectSources} from "./projectSources";
+import {isInside, ProjectSources} from "./projectSources";
+import {linkEnginePackages} from "../enginePackageLinks";
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
 const LINE_BREAK = "\r\n";
@@ -27,6 +28,7 @@ interface Generated {
 function generateFixture(generator: ProjectGenerator, manifest: object, folderPrefix = OUTSIDE_REPO_FIXTURE_PREFIX, files: FixtureFiles = {}): Generated {
     const folder = mkdtempSync(folderPrefix);
     try {
+        if (!isInside(REPO_ROOT, folder)) linkEnginePackages(folder);
         for (const [path, text] of Object.entries({...files, [PROJECT_MANIFEST_FILE]: JSON.stringify(manifest)})) {
             const target = join(folder, path);
             mkdirSync(dirname(target), {recursive: true});
@@ -61,7 +63,7 @@ describe("game bootstrap generator", () => {
         }, INSIDE_REPO_FIXTURE_PREFIX);
         const lines = linesOf(output, GENERATED_GAME_FILE);
         expect(lines[0]).toBe(GAME_GENERATED_HEADER);
-        expectLine(lines, `import {startGame} from "../../../../engine/project/startGame";`);
+        expectLine(lines, `import {startGame} from "@jsengine/engine/project";`);
         expectLine(lines, `import {generatedSchemas} from "./schemas";`);
         expectLine(lines, `    {type: "Tuning", path: "assets/tuning.asset.json"},`);
         expectLine(lines, `export const projectStartScene: string | undefined = "scenes/main.scene.json";`);
@@ -76,19 +78,18 @@ describe("game bootstrap generator", () => {
 
     test("a project outside the repo imports the engine through the alias, and the game registers no backend's schemas", () => {
         const source = sourceOf(generateFixture(GAME_GENERATOR, {name: "Outside"}).output, GENERATED_GAME_FILE);
-        expect(source.includes(`from "@jsengine/engine/project/startGame";`)).toBe(true);
+        expect(source.includes(`import {startGame} from "@jsengine/engine/project";`)).toBe(true);
         expect(source.includes("backends/")).toBe(false);
     });
 
     test("registers the image decoders for the image files in the project folder, and none without images", () => {
         const withImages = linesOf(generateFixture(GAME_GENERATOR, {name: "Pictures"}, OUTSIDE_REPO_FIXTURE_PREFIX, {[PNG_FILE]: "", [JPEG_FILE]: ""}).output, GENERATED_GAME_FILE);
-        expectLine(withImages, `import {PNG_IMAGE_DECODER} from "@jsengine/engine/assets/image/png";`);
-        expectLine(withImages, `import {JPEG_IMAGE_DECODER} from "@jsengine/engine/assets/image/jpeg";`);
+        expectLine(withImages, `import {JPEG_IMAGE_DECODER, PNG_IMAGE_DECODER} from "@jsengine/engine/assets";`);
         expectLine(withImages, `export const projectImageDecoders: readonly ImageDecoderEntry[] = [PNG_IMAGE_DECODER, JPEG_IMAGE_DECODER];`);
         expectLine(withImages, `        imageDecoders: projectImageDecoders,`);
         const withoutImages = linesOf(generateFixture(GAME_GENERATOR, {name: "Words"}).output, GENERATED_GAME_FILE);
         expectLine(withoutImages, `export const projectImageDecoders: readonly ImageDecoderEntry[] = [];`);
-        expect(withoutImages.some(line => line.includes("assets/image/png") || line.includes("assets/image/jpeg"))).toBe(false);
+        expect(withoutImages.some(line => line.includes("PNG_IMAGE_DECODER") || line.includes("JPEG_IMAGE_DECODER"))).toBe(false);
     });
 
     test("is deterministic", () => {

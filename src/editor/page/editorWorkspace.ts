@@ -1,7 +1,7 @@
 import type {Entity} from "../../engine/core";
 import {errorFramesOf} from "../../engine/debugging/errorStack";
 import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
-import {parseSceneDocument} from "../../engine/scene/sceneDocument";
+import {parseSceneDocument, sceneDocumentText} from "../../engine/scene/sceneDocument";
 import {withoutSceneMembership} from "../../engine/scene";
 import type {SceneJsonObject, SceneJsonValue} from "../../engine/scene";
 import type {
@@ -45,7 +45,6 @@ import type {DropTarget, HierarchyLink} from "./hierarchyDrop";
 import {
     documentRootCount,
     prefabInstanceRootOf,
-    sceneDocumentText,
     withoutPrefabInstances,
 } from "./prefabInstancePaths";
 import {

@@ -1,6 +1,6 @@
-import {System} from "../../../../src/engine/core";
-import {PixelsRenderBackend} from "../../../../src/engine/rendering/renderBackend";
-import {MeshPixelPassSettings} from "../../../../src/backends/pixels/3d/meshPixelPassSettings";
+import {System} from "@jsengine/engine/core";
+import {PixelsRenderBackend} from "@jsengine/engine/rendering";
+import {MeshPixelPassSettings} from "@jsengine/backends/pixels/3d";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";
 import {Demo3dTuning} from "../../tuning";
 

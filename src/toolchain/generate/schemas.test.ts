@@ -1,9 +1,11 @@
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "fs";
+import {mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from "fs";
 import {tmpdir} from "os";
 import {dirname, join, resolve} from "path";
 import {describe, expect, test} from "../../engine/testing/harness";
+import {isInside} from "./projectSources";
 import {GENERATED_HEADER, generateProjectSchemas} from "./schemas";
 import type {GeneratedProjectSchemas, GenerateProjectSchemasOptions} from "./schemas";
+import {linkEnginePackages} from "../enginePackageLinks";
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
 const LINE_BREAK = "\r\n";
@@ -21,6 +23,7 @@ type FixtureFiles = Readonly<Record<string, string>>;
 function generateFixture(files: FixtureFiles, folderPrefix = OUTSIDE_REPO_FIXTURE_PREFIX, options = NO_OPTIONS): GeneratedProjectSchemas {
     const projectFolder = mkdtempSync(folderPrefix);
     try {
+        if (!isInside(REPO_ROOT, projectFolder)) linkEnginePackages(projectFolder);
         for (const [path, text] of Object.entries(files)) {
             const target = join(projectFolder, path);
             mkdirSync(dirname(target), {recursive: true});
@@ -64,11 +67,11 @@ const MAPPING_FIXTURE: FixtureFiles = {
     "mapping.ts": `
 import {Component, NULL_ENTITY, Resource} from "@jsengine/engine/core";
 import type {Entity} from "@jsengine/engine/core";
-import {Vec2, Vec3, Vec4} from "@jsengine/engine/math/types/vec";
-import type {Mesh} from "@jsengine/engine/rendering/3d/mesh";
-import type {SpriteImage} from "@jsengine/engine/rendering/2d/spriteImage";
-import type {ShaderSource} from "@jsengine/engine/rendering/shaderSource";
-import {TextColor} from "@jsengine/engine/rendering/textColor";
+import {Vec2, Vec3, Vec4} from "@jsengine/engine/math";
+import type {Mesh} from "@jsengine/engine/rendering/3d";
+import type {SpriteImage} from "@jsengine/engine/rendering/2d";
+import {TextColor} from "@jsengine/engine/rendering";
+import type {ShaderSource} from "@jsengine/engine/rendering";
 import type {Int, PrefabAsset, Quat, Rgb, TextLines} from "@jsengine/engine/scene";
 
 export type Health = Int;
@@ -277,7 +280,7 @@ export class Structs extends Component {
 const READONLY_VECTOR_FIXTURE: FixtureFiles = {
     "anchored.ts": `
 import {Component} from "@jsengine/engine/core";
-import {Vec2, Vec3, Vec4} from "@jsengine/engine/math/types/vec";
+import {Vec2, Vec3, Vec4} from "@jsengine/engine/math";
 import type {Quat} from "@jsengine/engine/scene";
 
 export interface Waypoint {
@@ -336,7 +339,7 @@ export class Middle extends Component {}
 
 const INSIDE_REPO_FIXTURE: FixtureFiles = {
     "inside.ts": `
-import {Component} from "../../../engine/core";
+import {Component} from "@jsengine/engine/core";
 export class Inside extends Component {
     public value = 0;
 }
@@ -360,18 +363,32 @@ function structs(): GeneratedProjectSchemas {
 }
 
 describe("generateProjectSchemas engine checkout", () => {
-    test("refuses a project whose code imports another engine checkout", () => {
+    test("refuses a project whose node_modules links another engine checkout", () => {
         const root = mkdtempSync(OUTSIDE_REPO_FIXTURE_PREFIX);
         try {
-            const otherEngineCore = join(root, "other", "src", "engine", "core.ts");
+            const otherEngine = join(root, "other", "src", "engine");
             const projectFolder = join(root, "game");
-            mkdirSync(dirname(otherEngineCore), {recursive: true});
-            mkdirSync(projectFolder, {recursive: true});
-            writeFileSync(otherEngineCore, "export class Component {}\n");
-            writeFileSync(join(projectFolder, "components.ts"), 'import {Component} from "../other/src/engine/core";\nexport class Ship extends Component {}\n');
+            const linkedEngine = join(projectFolder, "node_modules", "@jsengine", "engine");
+            mkdirSync(join(otherEngine, "core"), {recursive: true});
+            mkdirSync(dirname(linkedEngine), {recursive: true});
+            writeFileSync(join(otherEngine, "package.json"), JSON.stringify({name: "@jsengine/engine", exports: {".": "./index.ts", "./core": "./core/index.ts"}}));
+            writeFileSync(join(otherEngine, "index.ts"), "export * from \"./core\";\n");
+            writeFileSync(join(otherEngine, "core", "index.ts"), "export class Component {}\n");
+            symlinkSync(otherEngine, linkedEngine, "junction");
+            writeFileSync(join(projectFolder, "components.ts"), 'import {Component} from "@jsengine/engine/core";\nexport class Ship extends Component {}\n');
             expect(() => generateProjectSchemas(projectFolder, {repoRoot: REPO_ROOT})).toThrow("imports the engine of");
         } finally {
             rmSync(root, {recursive: true, force: true});
+        }
+    });
+
+    test("refuses a project that cannot resolve the engine packages and names jsengine link", () => {
+        const projectFolder = mkdtempSync(OUTSIDE_REPO_FIXTURE_PREFIX);
+        try {
+            writeFileSync(join(projectFolder, "components.ts"), 'import {Component} from "@jsengine/engine/core";\nexport class Ship extends Component {}\n');
+            expect(() => generateProjectSchemas(projectFolder, {repoRoot: REPO_ROOT})).toThrow("jsengine link --project");
+        } finally {
+            rmSync(projectFolder, {recursive: true, force: true});
         }
     });
 });
@@ -575,10 +592,10 @@ describe("generateProjectSchemas output", () => {
         expect(mapping().source.split(LINE_BREAK)[1]).toBe(`import type {SchemaEntry} from "@jsengine/engine/scene";`);
     });
 
-    test("imports the engine relatively when the project is inside the repo", () => {
+    test("imports the engine through @jsengine/ when the project is inside the repo too", () => {
         const result = generateFixture(INSIDE_REPO_FIXTURE, INSIDE_REPO_FIXTURE_PREFIX);
         expect(result.source.split(LINE_BREAK).slice(1, 3)).toEqual([
-            `import type {SchemaEntry} from "../../../../engine/scene";`,
+            `import type {SchemaEntry} from "@jsengine/engine/scene";`,
             `import {Inside} from "../inside";`,
         ]);
     });
