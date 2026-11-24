@@ -6,12 +6,16 @@ import {FLOAT_BYTES, LIGHTS_UNLIT, VEC4_FLOATS} from "../gpuLightPacking";
 import {MESH_NORMAL_OFFSET, MESH_POSITION_OFFSET, MESH_UV_OFFSET, MESH_VERTEX_FLOATS} from "../gpuMeshPacking";
 import {INSTANCE_FLOATS, INSTANCE_MATRIX_OFFSET, INSTANCE_PARAMS_OFFSET, INSTANCE_TINT_OFFSET} from "../gpuInstanceBatcher";
 import {LIT_SURFACE_SHADER, SURFACE_SHADER_PARAMS} from "../gpuSurfaceShader";
+import {FULLY_LIT, SHADOW_MAP_FARTHEST_DEPTH, SHADOWS_OFF} from "../gpuShadowPacking";
 import {wgslFloat} from "./wgsl";
 
 export const FRAME_BIND_GROUP = 0;
 export const MATERIAL_BIND_GROUP = 1;
 export const FRAME_UNIFORMS_BINDING = 0;
 export const LIGHTS_BINDING = 1;
+export const SHADOW_UNIFORMS_BINDING = 2;
+export const SHADOW_MAP_BINDING = 3;
+export const SHADOW_SAMPLER_BINDING = 4;
 export const MATERIAL_UNIFORMS_BINDING = 0;
 export const MATERIAL_SAMPLER_BINDING = 1;
 export const MATERIAL_TEXTURE_BINDING = 2;
@@ -44,6 +48,13 @@ export const SMALLEST_HIGHLIGHT_BASE = 1e-30;
 export const SPECULAR_TEXTURE_MIP_LEVEL = 0;
 const SINGULAR_NORMAL_MATRIX_EPSILON = 1e-12;
 
+export const SHADOW_PCF_REACH_TAPS = 1;
+const SIDES_PER_AXIS = 2;
+const CENTRE_TAP = 1;
+const AXES_PER_MAP = 2;
+export const SHADOW_PCF_TAPS = (SHADOW_PCF_REACH_TAPS * SIDES_PER_AXIS + CENTRE_TAP) ** AXES_PER_MAP;
+export const NDC_TO_UV_SCALE = 0.5;
+
 export const SURFACE_VERTEX_ENTRY_POINT = "vertexMain";
 export const SURFACE_FRAGMENT_ENTRY_POINT = "fragmentMain";
 export const SURFACE_FUNCTION_SIGNATURE = "fn surface(input: SurfaceInput) -> vec4f";
@@ -53,6 +64,9 @@ export const FRAME_BIND_GROUP_LAYOUT: GPUBindGroupLayoutDescriptor = {
     entries: [
         {binding: FRAME_UNIFORMS_BINDING, visibility: GPU_SHADER_STAGE.VERTEX | GPU_SHADER_STAGE.FRAGMENT, buffer: {type: "uniform"}},
         {binding: LIGHTS_BINDING, visibility: GPU_SHADER_STAGE.FRAGMENT, buffer: {type: "read-only-storage"}},
+        {binding: SHADOW_UNIFORMS_BINDING, visibility: GPU_SHADER_STAGE.FRAGMENT, buffer: {type: "uniform"}},
+        {binding: SHADOW_MAP_BINDING, visibility: GPU_SHADER_STAGE.FRAGMENT, texture: {sampleType: "depth"}},
+        {binding: SHADOW_SAMPLER_BINDING, visibility: GPU_SHADER_STAGE.FRAGMENT, sampler: {type: "comparison"}},
     ],
 };
 
@@ -104,6 +118,13 @@ const SPECULAR_TEXTURE_MIP_LEVEL: f32 = ${wgslFloat(SPECULAR_TEXTURE_MIP_LEVEL)}
 const LIGHTS_UNLIT: u32 = ${LIGHTS_UNLIT}u;
 const SURFACE_SHADER_PARAMS: u32 = ${SURFACE_SHADER_PARAMS}u;
 const UNTEXTURED_TEXEL: vec4f = vec4f(1.0);
+const SHADOWS_OFF: u32 = ${SHADOWS_OFF}u;
+const FULLY_LIT: f32 = ${wgslFloat(FULLY_LIT)};
+const SHADOW_MAP_FARTHEST_DEPTH: f32 = ${wgslFloat(SHADOW_MAP_FARTHEST_DEPTH)};
+const SHADOW_PCF_REACH_TAPS: i32 = ${SHADOW_PCF_REACH_TAPS};
+const SHADOW_PCF_TAPS: f32 = ${wgslFloat(SHADOW_PCF_TAPS)};
+const SHADOW_NDC_TO_UV_SCALE: vec2f = vec2f(${wgslFloat(NDC_TO_UV_SCALE)}, ${wgslFloat(-NDC_TO_UV_SCALE)});
+const SHADOW_NDC_TO_UV_OFFSET: vec2f = vec2f(${wgslFloat(NDC_TO_UV_SCALE)});
 
 struct Frame {
     view: mat4x4f,
@@ -126,6 +147,18 @@ struct Lights {
     lights: array<Light>,
 }
 
+struct Shadow {
+    viewToLightClip: mat4x4f,
+    lightIndex: u32,
+    enabled: u32,
+    depthBias: f32,
+    normalOffset: f32,
+    filterStep: f32,
+    strength: f32,
+    fadeStart: f32,
+    fadeInverseLength: f32,
+}
+
 struct Material {
     diffuse: vec4f,
     emissive: vec4f,
@@ -138,6 +171,9 @@ struct Material {
 
 @group(${FRAME_BIND_GROUP}) @binding(${FRAME_UNIFORMS_BINDING}) var<uniform> frame: Frame;
 @group(${FRAME_BIND_GROUP}) @binding(${LIGHTS_BINDING}) var<storage, read> sceneLights: Lights;
+@group(${FRAME_BIND_GROUP}) @binding(${SHADOW_UNIFORMS_BINDING}) var<uniform> sceneShadow: Shadow;
+@group(${FRAME_BIND_GROUP}) @binding(${SHADOW_MAP_BINDING}) var sceneShadowMap: texture_depth_2d;
+@group(${FRAME_BIND_GROUP}) @binding(${SHADOW_SAMPLER_BINDING}) var sceneShadowSampler: sampler_comparison;
 @group(${MATERIAL_BIND_GROUP}) @binding(${MATERIAL_UNIFORMS_BINDING}) var<uniform> material: Material;
 @group(${MATERIAL_BIND_GROUP}) @binding(${MATERIAL_SAMPLER_BINDING}) var materialSampler: sampler;
 @group(${MATERIAL_BIND_GROUP}) @binding(${MATERIAL_TEXTURE_BINDING}) var materialTexture: texture_2d<f32>;
@@ -218,6 +254,7 @@ struct SurfaceInput {
     lit: vec4f,
     params: array<f32, SURFACE_SHADER_PARAMS>,
     time: f32,
+    shadow: f32,
 }
 
 struct SurfaceLight {
@@ -271,7 +308,43 @@ fn highlight(normal: vec3f, toLight: vec3f, toCamera: vec3f) -> f32 {
     return pow(max(normalDotHalf, SMALLEST_HIGHLIGHT_BASE), material.specularShininess.w);
 }
 
-fn lightSums(normal: vec3f, viewPosition: vec3f, specular: bool) -> LightSums {
+fn shadowVisibility(normal: vec3f, viewPosition: vec3f) -> f32 {
+    if (sceneShadow.enabled == SHADOWS_OFF) {
+        return FULLY_LIT;
+    }
+    let fade = saturate((viewPosition.z - sceneShadow.fadeStart) * sceneShadow.fadeInverseLength);
+    if (fade >= FULLY_LIT) {
+        return FULLY_LIT;
+    }
+    let lightClip = sceneShadow.viewToLightClip * vec4f(viewPosition + normal * sceneShadow.normalOffset, 1.0);
+    let uv = lightClip.xy * SHADOW_NDC_TO_UV_SCALE + SHADOW_NDC_TO_UV_OFFSET;
+    let depth = lightClip.z - sceneShadow.depthBias;
+    if (any(uv < vec2f(0.0)) || any(uv > vec2f(1.0)) || depth > SHADOW_MAP_FARTHEST_DEPTH) {
+        return FULLY_LIT;
+    }
+    var lit = 0.0;
+    for (var y = -SHADOW_PCF_REACH_TAPS; y <= SHADOW_PCF_REACH_TAPS; y++) {
+        for (var x = -SHADOW_PCF_REACH_TAPS; x <= SHADOW_PCF_REACH_TAPS; x++) {
+            let tap = uv + vec2f(f32(x), f32(y)) * sceneShadow.filterStep;
+            lit += textureSampleCompareLevel(sceneShadowMap, sceneShadowSampler, tap, depth);
+        }
+    }
+    let shadowed = FULLY_LIT - sceneShadow.strength * (FULLY_LIT - lit / SHADOW_PCF_TAPS);
+    return mix(shadowed, FULLY_LIT, fade);
+}
+
+fn shadowedLightIndex() -> u32 {
+    return sceneShadow.lightIndex;
+}
+
+fn lightShadow(index: u32, input: SurfaceInput) -> f32 {
+    if (index == shadowedLightIndex()) {
+        return input.shadow;
+    }
+    return FULLY_LIT;
+}
+
+fn shadowedLightSums(normal: vec3f, viewPosition: vec3f, specular: bool, shadow: f32) -> LightSums {
     var sums = LightSums(ambientLight(), vec3f(0.0));
     var toCamera = vec3f(0.0);
     if (specular) {
@@ -281,13 +354,21 @@ fn lightSums(normal: vec3f, viewPosition: vec3f, specular: bool) -> LightSums {
         let light = sceneLight(i, viewPosition);
         let diffuse = dot(normal, light.toLight) * light.attenuation;
         if (diffuse > 0.0) {
-            sums.diffuse += light.color * diffuse;
+            var color = light.color;
+            if (i == shadowedLightIndex()) {
+                color *= shadow;
+            }
+            sums.diffuse += color * diffuse;
             if (specular) {
-                sums.specular += light.color * highlight(normal, light.toLight, toCamera) * light.attenuation;
+                sums.specular += color * highlight(normal, light.toLight, toCamera) * light.attenuation;
             }
         }
     }
     return sums;
+}
+
+fn lightSums(normal: vec3f, viewPosition: vec3f, specular: bool) -> LightSums {
+    return shadowedLightSums(normal, viewPosition, specular, shadowVisibility(normal, viewPosition));
 }
 
 fn materialHasSpecular() -> bool {
@@ -298,14 +379,14 @@ fn lightDiffuse(input: SurfaceInput) -> vec3f {
     if (!sceneIsLit()) {
         return vec3f(1.0);
     }
-    return lightSums(input.viewNormal, input.viewPosition, false).diffuse;
+    return shadowedLightSums(input.viewNormal, input.viewPosition, false, input.shadow).diffuse;
 }
 
 fn lightSpecular(input: SurfaceInput) -> vec3f {
     if (!sceneIsLit() || !materialHasSpecular()) {
         return vec3f(0.0);
     }
-    return lightSums(input.viewNormal, input.viewPosition, true).specular;
+    return shadowedLightSums(input.viewNormal, input.viewPosition, true, input.shadow).specular;
 }
 
 fn litColor(input: SurfaceInput) -> vec4f {
@@ -314,7 +395,7 @@ fn litColor(input: SurfaceInput) -> vec4f {
     var highlightRgb = vec3f(0.0);
     if (sceneIsLit()) {
         let specular = materialHasSpecular();
-        let sums = lightSums(input.viewNormal, input.viewPosition, specular);
+        let sums = shadowedLightSums(input.viewNormal, input.viewPosition, specular, input.shadow);
         rgb = saturate(sums.diffuse * albedo + input.emissiveColor * input.tint.rgb);
         if (specular) {
             highlightRgb = sums.specular * input.gloss * input.specularColor * input.tint.rgb;
@@ -349,6 +430,7 @@ fn ${SURFACE_FRAGMENT_ENTRY_POINT}(input: VertexOutput) -> @location(0) vec4f {
         input.params1.x, input.params1.y, input.params1.z, input.params1.w
     );
     surfaceInput.time = frame.time;
+    surfaceInput.shadow = shadowVisibility(surfaceInput.viewNormal, input.viewPosition);
     surfaceInput.lit = litColor(surfaceInput);
     return surface(surfaceInput);
 }

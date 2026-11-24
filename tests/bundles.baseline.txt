@@ -1,5 +1,5 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 199 modules, 246635 bytes minified
+demo/2d terminal cells main: 199 modules, 246655 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/color.ts
   demo/2d/components.ts
@@ -230,7 +230,7 @@ demo/2d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 195 modules, 240302 bytes minified
+demo/2d web cells worker: 195 modules, 240322 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/color.ts
   demo/2d/components.ts
@@ -444,7 +444,7 @@ demo/2d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 196 modules, 239816 bytes minified
+demo/2d web pixels worker: 196 modules, 239836 bytes minified
   demo/2d/color.ts
   demo/2d/components.ts
   demo/2d/config.ts
@@ -659,7 +659,7 @@ demo/2d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 214 modules, 262592 bytes minified
+demo/2d web gpu worker: 217 modules, 266566 bytes minified
   demo/2d/color.ts
   demo/2d/components.ts
   demo/2d/config.ts
@@ -684,11 +684,14 @@ demo/2d web gpu worker: 214 modules, 262592 bytes minified
   src/backends/gpu/gpuMeshPassSettings.ts
   src/backends/gpu/gpuOverlayPass.ts
   src/backends/gpu/gpuOverlayUploadPlan.ts
+  src/backends/gpu/gpuShadowPacking.ts
+  src/backends/gpu/gpuShadowPass.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
   src/backends/gpu/shaders/basicLitShader.ts
   src/backends/gpu/shaders/overlayShader.ts
+  src/backends/gpu/shaders/shadowCasterShader.ts
   src/backends/gpu/shaders/wgsl.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/2d/pixelsHudSpritePasses.ts
@@ -874,7 +877,7 @@ demo/2d web gpu worker: 214 modules, 262592 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 224 modules, 316101 bytes minified
+demo/3d terminal cells main: 224 modules, 316373 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/config.ts
@@ -1130,7 +1133,7 @@ demo/3d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 220 modules, 309545 bytes minified
+demo/3d web cells worker: 220 modules, 309817 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/config.ts
@@ -1369,7 +1372,7 @@ demo/3d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 221 modules, 310245 bytes minified
+demo/3d web pixels worker: 221 modules, 310517 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/config.ts
@@ -1609,8 +1612,9 @@ demo/3d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 236 modules, 329378 bytes minified
+demo/3d web gpu worker: 244 modules, 347688 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
+  demo/3d/backend/gpu/demo3dGroundSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
   demo/3d/components.ts
   demo/3d/config.ts
@@ -1641,16 +1645,23 @@ demo/3d web gpu worker: 236 modules, 329378 bytes minified
   src/backends/gpu/gpuMeshPassSettings.ts
   src/backends/gpu/gpuMeshPassSystem.ts
   src/backends/gpu/gpuMeshPasses.ts
+  src/backends/gpu/gpuMeshRuns.ts
   src/backends/gpu/gpuOverlayPass.ts
   src/backends/gpu/gpuOverlayUploadPlan.ts
   src/backends/gpu/gpuPipelineCache.ts
   src/backends/gpu/gpuShaderLibrary.ts
+  src/backends/gpu/gpuShadowFit.ts
+  src/backends/gpu/gpuShadowPacking.ts
+  src/backends/gpu/gpuShadowPass.ts
+  src/backends/gpu/gpuShadowPipelineCache.ts
+  src/backends/gpu/gpuShadowSettings.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
   src/backends/gpu/schemas.ts
   src/backends/gpu/shaders/basicLitShader.ts
   src/backends/gpu/shaders/overlayShader.ts
+  src/backends/gpu/shaders/shadowCasterShader.ts
   src/backends/gpu/shaders/wgsl.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/hudTextSpritePixelPassSystem.ts
@@ -1846,7 +1857,7 @@ demo/3d web gpu worker: 236 modules, 329378 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 203 modules, 264637 bytes minified
+demo/swarm terminal cells main: 203 modules, 264657 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2081,7 +2092,7 @@ demo/swarm web cells page: 19 modules, 25057 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 199 modules, 258317 bytes minified
+demo/swarm web cells worker: 199 modules, 258337 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2299,7 +2310,7 @@ demo/swarm web pixels page: 17 modules, 17208 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 201 modules, 258358 bytes minified
+demo/swarm web pixels worker: 201 modules, 258378 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2519,7 +2530,7 @@ demo/swarm web gpu page: 17 modules, 16748 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 220 modules, 281370 bytes minified
+demo/swarm web gpu worker: 223 modules, 285344 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2550,11 +2561,14 @@ demo/swarm web gpu worker: 220 modules, 281370 bytes minified
   src/backends/gpu/gpuMeshPassSettings.ts
   src/backends/gpu/gpuOverlayPass.ts
   src/backends/gpu/gpuOverlayUploadPlan.ts
+  src/backends/gpu/gpuShadowPacking.ts
+  src/backends/gpu/gpuShadowPass.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
   src/backends/gpu/shaders/basicLitShader.ts
   src/backends/gpu/shaders/overlayShader.ts
+  src/backends/gpu/shaders/shadowCasterShader.ts
   src/backends/gpu/shaders/wgsl.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/2d/pixelsHudSpritePasses.ts

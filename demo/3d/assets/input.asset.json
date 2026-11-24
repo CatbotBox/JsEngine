@@ -237,6 +237,14 @@
         "buttons": []
       },
       {
+        "name": "toggleShadows",
+        "keys": [
+          "U"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
         "name": "toggleHalfBlock",
         "keys": [
           "B"

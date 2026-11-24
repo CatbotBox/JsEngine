@@ -6,5 +6,5 @@ import {MESH_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY} from "@jsengine/backends/pixels/3
 export const generatedPixelsSchemas: readonly SchemaEntry[] = [
     PIXEL_RENDER_SETTINGS_SCHEMA_ENTRY,
     MESH_PIXEL_PASS_SETTINGS_SCHEMA_ENTRY,
-    {kind: "otherBackendTypes", names: ["CellAspectRatio", "CellRenderSettings", "GpuMeshPassSettings", "GpuSurfaceShader", "MeshCellPassSettings", "SpriteCellPassSettings"]},
+    {kind: "otherBackendTypes", names: ["CellAspectRatio", "CellRenderSettings", "GpuMeshPassSettings", "GpuShadowSettings", "GpuSurfaceShader", "MeshCellPassSettings", "SpriteCellPassSettings"]},
 ];

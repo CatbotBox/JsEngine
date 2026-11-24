@@ -6,5 +6,5 @@ import {MESH_CELL_PASS_SETTINGS_SCHEMA_ENTRY} from "@jsengine/backends/cells/3d"
 export const generatedCellsSchemas: readonly SchemaEntry[] = [
     CELL_RENDER_SETTINGS_SCHEMA_ENTRY,
     MESH_CELL_PASS_SETTINGS_SCHEMA_ENTRY,
-    {kind: "otherBackendTypes", names: ["GpuMeshPassSettings", "GpuSurfaceShader", "MeshPixelPassSettings", "PixelRenderSettings", "SpritePixelPassSettings"]},
+    {kind: "otherBackendTypes", names: ["GpuMeshPassSettings", "GpuShadowSettings", "GpuSurfaceShader", "MeshPixelPassSettings", "PixelRenderSettings", "SpritePixelPassSettings"]},
 ];

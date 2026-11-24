@@ -8,6 +8,22 @@ export type {GpuCanvasPresenterFactory, GpuCanvasSurfaceSize, ScreenUnitReport} 
 export {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, MULTISAMPLE_COUNT, NEAREST_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 export type {GpuSampleCount, GpuTextureFiltering} from "./gpuMeshPassSettings";
 export {GpuMeshPassSystem, GPU_BACKEND_EXPERIMENTAL_NOTICE} from "./gpuMeshPassSystem";
+export {GpuShadowSettings, MAX_SHADOW_MAP_SIZE, MIN_SHADOW_MAP_SIZE, NO_SHADOW_MAP, shadowMapSizeOf} from "./gpuShadowSettings";
+export {GpuShadowFit} from "./gpuShadowFit";
+export type {GpuShadowView} from "./gpuShadowFit";
+export {
+    firstDirectionalLightOf,
+    GpuShadowUniforms,
+    NO_SHADOWED_LIGHT,
+    packShadowsOff,
+    packShadowUniforms,
+    SHADOW_UNIFORM_FLOATS,
+    SHADOWS_OFF,
+    SHADOWS_ON,
+} from "./gpuShadowPacking";
+export {GpuShadowInput, GpuShadowPass} from "./gpuShadowPass";
+export {GpuShadowPipelineCache, SHADOW_CASTER_CULL_MODE, SHADOW_MAP_FORMAT} from "./gpuShadowPipelineCache";
+export {SHADOW_CASTER_WGSL} from "./shaders/shadowCasterShader";
 export {
     FRAME_PROJECTION_OFFSET,
     FRAME_TIME_OFFSET,
@@ -39,4 +55,4 @@ export {GPU_HOST_SCHEMAS, GPU_SCHEMAS, registerGpuComponentSchemas} from "./gpuC
 export {installGpuBackend} from "./gpuBackend";
 export {GPU_MESH_PASSES} from "./gpuMeshPasses";
 export {GPU_STANDARD_PASSES} from "./gpuStandardPasses";
-export {GPU_MESH_PASS_SETTINGS_SCHEMA_ENTRY, GPU_SURFACE_SHADER_SCHEMA_ENTRY} from "./schemas";
+export {GPU_MESH_PASS_SETTINGS_SCHEMA_ENTRY, GPU_SHADOW_SETTINGS_SCHEMA_ENTRY, GPU_SURFACE_SHADER_SCHEMA_ENTRY} from "./schemas";

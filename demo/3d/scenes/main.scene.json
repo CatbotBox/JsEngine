@@ -57,6 +57,16 @@
           "orthographicDepthRange": 1000,
           "evictUnusedAfterFrames": 600,
           "lodTrianglesPerPixel": 0.25
+        },
+        "GpuShadowSettings": {
+          "mapSize": 2048,
+          "maxDistance": 30,
+          "fadeFraction": 0.1,
+          "depthBiasTexels": 0.5,
+          "normalBiasTexels": 1.5,
+          "slopeBias": 1,
+          "filterRadiusTexels": 1,
+          "strength": 1
         }
       }
     },

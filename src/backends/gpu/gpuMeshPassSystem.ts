@@ -1,12 +1,9 @@
 import {System} from "../../engine/core";
 import type {RenderPassKind} from "../../engine/rendering/renderPasses";
-import type {ColumnSpan} from "../../engine/core";
 import {Camera} from "../../engine/rendering/camera";
 import {RenderCameraOverride} from "../../engine/rendering/renderCameraOverride";
 import {LocalToWorld} from "../../engine/translation";
 import {RenderMesh} from "../../engine/rendering/3d/renderMesh";
-import type {Mesh} from "../../engine/rendering/3d/mesh";
-import type {FaceCulling} from "../../engine/rendering/3d/faceCulling";
 import {FieldOfView} from "../../engine/rendering/3d/fieldOfView";
 import {MeshRenderSettings} from "../../engine/rendering/3d/meshRenderSettings";
 import {MeshRenderStats, TRACKED_LOD_LEVELS} from "../../engine/rendering/3d/meshRenderStats";
@@ -18,7 +15,7 @@ import {SceneLights} from "../../engine/rendering/3d/lighting/sceneLights";
 import {SceneLightsGatherSystem} from "../../engine/rendering/3d/lighting/sceneLightsGatherSystem";
 import {WorldSpaceRenderBounds} from "../../engine/rendering/worldSpaceRenderBounds";
 import {AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_STRIDE} from "../../engine/datatypes/aabb";
-import {fromFloat32Array} from "../../engine/math/types/vec";
+import {asFloat32Array, fromFloat32Array} from "../../engine/math/types/vec";
 import type {ReadonlyVec16} from "../../engine/math/types/vec";
 import {PixelFramebuffer} from "../pixels/pixelFramebuffer";
 import {PixelPresenterResource} from "../pixels/pixelPresenterResource";
@@ -37,9 +34,13 @@ import {GpuTextureCache} from "./gpuTextureCache";
 import {GpuMaterialCache} from "./gpuMaterialCache";
 import {GpuPipelineCache} from "./gpuPipelineCache";
 import {GpuShaderLibrary} from "./gpuShaderLibrary";
-import {GpuSurfaceShader, LIT_SURFACE_SHADER, NO_SURFACE_SHADER_PARAMS, sameSurfaceShader} from "./gpuSurfaceShader";
+import {GpuSurfaceShader} from "./gpuSurfaceShader";
 import {effectiveRenderScale, GpuMeshPassSettings, MIN_RENDER_SCALE, MULTISAMPLE_COUNT, renderTargetPx, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import type {GpuSampleCount} from "./gpuMeshPassSettings";
+import {BASE_LOD_LEVEL, CULLED, GpuRowLevels, NO_ROW_LEVEL_OFFSET, visitMeshRuns} from "./gpuMeshRuns";
+import type {BoundedMeshSpan, MeshRunVisitor, MeshSpan, MeshSpanSource} from "./gpuMeshRuns";
+import {GpuShadowSettings} from "./gpuShadowSettings";
+import {GpuShadowInput, GpuShadowPass} from "./gpuShadowPass";
 import {
     FRAME_BIND_GROUP,
     FRAME_BIND_GROUP_LAYOUT,
@@ -49,17 +50,15 @@ import {
     MATERIAL_BIND_GROUP,
     MATERIAL_BIND_GROUP_LAYOUT,
     MESH_VERTEX_BUFFER_SLOT,
+    SHADOW_MAP_BINDING,
+    SHADOW_SAMPLER_BINDING,
+    SHADOW_UNIFORMS_BINDING,
 } from "./shaders/basicLitShader";
 
 export const GPU_BACKEND_EXPERIMENTAL_NOTICE = "The WebGPU render backend (?backend=gpu) is experimental: "
     + "lighting is per-pixel and output differs from ?backend=pixels.";
 
 const SQUARE_PIXEL_HEIGHT_PER_WIDTH = 1;
-const BASE_LOD_LEVEL = 0;
-const CULLED = -1;
-const NO_ROW_LEVEL_OFFSET = 0;
-const INITIAL_ROW_LEVEL_CAPACITY = 64;
-const ROW_LEVEL_GROWTH_FACTOR = 2;
 const NO_RASTER_WORKERS = 0;
 const NOTHING_DRAWN = 0;
 const NO_BASE_VERTEX = 0;
@@ -67,13 +66,6 @@ const INDEX_FORMAT: GPUIndexFormat = "uint32";
 const MS_PER_SECOND = 1000;
 const CAMERA_SPEC = {camera: Camera, localToWorld: LocalToWorld};
 const FIELD_OF_VIEW_SPEC = {fieldOfView: FieldOfView};
-
-type MeshSpan = ColumnSpan<"renderMesh" | "localToWorld" | "surfaceShader">;
-type BoundedMeshSpan = ColumnSpan<"renderMesh" | "localToWorld" | "bounds" | "surfaceShader">;
-type RunVisitor = (
-    mesh: Mesh, level: number, culling: FaceCulling, color: number, surfaceShader: string, params: ArrayLike<number>,
-    matrices: Float32Array, startRow: number, endRow: number,
-) => void;
 
 class GpuDrawCounts implements MeshDrawCounts {
     public trianglesDrawn = NOTHING_DRAWN;
@@ -93,6 +85,7 @@ export class GpuMeshPassSystem extends System {
 
     private _settingsQuery = this.createEntityQuery([GpuMeshPassSettings]);
     private _meshSettingsQuery = this.createEntityQuery([MeshRenderSettings]);
+    private _shadowSettingsQuery = this.createEntityQuery([GpuShadowSettings]);
     private _renderSettingsQuery = this.createEntityQuery([PixelRenderSettings]);
     private _cameraQuery = this.createEntityQuery([Camera, LocalToWorld]);
     private _unboundedMeshQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
@@ -105,10 +98,10 @@ export class GpuMeshPassSystem extends System {
     private readonly _frameUniforms = new Float32Array(FRAME_UNIFORM_FLOATS);
     private readonly _lights = new GpuLightPacking();
     private readonly _projectedBounds = new ScreenProjectedBounds();
+    private readonly _rowLevels = new GpuRowLevels();
+    private readonly _shadowInput = new GpuShadowInput();
     private _renderPxPerFramebufferPxX = MIN_RENDER_SCALE;
     private _renderPxPerFramebufferPxY = MIN_RENDER_SCALE;
-    private _rowLevels = new Int32Array(INITIAL_ROW_LEVEL_CAPACITY);
-    private _rowLevelCursor = 0;
     private _frameNumber = 0;
     private _cameraMatrix: ReadonlyVec16 | undefined;
     private _cameraFieldOfView: number | undefined;
@@ -119,13 +112,15 @@ export class GpuMeshPassSystem extends System {
     private _frameUniformBuffer!: GPUBuffer;
     private _lightBuffer!: GPUBuffer;
     private _lightBufferBytes = 0;
-    private _frameBindGroup!: GPUBindGroup;
+    private _frameBindGroup: GPUBindGroup | undefined;
+    private _frameBindGroupShadowView: GPUTextureView | undefined;
     private _instanceBuffer: GPUBuffer | undefined;
     private _instanceBufferBytes = 0;
     private _textures!: GpuTextureCache;
     private _materials!: GpuMaterialCache;
     private _meshes!: GpuMeshCache;
     private _pipelines!: GpuPipelineCache;
+    private _shadows!: GpuShadowPass;
 
     override systemGroup() {
         return PixelRenderSystemGroup;
@@ -159,6 +154,7 @@ export class GpuMeshPassSystem extends System {
         this._materials = new GpuMaterialCache(device, materialBindGroupLayout, this._textures);
         this._meshes = new GpuMeshCache(device);
         this._pipelines = new GpuPipelineCache(device, pipelineLayout);
+        this._shadows = new GpuShadowPass(device);
         this._startTimeMs = this.world.time.elapsedTimeMs;
     }
 
@@ -197,18 +193,41 @@ export class GpuMeshPassSystem extends System {
         writeFrameTime(this._frameUniforms, (this.world.time.elapsedTimeMs - this._startTimeMs) / MS_PER_SECOND);
         device.queue.writeBuffer(this._frameUniformBuffer, 0, asGpuBufferSource(this._frameUniforms));
         const view = frameViewMatrix(this._frameUniforms);
-        packSceneLights(this.world.resources.tryGet(SceneLights), view, this._lights);
+        const sceneLights = this.world.resources.tryGet(SceneLights);
+        packSceneLights(sceneLights, view, this._lights);
         this.uploadLights(device);
         const focalLength = this._cameraFieldOfView === undefined ? undefined : perspectiveFocalLength(this._cameraFieldOfView, heightPx);
         this._projectedBounds.begin(fromFloat32Array<16>(view), focalLength, SQUARE_PIXEL_HEIGHT_PER_WIDTH, widthPx, heightPx);
-        this.batchInstances();
+        const surface = {surfaceShader: GpuSurfaceShader};
+        const unbounded = this._unboundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld}, optional: surface});
+        const bounded = this._boundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld, bounds: WorldSpaceRenderBounds}, optional: surface});
+        this.batchInstances(unbounded, bounded);
         this.uploadInstances(device);
+        this.renderShadows(sceneLights, widthPx, heightPx, unbounded, bounded);
+        const frameBindGroup = this.frameBindGroup(device);
 
         const background = backgroundColorOf(this._renderSettingsQuery.tryGetSingleton({settings: PixelRenderSettings})?.settings);
         const pass = this.presentedFrame().beginScene(background, sampleCount, widthPx, heightPx, settings.renderScale);
-        this.drawBatches(pass, settings, meshSettings, sampleCount, this.world.resources.getOrCreate(GpuShaderLibrary));
+        this.drawBatches(pass, frameBindGroup, settings, meshSettings, sampleCount, this.world.resources.getOrCreate(GpuShaderLibrary));
         pass.end();
         this.evictUnused(settings.evictUnusedAfterFrames);
+    }
+
+    private renderShadows(sceneLights: SceneLights | undefined, widthPx: number, heightPx: number,
+        unbounded: MeshSpanSource<MeshSpan>, bounded: MeshSpanSource<BoundedMeshSpan>): void {
+        const input = this._shadowInput;
+        input.settings = this._shadowSettingsQuery.tryGetSingleton({settings: GpuShadowSettings})?.settings;
+        input.lights = sceneLights;
+        input.cameraMatrix = asFloat32Array(this._cameraMatrix!);
+        input.fieldOfViewRadians = this._cameraFieldOfView;
+        input.widthPx = widthPx;
+        input.heightPx = heightPx;
+        input.pixelHeightPerWidth = SQUARE_PIXEL_HEIGHT_PER_WIDTH;
+        input.orthographicDepthRange = this._settings.orthographicDepthRange;
+        input.lod = this._meshSettings.lod;
+        input.lodBias = this._meshSettings.lodBias;
+        input.lodTrianglesPerPixel = this._settings.lodTrianglesPerPixel;
+        this._shadows.render(input, unbounded, bounded, this._meshes, this._frameNumber);
     }
 
     private presentedFrame(): GpuFrame {
@@ -222,12 +241,14 @@ export class GpuMeshPassSystem extends System {
         this._materials.evictUnused(frame, maxUnusedFrames);
         this._textures.evictUnused(frame, maxUnusedFrames);
         this._pipelines.evictUnused(frame, maxUnusedFrames);
+        this._shadows.evictUnused(frame, maxUnusedFrames);
     }
 
     override onDestroy(): void {
         this._meshes.dispose();
         this._materials.dispose();
         this._textures.dispose();
+        this._shadows.dispose();
         this._frameUniformBuffer.destroy();
         this._lightBuffer.destroy();
         this._instanceBuffer?.destroy();
@@ -261,14 +282,25 @@ export class GpuMeshPassSystem extends System {
             size: this._lightBufferBytes,
             usage: GPU_BUFFER_USAGE.STORAGE | GPU_BUFFER_USAGE.COPY_DST,
         });
+        this._frameBindGroup = undefined;
+    }
+
+    private frameBindGroup(device: GpuDevice): GPUBindGroup {
+        const shadowView = this._shadows.sampledView;
+        if (this._frameBindGroup !== undefined && this._frameBindGroupShadowView === shadowView) return this._frameBindGroup;
+        this._frameBindGroupShadowView = shadowView;
         this._frameBindGroup = device.createBindGroup({
             label: "frame",
             layout: this._frameBindGroupLayout,
             entries: [
                 {binding: FRAME_UNIFORMS_BINDING, resource: {buffer: this._frameUniformBuffer}},
                 {binding: LIGHTS_BINDING, resource: {buffer: this._lightBuffer}},
+                {binding: SHADOW_UNIFORMS_BINDING, resource: {buffer: this._shadows.uniformBuffer}},
+                {binding: SHADOW_MAP_BINDING, resource: shadowView},
+                {binding: SHADOW_SAMPLER_BINDING, resource: this._shadows.sampler},
             ],
         });
+        return this._frameBindGroup;
     }
 
     private uploadLights(device: GpuDevice): void {
@@ -279,62 +311,47 @@ export class GpuMeshPassSystem extends System {
         device.queue.writeBuffer(this._lightBuffer, 0, asGpuBufferSource(this._lights.data), 0, this._lights.usedFloats);
     }
 
-    private batchInstances(): void {
+    private batchInstances(unbounded: MeshSpanSource<MeshSpan>, bounded: MeshSpanSource<BoundedMeshSpan>): void {
         this._batcher.begin();
-        const surface = {surfaceShader: GpuSurfaceShader};
-        const unbounded = this._unboundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld}, optional: surface});
-        const bounded = this._boundedMeshQuery.stream({read: {renderMesh: RenderMesh, localToWorld: LocalToWorld, bounds: WorldSpaceRenderBounds}, optional: surface});
         unbounded.consumeSpans(this.countUnboundedSpan);
-        this._rowLevelCursor = 0;
+        this._rowLevels.rewind();
         bounded.consumeSpans(this.countBoundedSpan);
         this._batcher.layout();
         unbounded.consumeSpans(this.fillUnboundedSpan);
-        this._rowLevelCursor = 0;
+        this._rowLevels.rewind();
         bounded.consumeSpans(this.fillBoundedSpan);
     }
 
-    private readonly countRun: RunVisitor = (mesh, level, culling, _color, surfaceShader, _params, _matrices, startRow, endRow) => {
+    private readonly countRun: MeshRunVisitor = (mesh, level, culling, _color, surfaceShader, _params, _matrices, startRow, endRow) => {
         const instances = endRow - startRow;
         this._batcher.count(mesh, culling, surfaceShader, instances);
         this._drawn.trianglesDrawn += mesh.triangleCount * instances;
         if (level < this._drawn.lodLevelCounts.length) this._drawn.lodLevelCounts[level] += instances;
     };
 
-    private readonly fillRun: RunVisitor = (mesh, _level, culling, color, surfaceShader, params, matrices, startRow, endRow) => {
+    private readonly fillRun: MeshRunVisitor = (mesh, _level, culling, color, surfaceShader, params, matrices, startRow, endRow) => {
         this._batcher.addRows(mesh, culling, surfaceShader, matrices, startRow, endRow, color, params);
     };
 
-    private readonly countUnboundedSpan = (span: MeshSpan): void => visitRuns(span, undefined, NO_ROW_LEVEL_OFFSET, this.countRun);
+    private readonly countUnboundedSpan = (span: MeshSpan): void => visitMeshRuns(span, undefined, NO_ROW_LEVEL_OFFSET, this.countRun);
 
-    private readonly fillUnboundedSpan = (span: MeshSpan): void => visitRuns(span, undefined, NO_ROW_LEVEL_OFFSET, this.fillRun);
+    private readonly fillUnboundedSpan = (span: MeshSpan): void => visitMeshRuns(span, undefined, NO_ROW_LEVEL_OFFSET, this.fillRun);
 
     private readonly countBoundedSpan = (span: BoundedMeshSpan): void => {
-        const firstLevel = this.claimRowLevels(span);
+        const firstLevel = this._rowLevels.claim(span);
         this.selectRowLevels(span, firstLevel);
-        visitRuns(span, this._rowLevels, firstLevel, this.countRun);
+        visitMeshRuns(span, this._rowLevels.levels, firstLevel, this.countRun);
     };
 
     private readonly fillBoundedSpan = (span: BoundedMeshSpan): void => {
-        visitRuns(span, this._rowLevels, this.claimRowLevels(span), this.fillRun);
+        const firstLevel = this._rowLevels.claim(span);
+        visitMeshRuns(span, this._rowLevels.levels, firstLevel, this.fillRun);
     };
-
-    private claimRowLevels({start, end}: BoundedMeshSpan): number {
-        const firstLevel = this._rowLevelCursor;
-        this._rowLevelCursor = firstLevel + end - start;
-        if (this._rowLevelCursor > this._rowLevels.length) {
-            let capacity = this._rowLevels.length;
-            while (capacity < this._rowLevelCursor) capacity *= ROW_LEVEL_GROWTH_FACTOR;
-            const grown = new Int32Array(capacity);
-            grown.set(this._rowLevels);
-            this._rowLevels = grown;
-        }
-        return firstLevel;
-    }
 
     private selectRowLevels({start, end, stores, cols}: BoundedMeshSpan, firstLevel: number): void {
         const renderMeshes = stores.renderMesh!;
         const bounds = cols.bounds!;
-        const levels = this._rowLevels;
+        const levels = this._rowLevels.levels;
         const projected = this._projectedBounds;
         const settings = this._settings;
         const meshSettings = this._meshSettings;
@@ -375,10 +392,11 @@ export class GpuMeshPassSystem extends System {
         device.queue.writeBuffer(this._instanceBuffer, 0, asGpuBufferSource(batcher.instanceData), 0, batcher.instanceCount * INSTANCE_FLOATS);
     }
 
-    private drawBatches(pass: GPURenderPassEncoder, settings: GpuMeshPassSettings, meshSettings: MeshRenderSettings, sampleCount: GpuSampleCount, library: GpuShaderLibrary): void {
+    private drawBatches(pass: GPURenderPassEncoder, frameBindGroup: GPUBindGroup, settings: GpuMeshPassSettings, meshSettings: MeshRenderSettings,
+        sampleCount: GpuSampleCount, library: GpuShaderLibrary): void {
         const instanceBuffer = this._instanceBuffer;
         if (instanceBuffer === undefined || this._batcher.instanceCount === 0) return;
-        pass.setBindGroup(FRAME_BIND_GROUP, this._frameBindGroup);
+        pass.setBindGroup(FRAME_BIND_GROUP, frameBindGroup);
         pass.setVertexBuffer(INSTANCE_VERTEX_BUFFER_SLOT, instanceBuffer);
         const format = this._gpu.format;
         let currentPipeline: GPURenderPipeline | undefined;
@@ -399,33 +417,5 @@ export class GpuMeshPassSystem extends System {
                 pass.drawIndexed(range.indexCount, batch.instanceCount, range.firstIndex, NO_BASE_VERTEX, batch.firstInstance);
             }
         }
-    }
-}
-
-function visitRuns({start, end, stores, cols}: MeshSpan, levels: Int32Array | undefined, firstLevel: number, visit: RunVisitor): void {
-    const renderMeshes = stores.renderMesh!;
-    const surfaceShaders = stores.surfaceShader;
-    const matrices = cols.localToWorld!;
-    const levelOffset = firstLevel - start;
-    let row = start;
-    while (row < end) {
-        const level = levels === undefined ? BASE_LOD_LEVEL : levels[levelOffset + row];
-        const first = renderMeshes.get(row) as RenderMesh;
-        const mesh = first.mesh, culling = first.faceCulling, color = first.color;
-        const surface = surfaceShaders?.get(row) as GpuSurfaceShader | undefined;
-        let runEnd = row + 1;
-        while (runEnd < end) {
-            const next = renderMeshes.get(runEnd) as RenderMesh;
-            if (next.mesh !== mesh || next.faceCulling !== culling || next.color !== color) break;
-            if (levels !== undefined && levels[levelOffset + runEnd] !== level) break;
-            if (surface !== undefined && !sameSurfaceShader(surface, surfaceShaders!.get(runEnd) as GpuSurfaceShader)) break;
-            runEnd++;
-        }
-        if (mesh !== undefined && level !== CULLED) {
-            const surfaceShader = surface === undefined ? LIT_SURFACE_SHADER : surface.name;
-            const params = surface === undefined ? NO_SURFACE_SHADER_PARAMS : surface.params;
-            visit(mesh.lods[level], level, culling, color, surfaceShader, params, matrices, row, runEnd);
-        }
-        row = runEnd;
     }
 }

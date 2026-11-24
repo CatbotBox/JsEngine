@@ -121,6 +121,11 @@
         "instancePhaseStepSeconds": 0.4
       }
     ],
+    "groundPlane": {
+      "halfSizeUnits": 40,
+      "heightUnits": -4.5,
+      "color": "#8c8678"
+    },
     "hud": {
       "rateWindowMs": 500,
       "rateDecimals": 1,

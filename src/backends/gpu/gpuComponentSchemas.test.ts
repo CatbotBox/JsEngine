@@ -10,11 +10,20 @@ import {PIXELS_SCHEMAS, registerPixelsComponentSchemas} from "../pixels/pixelsCo
 import {GPU_HOST_SCHEMAS, GPU_SCHEMAS, registerGpuComponentSchemas} from "./gpuComponentSchemas";
 import {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import {GpuSurfaceShader, LIT_SURFACE_SHADER} from "./gpuSurfaceShader";
+import {GpuShadowSettings} from "./gpuShadowSettings";
 
 const DEPTH_RANGE = 250;
 const EVICT_AFTER_FRAMES = 30;
 const LOD_TRIANGLES_PER_PIXEL = 0.5;
 const RENDER_SCALE = 2;
+const SHADOW_MAP_SIZE = 1024;
+const SHADOW_MAX_DISTANCE = 35;
+const SHADOW_FADE_FRACTION = 0.2;
+const SHADOW_DEPTH_BIAS_TEXELS = 0.25;
+const SHADOW_NORMAL_BIAS_TEXELS = 2.5;
+const SHADOW_SLOPE_BIAS = 1.5;
+const SHADOW_FILTER_RADIUS_TEXELS = 2;
+const SHADOW_STRENGTH = 0.75;
 const HOLOGRAM = "hologram";
 const HOLOGRAM_PARAMS = [0.25, 0.5, 1, 1.75, -2, 0, 8, 0.125];
 
@@ -57,6 +66,27 @@ describe("gpu component schemas", () => {
         expect([loadedSettings.textureFiltering, loadedSettings.sampleCount, loadedSettings.orthographicDepthRange, loadedSettings.lodTrianglesPerPixel, loadedSettings.renderScale])
             .toEqual([LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT, DEPTH_RANGE, LOD_TRIANGLES_PER_PIXEL, RENDER_SCALE]);
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
+    });
+
+    test("GpuShadowSettings round-trips at non-default values", () => {
+        const schemas = registry();
+        const shadows = Object.assign(new GpuShadowSettings(), {
+            mapSize: SHADOW_MAP_SIZE, maxDistance: SHADOW_MAX_DISTANCE, fadeFraction: SHADOW_FADE_FRACTION, depthBiasTexels: SHADOW_DEPTH_BIAS_TEXELS,
+            normalBiasTexels: SHADOW_NORMAL_BIAS_TEXELS, slopeBias: SHADOW_SLOPE_BIAS, filterRadiusTexels: SHADOW_FILTER_RADIUS_TEXELS, strength: SHADOW_STRENGTH,
+        });
+        const source = new World({platform: new MemoryPlatform()});
+        source.entityManager.createEntity("settings", [shadows]);
+        const saved = serializeWorld(source, schemas);
+        expect(saved.document.entities[0].components.GpuShadowSettings).toEqual({
+            mapSize: SHADOW_MAP_SIZE, maxDistance: SHADOW_MAX_DISTANCE, fadeFraction: SHADOW_FADE_FRACTION, depthBiasTexels: SHADOW_DEPTH_BIAS_TEXELS,
+            normalBiasTexels: SHADOW_NORMAL_BIAS_TEXELS, slopeBias: SHADOW_SLOPE_BIAS, filterRadiusTexels: SHADOW_FILTER_RADIUS_TEXELS, strength: SHADOW_STRENGTH,
+        });
+
+        const target = new World({platform: new MemoryPlatform()});
+        const loaded = deserializeInto(target, schemas, parseSceneDocument(JSON.stringify(saved.document)));
+        const loadedShadows = target.entityManager.getComponent<GpuShadowSettings>(loaded.entities[0], GpuShadowSettings)!;
+        expect({...loadedShadows}).toEqual({...shadows});
+        expect(serializeWorld(target, schemas).document).toEqual(saved.document);
     });
 
     test("GpuSurfaceShader saves its name and its eight params, and loads them back", () => {
