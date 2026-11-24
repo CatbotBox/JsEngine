@@ -1,6 +1,6 @@
 import type {Entity} from "../../engine/core";
 import type {SceneJsonValue} from "../../engine/scene";
-import type {EditorEntitySummary, EditorFieldValue} from "../editorProtocol";
+import type {AssetFieldDescription, EditorEntitySummary, EditorFieldDescription, EditorFieldValue, StructFieldDescription} from "../editorProtocol";
 import {matchesFileSuffix} from "./assetChoices";
 import {showChoicePopup} from "./choicePopup";
 import type {Choice} from "./choicePopup";
@@ -11,12 +11,24 @@ import {
     FieldEditorBase,
     fillSelect,
     MIXED_OPTION_VALUE,
+    nestedFieldContext,
     selectValue,
     showText,
     textInput,
 } from "./fieldEditorBase";
-import type {FieldEditorContext} from "./fieldEditorBase";
-import {assetPathOf, assetText, entityLabel, entityOptionValue, inlineImageSize, isInlineAssetSummary, NO_ENTITY_OPTION_VALUE, parseAssetPathText, parseEntityOptionValue} from "./fieldValueText";
+import type {FieldEditor, FieldEditorContext, FieldEditorFactory} from "./fieldEditorBase";
+import {
+    areEditableInlineValues,
+    assetPathOf,
+    assetText,
+    entityLabel,
+    entityOptionValue,
+    inlineImageSize,
+    isInlineAssetSummary,
+    NO_ENTITY_OPTION_VALUE,
+    parseAssetPathText,
+    parseEntityOptionValue,
+} from "./fieldValueText";
 import {mixedValueOf} from "./multiSelection";
 
 const NO_ENTITY_LABEL = "(none)";
@@ -27,6 +39,8 @@ const PICK_ASSET_TEXT = "…";
 const OPEN_DATA_ASSET_TEXT = "Open";
 const CREATE_DATA_ASSET_TEXT = "New";
 const EXTRACT_IMAGE_TEXT = "Extract…";
+const EDITABLE_INLINE_TEXT = "(inline)";
+const INLINE_FORM_CLASS = "inline-form";
 const ARMED_CLASS = "armed";
 const DROPPED_ENTITY_COUNT = 1;
 const DROP_EFFECT = "copy";
@@ -123,13 +137,19 @@ export class EntityFieldEditor extends FieldEditorBase {
 }
 
 export class AssetFieldEditor extends FieldEditorBase {
+    private readonly assetType: string;
     private readonly input: HTMLInputElement;
     private readonly inline: HTMLElement;
+    private readonly editableStruct: StructFieldDescription | undefined;
+    private readonly inlineForm: FieldEditor | undefined;
     private readonly openButton: HTMLButtonElement | undefined;
     private readonly extractButton: HTMLButtonElement | undefined;
 
-    public constructor(context: FieldEditorContext, document: Document, private readonly assetType: string) {
+    public constructor(context: FieldEditorContext, document: Document, asset: AssetFieldDescription, createEditor: FieldEditorFactory) {
         super(context, document);
+        const assetType = asset.assetType;
+        this.assetType = assetType;
+        this.editableStruct = asset.editableStruct;
         this.input = textInput(document, `${this.fieldLabel} file path`);
         this.input.dataset.placeholder = ASSET_PATH_PLACEHOLDER;
         this.input.addEventListener("change", () => this.commitAll(parseAssetPathText(this.input.value)));
@@ -165,19 +185,39 @@ export class AssetFieldEditor extends FieldEditorBase {
             });
             this.element.append(this.openButton, create);
         }
+        if (asset.editableStruct !== undefined) {
+            const field: EditorFieldDescription = {...asset.editableStruct, key: context.field.key};
+            this.inlineForm = createEditor(document, nestedFieldContext(context, field, context.label, (before, after, coalesceKey) => this.commitInlineForm(before, after, coalesceKey)));
+            this.inlineForm.element.classList.add(INLINE_FORM_CLASS);
+            this.inlineForm.element.hidden = true;
+            this.element.append(this.inlineForm.element);
+        }
         installDrop(this.element, () => this.droppablePath(), path => this.commitAll({path}));
     }
 
     protected render(values: readonly EditorFieldValue[]): void {
         const shared = mixedValueOf(values);
         const value = shared === undefined || shared.mixed ? undefined : shared.value;
-        const inline = value !== undefined && inlineImageSize(value) !== undefined;
+        const editableInline = this.editableStruct !== undefined && areEditableInlineValues(values, this.editableStruct);
+        const inlinePixels = !editableInline && value !== undefined && inlineImageSize(value) !== undefined;
+        const inline = editableInline || inlinePixels;
         this.input.hidden = inline;
         this.inline.hidden = !inline;
-        if (inline) this.inline.textContent = assetText(value);
+        if (editableInline) this.inline.textContent = EDITABLE_INLINE_TEXT;
+        else if (inlinePixels) this.inline.textContent = assetText(value);
         else showText(this.input, value === undefined ? undefined : assetText(value));
+        if (this.inlineForm !== undefined) {
+            this.inlineForm.element.hidden = !editableInline;
+            if (editableInline) this.inlineForm.show(values);
+        }
         if (this.extractButton !== undefined) this.extractButton.hidden = value === undefined || !isInlineAssetSummary(value);
         if (this.openButton !== undefined) this.openButton.disabled = assetPathOf(value) === undefined;
+    }
+
+    private async commitInlineForm(before: readonly EditorFieldValue[], after: readonly SceneJsonValue[], coalesceKey: string | undefined): Promise<readonly EditorFieldValue[] | undefined> {
+        const stored = await this.context.commit(before, after, coalesceKey);
+        if (stored !== undefined) this.values = stored;
+        return stored;
     }
 
     private openDataAsset(): void {

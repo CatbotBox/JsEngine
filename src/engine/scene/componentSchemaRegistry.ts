@@ -300,7 +300,8 @@ export class ComponentSchemaRegistry implements FieldTypeResolver {
         if (!hasSuffixes) throw new Error(`${label} needs a list of file suffixes`);
         const isLoader = typeof type.isAsset === "function" && typeof type.load === "function" && typeof type.pathOf === "function";
         if (!isLoader) throw new Error(`${label} needs isAsset, load and pathOf functions`);
-        if (type.isDerived !== undefined && typeof type.isDerived !== "function") throw new Error(`${label} has an isDerived that is not a function`);
+        const editableStruct = type.inline?.editableStruct;
+        if (editableStruct !== undefined && typeof editableStruct !== "function") throw new Error(`${label} has an inline editableStruct that is not a function`);
         if (this._assetTypes.has(name)) throw new Error(`${label} is already registered`);
         this._assetTypes.set(name, type as AssetType);
     }

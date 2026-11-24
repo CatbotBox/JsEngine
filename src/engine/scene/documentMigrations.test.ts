@@ -99,6 +99,43 @@ describe("document migrations", () => {
             .toEqual(["0/GpuMeshPassSettings.evictUnusedAfterFrames", "0/GpuMeshPassSettings.sampleCount", "1/LocalPosition"]);
     });
 
+    test("scene version 2 moves a SpritePattern into its entity's Sprite.image as an inline pattern and drops one without a Sprite", () => {
+        const ship = {rows: [" # ", "###"], palette: [{char: "#", rgb: "#40e0ff"}]};
+        const version2 = {
+            format: SCENE_DOCUMENT_FORMAT,
+            version: SECOND_VERSION,
+            entities: [
+                {id: 1, name: "ship", enabled: true, components: {
+                    LocalPosition: {xyz: [0, 0, 0]},
+                    Sprite: {image: {path: "sprites/old.png"}, tint: "#ffffff", opacity: 1},
+                    SpritePattern: ship,
+                    LocalToWorld: {},
+                }},
+                {id: 2, name: "lamp", enabled: true, components: {PointLight: {range: 4}, SpritePattern: ship}},
+                {id: 3, name: "blank", enabled: true, components: {Sprite: {image: null, tint: "#ffffff", opacity: 1}, SpritePattern: {rows: ["#"]}}},
+                {id: 4, name: "plain", enabled: true, components: {Sprite: {image: null, tint: "#ffffff", opacity: 1}}},
+            ],
+        };
+        const document = parseSceneDocument(version2);
+        expect(Object.keys(document.entities[0].components)).toEqual(["LocalPosition", "Sprite", "LocalToWorld"]);
+        expect(document.entities[0].components.Sprite).toEqual({image: ship, tint: "#ffffff", opacity: 1});
+        expect(document.entities[1].components).toEqual({PointLight: {range: 4}});
+        expect(document.entities[2].components.Sprite.image).toEqual({rows: ["#"], palette: []});
+        expect(document.entities[3].components).toEqual({Sprite: {image: null, tint: "#ffffff", opacity: 1}});
+    });
+
+    test("scene version 2 points prefab overrides of a SpritePattern at Sprite.image, once per entity", () => {
+        const overrides = ["/SpritePattern.rows", "/SpritePattern.palette", "0/SpritePattern", "0/Sprite.tint", "1/SpritePatternTint.rgb", "1/@name"];
+        const version2 = {
+            format: SCENE_DOCUMENT_FORMAT,
+            version: SECOND_VERSION,
+            entities: [{id: 1, name: "instance", enabled: true, components: {PrefabInstance: {sourcePath: "a.prefab.json", overrides}}}],
+        };
+        const document = parseSceneDocument(version2);
+        expect(document.entities[0].components.PrefabInstance.overrides)
+            .toEqual(["/Sprite.image", "0/Sprite.image", "0/Sprite.tint", "1/SpritePatternTint.rgb", "1/@name"]);
+    });
+
     test("scene and data asset errors name the document path", () => {
         expect(() => parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: TOO_OLD_VERSION, entities: []}, SCENE_PATH))
             .toThrow(`Scene document "${SCENE_PATH}": version ${TOO_OLD_VERSION} is older than the oldest version this engine migrates (${FIRST_VERSION})`);

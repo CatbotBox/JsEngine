@@ -4,7 +4,7 @@ import {Component, EntityCommandBufferSystem, World} from "../src/engine/core";
 import type {Entity, EntityCommandBuffer} from "../src/engine/core";
 import {Lifetime, Velocity} from "../src/engine/motion";
 import {RenderBounds} from "../src/engine/rendering";
-import {Sprite, SpritePattern, SpritePatternColor} from "../src/engine/rendering/2d";
+import {Sprite, SpritePatternColor, spritePatternImage} from "../src/engine/rendering/2d";
 import {ComponentSchemaRegistry, platformSceneAssetLoader, prefabSpawnerOf, registerEngineComponentSchemas} from "../src/engine/scene";
 import type {PrefabAsset, PrefabSpawner} from "../src/engine/scene";
 import {LocalPosition, LocalToWorld} from "../src/engine/translation";
@@ -34,6 +34,7 @@ const MS_PER_SECOND = 1000;
 const FULL_TURN_RAD = 2 * Math.PI;
 const UINT32_RANGE = 4294967296;
 const MULBERRY_INCREMENT = 0x6D2B79F5;
+const SPARK_IMAGE = spritePatternImage([SPARK_ROW], [new SpritePatternColor(SPARK_CHAR, SPARK_PATTERN_RGB)]);
 
 interface Fixture {
     readonly world: World;
@@ -79,8 +80,7 @@ const handBuiltSpark: SparkSpawn = (fixture, x, y) => {
     lifetime.remainingMs = lifetimeMs;
     fixture.spawned.push(fixture.buffer.createEntity(SPARK_NAME, [
         new LocalPosition(x, y, SPARK_DEPTH),
-        new Sprite(undefined, tintOf(fixture)),
-        new SpritePattern([SPARK_ROW], [new SpritePatternColor(SPARK_CHAR, SPARK_PATTERN_RGB)]),
+        new Sprite(SPARK_IMAGE, tintOf(fixture)),
         new LocalToWorld(),
         new RenderBounds(),
         lifetime,

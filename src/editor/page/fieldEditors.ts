@@ -1,5 +1,7 @@
 import type {NumberFieldOptions, SceneJsonValue} from "../../engine/scene";
 import type {EditorFieldValue, NumberFieldDescription} from "../editorProtocol";
+import {FIELD_INPUT_HOOK} from "../project/editorUiHooks";
+import type {FieldInputKind} from "../project/editorUiHooks";
 import {ListFieldEditor, StructFieldEditor} from "./compoundFieldEditors";
 import {createElement} from "./dom";
 import {fieldDrawers} from "./fieldDrawers";
@@ -83,6 +85,7 @@ const NO_OPTIONS: NumberFieldOptions = {};
 const NULL_VALUE: SceneJsonValue = null;
 const UNREADABLE_ROTATION: EulerDegrees = [Number.NaN, Number.NaN, Number.NaN];
 const FALLBACK_NUMBER = 0;
+const TEXT_LINES_FIELD_INPUT: FieldInputKind = "textLines";
 
 function vectorComponents(value: EditorFieldValue, length: number): SceneJsonValue[] {
     if (!Array.isArray(value) || value.length !== length) throw new InvalidFieldText(`${JSON.stringify(value)} is not ${length} numbers`);
@@ -477,6 +480,7 @@ class TextLinesFieldEditor extends FieldEditorBase {
         this.textarea.spellcheck = false;
         this.textarea.wrap = "off";
         this.textarea.setAttribute("aria-label", this.fieldLabel);
+        this.textarea.setAttribute(FIELD_INPUT_HOOK, TEXT_LINES_FIELD_INPUT);
         this.sendWhileTyping(this.textarea, key => this.commitEach(() => parseTextLinesText(this.textarea.value), key, TYPING));
         this.textarea.addEventListener("change", () => this.commitAll(parseTextLinesText(this.textarea.value)));
         this.element.append(this.textarea);
@@ -558,7 +562,7 @@ function builtInFieldEditor(document: Document, context: FieldEditorContext, nes
         case "entity":
             return new EntityFieldEditor(context, document, field.nullable);
         case "asset":
-            return new AssetFieldEditor(context, document, field.assetType);
+            return new AssetFieldEditor(context, document, field, nested);
         case "list":
             return new ListFieldEditor(context, document, field, nested);
         case "struct":

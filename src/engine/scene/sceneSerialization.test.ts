@@ -24,7 +24,7 @@ import {TextSprite} from "../rendering/textSprite";
 import {TextColor} from "../rendering/textColor";
 import {Sprite} from "../rendering/2d/sprite";
 import {SpriteImage} from "../rendering/2d/spriteImage";
-import {SpritePattern, SpritePatternColor} from "../rendering/2d/spritePattern";
+import {SpritePatternColor, spritePatternImage} from "../rendering/2d/spritePattern";
 import {FieldOfView} from "../rendering/3d/fieldOfView";
 import {MeshRenderSettings} from "../rendering/3d/meshRenderSettings";
 import {RenderMesh} from "../rendering/3d/renderMesh";
@@ -166,8 +166,8 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     const sunAngles = new EulerAngles();
     sunAngles.radians = Vec3.alloc(0.7, -0.6, 0);
     const sun = em.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalPosition(), sunRotation, new LocalToWorld(), sunAngles]);
-    const lampPattern = new SpritePattern(LAMP_PATTERN_ROWS, [new SpritePatternColor("#", LAMP_PATTERN_RGB)]);
-    em.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld(), lampPattern]);
+    const lampSprite = new Sprite(spritePatternImage(LAMP_PATTERN_ROWS, [new SpritePatternColor("#", LAMP_PATTERN_RGB)]));
+    em.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld(), lampSprite]);
     const frameLoop = new FrameLoopSettings();
     frameLoop.renderRate = UNCAPPED_RENDER_RATE;
     frameLoop.maxCatchUpTicks = CATCH_UP_TICKS;
@@ -242,6 +242,22 @@ describe("scene serialization", () => {
         expect(loadedParent.entity).toBe(loaded.entities[rootIndex]);
 
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
+    });
+
+    test("equal inline sprite patterns decode once per load, every sprite holding one shares that image, and each saves back inline", () => {
+        const platform = memoryPlatform();
+        const registry = engineRegistry();
+        const lamp: SceneJsonValue = {rows: LAMP_PATTERN_ROWS, palette: [{char: "#", rgb: "#4fa3f7"}]};
+        const dot: SceneJsonValue = {rows: ["#"], palette: [{char: "#", rgb: "#4fa3f7"}]};
+        const sprite = (id: number, image: SceneJsonValue) => ({id, name: `sprite${id}`, enabled: ENABLED, components: {Sprite: {image, tint: "#ffffff", opacity: 1}}});
+        const document = parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: [sprite(1, lamp), sprite(2, lamp), sprite(3, dot)]});
+        const world = newWorld(platform);
+        const loaded = deserializeInto(world, registry, document, {assets: platformSceneAssetLoader(platform)});
+        const imageOf = (index: number) => world.entityManager.getComponent<Sprite>(loaded.entities[index], Sprite)!.image;
+        expect(imageOf(0)?.pattern?.rows).toEqual(LAMP_PATTERN_ROWS);
+        expect(imageOf(1)).toBe(imageOf(0));
+        expect(imageOf(2)).not.toBe(imageOf(0));
+        expect(serializeWorld(world, registry).document.entities.map(record => record.components.Sprite.image)).toEqual([lamp, lamp, dot]);
     });
 
     test("F32 values survive the archetype move a parent makes when its child arrives, and the child's LocalToWorld follows it", () => {

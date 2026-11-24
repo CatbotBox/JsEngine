@@ -47,7 +47,7 @@ const ENEMY_PREFAB = "prefabs/enemy.prefab.json";
 const MAIN_SCENE_ID = 1;
 const LEVEL_SCENE_ID = 2;
 const FAKE_HISTORY = {} as TabHistory;
-const GAME_TYPE_NAMES: ReadonlySet<string> = new Set(["Camera", "LocalPosition", "Sprite", "SpritePattern", "TextSprite", "DirectionalLight", "PointLight", "AmbientLight"]);
+const GAME_TYPE_NAMES: ReadonlySet<string> = new Set(["Camera", "LocalPosition", "Sprite", "TextSprite", "DirectionalLight", "PointLight", "AmbientLight"]);
 
 interface FakeEditor {
     readonly registry: CommandRegistry;

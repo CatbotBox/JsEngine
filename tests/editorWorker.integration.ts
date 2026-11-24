@@ -96,7 +96,7 @@ const SHIP_NAME = "ship";
 const SWARM_TITLE_PHASE = "Title";
 const SWARM_PLAYING_PHASE = "Playing";
 const EDITED_PATTERN_ROWS = ["#"];
-const EDITED_PATTERN_IMAGE_SUMMARY = {inline: {width: 1, height: 1}};
+const EDITED_PATTERN_PALETTE = [{char: "#", rgb: "#ff8000"}];
 const DEMO_2D_TUNING_RESOURCE = "Demo2dTuning";
 const DEMO_2D_TUNING_PATH = "assets/demo2d.asset.json";
 const DEMO_2D_EDITED_TUNING_KEY = "pixelsPerSpawn";
@@ -706,15 +706,16 @@ async function openStartScene(page: EditorPage, project: BuiltProject, label: st
 }
 
 async function verifySpritePatternEdit(page: EditorPage, label: string, entity: Entity, name: string): Promise<void> {
-    await page.ask({op: "setField", entity, typeName: "SpritePattern", key: "rows", value: EDITED_PATTERN_ROWS});
-    const rows = await page.fieldOf(entity, "SpritePattern", "rows");
-    expect(sameJson(rows, EDITED_PATTERN_ROWS), `${label}: the sprite pattern rows of ${name} are editable (${JSON.stringify(rows)})`);
-    expect(await page.framesPass(BOUNDS_SETTLE_FRAMES), `${label}: frames pass after editing the sprite pattern`);
+    const before = await page.fieldOf(entity, "Sprite", "image") as {rows?: unknown, palette?: unknown} | undefined;
+    expect(Array.isArray(before?.rows) && Array.isArray(before?.palette), `${label}: the sprite image of ${name} is an inline pattern (${JSON.stringify(before)})`);
+    const edited = {rows: EDITED_PATTERN_ROWS, palette: EDITED_PATTERN_PALETTE};
+    await page.ask({op: "setField", entity, typeName: "Sprite", key: "image", value: edited});
     const image = await page.fieldOf(entity, "Sprite", "image");
-    expect(sameJson(image, EDITED_PATTERN_IMAGE_SUMMARY), `${label}: the sprite image of ${name} is rebuilt from the edited pattern (${JSON.stringify(image)})`);
+    expect(sameJson(image, edited), `${label}: the inline sprite pattern of ${name} is editable (${JSON.stringify(image)})`);
+    expect(await page.framesPass(BOUNDS_SETTLE_FRAMES), `${label}: frames pass after editing the sprite pattern`);
     const saved = parseSceneDocument((await page.ask({op: "saveScene"})).sceneText);
     const savedImage = saved.entities.find(record => record.name === name)?.components.Sprite?.image;
-    expect(savedImage === null, `${label}: the rebuilt sprite image saves as null, its pattern is the saved form (${JSON.stringify(savedImage)})`);
+    expect(sameJson(savedImage ?? null, edited), `${label}: the edited pattern is the saved form of the sprite image (${JSON.stringify(savedImage)})`);
 }
 
 async function verifyTuningEdit(page: EditorPage, label: string, typeName: string, path: string, key: string, value: SceneJsonValue): Promise<void> {
@@ -766,7 +767,7 @@ async function verifySwarm(project: BuiltProject): Promise<void> {
     const page = new EditorPage(project, "the Swarm editor");
     try {
         await verifyStartsInEditMode(page, label);
-        await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SwarmHud", "SpritePattern", "SpritePixelPassSettings"]);
+        await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SwarmHud", "Sprite", "SpritePixelPassSettings"]);
         const {resources} = await page.ask({op: "describeSchemas"});
         for (const typeName of [SWARM_STATE_RESOURCE, SWARM_TUNING_RESOURCE]) {
             expect(resources.some(resource => resource.typeName === typeName), `${label}: describeSchemas lists the ${typeName} resource`);
@@ -775,8 +776,8 @@ async function verifySwarm(project: BuiltProject): Promise<void> {
         expect(tuning.dataAssetPath === SWARM_TUNING_PATH, `${label}: ${SWARM_TUNING_RESOURCE} is loaded from ${SWARM_TUNING_PATH} (${tuning.dataAssetPath})`);
         await openStartScene(page, project, label, SWARM_GAMEPLAY_SCENE);
         const ship = await page.entityNamed(SHIP_NAME);
-        expect(ship !== undefined && ship.componentTypeNames.includes("Ship") && ship.componentTypeNames.includes("SpritePattern"),
-            `${label}: the gameplay scene has the ship with its Ship and SpritePattern components`);
+        expect(ship !== undefined && ship.componentTypeNames.includes("Ship") && ship.componentTypeNames.includes("Sprite"),
+            `${label}: the gameplay scene has the ship with its Ship and Sprite components`);
         await verifySwarmGate(page, label);
         const restoredShip = await page.entityNamed(SHIP_NAME);
         expect(restoredShip !== undefined, `${label}: stopping play restores the ship of the opened scene`);

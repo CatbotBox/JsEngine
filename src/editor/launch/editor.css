@@ -1097,6 +1097,18 @@ button.primary {
     align-items: stretch;
 }
 
+.field-editor.kind-asset {
+    flex-wrap: wrap;
+}
+
+.field-editor.kind-asset > .inline-form {
+    flex: 1 0 100%;
+}
+
+.field-editor.kind-asset > .inline-form[hidden] {
+    display: none;
+}
+
 .list-header {
     display: flex;
     align-items: center;

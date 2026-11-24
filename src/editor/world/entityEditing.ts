@@ -6,6 +6,7 @@ import type {AnyCT} from "../../engine/util/tokenUtils";
 import {Parent, ParentTransform} from "../../engine/translation/parent";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
+import type {SpriteImage} from "../../engine/rendering/2d/spriteImage";
 import {
     assetReferencesOfFields,
     assignFieldValue,
@@ -101,6 +102,7 @@ export function editorDecodeContext(world: World, registry: ComponentSchemaRegis
             throw new Error(`${path} names no entity of this world`);
         },
         assets,
+        inlineSpriteImages: new Map<string, SpriteImage>(),
         fieldTypes: registry,
     };
 }

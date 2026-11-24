@@ -7,7 +7,7 @@ import {asFloat32Array} from "../math/types/vec";
 import {LocalPosition} from "../translation/localPosition";
 import {Parent} from "../translation/parent";
 import {Sprite} from "../rendering/2d/sprite";
-import {SpritePattern} from "../rendering/2d/spritePattern";
+import {SPRITE_PATTERN_FILE_FORMAT, SPRITE_PATTERN_FILE_VERSION} from "../rendering/2d/spritePatternFile";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {registerEngineComponentSchemas} from "./engineComponentSchemas";
 import {PrefabAsset} from "./prefabAsset";
@@ -18,6 +18,7 @@ import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_
 import type {SceneEntityRecord, SceneFieldValues} from "./sceneDocument";
 
 const PREFAB_PATH = "prefabs/thing.prefab.json";
+const PATTERN_PATH = "sprites/thing.pattern.json";
 const ROOT_XYZ = [1, 2, 3];
 const CHILD_XYZ = [4, 5, 6];
 const ROOT_ROWS = ["#.", ".#"];
@@ -48,11 +49,14 @@ function prefabOf(...entities: readonly SceneEntityRecord[]): PrefabAsset {
     return new PrefabAsset(PREFAB_PATH, parseSceneDocument({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities}));
 }
 
+function patternFileText(rows: readonly string[]): string {
+    return JSON.stringify({format: SPRITE_PATTERN_FILE_FORMAT, version: SPRITE_PATTERN_FILE_VERSION, rows, palette: [{char: "#", rgb: TINT}]});
+}
+
 function patternedRoot(): SceneEntityRecord {
     return record(FIRST_SCENE_ENTITY_ID, "thing", {
         LocalPosition: {xyz: ROOT_XYZ},
-        Sprite: {image: null, tint: TINT, opacity: 1},
-        SpritePattern: {rows: ROOT_ROWS, palette: [{char: "#", rgb: TINT}]},
+        Sprite: {image: {rows: ROOT_ROWS, palette: [{char: "#", rgb: TINT}]}, tint: TINT, opacity: 1},
     });
 }
 
@@ -78,7 +82,7 @@ describe("PrefabSpawner", () => {
         expect(world.entityManager.nameOf(spawned.root)).toBe("thing");
         expect(positionOf(world, spawned.root)).toEqual([SPAWNED_X, ROOT_XYZ[1], ROOT_XYZ[2]]);
         expect(world.entityManager.getComponent<Sprite>(spawned.root, Sprite)!.tint).toBe(TINT_RGB);
-        expect([...world.entityManager.getComponent<SpritePattern>(spawned.root, SpritePattern)!.rows]).toEqual(ROOT_ROWS);
+        expect(world.entityManager.getComponent<Sprite>(spawned.root, Sprite)!.image?.pattern?.rows).toEqual(ROOT_ROWS);
     });
 
     test("spawns at once through the entity manager", () => {
@@ -87,16 +91,31 @@ describe("PrefabSpawner", () => {
         expect(positionOf(world, spawned.root)).toEqual(ROOT_XYZ);
     });
 
-    test("every spawn gets its own mutable values", () => {
+    test("every spawn gets its own mutable values and shares the one pattern image its prefab decoded", () => {
         const {world, spawner} = setup();
         const prefab = prefabOf(patternedRoot());
         const first = spawner.spawn(world.entityManager, prefab);
         const second = spawner.spawn(world.entityManager, prefab);
-        const firstPattern = first.rootComponent(SpritePattern), secondPattern = second.rootComponent(SpritePattern);
-        expect(firstPattern.rows).not.toBe(secondPattern.rows);
-        expect(firstPattern.palette[0]).not.toBe(secondPattern.palette[0]);
+        const firstSprite = first.rootComponent(Sprite), secondSprite = second.rootComponent(Sprite);
+        expect(firstSprite).not.toBe(secondSprite);
+        expect(firstSprite.image).toBeDefined();
+        expect(secondSprite.image).toBe(firstSprite.image);
+        expect(spawner.templateOf(prefab).rootComponentDefaults(Sprite)?.image).toBe(firstSprite.image);
         first.rootComponent(LocalPosition).x = SPAWNED_X;
         expect(positionOf(world, second.root)).toEqual(ROOT_XYZ);
+    });
+
+    test("spawns of a prefab whose sprite names a pattern file share the image loaded once from that file", () => {
+        const platform = new MemoryPlatform({files: {[PATTERN_PATH]: patternFileText(ROOT_ROWS)}});
+        const world = new World({platform});
+        const registry = new ComponentSchemaRegistry();
+        registerEngineComponentSchemas(registry);
+        const spawner = prefabSpawnerOf(world, registry, platformSceneAssetLoader({files: platform.files, inflate: platform.inflate}));
+        const filed = (name: string): SceneEntityRecord => record(FIRST_SCENE_ENTITY_ID, name, {LocalPosition: {xyz: ROOT_XYZ}, Sprite: {image: {path: PATTERN_PATH}, tint: TINT, opacity: 1}});
+        const first = spawner.spawn(world.entityManager, prefabOf(filed("first"))).rootComponent(Sprite).image;
+        const second = spawner.spawn(world.entityManager, prefabOf(filed("second"))).rootComponent(Sprite).image;
+        expect([first?.sourcePath, first?.pattern?.rows]).toEqual([PATTERN_PATH, ROOT_ROWS]);
+        expect(second).toBe(first);
     });
 
     test("compiles a prefab once and reads its root defaults without spawning", () => {

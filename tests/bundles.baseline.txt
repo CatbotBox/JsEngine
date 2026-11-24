@@ -1,5 +1,5 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 196 modules, 241036 bytes minified
+demo/2d terminal cells main: 195 modules, 246310 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -19,7 +19,6 @@ demo/2d terminal cells main: 196 modules, 241036 bytes minified
   src/backends/cells/2d/spriteCellPassSystem.ts
   src/backends/cells/2d/spriteCellRasterizer.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
-  src/backends/cells/cellAspectRatio.ts
   src/backends/cells/cellCameraSizingSystem.ts
   src/backends/cells/cellFrame.ts
   src/backends/cells/cellGrid.ts
@@ -107,7 +106,7 @@ demo/2d terminal cells main: 196 modules, 241036 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
@@ -227,7 +226,7 @@ demo/2d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 192 modules, 234703 bytes minified
+demo/2d web cells worker: 191 modules, 239977 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -247,7 +246,6 @@ demo/2d web cells worker: 192 modules, 234703 bytes minified
   src/backends/cells/2d/spriteCellPassSystem.ts
   src/backends/cells/2d/spriteCellRasterizer.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
-  src/backends/cells/cellAspectRatio.ts
   src/backends/cells/cellCameraSizingSystem.ts
   src/backends/cells/cellFrame.ts
   src/backends/cells/cellGrid.ts
@@ -333,7 +331,7 @@ demo/2d web cells worker: 192 modules, 234703 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
@@ -438,7 +436,7 @@ demo/2d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 192 modules, 232725 bytes minified
+demo/2d web pixels worker: 192 modules, 239467 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -544,7 +542,7 @@ demo/2d web pixels worker: 192 modules, 232725 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
@@ -649,7 +647,7 @@ demo/2d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 210 modules, 255046 bytes minified
+demo/2d web gpu worker: 210 modules, 262243 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -771,7 +769,7 @@ demo/2d web gpu worker: 210 modules, 255046 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
@@ -860,7 +858,7 @@ demo/2d web gpu worker: 210 modules, 255046 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 220 modules, 311044 bytes minified
+demo/3d terminal cells main: 220 modules, 315797 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1112,7 +1110,7 @@ demo/3d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 216 modules, 304486 bytes minified
+demo/3d web cells worker: 216 modules, 309241 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1347,7 +1345,7 @@ demo/3d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 217 modules, 303957 bytes minified
+demo/3d web pixels worker: 217 modules, 309941 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1583,7 +1581,7 @@ demo/3d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 232 modules, 322461 bytes minified
+demo/3d web gpu worker: 232 modules, 329074 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
   demo/3d/components.ts
@@ -1816,7 +1814,7 @@ demo/3d web gpu worker: 232 modules, 322461 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 198 modules, 259040 bytes minified
+demo/swarm terminal cells main: 197 modules, 264338 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1838,7 +1836,6 @@ demo/swarm terminal cells main: 198 modules, 259040 bytes minified
   src/backends/cells/2d/spriteCellPassSystem.ts
   src/backends/cells/2d/spriteCellRasterizer.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
-  src/backends/cells/cellAspectRatio.ts
   src/backends/cells/cellCameraSizingSystem.ts
   src/backends/cells/cellFrame.ts
   src/backends/cells/cellGrid.ts
@@ -1926,7 +1923,7 @@ demo/swarm terminal cells main: 198 modules, 259040 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
@@ -2046,7 +2043,7 @@ demo/swarm web cells page: 19 modules, 25057 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 194 modules, 252720 bytes minified
+demo/swarm web cells worker: 193 modules, 258018 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2068,7 +2065,6 @@ demo/swarm web cells worker: 194 modules, 252720 bytes minified
   src/backends/cells/2d/spriteCellPassSystem.ts
   src/backends/cells/2d/spriteCellRasterizer.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
-  src/backends/cells/cellAspectRatio.ts
   src/backends/cells/cellCameraSizingSystem.ts
   src/backends/cells/cellFrame.ts
   src/backends/cells/cellGrid.ts
@@ -2154,7 +2150,7 @@ demo/swarm web cells worker: 194 modules, 252720 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
@@ -2259,7 +2255,7 @@ demo/swarm web pixels page: 17 modules, 17208 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 195 modules, 251293 bytes minified
+demo/swarm web pixels worker: 195 modules, 258059 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2368,7 +2364,7 @@ demo/swarm web pixels worker: 195 modules, 251293 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
@@ -2473,7 +2469,7 @@ demo/swarm web gpu page: 17 modules, 16748 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 214 modules, 273850 bytes minified
+demo/swarm web gpu worker: 214 modules, 281071 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2598,7 +2594,7 @@ demo/swarm web gpu worker: 214 modules, 273850 bytes minified
   src/engine/rendering/2d/spriteImage.ts
   src/engine/rendering/2d/spriteImageAssetType.ts
   src/engine/rendering/2d/spritePattern.ts
-  src/engine/rendering/2d/spritePatternImageSystem.ts
+  src/engine/rendering/2d/spritePatternFile.ts
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts

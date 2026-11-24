@@ -339,6 +339,7 @@ export interface EnumFieldDescription {
 export interface AssetFieldDescription {
     readonly kind: "asset";
     readonly assetType: string;
+    readonly editableStruct?: StructFieldDescription;
 }
 
 export interface ListFieldDescription {

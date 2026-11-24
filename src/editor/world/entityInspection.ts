@@ -17,7 +17,7 @@ import {
     siblingOrderOf,
     SPRITE_IMAGE_ASSET_TYPE_NAME,
 } from "../../engine/scene";
-import type {ComponentSchema, ComponentSchemaRegistry, FieldEncodeContext, FieldSchema, FieldType, SceneJsonValue} from "../../engine/scene";
+import type {ComponentSchema, ComponentSchemaRegistry, FieldEncodeContext, FieldSchema, FieldType, SceneJsonValue, StructFieldType} from "../../engine/scene";
 import {ENTITY_HANDLE_LIMIT} from "../editorProtocol";
 import type {
     DescribeSchemasResult,
@@ -28,6 +28,7 @@ import type {
     EditorFieldDescription,
     EditorFieldTypeDescription,
     EditorFieldValue,
+    StructFieldDescription,
 } from "../editorProtocol";
 
 interface EntityRow {
@@ -93,21 +94,27 @@ function describeFieldType(registry: ComponentSchemaRegistry, type: FieldType, p
             return {kind: type.kind, nullable: type.nullable};
         case "enum":
             return withoutUndefined({kind: type.kind, enumNames: type.members.map(member => member.name), typeName: type.typeName});
-        case "asset":
-            return {kind: type.kind, assetType: type.assetType};
+        case "asset": {
+            const editableStruct = registry.assetType(type.assetType)?.inline?.editableStruct?.();
+            if (editableStruct === undefined) return {kind: type.kind, assetType: type.assetType};
+            return {kind: type.kind, assetType: type.assetType, editableStruct: describeStructType(registry, editableStruct, path)};
+        }
         case "list": {
             const elementPath = path + LIST_ELEMENT_PATH_SUFFIX;
             return {kind: type.kind, element: describeFieldType(registry, type.element, elementPath), elementDefault: encodedDefaultValue(registry, type.element, elementPath)};
         }
-        case "struct": {
-            const presentDefault = type.nullable === true ? encodedDefaultValue(registry, {...type, nullable: false}, path) : undefined;
-            return withoutUndefined({kind: type.kind, nullable: type.nullable, typeName: type.typeName, fields: describeFields(registry, type.fields, path), presentDefault});
-        }
+        case "struct":
+            return describeStructType(registry, type, path);
         case "custom":
             return {kind: type.kind, typeName: type.typeName};
         default:
             return {kind: type.kind};
     }
+}
+
+function describeStructType(registry: ComponentSchemaRegistry, type: StructFieldType, path: string): StructFieldDescription {
+    const presentDefault = type.nullable === true ? encodedDefaultValue(registry, {...type, nullable: false}, path) : undefined;
+    return withoutUndefined({kind: type.kind, nullable: type.nullable, typeName: type.typeName, fields: describeFields(registry, type.fields, path), presentDefault});
 }
 
 export function describeFields(registry: ComponentSchemaRegistry, fields: readonly FieldSchema[], ownerPath: string): EditorFieldDescription[] {
@@ -246,7 +253,7 @@ export function encodeFullFieldValue(world: World, registry: ComponentSchemaRegi
 
 export function encodeEditorFieldValue(world: World, registry: ComponentSchemaRegistry, field: FieldSchema, value: unknown, path: string): EditorFieldValue {
     const isSpriteImageField = field.kind === "asset" && field.assetType === SPRITE_IMAGE_ASSET_TYPE_NAME;
-    if (isSpriteImageField && value instanceof SpriteImage && value.sourcePath === undefined) {
+    if (isSpriteImageField && value instanceof SpriteImage && value.sourcePath === undefined && value.pattern === undefined) {
         return {inline: {width: value.sizeX, height: value.sizeY}};
     }
     return encodeFullFieldValue(world, registry, field, value, path);

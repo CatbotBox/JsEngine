@@ -31,6 +31,8 @@ const CODE_A = 0x41;
 const CODE_F = 0x46;
 const PATH_ONLY_EXPECTATION = `{"path": "<file>"}`;
 
+export const HEX_COLOR_EXPECTATION = `a "#rrggbb" colour`;
+
 export interface FieldEncodeContext {
     sceneIdOf(entity: Entity): number | undefined;
 
@@ -64,19 +66,22 @@ function isPackedRgb(value: unknown): value is number {
     return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= PACKED_RGB_MASK;
 }
 
-function hexColorOf(rgb: number): string {
+export function hexColorOf(rgb: number): string {
     return HEX_COLOR_PREFIX + rgb.toString(HEX_RADIX).padStart(HEX_COLOR_DIGITS, "0");
 }
 
-function rgbOfHexColor(json: SceneJsonValue, path: string): number {
-    const expectation = `a "#rrggbb" colour`;
-    if (typeof json !== "string" || json.length !== HEX_COLOR_PREFIX.length + HEX_COLOR_DIGITS || !json.startsWith(HEX_COLOR_PREFIX)) {
-        throw fieldValueError(path, expectation, json);
-    }
+export function rgbOfHexColorText(json: unknown): number | undefined {
+    if (typeof json !== "string" || json.length !== HEX_COLOR_PREFIX.length + HEX_COLOR_DIGITS || !json.startsWith(HEX_COLOR_PREFIX)) return undefined;
     for (let i = HEX_COLOR_PREFIX.length; i < json.length; i++) {
-        if (!isHexDigit(json.charCodeAt(i))) throw fieldValueError(path, expectation, json);
+        if (!isHexDigit(json.charCodeAt(i))) return undefined;
     }
     return Number.parseInt(json.slice(HEX_COLOR_PREFIX.length), HEX_RADIX);
+}
+
+function rgbOfHexColor(json: SceneJsonValue, path: string): number {
+    const rgb = rgbOfHexColorText(json);
+    if (rgb === undefined) throw fieldValueError(path, HEX_COLOR_EXPECTATION, json);
+    return rgb;
 }
 
 function encodeNumber(value: unknown, path: string): SceneJsonValue {
@@ -211,7 +216,6 @@ function encodeAsset(field: AssetFieldType, value: unknown, context: FieldEncode
     if (value === undefined) return null;
     const type = assetTypeOf(context.fieldTypes, field.assetType, path);
     if (!type.isAsset(value)) throw fieldValueError(path, `a ${type.valueName} or undefined`, value);
-    if (type.isDerived?.(value) === true) return null;
     const assetPath = type.pathOf(value);
     if (assetPath !== undefined) return {path: assetPath};
     if (type.inline !== undefined) return type.inline.encode(value, context, path);
