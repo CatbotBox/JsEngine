@@ -57,6 +57,13 @@ export interface ScriptPhase {
     readonly ticks: number;
     readonly atStart?: (keys: ScriptedInput) => void;
     readonly eachTick?: (tick: number, keys: ScriptedInput) => void;
+    readonly yieldsToPendingWork?: boolean;
+}
+
+const NEXT_TASK_DELAY_MS = 0;
+
+export function pendingWorkSettled(): Promise<void> {
+    return new Promise(done => setTimeout(done, NEXT_TASK_DELAY_MS));
 }
 
 const NO_KEYS: readonly Key[] = [];
@@ -109,7 +116,7 @@ const SWARM_SCRIPT: readonly ScriptPhase[] = [
     {segment: "title", ticks: SWARM_TITLE_TICKS},
     tapping("title", Key.Tab, TOGGLE_TICKS),
     tapping("title", Key.Tab, TOGGLE_TICKS),
-    tapping("start", Key.Enter, SWARM_START_TICKS),
+    {...tapping("start", Key.Enter, SWARM_START_TICKS), yieldsToPendingWork: true},
     {segment: "intermission", ticks: SWARM_INTERMISSION_TICKS, eachTick: (tick, keys) => keys.hold(cycled(SWARM_MOVE_PATTERN, tick, SWARM_MOVE_STRIDE_TICKS))},
     {
         segment: "wave",

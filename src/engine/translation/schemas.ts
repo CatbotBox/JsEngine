@@ -6,6 +6,7 @@ import type {SchemaEntry} from "../scene/schemaEntries";
 import {PARENT_COMPONENT_NAME, PARENT_ENTITY_KEY} from "../scene/sceneSerialization";
 import {Children} from "./children";
 import {EulerAngles} from "./eulerAngles";
+import {InterpolatedTransform, InterpolatedTransformSnap} from "./interpolatedTransform";
 import {LocalPosition} from "./localPosition";
 import {LocalRotation} from "./localRotation";
 import {LocalScale} from "./localScale";
@@ -48,6 +49,16 @@ export const LOCAL_TO_WORLD_SCHEMA_ENTRY: SchemaEntry = {
 export const PARENT_TRANSFORM_SCHEMA_ENTRY: SchemaEntry = {
     kind: "componentSchema",
     build: () => componentSchema(ParentTransform, "ParentTransform").implied().category(ENGINE_COMPONENT_CATEGORIES.transform).build(),
+};
+
+export const INTERPOLATED_TRANSFORM_SCHEMA_ENTRY: SchemaEntry = {
+    kind: "componentSchema",
+    build: () => componentSchema(InterpolatedTransform, "InterpolatedTransform").boolean("enabled").category(ENGINE_COMPONENT_CATEGORIES.transform).build(),
+};
+
+export const INTERPOLATED_TRANSFORM_SNAP_SCHEMA_ENTRY: SchemaEntry = {
+    kind: "componentSchema",
+    build: () => componentSchema(InterpolatedTransformSnap, "InterpolatedTransformSnap").implied().category(ENGINE_COMPONENT_CATEGORIES.transform).build(),
 };
 
 export const CHILDREN_SCHEMA_ENTRY: SchemaEntry = {

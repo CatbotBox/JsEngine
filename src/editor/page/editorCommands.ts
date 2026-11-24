@@ -14,6 +14,7 @@ import {handleRotationProblem, withHandlePositionToggled, withHandleRotationTogg
 import {GAME_VIEW_OPTION_LABELS, GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import type {GameViewOption} from "./gameViewOptions";
 import type {HierarchyView} from "./hierarchyView";
+import type {InlineImageTarget} from "./imageExtraction";
 import {UNPARENT_TARGET} from "./hierarchyDrop";
 import type {LayoutPanel} from "./panelSizes";
 import {normalizeProjectPath, opensInEditor, projectFileKind, ROOT_FOLDER_PATH} from "./projectFiles";
@@ -71,6 +72,8 @@ export interface EditorCommandHost {
     openBuildWindow(): void;
 
     openPreferences(): void;
+
+    focusView(view: EditorView): void;
 }
 
 export interface DataAssetCreation {
@@ -195,6 +198,7 @@ export interface ComponentCommands {
     readonly remove: Command<ComponentTarget>;
     readonly copyValues: Command<ComponentTarget>;
     readonly pasteValues: Command<ComponentTarget>;
+    readonly extractImage: Command<InlineImageTarget>;
 }
 
 export interface EditorCommands {
@@ -237,6 +241,7 @@ export const UNSAVED_START_SCENE_REASON = "Save the scene first; the start scene
 export const PREFAB_START_SCENE_REASON = "A prefab cannot be the start scene";
 export const ALREADY_START_SCENE_REASON = "Already the start scene";
 export const LAST_TAB_REASON = "The last tab stays open";
+export const EXTRACT_ONE_ENTITY_REASON = "Select one entity; each inline image is extracted to its own file";
 
 const SAVE_WHILE_PLAYING_REASON = "The scene can only be saved while editing; stop the game first";
 const UNDO_WHILE_PLAYING_REASON = "Undo is not available while the game runs; stop it first";
@@ -246,8 +251,8 @@ const NOTHING_TO_REDO_REASON = "Nothing to redo";
 const EMPTY_CLIPBOARD_REASON = "Nothing copied yet";
 const NO_ENTITIES_REASON = "The scene has no entities";
 const NO_PARENT_REASON = "Select the parent entity first";
-const FRAME_NEEDS_SCENE_VIEW_REASON = "Frame Selected works in the Scene view outside play";
-const SCENE_VIEW_DURING_PLAY_REASON = "The Scene view is not available while the game plays; pause first";
+const FRAME_NEEDS_SCENE_VIEW_REASON = "Frame Selected works in the Scene view, which is hidden while the game view is maximized";
+const SCENE_VIEW_HIDDEN_REASON = "The Scene view is hidden while the game view is maximized";
 const NOT_RESETTABLE_REASON = "This component has required entity fields, so it has no default to reset to";
 const NO_COMPONENT_VALUES_REASON = "Nothing to copy yet";
 const NO_COPIED_VALUES_REASON = "No component values copied";
@@ -265,7 +270,7 @@ const ALREADY_LOADED_REASON = "The scene is already loaded";
 const NO_FILE_REASON = "The scene has no file to load from";
 const ALREADY_ACTIVE_REASON = "Already the active scene";
 const OPEN_IN_EDITOR_LABEL = "Open in Editor";
-const VIEW_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene View", game: "Game View"};
+const VIEW_LABELS: Readonly<Record<EditorView, string>> = {scene: "Focus Scene View", game: "Focus Game View"};
 const VIEW_ORDER: readonly EditorView[] = ["scene", "game"];
 const TOOL_LABELS: Readonly<Record<EditorTool, string>> = {hand: "Hand", move: "Move", rotate: "Rotate", scale: "Scale"};
 const TOOL_SHORTCUTS: Readonly<Record<EditorTool, string>> = {hand: "Q", move: "W", rotate: "E", scale: "R"};
@@ -530,7 +535,7 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             shortcuts: ["F"],
             disabledReason: whenOpen(({workspace}) => {
                 if (workspace.selection.length === 0) return NOTHING_SELECTED_REASON;
-                return workspace.view === "scene" && workspace.mode !== "play" ? undefined : FRAME_NEEDS_SCENE_VIEW_REASON;
+                return workspace.sceneViewShown ? undefined : FRAME_NEEDS_SCENE_VIEW_REASON;
             }),
         }),
         preferences: registry.add({id: "edit.preferences", category: EDIT_CATEGORY, label: "Preferences…", run: () => host.openPreferences()}),
@@ -663,9 +668,8 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
     };
 
     const view: ViewCommands = {
-        views: recordOf(VIEW_ORDER, shown => action(`view.${shown}`, VIEW_CATEGORY, VIEW_LABELS[shown], ({workspace}) => void workspace.setView(shown), {
-            checked: () => host.views()?.workspace.view === shown,
-            disabledReason: whenOpen(({workspace}) => shown === "scene" && workspace.mode === "play" ? SCENE_VIEW_DURING_PLAY_REASON : undefined),
+        views: recordOf(VIEW_ORDER, shown => action(`view.${shown}`, VIEW_CATEGORY, VIEW_LABELS[shown], () => host.focusView(shown), {
+            disabledReason: whenOpen(({workspace}) => shown === "scene" && !workspace.sceneViewShown ? SCENE_VIEW_HIDDEN_REASON : undefined),
         })),
         gameViewAspect: registry.addTargeted<string>({
             id: "view.gameViewAspect", category: GAME_VIEW_CATEGORY, label: "Aspect",
@@ -734,6 +738,12 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
                 return copied.typeName === target.typeName ? undefined : `The copied values are for ${copied.typeName}`;
             },
             run: target => void mounted().workspace.pasteComponentValues(target.entities, target.typeName),
+        }),
+        extractImage: registry.addTargeted<InlineImageTarget>({
+            id: "component.extractImage", category: COMPONENT_CATEGORY, label: "Extract to File…",
+            labelFor: target => `Extract ${target.key} to File…`,
+            disabledReason: target => blocked() ?? editingProblem(mounted().workspace) ?? (target.entities.length === 1 ? undefined : EXTRACT_ONE_ENTITY_REASON),
+            run: target => void mounted().workspace.extractInlineImage(target.entities[0], target.typeName, target.key),
         }),
     };
 

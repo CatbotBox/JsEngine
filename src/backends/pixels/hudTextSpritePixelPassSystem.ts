@@ -3,6 +3,7 @@ import type {RenderPassKind} from "../../engine/rendering/renderPasses";
 import {Camera} from "../../engine/rendering/camera";
 import {HudElement} from "../../engine/rendering/hudElement";
 import {ScreenSize} from "../../engine/rendering/screenSize";
+import {RenderCameraOverride} from "../../engine/rendering/renderCameraOverride";
 import {anchorFractionX, anchorFractionY, anchoredStart, ScreenAnchor} from "../../engine/rendering/screenAnchor";
 import {RenderBoundsOffset} from "../../engine/rendering/renderBoundsOffset";
 import {TextSprite} from "../../engine/rendering/textSprite";
@@ -32,7 +33,7 @@ export class HudTextSpritePixelPassSystem extends System {
     }
 
     protected onCreate() {
-        this.requireAllForUpdate(this._cameraQuery);
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride);
         this.requireAnyForUpdate(this._hudObjectQuery);
     }
 

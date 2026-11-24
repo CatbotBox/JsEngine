@@ -38,6 +38,18 @@ export interface ExportedClass {
     readonly isAbstract: boolean;
 }
 
+export type CacheableFileExtraction<T> = (sources: ProjectSources, file: string) => T;
+
+export interface ProjectProgramHost {
+    createProgram(rootNames: readonly string[], options: ts.CompilerOptions): ts.Program;
+    extractFromFile<T>(sources: ProjectSources, file: string, extraction: CacheableFileExtraction<T>): T;
+}
+
+export const ONE_SHOT_PROGRAM_HOST: ProjectProgramHost = {
+    createProgram: (rootNames, options) => ts.createProgram({rootNames, options}),
+    extractFromFile: (sources, file, extraction) => extraction(sources, file),
+};
+
 export function toPosix(path: string): string {
     return path.replace(/\\/g, "/");
 }
@@ -113,13 +125,14 @@ export class ProjectSources {
         public readonly repoRoot: string,
         public readonly files: readonly string[],
         public readonly program: ts.Program,
+        private readonly programHost: ProjectProgramHost,
     ) {
         this.checker = program.getTypeChecker();
         this.engineDirectory = join(repoRoot, ...ENGINE_SOURCE_PATH);
         this.backendsDirectory = join(repoRoot, ...BACKENDS_SOURCE_PATH);
     }
 
-    public static read(projectFolder: string, repoRoot: string): ProjectSources {
+    public static read(projectFolder: string, repoRoot: string, programHost: ProjectProgramHost = ONE_SHOT_PROGRAM_HOST): ProjectSources {
         const folder = resolve(projectFolder);
         const root = resolve(repoRoot);
         const files = discoverProjectFiles(folder);
@@ -128,13 +141,17 @@ export class ProjectSources {
             throw new CliError(`${displayPath(folder)} does not resolve ${ENGINE_IMPORT_PREFIX}${ENGINE_ROOT_ENTRY_POINT}; `
                 + `run jsengine link --project ${displayPath(folder)} to add this checkout's engine packages to its package.json and install them`);
         }
-        const program = ts.createProgram({rootNames: files, options});
+        const program = programHost.createProgram(files, options);
         const otherEngine = foreignEngineRoot(program, folder, join(root, ...ENGINE_SOURCE_PATH));
         if (otherEngine !== undefined) {
             throw new CliError(`${displayPath(folder)} imports the engine of ${displayPath(otherEngine)}, but this jsengine runs from ${displayPath(root)}; `
                 + `run that checkout's jsengine, or jsengine link --project ${displayPath(folder)} to use this one`);
         }
-        return new ProjectSources(folder, root, files, program);
+        return new ProjectSources(folder, root, files, program, programHost);
+    }
+
+    public extractFromFile<T>(file: string, extraction: CacheableFileExtraction<T>): T {
+        return this.programHost.extractFromFile(this, file, extraction);
     }
 
     public get manifest(): ProjectManifest | undefined {

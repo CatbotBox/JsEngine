@@ -15,8 +15,9 @@ import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_
 import type {SceneDocument, SceneFieldValues} from "./sceneDocument";
 import {applySceneInPlace, deserializeInto, sceneEntitiesInCreationOrder, serializeWorld} from "./sceneSerialization";
 import {SceneInstance, withoutSceneMembership} from "./sceneInstance";
-import {SceneManager} from "./sceneManager";
+import {SceneLoadCancelledError, SceneManager} from "./sceneManager";
 import {PrefabSpawner} from "./prefabSpawner";
+import {SceneLoader} from "./sceneLoader";
 import type {LoadedScene, ScenePreload} from "./sceneManager";
 
 const FIRST_PATH = "scenes/first.scene.json";
@@ -28,6 +29,9 @@ const FOREIGN_SCENE_ID = 99;
 const FOREIGN_PATH = "scenes/elsewhere.scene.json";
 const RED_PIXEL_RGBA = new Uint8Array([255, 0, 0, 255]);
 const ORIGIN = [0, 0, 0];
+const NEXT_TASK_DELAY_MS = 0;
+const SECOND_LOAD_FILE_PRELOAD = 1;
+const PRELOADS_BEFORE_CANCEL = 3;
 
 interface PlannedEntity {
     readonly name: string;
@@ -107,6 +111,20 @@ function consoleErrorsDuring(action: () => void): string[] {
         consoleOverride.addConsoleEventListener(originalConsole);
     }
     return errors;
+}
+
+function nextTask(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, NEXT_TASK_DELAY_MS));
+}
+
+async function cancellationOf(promise: Promise<unknown>): Promise<SceneLoadCancelledError> {
+    try {
+        await promise;
+    } catch (error) {
+        if (error instanceof SceneLoadCancelledError) return error;
+        throw error;
+    }
+    throw new Error("expected the load to be cancelled");
 }
 
 async function rejectionOf(promise: Promise<unknown>): Promise<string> {
@@ -217,6 +235,38 @@ describe("SceneManager loading", () => {
         expect(handle.path).toBe(FIRST_PATH);
         expect(scenes.active()).toBe(handle);
         expect(scenes.sceneOf(entityNamed(world, "dot"))).toBe(handle);
+    });
+
+    test("cancelPendingLoads stops loads still preloading their file or their assets: they reject as cancelled, leave the world alone, and later loads apply", async () => {
+        const releases: (() => void)[] = [];
+        let holdingPreloads = true;
+        const dotScene = documentOf({name: "dot", components: {Sprite: {image: {path: SPRITE_PATH}}}});
+        const {world, scenes} = setup(
+            {[FIRST_PATH]: JSON.stringify(familyOf("first")), [SECOND_PATH]: JSON.stringify(dotScene)},
+            () => holdingPreloads ? new Promise<void>(release => releases.push(release)) : Promise.resolve(),
+        );
+        const kept = scenes.loadDocument(familyOf("kept"), {path: THIRD_PATH});
+        const waitingForItsFile = scenes.load(FIRST_PATH);
+        const waitingForItsAssets = scenes.load(SECOND_PATH);
+        releases[SECOND_LOAD_FILE_PRELOAD]();
+        await nextTask();
+        expect(releases.length).toBe(PRELOADS_BEFORE_CANCEL);
+
+        scenes.cancelPendingLoads();
+        holdingPreloads = false;
+        for (const release of releases) release();
+        const cancelled = [await cancellationOf(waitingForItsFile), await cancellationOf(waitingForItsAssets)];
+        expect(cancelled.map(error => [error.path, error.message])).toEqual([
+            [FIRST_PATH, `Loading the scene ${FIRST_PATH} was cancelled: cancelPendingLoads ran before it finished`],
+            [SECOND_PATH, `Loading the scene ${SECOND_PATH} was cancelled: cancelPendingLoads ran before it finished`],
+        ]);
+        expect(namesIn(world)).toEqual(["keptRoot", "keptChild", "keptGrandchild"]);
+        expect(scenes.loaded()).toEqual([kept.handle]);
+        expect(scenes.active()).toBe(kept.handle);
+
+        const later = await scenes.load(SECOND_PATH);
+        expect(scenes.active()).toBe(later);
+        expect(namesIn(world)).toEqual(["dot"]);
     });
 
     test("the manager needs the engine schemas so membership is saved with the world", () => {
@@ -404,5 +454,22 @@ describe("SceneManager activation and archetypes", () => {
     test("creating a SceneManager gives the world a PrefabSpawner", () => {
         const {world} = setup();
         expect(world.resources.tryGet(PrefabSpawner)).toBeInstanceOf(PrefabSpawner);
+    });
+
+    test("creating a SceneManager gives the world a SceneLoader that loads scenes through that manager", async () => {
+        const {world, scenes} = setup({[FIRST_PATH]: JSON.stringify(familyOf("first")), [SECOND_PATH]: JSON.stringify(familyOf("second"))});
+        const loader = world.resources.get(SceneLoader);
+        await scenes.load(FIRST_PATH);
+
+        const handle = await loader.load(SECOND_PATH);
+        expect(handle.path).toBe(SECOND_PATH);
+        expect(scenes.active()).toBe(handle);
+        expect(loader.active()).toBe(handle);
+        expect(namesIn(world)).toEqual(["secondRoot", "secondChild", "secondGrandchild"]);
+    });
+
+    test("a SceneLoader cannot be created without a SceneManager", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        expect(() => world.resources.getOrCreate(SceneLoader)).toThrow("cannot be created on its own");
     });
 });

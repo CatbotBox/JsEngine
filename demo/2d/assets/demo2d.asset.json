@@ -19,7 +19,10 @@
       "fpsDecimals": 2,
       "entitiesFormat": "Entities: {entities}",
       "entitiesDecimals": 2,
-      "fadeSystemInactiveText": "Fade System Not Active"
+      "fadeSystemInactiveText": "Fade System Not Active",
+      "presentationWindowMs": 500,
+      "presentationFormat": "GPU: {submits} submits/s  overlay upload: {upload} KB/frame",
+      "presentationDecimals": 1
     }
   }
 }

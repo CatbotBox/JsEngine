@@ -201,6 +201,7 @@ export class ProjectView {
                 if (normalized === PROJECT_MANIFEST_FILE) void this.workspace.scenes.manifestChanged();
             }
             void this.workspace.reloadDataAssets(change.paths);
+            void this.workspace.reloadPrefabs(change.paths);
         });
         void this.reload();
     }

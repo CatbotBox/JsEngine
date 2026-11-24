@@ -1,5 +1,5 @@
 import {existsSync} from "fs";
-import {join} from "path";
+import {join, resolve} from "path";
 import type {RenderBackendKind} from "../engine/rendering/renderBackend";
 import {SAMPLE_PROJECTS} from "../editor/project/sampleProjects";
 import {BACKEND_QUERY_PARAMETER, PIXEL_SCALE_QUERY_PARAMETER} from "../hosts/web/worldWorkerProtocol";
@@ -17,6 +17,10 @@ export function sampleProjectPaths(): string[] {
 
 export function sampleProjectFolders(): string[] {
     return sampleProjectPaths().map(path => join(REPO_ROOT, ...path.split(SAMPLE_PATH_SEPARATOR)));
+}
+
+export function siteProjectFolders(project: string | undefined): string[] {
+    return project === undefined ? sampleProjectFolders() : [resolve(project)];
 }
 
 function projectSiteFolder(projectFolder: string): string {

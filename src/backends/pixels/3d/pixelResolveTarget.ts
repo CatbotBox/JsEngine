@@ -23,6 +23,7 @@ export class PixelResolveTarget implements RasterTarget {
         const framebufferWidthPx = framebuffer.widthPx, framebufferHeightPx = framebuffer.heightPx;
         const pixels = framebuffer.pixels, depths = framebuffer.depth;
         const blockPx = this.framebufferPixelsPerRasterPixel;
+        framebuffer.markAllDrawn();
 
         for (let rasterY = 0; rasterY < height; rasterY++) {
             const top = rasterY * blockPx;

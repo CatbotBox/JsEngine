@@ -134,6 +134,7 @@
         "Triangles: {drawn} drawn / {source} source{lodLevels}"
       ],
       "rasterWorkersLine": "Raster workers: {rasterWorkers}",
+      "presentationLine": "GPU: {submits} submits/s  overlay upload: {upload} KB/frame",
       "lodLevelsFormat": "  LOD levels: {levels}",
       "lodLevelsShown": 5,
       "lodLevelSeparator": "/",

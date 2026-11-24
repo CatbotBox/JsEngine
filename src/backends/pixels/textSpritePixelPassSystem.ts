@@ -4,6 +4,7 @@ import {Camera} from "../../engine/rendering/camera";
 import {HudElement} from "../../engine/rendering/hudElement";
 import {LocalToWorld} from "../../engine/translation";
 import {ScreenSize} from "../../engine/rendering/screenSize";
+import {RenderCameraOverride, renderCameraComponents} from "../../engine/rendering/renderCameraOverride";
 import {TextSprite} from "../../engine/rendering/textSprite";
 import {TextSpriteBoundsSystem} from "../../engine/rendering/textSpriteBoundsSystem";
 import {WorldSpaceRenderBounds} from "../../engine/rendering/worldSpaceRenderBounds";
@@ -14,6 +15,7 @@ import {PixelFramebuffer} from "./pixelFramebuffer";
 import {PixelRenderSystemGroup} from "./pixelRenderSystemGroup";
 import {PixelTextRasterizer} from "./pixelTextRasterizer";
 
+const CAMERA_SPEC = {camera: Camera, screenSize: ScreenSize, localToWorld: LocalToWorld};
 const CAMERA_DEPTH_EXTENT = 1000;
 const CENTER_FRACTION = 0.5;
 
@@ -38,7 +40,7 @@ export class TextSpritePixelPassSystem extends System {
     }
 
     protected onCreate() {
-        this.requireAllForUpdate(this._cameraQuery);
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride);
         this.requireAnyForUpdate(this._objectQuery);
 
         this.world.ensureSystemExists(TextSpriteBoundsSystem);
@@ -48,11 +50,8 @@ export class TextSpritePixelPassSystem extends System {
         const framebuffer = this.world.resources.tryGet(PixelFramebuffer);
         if (!framebuffer) return;
 
-        const cameraEntity = this._cameraQuery.getSingleton({
-            camera: Camera,
-            screenSize: ScreenSize,
-            localToWorld: LocalToWorld,
-        });
+        const cameraEntity = renderCameraComponents(this.world, this._cameraQuery, CAMERA_SPEC);
+        if (cameraEntity === undefined) return;
 
         const position = cameraEntity.localToWorld.position;
         const screenSize = cameraEntity.screenSize;

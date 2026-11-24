@@ -41,6 +41,7 @@ export class Demo3dHudTuning {
     public pacingWithCpuLimitFormat = "";
     public statsLines: TextLines = [];
     public rasterWorkersLine = "";
+    public presentationLine = "";
     public lodLevelsFormat = "";
     public lodLevelsShown: Int = 0;
     public lodLevelSeparator = "";

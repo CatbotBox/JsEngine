@@ -5,6 +5,7 @@ export {LocalRotation} from "./localRotation"
 export {LocalScale} from "./localScale"
 export {Children} from "./children"
 export {EulerAngles} from "./eulerAngles"
+export {InterpolatedTransform, InterpolatedTransformSnap} from "./interpolatedTransform"
 
 export {TranslationSystemGroup} from "./translationSystemGroup"
 export {LocalToWorldSystem} from "./localToWorldSystem"
@@ -16,6 +17,8 @@ export {turnEulerAngles} from "./turnEulerAngles"
 export {
     CHILDREN_SCHEMA_ENTRY,
     EULER_ANGLES_SCHEMA_ENTRY,
+    INTERPOLATED_TRANSFORM_SCHEMA_ENTRY,
+    INTERPOLATED_TRANSFORM_SNAP_SCHEMA_ENTRY,
     LOCAL_POSITION_SCHEMA_ENTRY,
     LOCAL_ROTATION_SCHEMA_ENTRY,
     LOCAL_SCALE_SCHEMA_ENTRY,

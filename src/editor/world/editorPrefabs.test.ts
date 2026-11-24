@@ -3,13 +3,16 @@ import type {Entity, World} from "../../engine/core";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Parent} from "../../engine/translation/parent";
-import {parseSceneDocument} from "../../engine/scene";
-import type {SceneDocument} from "../../engine/scene";
+import type {MemoryFileSource} from "../../engine/testing/memoryPlatform";
+import {DataAssets, FIRST_SCENE_ENTITY_ID, parseSceneDocument, PrefabSpawner, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene";
+import type {PrefabAsset, SceneDocument} from "../../engine/scene";
 import {ask, byName, childrenOf, disposeEditorWorlds, editorWorld, failureOf, fieldsOf} from "./editorServiceTestHarness";
 import type {Harnessed} from "./editorServiceTestHarness";
 import {linkChild} from "./hierarchyEditing";
 
 const ENEMY_PREFAB = "prefabs/enemy.prefab.json";
+const BOLT_PREFAB = "prefabs/bolt.prefab.json";
+const UNLOADED_PREFAB = "prefabs/unloaded.prefab.json";
 
 afterEach(disposeEditorWorlds);
 
@@ -35,6 +38,44 @@ function editedPrefab(text: string, edit: (document: SceneDocument) => void): st
     const document = parseSceneDocument(text);
     edit(document);
     return JSON.stringify(document);
+}
+
+interface BoltRoot {
+    readonly name: string;
+    readonly x: number;
+}
+
+interface BoltGame {
+    readonly harnessed: Harnessed;
+    readonly files: MemoryFileSource;
+    readonly prefab: PrefabAsset;
+    readonly refetched: string[][];
+}
+
+function boltText(...roots: readonly BoltRoot[]): string {
+    return JSON.stringify({
+        format: SCENE_DOCUMENT_FORMAT,
+        version: SCENE_DOCUMENT_VERSION,
+        entities: roots.map((root, index) => ({id: index + FIRST_SCENE_ENTITY_ID, name: root.name, enabled: true, components: {LocalPosition: {xyz: [root.x, 0, 0]}}})),
+    });
+}
+
+function boltGame(): BoltGame {
+    const refetched: string[][] = [];
+    const harnessed = editorWorld(undefined, {
+        files: {[BOLT_PREFAB]: boltText({name: "Bolt", x: 1})},
+        refetchFiles: async paths => {
+            refetched.push([...paths]);
+        },
+    });
+    const prefab = harnessed.world.resources.get(DataAssets).assets.loadPrefab(BOLT_PREFAB);
+    return {harnessed, files: harnessed.world.platform.files as MemoryFileSource, prefab, refetched};
+}
+
+function spawnBolt(game: BoltGame): [string | undefined, number] {
+    const world = game.harnessed.world;
+    const root = world.resources.get(PrefabSpawner).spawn(world.entityManager, game.prefab).root;
+    return [nameOf(game.harnessed, root), world.entityManager.getComponent<LocalPosition>(root, LocalPosition)!.x];
 }
 
 describe("editor prefabs", () => {
@@ -111,6 +152,30 @@ describe("editor prefabs", () => {
         await ask(harnessed, {op: "updatePrefabInstances", sourcePath: ENEMY_PREFAB, documentText: withoutScope});
         expect(childrenOf(harnessed.world, second).map(child => nameOf(harnessed, child))).toEqual(["Rifle"]);
         expect((await ask(harnessed, {op: "listEntities"})).entities.filter(entity => entity.name === "Scope")).toEqual([]);
+    });
+
+    test("reloadPrefab refetches a prefab the game loaded, so its next spawn in play and after Stop uses the file's new content", async () => {
+        const game = boltGame();
+        await ask(game.harnessed, {op: "setMode", mode: "play"});
+        expect(spawnBolt(game)).toEqual(["Bolt", 1]);
+
+        game.files.set(BOLT_PREFAB, boltText({name: "Heavy Bolt", x: 4}));
+        expect(await ask(game.harnessed, {op: "reloadPrefab", path: `./${BOLT_PREFAB}`})).toEqual({reloaded: true});
+        expect(game.refetched).toEqual([[`./${BOLT_PREFAB}`]]);
+        expect(spawnBolt(game)).toEqual(["Heavy Bolt", 4]);
+        await ask(game.harnessed, {op: "setMode", mode: "edit"});
+        expect(spawnBolt(game)).toEqual(["Heavy Bolt", 4]);
+    });
+
+    test("reloadPrefab ignores a prefab nothing loaded, and a file that can no longer spawn fails, naming the problem, and keeps the loaded prefab", async () => {
+        const game = boltGame();
+        expect(await ask(game.harnessed, {op: "reloadPrefab", path: UNLOADED_PREFAB})).toEqual({reloaded: false});
+        expect(game.refetched).toEqual([]);
+
+        game.files.set(BOLT_PREFAB, boltText({name: "Bolt", x: 1}, {name: "Stray", x: 2}));
+        expect(await failureOf(ask(game.harnessed, {op: "reloadPrefab", path: BOLT_PREFAB})))
+            .toBe(`Editor request "reloadPrefab" failed: Prefab "${BOLT_PREFAB}" needs exactly one root entity; it has 2`);
+        expect(spawnBolt(game)).toEqual(["Bolt", 1]);
     });
 
     test("prefab requests refuse what is not an instance, a document with several roots and an unloaded prefab", async () => {

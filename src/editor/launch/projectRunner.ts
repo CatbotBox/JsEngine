@@ -9,10 +9,9 @@ import {sameGameTarget} from "../project/editorSettings";
 import type {GameTarget} from "../project/editorSettings";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {BundleStackMapper} from "../page/stackMapper";
-import type {EditorViewport} from "./editorViewport";
 import {gameTargetLabelText} from "./gameTargets";
 import {ProjectWorkerSession} from "./projectWorkerSession";
-import type {SessionVisibility} from "./projectWorkerSession";
+import type {EditorViewports, SessionVisibility} from "./projectWorkerSession";
 
 export const RELOAD_WORKER_START_TIMEOUT_MS = 120_000;
 
@@ -28,8 +27,8 @@ export interface WorkerBuild {
 
 export interface ProjectRunnerOptions {
     readonly shell: EditorShell;
-    readonly viewport: EditorViewport;
-    readonly createHiddenViewport: (gameTarget: GameTarget) => EditorViewport;
+    readonly viewports: EditorViewports;
+    readonly createHiddenViewports: (gameTarget: GameTarget) => EditorViewports;
     readonly onTargetChanged: (gameTarget: GameTarget) => void;
     readonly files: ProjectFileSystem;
     readonly project: EditorProject;
@@ -40,6 +39,7 @@ export interface ProjectRunnerOptions {
 
 const VISIBLE: SessionVisibility = {visible: true};
 const HIDDEN: SessionVisibility = {visible: false};
+const SCENE_VIEW_SHOWN_AT_START = true;
 const RELOADED_SUMMARY = "Reloaded the game code";
 
 function describeError(error: unknown): string {
@@ -75,6 +75,11 @@ export function reloadNotices(report: SceneLoadReport, entityCount: number, summ
     return notices;
 }
 
+function disposeViewports(viewports: EditorViewports): void {
+    viewports.scene.dispose();
+    viewports.game.dispose();
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, what: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`${what} did not finish within ${timeoutMs} ms`)), timeoutMs);
@@ -95,30 +100,36 @@ export class ProjectRunner {
 
     private readonly stackMapper = new BundleStackMapper(location.href);
     private current: ProjectWorkerSession | undefined;
-    private viewport: EditorViewport;
+    private viewports: EditorViewports;
+    private sceneViewShown = SCENE_VIEW_SHOWN_AT_START;
     private mounted = false;
     private reloading = false;
     private queuedBuild: WorkerBuild | undefined;
     private stopped = false;
 
     public constructor(private readonly options: ProjectRunnerOptions) {
-        this.viewport = options.viewport;
+        this.viewports = options.viewports;
     }
 
     public get gameTarget(): GameTarget {
-        return this.viewport.gameTarget;
+        return this.viewports.game.gameTarget;
     }
 
     public cellArea(): CellArea {
-        return this.viewport.cellArea();
+        return this.viewports.game.cellArea();
     }
 
     public showError(text: string): void {
-        this.viewport.showError(text);
+        this.viewports.game.showError(text);
+    }
+
+    public setSceneViewShown(shown: boolean): void {
+        this.sceneViewShown = shown;
+        this.current?.setSceneViewShown(shown);
     }
 
     public async start(workerUrl: string): Promise<void> {
-        const session = await this.startSession(workerUrl, this.viewport, VISIBLE);
+        const session = await this.startSession(workerUrl, this.viewports, VISIBLE);
         this.current = session;
         await this.options.shell.mount(this.editorSession(session));
         this.mounted = true;
@@ -139,11 +150,11 @@ export class ProjectRunner {
         this.current?.exit();
     }
 
-    private startSession(workerUrl: string, viewport: EditorViewport, visibility: SessionVisibility): Promise<ProjectWorkerSession> {
+    private async startSession(workerUrl: string, viewports: EditorViewports, visibility: SessionVisibility): Promise<ProjectWorkerSession> {
         this.stackMapper.addBundle(workerUrl);
-        return ProjectWorkerSession.start({
+        const session = await ProjectWorkerSession.start({
             workerUrl,
-            viewport,
+            viewports,
             files: this.options.files,
             name: this.options.project.name,
             search: this.options.search,
@@ -153,6 +164,8 @@ export class ProjectRunner {
                 this.options.onStopped();
             },
         });
+        session.setSceneViewShown(this.sceneViewShown);
+        return session;
     }
 
     private editorSession(session: ProjectWorkerSession): EditorSession {
@@ -167,14 +180,14 @@ export class ProjectRunner {
         const previous = this.current;
         if (previous === undefined) return;
         this.reloading = true;
-        const previousViewport = this.viewport;
-        const switching = !sameGameTarget(build.gameTarget, previousViewport.gameTarget);
-        const viewport = switching ? this.options.createHiddenViewport(build.gameTarget) : previousViewport;
+        const previousViewports = this.viewports;
+        const switching = !sameGameTarget(build.gameTarget, previousViewports.game.gameTarget);
+        const viewports = switching ? this.options.createHiddenViewports(build.gameTarget) : previousViewports;
         let next: ProjectWorkerSession | undefined;
         try {
             this.notice("info", switching ? `Switching to ${gameTargetLabelText(build.gameTarget)}...` : "Reloading the game code...");
             const exported = await previous.client.request({op: "exportSnapshot"});
-            next = await withTimeout(this.startSession(build.workerUrl, viewport, HIDDEN), RELOAD_WORKER_START_TIMEOUT_MS, "The rebuilt game");
+            next = await withTimeout(this.startSession(build.workerUrl, viewports, HIDDEN), RELOAD_WORKER_START_TIMEOUT_MS, "The rebuilt game");
             const imported = await next.client.request({
                 op: "importSnapshot",
                 documentText: exported.documentText,
@@ -190,15 +203,15 @@ export class ProjectRunner {
             this.current = next;
             previous.dispose();
             if (switching) {
-                this.viewport = viewport;
-                previousViewport.dispose();
-                this.options.onTargetChanged(viewport.gameTarget);
+                this.viewports = viewports;
+                disposeViewports(previousViewports);
+                this.options.onTargetChanged(viewports.game.gameTarget);
             }
-            const summary = switching ? switchedTargetSummary(viewport.gameTarget) : RELOADED_SUMMARY;
+            const summary = switching ? switchedTargetSummary(viewports.game.gameTarget) : RELOADED_SUMMARY;
             for (const notice of reloadNotices(imported.report, imported.entities.length, summary)) this.notice(notice.level, notice.text);
         } catch (error) {
             if (next !== undefined && this.current !== next) next.dispose();
-            if (viewport !== this.viewport) viewport.dispose();
+            if (viewports !== this.viewports) disposeViewports(viewports);
             const failure = switching ? `Switching to ${gameTargetLabelText(build.gameTarget)} failed` : "Hot reload failed";
             this.notice("error", `${failure}, the previous game code keeps running: ${describeError(error)}`, errorFramesOf(error));
         } finally {

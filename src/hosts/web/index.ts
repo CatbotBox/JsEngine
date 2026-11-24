@@ -30,6 +30,7 @@ export type {
     PixelFrameMessage,
     PixelSurfaceSize,
     PresentedMessage,
+    ReloadDataAssetsMessage,
     ResizeMessage,
     ScreenUnitMessage,
     StatusMessage,

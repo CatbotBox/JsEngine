@@ -5,6 +5,7 @@ import {CellGrid} from "../cellGrid";
 import {HudElement} from "../../../engine/rendering/hudElement";
 import {LocalToWorld} from "../../../engine/translation";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
+import {RenderCameraOverride, renderCameraComponents} from "../../../engine/rendering/renderCameraOverride";
 import {TextSprite} from "../../../engine/rendering/textSprite";
 import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {TextSpriteBoundsSystem} from "../../../engine/rendering/textSpriteBoundsSystem";
@@ -13,6 +14,7 @@ import {Vec} from "../../../engine/math/types/vec";
 import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../../../engine/datatypes/aabb";
 import {MAT4_FLOATS_SHIFT, MAT4_TRANSLATION_Z} from "../../../engine/math/mat4Layout";
 
+const CAMERA_SPEC = {camera: Camera, screenSize: ScreenSize, localToWorld: LocalToWorld};
 const CAMERA_DEPTH_EXTENT = 1000;
 
 export class TextSpriteCellPassSystem extends System {
@@ -34,7 +36,7 @@ export class TextSpriteCellPassSystem extends System {
     }
 
     protected onCreate() {
-        this.requireAllForUpdate(this._cameraQuery)
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride)
         this.requireAnyForUpdate(this._objectQuery)
 
         this.world.ensureSystemExists(TextSpriteBoundsSystem)
@@ -45,11 +47,8 @@ export class TextSpriteCellPassSystem extends System {
         if (!dualScreenBuffer) return;
         const screenBuffer = dualScreenBuffer.screenBuffer;
 
-        const cameraEntity = this._cameraQuery.getSingleton({
-            camera: Camera,
-            screenSize: ScreenSize,
-            localToWorld: LocalToWorld,
-        });
+        const cameraEntity = renderCameraComponents(this.world, this._cameraQuery, CAMERA_SPEC);
+        if (cameraEntity === undefined) return;
 
         const position = cameraEntity.localToWorld.position;
         const screenSize = cameraEntity.screenSize;

@@ -2,8 +2,33 @@
 import type {F32Backed} from "../core/componentType";
 import {asFloat32Array, fromFloat32Array, ReadonlyVec, ReadonlyVec16, ReadonlyVec3, ReadonlyVec4, Vec, Vec16, Vec3, Vec4} from "../math/types/vec";
 import {MAT4_ELEMENT, MAT4_FLOATS, MAT4_TRANSLATION_X, MAT4_TRANSLATION_Y, MAT4_TRANSLATION_Z} from "../math/mat4Layout";
+import {
+    TRS_FLOATS,
+    TRS_POSITION_X,
+    TRS_POSITION_Y,
+    TRS_POSITION_Z,
+    TRS_ROTATION_W,
+    TRS_ROTATION_X,
+    TRS_ROTATION_Y,
+    TRS_ROTATION_Z,
+    TRS_SCALE_X,
+    TRS_SCALE_Y,
+    TRS_SCALE_Z,
+} from "../math/trsLayout";
 
 const raw = (v: ReadonlyVec<number>): Float32Array => asFloat32Array(v);
+
+const MATRIX_START = 0;
+const TRS_START = 0;
+const QUATERNION_X = 0;
+const QUATERNION_Y = 1;
+const QUATERNION_Z = 2;
+const QUATERNION_W = 3;
+const IDENTITY_QUATERNION_X = 0;
+const IDENTITY_QUATERNION_Y = 0;
+const IDENTITY_QUATERNION_Z = 0;
+const IDENTITY_QUATERNION_W = 1;
+const decomposedScratch = new Float32Array(TRS_FLOATS);
 
 const IDENTITY_DIAGONAL_VALUE = 1;
 const IDENTITY_DIAGONAL: readonly number[] = [MAT4_ELEMENT.m00, MAT4_ELEMENT.m11, MAT4_ELEMENT.m22, MAT4_ELEMENT.m33];
@@ -44,21 +69,9 @@ export class LocalToWorld extends Component implements F32Backed {
     }
 
     public decomposeScaleInto(out: Vec3): Vec3 {
-        const m = raw(this._matrix);
-        const sx = Math.hypot(...m.subarray(MAT4_ELEMENT.m00, MAT4_ELEMENT.m30));
-        const sy = Math.hypot(...m.subarray(MAT4_ELEMENT.m01, MAT4_ELEMENT.m31));
-        const sz = Math.hypot(...m.subarray(MAT4_ELEMENT.m02, MAT4_ELEMENT.m32));
-
-        const nx0 = sx > 0 ? m[0] / sx : 0, ny0 = sx > 0 ? m[1] / sx : 0, nz0 = sx > 0 ? m[2] / sx : 0;
-        const nx1 = sy > 0 ? m[4] / sy : 0, ny1 = sy > 0 ? m[5] / sy : 0, nz1 = sy > 0 ? m[6] / sy : 0;
-        const nx2 = sz > 0 ? m[8] / sz : 0, ny2 = sz > 0 ? m[9] / sz : 0, nz2 = sz > 0 ? m[10] / sz : 0;
-
-        const cx = ny0 * nz1 - nz0 * ny1;
-        const cy = nz0 * nx1 - nx0 * nz1;
-        const cz = nx0 * ny1 - ny0 * nx1;
-        const basisDeterminant = cx * nx2 + cy * ny2 + cz * nz2;
-
-        return Vec.set3(out, basisDeterminant < 0 ? -sx : sx, sy, sz);
+        const trs = decomposedScratch;
+        LocalToWorld.decomposeAt(raw(this._matrix), MATRIX_START, trs, TRS_START);
+        return Vec.set3(out, trs[TRS_SCALE_X], trs[TRS_SCALE_Y], trs[TRS_SCALE_Z]);
     }
 
     public set scale(s: ReadonlyVec3) {
@@ -72,27 +85,49 @@ export class LocalToWorld extends Component implements F32Backed {
     }
 
     public rotationInto(out: Vec4): Vec4 {
-        const m = raw(this._matrix);
+        const trs = decomposedScratch;
+        LocalToWorld.decomposeAt(raw(this._matrix), MATRIX_START, trs, TRS_START);
+        const o = raw(out);
+        o[QUATERNION_X] = trs[TRS_ROTATION_X];
+        o[QUATERNION_Y] = trs[TRS_ROTATION_Y];
+        o[QUATERNION_Z] = trs[TRS_ROTATION_Z];
+        o[QUATERNION_W] = trs[TRS_ROTATION_W];
+        return out;
+    }
 
-        let sx = Math.hypot(m[0], m[1], m[2]);
-        let sy = Math.hypot(m[4], m[5], m[6]);
-        let sz = Math.hypot(m[8], m[9], m[10]);
+    public static decomposeAt(m: Float32Array, off: number, out: Float32Array, outOff: number): void {
+        const sx = Math.hypot(m[off + MAT4_ELEMENT.m00], m[off + MAT4_ELEMENT.m10], m[off + MAT4_ELEMENT.m20]);
+        const sy = Math.hypot(m[off + MAT4_ELEMENT.m01], m[off + MAT4_ELEMENT.m11], m[off + MAT4_ELEMENT.m21]);
+        const sz = Math.hypot(m[off + MAT4_ELEMENT.m02], m[off + MAT4_ELEMENT.m12], m[off + MAT4_ELEMENT.m22]);
+        out[outOff + TRS_POSITION_X] = m[off + MAT4_TRANSLATION_X];
+        out[outOff + TRS_POSITION_Y] = m[off + MAT4_TRANSLATION_Y];
+        out[outOff + TRS_POSITION_Z] = m[off + MAT4_TRANSLATION_Z];
+        out[outOff + TRS_SCALE_Y] = sy;
+        out[outOff + TRS_SCALE_Z] = sz;
 
-        if (sx === 0 || sy === 0 || sz === 0) return Vec.copy(out, [0, 0, 0, 1]);
+        if (sx === 0 || sy === 0 || sz === 0) {
+            out[outOff + TRS_SCALE_X] = sx;
+            out[outOff + TRS_ROTATION_X] = IDENTITY_QUATERNION_X;
+            out[outOff + TRS_ROTATION_Y] = IDENTITY_QUATERNION_Y;
+            out[outOff + TRS_ROTATION_Z] = IDENTITY_QUATERNION_Z;
+            out[outOff + TRS_ROTATION_W] = IDENTITY_QUATERNION_W;
+            return;
+        }
 
-        let r00 = m[0] / sx, r10 = m[1] / sx, r20 = m[2] / sx;
-        let r01 = m[4] / sy, r11 = m[5] / sy, r21 = m[6] / sy;
-        let r02 = m[8] / sz, r12 = m[9] / sz, r22 = m[10] / sz;
+        let r00 = m[off + MAT4_ELEMENT.m00] / sx, r10 = m[off + MAT4_ELEMENT.m10] / sx, r20 = m[off + MAT4_ELEMENT.m20] / sx;
+        const r01 = m[off + MAT4_ELEMENT.m01] / sy, r11 = m[off + MAT4_ELEMENT.m11] / sy, r21 = m[off + MAT4_ELEMENT.m21] / sy;
+        const r02 = m[off + MAT4_ELEMENT.m02] / sz, r12 = m[off + MAT4_ELEMENT.m12] / sz, r22 = m[off + MAT4_ELEMENT.m22] / sz;
 
         const cx = r10 * r21 - r20 * r11;
         const cy = r20 * r01 - r00 * r21;
         const cz = r00 * r11 - r10 * r01;
-        const basisDeterminant = cx * r02 + cy * r12 + cz * r22;
-        if (basisDeterminant < 0) {
+        const mirrored = cx * r02 + cy * r12 + cz * r22 < 0;
+        if (mirrored) {
             r00 = -r00;
             r10 = -r10;
             r20 = -r20;
         }
+        out[outOff + TRS_SCALE_X] = mirrored ? -sx : sx;
 
         const trace = r00 + r11 + r22;
         let x: number, y: number, z: number, w: number;
@@ -122,12 +157,10 @@ export class LocalToWorld extends Component implements F32Backed {
             z = 0.25 * fourZ;
         }
         const n = Math.hypot(x, y, z, w) || 1;
-        const o = raw(out);
-        o[0] = x / n;
-        o[1] = y / n;
-        o[2] = z / n;
-        o[3] = w / n;
-        return out;
+        out[outOff + TRS_ROTATION_X] = x / n;
+        out[outOff + TRS_ROTATION_Y] = y / n;
+        out[outOff + TRS_ROTATION_Z] = z / n;
+        out[outOff + TRS_ROTATION_W] = w / n;
     }
 
     public set rotation(q: ReadonlyVec4) {

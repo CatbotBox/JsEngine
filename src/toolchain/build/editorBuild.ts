@@ -7,8 +7,9 @@ import {EDITOR_EXTENSIONS_BUNDLE_FILE} from "../../editor/project/editorExtensio
 import type {ProjectWorkerBuildReport} from "../../editor/desktop";
 import {CliError} from "../cliArguments";
 import {PROJECT_GENERATED_FILES, writeGeneratedFiles} from "../generate/generatedFiles";
+import type {ProjectGeneration} from "../generate/generatedFiles";
 import {DEFAULT_ENTRY_FILE, editorWorkerMainFile, ENGINE_IMPORT_PREFIX, GENERATED_FOLDER, START_PROJECT_EXPORT} from "../projectLayout";
-import {readProjectManifest} from "../project";
+import {projectFolderOf, readProjectManifest} from "../project";
 import {closestPublicEntryPoints, isPublicEntryPoint} from "../publicEntryPoints";
 import {EDITOR_PROJECTS_DIST, REPO_ROOT, slashed} from "../repoPaths";
 import {featureDefines} from "../targets";
@@ -159,7 +160,7 @@ export function describeBuildErrors(errors: readonly EditorBuildError[], paths: 
     return described.length > 0 ? described : ["bun build failed without reporting an error"];
 }
 
-export async function buildEditorWorker(projectFolder: string, simulation: EditorSimulation): Promise<ProjectWorkerBuildReport> {
+export async function buildEditorWorker(projectFolder: string, simulation: EditorSimulation, generate: ProjectGeneration = writeGeneratedFiles): Promise<ProjectWorkerBuildReport> {
     const folder = resolve(projectFolder);
     const generatedFiles = PROJECT_GENERATED_FILES;
     let manifest: ProjectManifest;
@@ -175,7 +176,7 @@ export async function buildEditorWorker(projectFolder: string, simulation: Edito
     const bundlePath = join(directory, editorWorkerBundleFile(simulation));
     let warnings: readonly string[];
     try {
-        warnings = writeGeneratedFiles(folder).warnings;
+        warnings = generate(folder).warnings;
     } catch (error) {
         return {ok: false, errors: [`Could not generate the files in ${GENERATED_FOLDER}/: ${describeError(error)}`], generatedFiles};
     }
@@ -192,4 +193,12 @@ export async function buildEditorWorker(projectFolder: string, simulation: Edito
         warnings: extensions.warning === undefined ? warnings : [...warnings, extensions.warning],
         generatedFiles,
     };
+}
+
+export async function editorWorkerReport(projectOption: string | undefined, simulation: EditorSimulation, generate: ProjectGeneration = writeGeneratedFiles): Promise<ProjectWorkerBuildReport> {
+    try {
+        return await buildEditorWorker(projectFolderOf(projectOption), simulation, generate);
+    } catch (error) {
+        return {ok: false, errors: [describeError(error)], generatedFiles: []};
+    }
 }

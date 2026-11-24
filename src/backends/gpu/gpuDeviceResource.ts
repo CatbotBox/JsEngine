@@ -8,7 +8,11 @@ const MISSING_DEVICE = "This world has no GpuDeviceResource: the host must inser
 const DEVICE_DESTROYED_ON_PURPOSE: GPUDeviceLostReason = "destroyed";
 const OPAQUE_CANVAS: GPUCanvasAlphaMode = "opaque";
 
+const NO_OTHER_CANVASES = "This GpuDeviceResource draws on one canvas only: make it with GpuDeviceResource.request to draw on more";
+
 export type GpuEntryPoint = Pick<GPU, "requestAdapter" | "getPreferredCanvasFormat">;
+
+export type GpuCanvasAttacher = (canvas: OffscreenCanvas) => GpuFrame;
 
 function releaseNothing(): void {
 }
@@ -16,7 +20,12 @@ function releaseNothing(): void {
 export class GpuDeviceResource extends Resource {
     private disposed = false;
 
-    public constructor(public readonly device: GpuDevice, public readonly frame: GpuFrame, private readonly release: () => void = releaseNothing) {
+    public constructor(
+        public readonly device: GpuDevice,
+        public readonly frame: GpuFrame,
+        private readonly release: () => void = releaseNothing,
+        private readonly attachCanvas?: GpuCanvasAttacher,
+    ) {
         super();
     }
 
@@ -34,17 +43,30 @@ export class GpuDeviceResource extends Resource {
         const adapter = await gpu.requestAdapter();
         if (adapter === null) throw new Error("no WebGPU adapter is available");
         const device = await adapter.requestDevice();
-        const context = canvas.getContext("webgpu");
-        if (context === null) throw new Error("the canvas has no webgpu context");
         const format = gpu.getPreferredCanvasFormat();
-        context.configure({device, format, alphaMode: OPAQUE_CANVAS});
+        const configure = (target: OffscreenCanvas): GPUCanvasContext => {
+            const context = target.getContext("webgpu");
+            if (context === null) throw new Error("the canvas has no webgpu context");
+            context.configure({device, format, alphaMode: OPAQUE_CANVAS});
+            return context;
+        };
+        const context = configure(canvas);
         void device.lost.then(info => {
             if (info.reason !== DEVICE_DESTROYED_ON_PURPOSE) onLost(`the WebGPU device was lost (${info.reason}): ${info.message}`);
         });
-        return new GpuDeviceResource(device, new GpuFrame(device, context, canvas, format), () => {
+        const release = (): void => {
             context.unconfigure();
             device.destroy();
+        };
+        return new GpuDeviceResource(device, new GpuFrame(device, context, canvas, format), release, target => {
+            const targetContext = configure(target);
+            return new GpuFrame(device, targetContext, target, format, () => targetContext.unconfigure());
         });
+    }
+
+    public frameOn(canvas: OffscreenCanvas): GpuFrame {
+        if (this.attachCanvas === undefined) throw new Error(NO_OTHER_CANVASES);
+        return this.attachCanvas(canvas);
     }
 
     public dispose(): void {

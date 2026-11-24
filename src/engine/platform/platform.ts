@@ -15,10 +15,18 @@ export type FramePacing =
     | {readonly kind: "uncapped"}
     | {readonly kind: "display", readonly capIntervalMs?: number};
 
+export type CappedPacingKind = Exclude<FramePacing["kind"], "uncapped">;
+
 export type FrameCallback = (frameTimeMs: number) => void;
 
+export interface PresentationBacklog {
+    backlogged(): boolean;
+    onPresented(listener: () => void): () => void;
+}
+
 export interface FrameScheduler {
-    start(pacing: FramePacing, onFrame: FrameCallback): () => void;
+    readonly cappedPacing?: CappedPacingKind;
+    start(pacing: FramePacing, onFrame: FrameCallback, backlog?: PresentationBacklog): () => void;
 }
 
 export interface FileStat {

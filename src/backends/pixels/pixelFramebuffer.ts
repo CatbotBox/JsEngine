@@ -2,6 +2,7 @@ import {Resource} from "../../engine/core";
 import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, RED_SHIFT} from "../../engine/rendering/packedRgb";
 import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../engine/rendering/screenUnits";
 import {RGBA_BYTES_PER_PIXEL} from "./pixelFrame";
+import {PixelDrawnTiles} from "./pixelDrawnTiles";
 import type {PixelFrame} from "./pixelFrame";
 import type {PixelPresenterSize} from "./pixelPresenter";
 
@@ -55,6 +56,7 @@ export class PixelFramebuffer extends Resource {
     private _rgba = new Uint8ClampedArray(0);
     private _pixels = new Uint32Array(0);
     private _depth = new Float32Array(0);
+    private readonly _drawnTiles = new PixelDrawnTiles();
 
     public constructor() {
         super();
@@ -85,12 +87,26 @@ export class PixelFramebuffer extends Resource {
         return this._depth;
     }
 
+    public get drawnTiles(): PixelDrawnTiles {
+        return this._drawnTiles;
+    }
+
     public beginFrame(size: PixelPresenterSize, backgroundRgb: number, pixelsPerScreenUnitX: number, backgroundAlpha: number = OPAQUE_ALPHA): void {
         this.resize(Math.max(0, size.widthPx | 0), Math.max(0, size.heightPx | 0));
         this._pixelsPerScreenUnitX = pixelsPerScreenUnitX;
         this._pixelsPerScreenUnitY = pixelsPerScreenUnitX * SCREEN_UNIT_HEIGHT_PER_WIDTH;
-        this._pixels.fill((pixelOfRgb(backgroundRgb) & PIXEL_RGB_BITS) | ((backgroundAlpha & CHANNEL_MASK) << PIXEL_ALPHA_SHIFT));
+        const backgroundPixel = (pixelOfRgb(backgroundRgb) & PIXEL_RGB_BITS) | ((backgroundAlpha & CHANNEL_MASK) << PIXEL_ALPHA_SHIFT);
+        this._pixels.fill(backgroundPixel);
         this._depth.fill(Number.POSITIVE_INFINITY);
+        this._drawnTiles.begin(this._widthPx, this._heightPx, backgroundPixel);
+    }
+
+    public markDrawn(leftPx: number, topPx: number, rightPx: number, bottomPx: number): void {
+        this._drawnTiles.mark(leftPx, topPx, rightPx, bottomPx);
+    }
+
+    public markAllDrawn(): void {
+        this._drawnTiles.markAll();
     }
 
     public rgbAt(x: number, y: number): number {
@@ -120,6 +136,7 @@ export class PixelFramebuffer extends Resource {
             rgba: this._rgba,
             pixelsPerScreenUnitX: this._pixelsPerScreenUnitX,
             pixelsPerScreenUnitY: this._pixelsPerScreenUnitY,
+            drawnTiles: this._drawnTiles,
         };
     }
 

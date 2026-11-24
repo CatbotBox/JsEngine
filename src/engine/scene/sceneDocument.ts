@@ -2,14 +2,22 @@ import {migrateDocumentJson, withRenamedKey} from "./documentMigrations";
 import type {DocumentMigrations} from "./documentMigrations";
 
 export const SCENE_DOCUMENT_FORMAT = "jsengine-scene";
-export const SCENE_DOCUMENT_VERSION = 2;
+export const SCENE_DOCUMENT_VERSION = 3;
 export const FIRST_SCENE_ENTITY_ID = 1;
 
 const MAX_DESCRIBED_LENGTH = 60;
 const SCENE_TEXT_INDENT_SPACES = 2;
 const GPU_MESH_PASS_SETTINGS_TYPE_NAME = "GpuMeshPassSettings";
 const PREFAB_INSTANCE_TYPE_NAME = "PrefabInstance";
+const SPRITE_TYPE_NAME = "Sprite";
+const SPRITE_IMAGE_KEY = "image";
+const SPRITE_PATTERN_COMPONENT_NAME = "SpritePattern";
+const SPRITE_PATTERN_ROWS_KEY = "rows";
+const SPRITE_PATTERN_PALETTE_KEY = "palette";
+const OVERRIDE_PATH_SEPARATOR = "/";
+const OVERRIDE_FIELD_SEPARATOR = ".";
 const FIRST_SCENE_DOCUMENT_VERSION = 1;
+const LAST_SPRITE_PATTERN_COMPONENT_VERSION = 2;
 
 export type SceneJsonValue = null | boolean | number | string | SceneJsonValue[] | SceneJsonObject;
 
@@ -100,6 +108,52 @@ function withRenamedComponentField(document: SceneJsonObject, typeName: string, 
     return withRenamedOverridePaths(renamedFields, typeName, from, to);
 }
 
+function spriteImageOfPattern(pattern: SceneJsonObject): SceneJsonObject {
+    return {
+        [SPRITE_PATTERN_ROWS_KEY]: pattern[SPRITE_PATTERN_ROWS_KEY] ?? [],
+        [SPRITE_PATTERN_PALETTE_KEY]: pattern[SPRITE_PATTERN_PALETTE_KEY] ?? [],
+    };
+}
+
+function withSpritePatternImage(entity: SceneJsonValue): SceneJsonValue {
+    if (!isSceneJsonObject(entity)) return entity;
+    const components = entity.components;
+    if (!isSceneJsonObject(components)) return entity;
+    const pattern = components[SPRITE_PATTERN_COMPONENT_NAME];
+    if (!isSceneJsonObject(pattern)) return entity;
+    const migrated: SceneJsonObject = {};
+    for (const typeName of Object.keys(components)) {
+        if (typeName === SPRITE_PATTERN_COMPONENT_NAME) continue;
+        const fields = components[typeName];
+        migrated[typeName] = typeName === SPRITE_TYPE_NAME && isSceneJsonObject(fields) ? {...fields, [SPRITE_IMAGE_KEY]: spriteImageOfPattern(pattern)} : fields;
+    }
+    return {...entity, components: migrated};
+}
+
+function spriteImageOverridePath(path: SceneJsonValue): SceneJsonValue {
+    if (typeof path !== "string") return path;
+    const marker = OVERRIDE_PATH_SEPARATOR + SPRITE_PATTERN_COMPONENT_NAME;
+    const at = path.lastIndexOf(marker);
+    if (at < 0) return path;
+    const rest = path.slice(at + marker.length);
+    if (rest.length > 0 && !rest.startsWith(OVERRIDE_FIELD_SEPARATOR)) return path;
+    return `${path.slice(0, at)}${OVERRIDE_PATH_SEPARATOR}${SPRITE_TYPE_NAME}${OVERRIDE_FIELD_SEPARATOR}${SPRITE_IMAGE_KEY}`;
+}
+
+function withSpritePatternOverrides(fields: SceneJsonObject): SceneJsonObject {
+    const overrides = fields.overrides;
+    if (!Array.isArray(overrides)) return fields;
+    const migrated: SceneJsonValue[] = [];
+    for (const path of overrides.map(spriteImageOverridePath)) if (!migrated.includes(path)) migrated.push(path);
+    return {...fields, overrides: migrated};
+}
+
+function withSpritePatternsAsImages(document: SceneJsonObject): SceneJsonObject {
+    const entities = document.entities;
+    const migrated = Array.isArray(entities) ? {...document, entities: entities.map(withSpritePatternImage)} : document;
+    return withComponentFields(migrated, PREFAB_INSTANCE_TYPE_NAME, withSpritePatternOverrides);
+}
+
 export const SCENE_DOCUMENT_MIGRATIONS: DocumentMigrations = {
     currentVersion: SCENE_DOCUMENT_VERSION,
     steps: [
@@ -107,6 +161,10 @@ export const SCENE_DOCUMENT_MIGRATIONS: DocumentMigrations = {
             fromVersion: FIRST_SCENE_DOCUMENT_VERSION,
             migrate: document => withRenamedComponentField(document, GPU_MESH_PASS_SETTINGS_TYPE_NAME,
                 "evictUnusedMeshAfterFrames", "evictUnusedAfterFrames"),
+        },
+        {
+            fromVersion: LAST_SPRITE_PATTERN_COMPONENT_VERSION,
+            migrate: withSpritePatternsAsImages,
         },
     ],
 };

@@ -7,6 +7,7 @@ import {RootSystemGroup} from "./rootSystemGroup";
 import {Time} from "./time";
 import {PresentationBarriers} from "./presentationBarriers";
 import {ActiveRenderers} from "./activeRenderers";
+import {PresenterBacklogs} from "./presenterBacklogs";
 import {GcSystem} from "./gcSystem";
 import {InputSystem} from "../input/inputSystem";
 import {WorldSource} from "./worldSource";
@@ -22,6 +23,7 @@ import {Event} from "../util/event";
 import type {App} from "./app";
 
 const NO_TICK_PROGRESS = 0;
+const NO_TICK_INTERPOLATION = false;
 
 export interface WorldOptions {
     readonly platform: Platform;
@@ -45,6 +47,7 @@ export class World extends WorldSource {
     public time: Time = new Time();
     public readonly presentationBarriers: PresentationBarriers = new PresentationBarriers();
     public readonly renderers: ActiveRenderers = new ActiveRenderers();
+    public readonly presenterBacklogs: PresenterBacklogs = new PresenterBacklogs();
 
     get archetypes(): EntityArchetypeMap {
         return this._archetypes;
@@ -154,7 +157,7 @@ export class World extends WorldSource {
 
     public get loopTiming(): LoopTiming {
         const settings = this._frameLoopSettingsQuery.tryGetSingleton({settings: FrameLoopSettings})?.settings ?? this._defaultFrameLoopSettings;
-        return this._loopTimingResolver.resolve(settings, this.renderers.frameRenderer);
+        return this._loopTimingResolver.resolve(settings, this.renderers.frameRenderer, this.platform.frameScheduler?.cappedPacing);
     }
 
     public step(deltaTimeMs: number = this.loopTiming.tickDeltaMs): void {
@@ -164,6 +167,7 @@ export class World extends WorldSource {
         time.tickDeltaTimeMs = deltaTimeMs;
         time.frameDeltaTimeMs = deltaTimeMs;
         time.tickAlpha = NO_TICK_PROGRESS;
+        time.interpolatingTicks = NO_TICK_INTERPOLATION;
         time.tickCount++;
         time.frameCount++;
         this._rootSystemGroup.update();
@@ -197,11 +201,13 @@ export class World extends WorldSource {
         time.deltaTimeMs = frameDeltaMs;
         time.frameDeltaTimeMs = frameDeltaMs;
         time.tickAlpha = tickAlpha;
+        time.interpolatingTicks = !this.presentationBarriers.listeningAtSystemBoundaries;
         time.frameCount++;
         try {
             this._rootSystemGroup.updatePresentation();
         } finally {
             time.deltaTimeMs = time.tickDeltaTimeMs;
+            time.interpolatingTicks = NO_TICK_INTERPOLATION;
         }
     }
 
@@ -216,6 +222,7 @@ export class World extends WorldSource {
             now,
             scheduler: platform.frameScheduler ?? timerFrameScheduler(now),
             barriers: this.presentationBarriers,
+            presentationBacklog: this.presenterBacklogs,
             loopTiming: () => this.loopTiming,
             simulate: tickDeltaMs => this.simulateTick(tickDeltaMs),
             present: (frameDeltaMs, tickAlpha) => this.presentFrame(frameDeltaMs, tickAlpha),

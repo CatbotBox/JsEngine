@@ -3,7 +3,7 @@ import {Quaternions} from "../../engine/math/quaternions";
 import {asFloat32Array, Vec3, Vec4} from "../../engine/math/types/vec";
 import {isSceneJsonObject} from "../../engine/scene/sceneDocument";
 import type {NumberFieldOptions, SceneJsonValue} from "../../engine/scene";
-import type {EditorFieldValue, InlineSpriteImageSummary} from "../editorProtocol";
+import type {EditorFieldValue, InlineSpriteImageSummary, StructFieldDescription} from "../editorProtocol";
 
 export type ParsedFieldText =
     | {readonly valid: true, readonly value: SceneJsonValue}
@@ -273,6 +273,14 @@ export function inlineImageSize(value: EditorFieldValue): InlineImageSize | unde
     if (isInlineAssetSummary(value)) return {width: value.inline.width, height: value.inline.height};
     const isEncodedImage = isSceneJsonObject(value) && typeof value.width === "number" && typeof value.height === "number" && typeof value.rgbaBase64 === "string";
     return isEncodedImage ? {width: value.width as number, height: value.height as number} : undefined;
+}
+
+export function isEditableInlineValue(value: EditorFieldValue, editableStruct: StructFieldDescription): boolean {
+    return editableStruct.fields.length > 0 && isSceneJsonObject(value) && editableStruct.fields.every(member => value[member.key] !== undefined);
+}
+
+export function areEditableInlineValues(values: readonly EditorFieldValue[], editableStruct: StructFieldDescription): boolean {
+    return values.length > 0 && values.every(value => isEditableInlineValue(value, editableStruct));
 }
 
 export function assetPathOf(value: EditorFieldValue | undefined): string | undefined {

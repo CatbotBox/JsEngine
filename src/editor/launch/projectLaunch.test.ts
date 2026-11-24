@@ -93,7 +93,7 @@ describe("hot reload helpers", () => {
         deliver({data: {type: "status", text: "not an editor event"}});
         const received: EditorEvent[] = [];
         events.onEvent(event => received.push(event));
-        const second: EditorEvent = {kind: "modeChanged", mode: "play", gameplayTicks: 1, view: "game"};
+        const second: EditorEvent = {kind: "modeChanged", mode: "play", gameplayTicks: 1};
         deliver({data: {type: EDITOR_MESSAGE_TYPE, event: second}});
         expect(received).toEqual([first, second]);
     });

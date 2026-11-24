@@ -2,7 +2,7 @@ import {EntityCommandBufferSystem, FrameLoopSettings, NULL_ENTITY, Resource, Sys
 import type {Component, ComponentCtor, EntityCommandBuffer, EntityQuery, World} from "@jsengine/engine/core";
 import {Input, resolveInputActions} from "@jsengine/engine/input";
 import type {InputAction, ResolvedInputActions} from "@jsengine/engine/input";
-import {activeRenderBackend, RenderPasses} from "@jsengine/engine/rendering";
+import {activeRenderBackend, PresentationStats, RenderPasses} from "@jsengine/engine/rendering";
 import type {RenderPassKind} from "@jsengine/engine/rendering";
 import {EulerAngles, LocalRotation, turnEulerAngles} from "@jsengine/engine/translation";
 import {AmbientLight, DirectionalLight, MeshRenderSettings, MeshRenderStats, PointLight} from "@jsengine/engine/rendering/3d";
@@ -29,7 +29,9 @@ const FIRST_MODEL = 0;
 const FIRST_PRESET = 0;
 const NEXT_INDEX_STEP = 1;
 const MS_PER_SECOND = 1000;
-const BYTES_PER_MB = 1024 * 1024;
+const BYTES_PER_KB = 1024;
+const BYTES_PER_MB = BYTES_PER_KB * BYTES_PER_KB;
+const NO_SUBMITS = 0;
 const COMPACT_DIGITS = 3;
 const UNIT_STEP = 1000;
 const NO_TEXT = "";
@@ -383,6 +385,10 @@ export class Demo3dHudSystem extends System {
     private _rateWindowTicks = 0;
     private _framesPerSecond = 0;
     private _ticksPerSecond = 0;
+    private _rateWindowSubmits = NO_SUBMITS;
+    private _rateWindowUploadedBytes = 0;
+    private _submitsPerSecond = 0;
+    private _uploadedBytesPerSubmit = 0;
 
     override priority(): number {
         return HUD_PRIORITY;
@@ -424,6 +430,12 @@ export class Demo3dHudSystem extends System {
             const rasterWorkers = stats === undefined ? 0 : stats.rasterWorkers;
             statsLines.push(formatHudText(tuning.hud.rasterWorkersLine, {
                 rasterWorkers: rasterWorkers === 0 ? tuning.hud.singleThreadedRasterText : rasterWorkers,
+            }));
+        }
+        if (this.world.resources.tryGet(PresentationStats) !== undefined) {
+            statsLines.push(formatHudText(tuning.hud.presentationLine, {
+                submits: this._submitsPerSecond.toFixed(tuning.hud.rateDecimals),
+                upload: (this._uploadedBytesPerSubmit / BYTES_PER_KB).toFixed(tuning.hud.rateDecimals),
             }));
         }
         this._entityCounter.show(statsLines);
@@ -473,8 +485,19 @@ export class Demo3dHudSystem extends System {
         if (windowMs < rateWindowMs) return;
         this._framesPerSecond = (time.frameCount - this._rateWindowFrames) * MS_PER_SECOND / windowMs;
         this._ticksPerSecond = (time.tickCount - this._rateWindowTicks) * MS_PER_SECOND / windowMs;
+        this.measurePresentation(windowMs);
         this._rateWindowStartMs = nowMs;
         this._rateWindowFrames = time.frameCount;
         this._rateWindowTicks = time.tickCount;
+    }
+
+    private measurePresentation(windowMs: number): void {
+        const stats = this.world.resources.tryGet(PresentationStats);
+        if (stats === undefined) return;
+        const submits = stats.submittedFrames - this._rateWindowSubmits;
+        this._submitsPerSecond = submits * MS_PER_SECOND / windowMs;
+        this._uploadedBytesPerSubmit = submits === NO_SUBMITS ? 0 : (stats.uploadedBytes - this._rateWindowUploadedBytes) / submits;
+        this._rateWindowSubmits = stats.submittedFrames;
+        this._rateWindowUploadedBytes = stats.uploadedBytes;
     }
 }

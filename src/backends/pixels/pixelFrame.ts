@@ -1,5 +1,13 @@
 export const RGBA_BYTES_PER_PIXEL = 4;
 
+export interface PixelFrameDrawnTiles {
+    readonly tileSizePx: number;
+    readonly columns: number;
+    readonly rows: number;
+    readonly drawn: Uint8Array;
+    readonly backgroundPixel: number;
+}
+
 export interface PixelFrame {
     readonly widthPx: number;
     readonly heightPx: number;
@@ -7,6 +15,7 @@ export interface PixelFrame {
     readonly rgba: Uint8ClampedArray;
     readonly pixelsPerScreenUnitX: number;
     readonly pixelsPerScreenUnitY: number;
+    readonly drawnTiles?: PixelFrameDrawnTiles;
 }
 
 export function pixelFrameBuffers(frame: PixelFrame): ArrayBuffer[] {

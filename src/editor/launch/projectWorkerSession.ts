@@ -9,21 +9,29 @@ import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {serveProjectFiles} from "../project/projectFileServing";
 import type {ProjectFileServing} from "../project/projectFileServing";
 import type {InputEventSink} from "../../engine/input/inputEvent";
-import type {EditorSessionDisplay, EditorViewport} from "./editorViewport";
+import type {EditorSessionDisplay, EditorViewport, SessionDisplayEvents} from "./editorViewport";
+import {connectSceneView} from "./sceneViewConnection";
+import type {SceneViewConnection} from "./sceneViewConnection";
 import {terminalInputMessage} from "./terminalInputChannel";
 
 export const EDITOR_REQUEST_TIMEOUT_MS = 60_000;
 export const BUFFERED_EDITOR_EVENT_LIMIT = 1000;
 
 const MODULE_WORKER: WorkerOptions = {type: "module"};
+const SCENE_VIEW_FAILURES_KEEP_THE_SESSION: SessionDisplayEvents = {failed: () => undefined};
 
 export interface SessionVisibility {
     readonly visible: boolean;
 }
 
+export interface EditorViewports {
+    readonly game: EditorViewport;
+    readonly scene: EditorViewport;
+}
+
 export interface ProjectWorkerSessionOptions {
     readonly workerUrl: string;
-    readonly viewport: EditorViewport;
+    readonly viewports: EditorViewports;
     readonly files: ProjectFileSystem;
     readonly name: string;
     readonly search: string;
@@ -70,6 +78,8 @@ export class ProjectWorkerSession {
     private constructor(
         private readonly worker: Worker,
         private readonly display: EditorSessionDisplay,
+        private readonly sceneDisplay: EditorSessionDisplay,
+        private readonly sceneView: SceneViewConnection,
         private readonly fileServing: ProjectFileServing,
         public readonly page: WorldWorkerPage,
         public readonly client: EditorClient,
@@ -90,11 +100,17 @@ export class ProjectWorkerSession {
                 if (settled) return;
                 settled = true;
                 fileServing.dispose();
+                sceneView.close();
                 worker.terminate();
-                if (!options.visibility.visible) display.dispose();
+                if (!options.visibility.visible) {
+                    display.dispose();
+                    sceneDisplay.dispose();
+                }
                 reject(new Error(text));
             };
-            const display = options.viewport.sessionDisplay(options.visibility.visible, {
+            const sceneDisplay = options.viewports.scene.sessionDisplay(options.visibility.visible, SCENE_VIEW_FAILURES_KEEP_THE_SESSION);
+            const sceneView = connectSceneView(sceneDisplay, worker, options.name);
+            const display = options.viewports.game.sessionDisplay(options.visibility.visible, {
                 failed: text => {
                     if (!settled) fail(text);
                     else session?.client.close();
@@ -107,7 +123,7 @@ export class ProjectWorkerSession {
                 onReady: () => {
                     if (settled) return;
                     settled = true;
-                    session = new ProjectWorkerSession(worker, display, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events, options.viewport);
+                    session = new ProjectWorkerSession(worker, display, sceneDisplay, sceneView, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events, options.viewports.game);
                     resolve(session);
                 },
                 onQuit: () => {
@@ -119,11 +135,17 @@ export class ProjectWorkerSession {
     }
 
     public show(): void {
+        this.sceneDisplay.show();
         this.display.show();
     }
 
     public hide(): void {
+        this.sceneDisplay.hide();
         this.display.hide();
+    }
+
+    public setSceneViewShown(shown: boolean): void {
+        this.sceneView.setShown(shown);
     }
 
     public exit(): void {
@@ -139,7 +161,9 @@ export class ProjectWorkerSession {
         this.disposed = true;
         this.client.close();
         this.fileServing.dispose();
+        this.sceneView.close();
         this.page.close();
+        this.sceneDisplay.dispose();
         this.display.dispose();
     }
 }

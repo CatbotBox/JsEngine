@@ -1,8 +1,11 @@
 import {connectWorldWorker} from "./worldWorkerPage";
 import type {WorldDisplay} from "./worldWorkerPage";
+import {projectPathsIn, siteFolderOf, takeDevDataAssetsChanges} from "./devReload";
 import {requestedRasterWorkersFromQuery} from "./worldWorkerProtocol";
 import {installDomInput} from "./domInput";
 import type {CellArea} from "./domInput";
+
+declare const JSENGINE_DEV_RELOAD: boolean;
 
 export type PageDisplay = WorldDisplay & {cellArea(): CellArea};
 
@@ -27,4 +30,7 @@ function start(workerUrl: string, name: string, createDisplay: PageDisplayFactor
     });
     installDomInput(container, {sink: page.input, cellArea: () => display.cellArea()});
     window.addEventListener("pagehide", () => page.exit());
+    if (typeof JSENGINE_DEV_RELOAD === "undefined" || !JSENGINE_DEV_RELOAD) return;
+    const siteFolder = siteFolderOf(workerUrl, location.href);
+    takeDevDataAssetsChanges(window, change => page.reloadDataAssets(projectPathsIn(siteFolder, change.paths)));
 }

@@ -15,11 +15,13 @@ import type {
     EditorEntityDetails,
     EditorEntitySummary,
     EditorEvent,
+    EditorGameCameraChangedEvent,
     EditorRequest,
     EditorResultOf,
     EditorView,
     ExportSnapshotResult,
     ImportSnapshotRequest,
+    ListEntitiesResult,
 } from "../src/editor/editorProtocol";
 import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_DOCUMENT_VERSION, SCENE_INSTANCE_COMPONENT_NAME} from "../src/engine/scene";
 import type {SceneEntityRecord} from "../src/engine/scene";
@@ -36,9 +38,11 @@ import type {BuildProjectResult, OpenProjectResult} from "../src/editor/project/
 import {entityRemapOf} from "../src/editor/launch/projectRunner";
 import {terminalInputMessage} from "../src/editor/launch/terminalInputChannel";
 import {NO_CELL_AREA, PixelEditorViewport} from "../src/editor/launch/editorViewport";
-import type {EditorViewport, SharedPixelDisplay} from "../src/editor/launch/editorViewport";
+import type {SharedPixelDisplay} from "../src/editor/launch/editorViewport";
 import {ProjectWorkerSession} from "../src/editor/launch/projectWorkerSession";
-import type {SessionVisibility} from "../src/editor/launch/projectWorkerSession";
+import {connectSceneView} from "../src/editor/launch/sceneViewConnection";
+import type {SceneViewConnection, SceneViewWorker} from "../src/editor/launch/sceneViewConnection";
+import type {EditorViewports, SessionVisibility} from "../src/editor/launch/projectWorkerSession";
 import {STARTER_SCENE_FILE} from "../src/editor/project/projectTemplate";
 import type {RenderBackendKind} from "../src/engine/rendering/renderBackend";
 
@@ -48,6 +52,9 @@ const SERVER_ORIGIN = "http://localhost";
 const JSON_HEADERS: Readonly<Record<string, string>> = {"Content-Type": "application/json"};
 const NO_SERVER_EVENTS: ProjectEventSource = {on: () => () => undefined};
 const SURFACE: PixelPresenterSize = {widthPx: 640, heightPx: 384};
+const SCENE_VIEW_SURFACE: PixelPresenterSize = {widthPx: 480, heightPx: 320};
+const SCENE_VIEW_COLUMNS = 60;
+const SCENE_VIEW_ROWS = 20;
 const TIMEOUT_MS = 20_000;
 const POLL_INTERVAL_MS = 10;
 const FRAME_ARRIVAL_WINDOW_MS = 300;
@@ -84,12 +91,12 @@ const BOUNDS_SETTLE_FRAMES = 3;
 const SWARM_STATE_RESOURCE = "SwarmState";
 const SWARM_TUNING_RESOURCE = "SwarmTuning";
 const SWARM_TUNING_PATH = "assets/swarm.tuning.asset.json";
-const SWARM_START_SCENE = "scenes/main.scene.json";
+const SWARM_GAMEPLAY_SCENE = "scenes/main.scene.json";
 const SHIP_NAME = "ship";
 const SWARM_TITLE_PHASE = "Title";
 const SWARM_PLAYING_PHASE = "Playing";
 const EDITED_PATTERN_ROWS = ["#"];
-const EDITED_PATTERN_IMAGE_SUMMARY = {inline: {width: 1, height: 1}};
+const EDITED_PATTERN_PALETTE = [{char: "#", rgb: "#ff8000"}];
 const DEMO_2D_TUNING_RESOURCE = "Demo2dTuning";
 const DEMO_2D_TUNING_PATH = "assets/demo2d.asset.json";
 const DEMO_2D_EDITED_TUNING_KEY = "pixelsPerSpawn";
@@ -113,9 +120,18 @@ const CAMERA_LESS_PROJECT_NAME = "Camera-less fixture";
 const CAMERA_COMPONENT = "Camera";
 const MARKER_NAME = "marker";
 const MARKER_XYZ = [1, 2, 3];
+const ADDED_CAMERA_NAME = "addedCamera";
+const MISSING_ONLY: readonly boolean[] = [false];
+const MISSING_THEN_ADDED: readonly boolean[] = [false, true];
+const MISSING_ADDED_REMOVED: readonly boolean[] = [false, true, false];
 const VISIBLE_SESSION: SessionVisibility = {visible: true};
 const HIDDEN_SESSION: SessionVisibility = {visible: false};
 const NO_QUERY = "";
+
+interface ViewFrames {
+    readonly game: number;
+    readonly scene: number;
+}
 
 interface BuiltProject {
     readonly id: string;
@@ -158,8 +174,11 @@ class PixelFrameRecorder implements PixelWorldDisplay {
     public frames = 0;
     public latest: PixelFrame | undefined;
 
+    public constructor(private readonly size: PixelPresenterSize = SURFACE) {
+    }
+
     public surfaceSize(): PixelSurfaceSize {
-        return {kind: "pixels", ...SURFACE};
+        return {kind: "pixels", ...this.size};
     }
 
     public onResize(): () => void {
@@ -189,8 +208,11 @@ class CellFrameRecorder implements CellWorldDisplay {
     public readonly errors: string[] = [];
     public frames = 0;
 
+    public constructor(private readonly columns: number = TERMINAL_COLUMNS, private readonly rows: number = TERMINAL_ROWS) {
+    }
+
     public surfaceSize(): CellSurfaceSize {
-        return {kind: "cells", columns: TERMINAL_COLUMNS, rows: TERMINAL_ROWS};
+        return {kind: "cells", columns: this.columns, rows: this.rows};
     }
 
     public onResize(): () => void {
@@ -262,16 +284,20 @@ class EditorPage {
     public readonly workerErrors: string[] = [];
     public readonly events: EditorEvent[] = [];
     public readonly client: EditorClient;
+    public readonly sceneDisplay: RecordingDisplay;
     public readyReports = 0;
     private readonly worker: Worker;
     private readonly connection: WorldWorkerPage;
+    private readonly sceneConnection: SceneViewConnection;
     private readonly fileServing: ProjectFileServing;
 
     public constructor(project: BuiltProject, name: string, public readonly display: RecordingDisplay = new PixelFrameRecorder()) {
+        this.sceneDisplay = display instanceof CellFrameRecorder ? new CellFrameRecorder(SCENE_VIEW_COLUMNS, SCENE_VIEW_ROWS) : new PixelFrameRecorder(SCENE_VIEW_SURFACE);
         this.worker = new Worker(project.bundlePath, {type: "module"});
         this.worker.addEventListener("error", event => this.workerErrors.push(event.message));
         this.fileServing = serveProjectFiles(this.worker as unknown as ProjectFilesPort, project.files);
         this.connection = connectWorldWorker(this.display, this.worker as unknown as WorldWorker, {name, onReady: () => this.readyReports++});
+        this.sceneConnection = connectSceneView(this.sceneDisplay, this.worker as unknown as SceneViewWorker, name);
         this.client = new EditorClient(this.worker as unknown as EditorChannel, {timeoutMs: TIMEOUT_MS});
         this.worker.addEventListener("message", event => {
             if (isEditorEventMessage(event.data)) this.events.push(event.data.event);
@@ -302,6 +328,12 @@ class EditorPage {
         return this.display.frames - before;
     }
 
+    public async bothViewsKeepDrawing(): Promise<ViewFrames> {
+        const game = this.display.frames, scene = this.sceneDisplay.frames;
+        await sleep(FRAME_ARRIVAL_WINDOW_MS);
+        return {game: this.display.frames - game, scene: this.sceneDisplay.frames - scene};
+    }
+
     public async entityNamed(name: string): Promise<EditorEntitySummary | undefined> {
         return (await this.ask({op: "listEntities"})).entities.find(entity => entity.name === name);
     }
@@ -312,25 +344,46 @@ class EditorPage {
     }
 
     public expectNoErrors(label: string): void {
-        const all = [...this.workerErrors, ...this.display.errors];
+        const all = [...this.workerErrors, ...this.display.errors, ...this.sceneDisplay.errors];
         expect(all.length === 0, `${label}: no worker errors${all.length > 0 ? ": " + all.join(" | ") : ""}`);
     }
 
     public dispose(): void {
         this.client.close();
         this.fileServing.dispose();
+        this.sceneConnection.close();
         this.connection.close();
     }
 }
 
+function gameCameraReports(events: readonly EditorEvent[]): boolean[] {
+    return events.filter((event): event is EditorGameCameraChangedEvent => event.kind === "gameCameraChanged").map(event => event.present);
+}
+
+function drawsBoth(frames: ViewFrames): boolean {
+    return frames.game > 0 && frames.scene > 0;
+}
+
+function framesText(frames: ViewFrames): string {
+    return `${frames.game} game and ${frames.scene} scene frames in ${FRAME_ARRIVAL_WINDOW_MS} ms`;
+}
+
 async function verifyStartsInEditMode(page: EditorPage, label: string): Promise<void> {
     expect(await waitUntil(() => page.readyReports > 0), `${label}: the worker reports ready`);
-    expect(await waitUntil(() => page.display.frames > 0), `${label}: frames arrive in edit mode`);
+    expect(await waitUntil(() => page.display.frames > 0 && page.sceneDisplay.frames > 0), `${label}: game and scene view frames arrive in edit mode`);
     const state = await page.ask({op: "setMode", mode: "edit"});
     expect(state.mode === "edit" && state.gameplayTicks === 0, `${label}: the world starts in edit mode with no gameplay ticks (${JSON.stringify(state)})`);
-    const arrived = await page.framesKeepArriving();
-    expect(arrived > 0, `${label}: edit mode keeps presenting frames (${arrived} in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
+    const arrived = await page.bothViewsKeepDrawing();
+    expect(drawsBoth(arrived), `${label}: edit mode keeps presenting both views (${framesText(arrived)})`);
+    const cameraReports = gameCameraReports(page.events);
+    expect(cameraReports.length === 0, `${label}: no missing game camera is reported while the start scene's camera loads (${JSON.stringify(cameraReports)})`);
     expect(page.readyReports === 1, `${label}: ready is reported once while frames keep arriving (${page.readyReports})`);
+    const [scene, game] = await Promise.all([page.ask({op: "getViewInfo", view: "scene"}), page.ask({op: "getViewInfo", view: "game"})]);
+    const sceneSize = page.sceneDisplay.surfaceSize(), gameSize = page.display.surfaceSize();
+    const sceneExtent = sceneSize.kind === "cells" ? sceneSize.columns : sceneSize.widthPx;
+    const gameExtent = gameSize.kind === "cells" ? gameSize.columns : gameSize.widthPx;
+    expect(scene.screenWidth > 0 && scene.screenWidth * gameExtent === game.screenWidth * sceneExtent,
+        `${label}: each view's info is in its own presenter's screen units (scene ${scene.screenWidth}, game ${game.screenWidth} wide)`);
 }
 
 function importSnapshotRequest(exported: ExportSnapshotResult): ImportSnapshotRequest {
@@ -530,7 +583,7 @@ async function verifyDomainReload(project: BuiltProject, page: EditorPage, label
         const moved = checked === undefined ? undefined : remap.get(checked.entity);
         const movedXyz = moved === undefined ? undefined : await reloaded.fieldOf(moved, "LocalPosition", "xyz");
         expect(checkedXyz !== undefined && sameJson(movedXyz, checkedXyz), `${label}: the remapped ${checkedName} kept its position through the domain reload (${JSON.stringify(movedXyz)})`);
-        expect(await waitUntil(() => reloaded.display.frames > 0), `${label}: the second worker presents frames`);
+        expect(await waitUntil(() => reloaded.display.frames > 0 && reloaded.sceneDisplay.frames > 0), `${label}: the second worker presents game and scene view frames`);
         expect(reloaded.readyReports === 1, `${label}: the second worker reported ready once (${reloaded.readyReports})`);
         reloaded.expectNoErrors(`${label} (reloaded)`);
     } finally {
@@ -653,15 +706,16 @@ async function openStartScene(page: EditorPage, project: BuiltProject, label: st
 }
 
 async function verifySpritePatternEdit(page: EditorPage, label: string, entity: Entity, name: string): Promise<void> {
-    await page.ask({op: "setField", entity, typeName: "SpritePattern", key: "rows", value: EDITED_PATTERN_ROWS});
-    const rows = await page.fieldOf(entity, "SpritePattern", "rows");
-    expect(sameJson(rows, EDITED_PATTERN_ROWS), `${label}: the sprite pattern rows of ${name} are editable (${JSON.stringify(rows)})`);
-    expect(await page.framesPass(BOUNDS_SETTLE_FRAMES), `${label}: frames pass after editing the sprite pattern`);
+    const before = await page.fieldOf(entity, "Sprite", "image") as {rows?: unknown, palette?: unknown} | undefined;
+    expect(Array.isArray(before?.rows) && Array.isArray(before?.palette), `${label}: the sprite image of ${name} is an inline pattern (${JSON.stringify(before)})`);
+    const edited = {rows: EDITED_PATTERN_ROWS, palette: EDITED_PATTERN_PALETTE};
+    await page.ask({op: "setField", entity, typeName: "Sprite", key: "image", value: edited});
     const image = await page.fieldOf(entity, "Sprite", "image");
-    expect(sameJson(image, EDITED_PATTERN_IMAGE_SUMMARY), `${label}: the sprite image of ${name} is rebuilt from the edited pattern (${JSON.stringify(image)})`);
+    expect(sameJson(image, edited), `${label}: the inline sprite pattern of ${name} is editable (${JSON.stringify(image)})`);
+    expect(await page.framesPass(BOUNDS_SETTLE_FRAMES), `${label}: frames pass after editing the sprite pattern`);
     const saved = parseSceneDocument((await page.ask({op: "saveScene"})).sceneText);
     const savedImage = saved.entities.find(record => record.name === name)?.components.Sprite?.image;
-    expect(savedImage === null, `${label}: the rebuilt sprite image saves as null, its pattern is the saved form (${JSON.stringify(savedImage)})`);
+    expect(sameJson(savedImage ?? null, edited), `${label}: the edited pattern is the saved form of the sprite image (${JSON.stringify(savedImage)})`);
 }
 
 async function verifyTuningEdit(page: EditorPage, label: string, typeName: string, path: string, key: string, value: SceneJsonValue): Promise<void> {
@@ -686,11 +740,26 @@ async function verifySwarmGate(page: EditorPage, label: string): Promise<void> {
     expect(await page.framesPass(EDIT_FRAMES_AFTER_KEY), `${label}: ${EDIT_FRAMES_AFTER_KEY} edit frames passed after pressing Enter`);
     const editPhase = await swarmPhase(page);
     expect(editPhase === SWARM_TITLE_PHASE, `${label}: Enter does not start a game in edit mode, the generated system list is suspended (phase ${JSON.stringify(editPhase)})`);
+    const opened = await page.ask({op: "listEntities"});
     await page.ask({op: "setMode", mode: "play"});
     page.press(Key.Enter);
     const started = await waitUntil(async () => await swarmPhase(page) === SWARM_PLAYING_PHASE);
     expect(started, `${label}: the same Enter starts a game in play mode`);
+    const playing = await page.ask({op: "listEntities"});
+    expect(playing.activeSceneId !== opened.activeSceneId && playing.scenes.some(scene => scene.id === playing.activeSceneId && scene.path === SWARM_GAMEPLAY_SCENE),
+        `${label}: starting the game loads ${SWARM_GAMEPLAY_SCENE} as a new active scene (${opened.activeSceneId} -> ${playing.activeSceneId})`);
+    const arrived = await page.bothViewsKeepDrawing();
+    const phaseWhileDrawing = await swarmPhase(page);
+    const sceneInfo = await page.ask({op: "getViewInfo", view: "scene"});
+    expect(drawsBoth(arrived) && phaseWhileDrawing === SWARM_PLAYING_PHASE && sceneInfo.screenWidth > 0,
+        `${label}: the Scene and Game views both draw while the game plays and the game keeps playing (${framesText(arrived)}, phase ${JSON.stringify(phaseWhileDrawing)}, scene view ${sceneInfo.screenWidth} wide)`);
+    const cameraReports = gameCameraReports(page.events);
+    expect(cameraReports.length === 0, `${label}: opening scenes and switching to ${SWARM_GAMEPLAY_SCENE} in play never report a missing game camera (${JSON.stringify(cameraReports)})`);
     await page.ask({op: "setMode", mode: "edit"});
+    const stopped = await page.ask({op: "listEntities"});
+    const namesOf = (listing: ListEntitiesResult) => listing.entities.map(entity => entity.name);
+    expect(stopped.activeSceneId === opened.activeSceneId && sameJson(namesOf(stopped), namesOf(opened)),
+        `${label}: stopping play restores the scene the editor opened (active scene ${stopped.activeSceneId}, ${stopped.entities.length} entities)`);
 }
 
 async function verifySwarm(project: BuiltProject): Promise<void> {
@@ -698,19 +767,21 @@ async function verifySwarm(project: BuiltProject): Promise<void> {
     const page = new EditorPage(project, "the Swarm editor");
     try {
         await verifyStartsInEditMode(page, label);
-        await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SwarmHud", "SpritePattern", "SpritePixelPassSettings"]);
+        await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SwarmHud", "Sprite", "SpritePixelPassSettings"]);
         const {resources} = await page.ask({op: "describeSchemas"});
         for (const typeName of [SWARM_STATE_RESOURCE, SWARM_TUNING_RESOURCE]) {
             expect(resources.some(resource => resource.typeName === typeName), `${label}: describeSchemas lists the ${typeName} resource`);
         }
         const tuning = await page.ask({op: "getResource", typeName: SWARM_TUNING_RESOURCE});
         expect(tuning.dataAssetPath === SWARM_TUNING_PATH, `${label}: ${SWARM_TUNING_RESOURCE} is loaded from ${SWARM_TUNING_PATH} (${tuning.dataAssetPath})`);
-        await openStartScene(page, project, label, SWARM_START_SCENE);
+        await openStartScene(page, project, label, SWARM_GAMEPLAY_SCENE);
         const ship = await page.entityNamed(SHIP_NAME);
-        expect(ship !== undefined && ship.componentTypeNames.includes("Ship") && ship.componentTypeNames.includes("SpritePattern"),
-            `${label}: the start scene has the ship with its Ship and SpritePattern components`);
+        expect(ship !== undefined && ship.componentTypeNames.includes("Ship") && ship.componentTypeNames.includes("Sprite"),
+            `${label}: the gameplay scene has the ship with its Ship and Sprite components`);
         await verifySwarmGate(page, label);
-        if (ship !== undefined) await verifySpritePatternEdit(page, label, ship.entity, SHIP_NAME);
+        const restoredShip = await page.entityNamed(SHIP_NAME);
+        expect(restoredShip !== undefined, `${label}: stopping play restores the ship of the opened scene`);
+        if (restoredShip !== undefined) await verifySpritePatternEdit(page, label, restoredShip.entity, SHIP_NAME);
         await verifySaveLoad(page, label, SHIP_NAME);
         await verifyDomainReload(project, page, label, SHIP_NAME);
         page.expectNoErrors(label);
@@ -741,12 +812,9 @@ async function verifyTerminalTargetSwitch(server: ProjectServer): Promise<void> 
         const moved = await waitUntil(async () => (await page.fieldOf(player.entity, "LocalPosition", "xyz") as number[])[X_COMPONENT] === PLAYER_MOVED_X);
         expect(moved, `${label}: the right-arrow bytes reach the game through TerminalInput in play mode (x ${PLAYER_EDITED_XYZ[X_COMPONENT]} -> ${PLAYER_MOVED_X})`);
         await page.ask({op: "setMode", mode: "edit"});
-        for (const view of EDITOR_VIEWS) {
-            const shown = await page.ask({op: "setView", view});
-            const arrived = await page.framesKeepArriving();
-            expect(shown.view === view && arrived > 0, `${label}: the ${view} view draws through the one cells backend (${arrived} frames in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
-            await verifyPickingNamed(page, label, PLAYER_NAME, view);
-        }
+        const arrived = await page.bothViewsKeepDrawing();
+        expect(drawsBoth(arrived), `${label}: the Scene and Game views both draw through the one cells backend (${framesText(arrived)})`);
+        for (const view of EDITOR_VIEWS) await verifyPickingNamed(page, label, PLAYER_NAME, view);
         const switched = await postJson<BuildProjectResult>(server, `${project.id}/build`, {gameTarget: WEB_PIXELS});
         const switchedBundle = server.bundlePathOf(project.id);
         expect(isBuildSuccess(switched) && sameGameTarget(switched.gameTarget, WEB_PIXELS) && switchedBundle !== project.bundlePath,
@@ -775,8 +843,8 @@ function removeCamerasFromStarterScene(folder: string): void {
     writeFileSync(path, JSON.stringify({...document, entities}));
 }
 
-function startEditorSession(project: BuiltProject, viewport: EditorViewport, visibility: SessionVisibility, name: string): Promise<ProjectWorkerSession> {
-    return ProjectWorkerSession.start({workerUrl: project.bundlePath, viewport, files: project.files, name, search: NO_QUERY, visibility, onQuit: () => undefined});
+function startEditorSession(project: BuiltProject, viewports: EditorViewports, visibility: SessionVisibility, name: string): Promise<ProjectWorkerSession> {
+    return ProjectWorkerSession.start({workerUrl: project.bundlePath, viewports, files: project.files, name, search: NO_QUERY, visibility, onQuit: () => undefined});
 }
 
 async function sessionWithin(starting: Promise<ProjectWorkerSession>, timeoutMs: number): Promise<ProjectWorkerSession | undefined> {
@@ -805,9 +873,18 @@ async function verifyCameraLessWorker(project: BuiltProject, label: string): Pro
         const listed = (await page.ask({op: "listEntities"})).entities;
         expect(listed.some(entity => entity.name === MARKER_NAME) && !listed.some(entity => entity.componentTypeNames.includes(CAMERA_COMPONENT)),
             `${label}: the start scene is open with its entities and no camera (${listed.map(entity => entity.name).join(", ")})`);
-        const arrived = await page.framesKeepArriving();
-        expect(page.display.frames === 0, `${label}: no frame is drawn without a camera (${page.display.frames} in all, ${arrived} in ${FRAME_ARRIVAL_WINDOW_MS} ms)`);
+        const arrived = await page.bothViewsKeepDrawing();
+        expect(page.display.frames === 0 && page.sceneDisplay.frames === 0,
+            `${label}: no frame is drawn in either view without a camera (${page.display.frames} game and ${page.sceneDisplay.frames} scene frames in all, ${framesText(arrived)})`);
         expect(page.readyReports === 1, `${label}: ready is reported once (${page.readyReports})`);
+        expect(await waitUntil(() => sameJson(gameCameraReports(page.events), MISSING_ONLY)),
+            `${label}: the world reports the missing game camera once (${JSON.stringify(gameCameraReports(page.events))})`);
+        const added = await page.ask({op: "createEntity", name: ADDED_CAMERA_NAME, components: {Camera: {}, LocalPosition: {xyz: [0, 0, 0]}}});
+        expect(await waitUntil(() => sameJson(gameCameraReports(page.events), MISSING_THEN_ADDED)),
+            `${label}: adding a camera reports it present (${JSON.stringify(gameCameraReports(page.events))})`);
+        await page.ask({op: "destroyEntity", entity: added.entity});
+        expect(await waitUntil(() => sameJson(gameCameraReports(page.events), MISSING_ADDED_REMOVED)),
+            `${label}: removing it reports the camera missing again (${JSON.stringify(gameCameraReports(page.events))})`);
         page.expectNoErrors(label);
     } finally {
         page.dispose();
@@ -816,16 +893,19 @@ async function verifyCameraLessWorker(project: BuiltProject, label: string): Pro
 
 async function verifyCameraLessHotReload(project: BuiltProject, label: string): Promise<void> {
     const display = new SharedPixelFrameRecorder();
-    const viewport = new PixelEditorViewport(display, WEB_PIXELS);
-    const opened = await sessionWithin(startEditorSession(project, viewport, VISIBLE_SESSION, label), TIMEOUT_MS);
+    const sceneDisplay = new SharedPixelFrameRecorder(SCENE_VIEW_SURFACE);
+    const viewports: EditorViewports = {game: new PixelEditorViewport(display, WEB_PIXELS), scene: new PixelEditorViewport(sceneDisplay, WEB_PIXELS)};
+    const opened = await sessionWithin(startEditorSession(project, viewports, VISIBLE_SESSION, label), TIMEOUT_MS);
     expect(opened !== undefined, `${label}: the editor page's worker session opens within ${TIMEOUT_MS} ms`);
     if (opened === undefined) return;
     try {
         const before = await markerDetails(opened.client);
         const exported = await opened.client.request({op: "exportSnapshot"});
-        const reloaded = await sessionWithin(startEditorSession(project, viewport, HIDDEN_SESSION, `${label} (reloaded)`), TIMEOUT_MS);
+        const reloaded = await sessionWithin(startEditorSession(project, viewports, HIDDEN_SESSION, `${label} (reloaded)`), TIMEOUT_MS);
         expect(reloaded !== undefined, `${label}: a hot reload's hidden worker session opens within ${TIMEOUT_MS} ms`);
         if (reloaded === undefined) return;
+        const reloadedEvents: EditorEvent[] = [];
+        const stopListening = reloaded.events.onEvent(event => reloadedEvents.push(event));
         try {
             const imported = await reloaded.client.request(importSnapshotRequest(exported));
             const remap = entityRemapOf(exported.entities, imported.entities);
@@ -833,9 +913,13 @@ async function verifyCameraLessHotReload(project: BuiltProject, label: string): 
             const xyz = after?.components.find(component => component.typeName === "LocalPosition")?.fields.xyz;
             expect(before !== undefined && after?.entity === remap.get(before.entity) && sameJson(xyz, MARKER_XYZ),
                 `${label}: the hot-reloaded session holds the imported scene, ${MARKER_NAME} remapped with its position (${JSON.stringify(xyz)})`);
-            expect(display.frames === 0 && display.errors.length === 0,
-                `${label}: both sessions opened with no frame and no error (${display.frames} frames${display.errors.length > 0 ? ": " + display.errors.join(" | ") : ""})`);
+            const errors = [...display.errors, ...sceneDisplay.errors];
+            expect(display.frames === 0 && sceneDisplay.frames === 0 && errors.length === 0,
+                `${label}: both sessions opened with no frame in either view and no error (${display.frames} game and ${sceneDisplay.frames} scene frames${errors.length > 0 ? ": " + errors.join(" | ") : ""})`);
+            expect(await waitUntil(() => sameJson(gameCameraReports(reloadedEvents), MISSING_ONLY)),
+                `${label}: the hot-reloaded session reports the missing game camera on its own (${JSON.stringify(gameCameraReports(reloadedEvents))})`);
         } finally {
+            stopListening();
             reloaded.dispose();
         }
     } finally {

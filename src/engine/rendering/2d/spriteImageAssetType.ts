@@ -3,12 +3,22 @@ import {decodeBase64, encodeBase64} from "../../scene/base64";
 import {SPRITE_IMAGE_ASSET_TYPE_NAME} from "../../scene/fieldSchema";
 import {fieldValueError} from "../../scene/fieldValueError";
 import type {FieldDecodeContext, FieldEncodeContext} from "../../scene/fieldValueCodec";
+import type {SceneAssetLoader} from "../../scene/sceneAssets";
 import type {SceneJsonObject} from "../../scene/sceneDocument";
 import {SpriteImage} from "./spriteImage";
-import {isSpritePatternImage} from "./spritePattern";
+import {
+    decodeSpritePatternJson,
+    encodeSpritePatternJson,
+    isSpritePatternFile,
+    isSpritePatternJson,
+    parseSpritePatternFile,
+    SPRITE_PATTERN_FILE_SUFFIX,
+    spritePatternFieldType,
+} from "./spritePatternFile";
 
-const IMAGE_FILE_SUFFIXES: readonly string[] = [".png", ".jpg", ".jpeg", ".ppm"];
+const IMAGE_FILE_SUFFIXES: readonly string[] = [".png", ".jpg", ".jpeg", ".ppm", SPRITE_PATTERN_FILE_SUFFIX];
 const RGBA_BYTES_PER_PIXEL = 4;
+const PATTERN_CACHE_KEY_PREFIX = "pattern:";
 
 function inlineSpriteImageText(image: SpriteImage, context: FieldEncodeContext): string {
     const cache = context.inlineSpriteImageEncodings;
@@ -19,13 +29,18 @@ function inlineSpriteImageText(image: SpriteImage, context: FieldEncodeContext):
     return text;
 }
 
+function encodeInlineSpriteImage(image: SpriteImage, context: FieldEncodeContext): SceneJsonObject {
+    if (image.pattern !== undefined) return encodeSpritePatternJson(image.pattern);
+    return {width: image.sizeX, height: image.sizeY, rgbaBase64: inlineSpriteImageText(image, context)};
+}
+
 function imageExtentOf(json: SceneJsonObject, key: string, path: string): number {
     const extent = json[key];
     if (typeof extent !== "number" || !Number.isSafeInteger(extent) || extent < 0) throw fieldValueError(`${path}.${key}`, "a whole number >= 0", extent);
     return extent;
 }
 
-function decodeInlineSpriteImage(json: SceneJsonObject, context: FieldDecodeContext, path: string): SpriteImage {
+function decodeInlinePixels(json: SceneJsonObject, context: FieldDecodeContext, path: string): SpriteImage {
     const width = imageExtentOf(json, "width", path);
     const height = imageExtentOf(json, "height", path);
     const text = json.rgbaBase64;
@@ -48,18 +63,36 @@ function decodeInlineSpriteImage(json: SceneJsonObject, context: FieldDecodeCont
     return image;
 }
 
+function decodeInlinePattern(json: SceneJsonObject, context: FieldDecodeContext, path: string): SpriteImage {
+    const pattern = decodeSpritePatternJson(json, (key, expectation, actual) => fieldValueError(`${path}.${key}`, expectation, actual));
+    const cacheKey = PATTERN_CACHE_KEY_PREFIX + JSON.stringify(encodeSpritePatternJson(pattern));
+    const cached = context.inlineSpriteImages?.get(cacheKey);
+    if (cached !== undefined) return cached;
+    const image = SpriteImage.fromPatternSource(pattern);
+    context.inlineSpriteImages?.set(cacheKey, image);
+    return image;
+}
+
+function decodeInlineSpriteImage(json: SceneJsonObject, context: FieldDecodeContext, path: string): SpriteImage {
+    return isSpritePatternJson(json) ? decodeInlinePattern(json, context, path) : decodeInlinePixels(json, context, path);
+}
+
+function loadPatternFile(path: string, loader: SceneAssetLoader): SpriteImage {
+    return loader.loadCached(SPRITE_IMAGE_ASSET_TYPE_NAME, path, () => SpriteImage.fromPatternSource(parseSpritePatternFile(loader.loadText(path), path), path));
+}
+
 export const SPRITE_IMAGE_ASSET_TYPE: AssetType<SpriteImage> = {
     name: SPRITE_IMAGE_ASSET_TYPE_NAME,
     valueName: "SpriteImage",
     fileSuffixes: IMAGE_FILE_SUFFIXES,
     inline: {
-        expectation: `{"width", "height", "rgbaBase64"}`,
-        matches: json => json.rgbaBase64 !== undefined,
-        encode: (image, context) => ({width: image.sizeX, height: image.sizeY, rgbaBase64: inlineSpriteImageText(image, context)}),
+        expectation: `{"width", "height", "rgbaBase64"}, {"rows", "palette"}`,
+        editableStruct: spritePatternFieldType,
+        matches: json => json.rgbaBase64 !== undefined || isSpritePatternJson(json),
+        encode: encodeInlineSpriteImage,
         decode: decodeInlineSpriteImage,
     },
     isAsset: (value): value is SpriteImage => value instanceof SpriteImage,
-    isDerived: isSpritePatternImage,
-    load: (path, loader) => SpriteImage.fromFile(path, loader.loadOptions),
+    load: (path, loader) => isSpritePatternFile(path) ? loadPatternFile(path, loader) : SpriteImage.fromFile(path, loader.loadOptions),
     pathOf: image => image.sourcePath,
 };

@@ -11,7 +11,7 @@ import type {PixelFrame, PixelPresenter, PixelPresenterSize} from "../src/backen
 import {AnsiCellPresenter, nodePlatform} from "../src/hosts/terminal";
 import {demoFrameHashFiles, startDemoForFrameHashes} from "./support/demoFrameHashLaunch";
 import type {HashedBackend, HashedDemo, HashedOutput} from "./support/demoFrameHashLaunch";
-import {DEMO_FRAME_HASH_SCRIPTS, ScriptedInput} from "./support/demoFrameHashScripts";
+import {DEMO_FRAME_HASH_SCRIPTS, pendingWorkSettled, ScriptedInput} from "./support/demoFrameHashScripts";
 
 const ROOT = resolve(__dirname, "..");
 const BASELINE_PATH = join(__dirname, "demoFrameHashes.baseline.txt");
@@ -209,6 +209,7 @@ async function runCase(hashCase: HashCase, runtime: DeterministicRuntime, errors
                 platform.advance(FRAME_MS);
                 runtime.advance(FRAME_MS);
                 recorder.endTick();
+                if (phase.yieldsToPendingWork) await pendingWorkSettled();
             }
         }
     } finally {

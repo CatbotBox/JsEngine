@@ -2,13 +2,16 @@ import {existsSync, watch} from "fs";
 import {join} from "path";
 import {contentTypeOf, distFileFor, ISOLATION_HEADERS, ServerSentEventChannel} from "../../hosts/desktop";
 import {createProjectServer, LOOPBACK_HOSTNAMES, locateBun} from "../../editor/desktop";
-import {DEV_EVENTS_PATH, DEV_RELOAD_EVENT} from "../../hosts/web/devReload";
+import {DEV_EVENTS_PATH} from "../../hosts/web/devReload";
+import {SPRITE_PATTERN_FILE_SUFFIX} from "../../engine/rendering/2d/spritePatternFile";
 import {CliError} from "../cliArguments";
 import {isWebProjectDataFile} from "../build/webDistFiles";
 import {isInside} from "../generate/projectSources";
 import {GENERATED_FOLDER} from "../projectLayout";
 import {builtProjectSite} from "../projectSites";
 import {CLI_ENTRY, REPO_ROOT, repoRelative, slashed, webDistOf} from "../repoPaths";
+import {classifyDevChanges, devPageEventOf, servedProjectFolders} from "./devChanges";
+import {DevSiteGenerator} from "./devSiteGenerator";
 
 export interface DevServerOptions {
     readonly prod: boolean;
@@ -29,11 +32,12 @@ const REBUILD_DEBOUNCE_MS = 300;
 const IGNORED_CHANGE_MARKERS: readonly string[] = [".jsengine", "node_modules"];
 const IGNORED_CHANGE_FOLDERS: readonly string[] = [GENERATED_FOLDER];
 const PATH_SEPARATOR = "/";
-const REBUILT_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".mjs", ".html", ".css", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".ppm"];
+const REBUILT_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".mjs", ".html", ".css", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".ppm", SPRITE_PATTERN_FILE_SUFFIX];
 const WATCH_RECURSIVE = {recursive: true} as const;
 const WEB_BUILD_ARGUMENTS: readonly string[] = ["build", "--target", "web"];
 const PROD_FLAG = "--prod";
 const PROJECT_FLAG = "--project";
+const NO_GENERATE_FLAG = "--no-generate";
 
 function browserOpenCommand(url: string): string[] {
     if (process.platform === "win32") return ["cmd", "/c", "start", "", url];
@@ -41,8 +45,8 @@ function browserOpenCommand(url: string): string[] {
     return ["xdg-open", url];
 }
 
-function buildArguments(prod: boolean, project: string | undefined): string[] {
-    return [process.execPath, CLI_ENTRY, ...WEB_BUILD_ARGUMENTS, ...(prod ? [PROD_FLAG] : []), ...(project === undefined ? [] : [PROJECT_FLAG, project])];
+function buildArguments(prod: boolean, project: string | undefined, regenerated: boolean): string[] {
+    return [process.execPath, CLI_ENTRY, ...WEB_BUILD_ARGUMENTS, ...(prod ? [PROD_FLAG] : []), ...(project === undefined ? [] : [PROJECT_FLAG, project]), ...(regenerated ? [NO_GENERATE_FLAG] : [])];
 }
 
 function watchedDirectories(project: string | undefined): string[] {
@@ -69,24 +73,30 @@ function isIgnoredChange(filename: string): boolean {
     return !REBUILT_EXTENSIONS.some(extension => lower.endsWith(extension)) && !isWebProjectDataFile(lower);
 }
 
-function watchAndRebuild(events: ServerSentEventChannel, prod: boolean, dist: string, project: string | undefined): void {
+function watchAndRebuild(events: ServerSentEventChannel, prod: boolean, dist: string, project: string | undefined, siteGenerator: DevSiteGenerator): void {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let building = false;
     let buildAgain = false;
+    const changedFiles = new Set<string>();
     const rebuild = async (): Promise<void> => {
         if (building) {
             buildAgain = true;
             return;
         }
         building = true;
+        const builtChanges = [...changedFiles];
+        changedFiles.clear();
         const started = performance.now();
-        const child = Bun.spawn(buildArguments(prod, project), {cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe"});
+        const regenerated = siteGenerator.regenerate(false);
+        const child = Bun.spawn(buildArguments(prod, project, regenerated), {cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe"});
         const [stdout, stderr, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
         building = false;
         if (exitCode === 0) {
-            console.log(`rebuilt ${repoRelative(dist)} in ${Math.round(performance.now() - started)} ms; reloading ${events.subscriberCount} page(s)`);
-            events.send(DEV_RELOAD_EVENT, {});
+            const pageEvent = devPageEventOf(classifyDevChanges(builtChanges, servedProjectFolders(project)));
+            console.log(`rebuilt ${repoRelative(dist)} in ${Math.round(performance.now() - started)} ms; ${pageEvent.action} on ${events.subscriberCount} page(s)`);
+            events.send(pageEvent.event, pageEvent.data);
         } else {
+            for (const file of builtChanges) changedFiles.add(file);
             console.error(`dev rebuild failed (exit ${exitCode}):\n${stdout}${stderr}`);
         }
         if (buildAgain) {
@@ -98,6 +108,7 @@ function watchAndRebuild(events: ServerSentEventChannel, prod: boolean, dist: st
         if (!existsSync(watched)) continue;
         watch(watched, WATCH_RECURSIVE, (_event, filename) => {
             if (filename === null || isIgnoredChange(String(filename))) return;
+            changedFiles.add(join(watched, String(filename)));
             if (timer !== undefined) clearTimeout(timer);
             timer = setTimeout(() => {
                 timer = undefined;
@@ -112,8 +123,10 @@ export function serveSite(options: DevServerOptions): void {
     const dist = webDistOf(options.prod);
     const port = Number(process.env.PORT ?? DEFAULT_PORT);
     const headers: Readonly<Record<string, string>> = options.isolated ? ISOLATION_HEADERS : {};
+    const siteGenerator = dev ? new DevSiteGenerator(options.project) : undefined;
     if (options.build) {
-        const result = Bun.spawnSync(buildArguments(options.prod, options.project), {cwd: REPO_ROOT, stdio: ["inherit", "inherit", "inherit"]});
+        const regenerated = siteGenerator?.regenerate(true) === true;
+        const result = Bun.spawnSync(buildArguments(options.prod, options.project, regenerated), {cwd: REPO_ROOT, stdio: ["inherit", "inherit", "inherit"]});
         if (result.exitCode !== 0) throw new CliError(`the web build failed (exit ${result.exitCode}); fix the errors above`);
     }
     if (!existsSync(dist)) throw new CliError(`${dist} does not exist; build it first (drop --no-build)`);
@@ -147,7 +160,7 @@ export function serveSite(options: DevServerOptions): void {
 
     const boundAddresses = (dev ? DEV_LOOPBACK_ADDRESSES : [ALL_INTERFACES]).filter(serveOn);
     if (boundAddresses.length === 0) throw new CliError(`nothing could listen on port ${port}; free it or set PORT to another one`);
-    if (devEvents !== undefined) watchAndRebuild(devEvents, options.prod, dist, options.project);
+    if (devEvents !== undefined && siteGenerator !== undefined) watchAndRebuild(devEvents, options.prod, dist, options.project, siteGenerator);
     const siteUrl = `http://localhost:${port}/`;
     console.log(`serving ${repoRelative(dist)} at ${siteUrl} ${options.isolated ? "(cross-origin isolated)" : "(--no-coi: isolated only through the coi-serviceworker, else single-threaded)"}`);
     if (dev) console.log(`dev: bound to ${boundAddresses.join(" and ")}; watching ${watchedDirectories(options.project).map(watchedLabel).join(", ")} to rebuild and reload game pages; editor at ${siteUrl}editor.html`);

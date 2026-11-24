@@ -2,6 +2,7 @@ import {System} from "../../engine/core";
 import type {RenderPassKind} from "../../engine/rendering/renderPasses";
 import type {ColumnSpan} from "../../engine/core";
 import {Camera} from "../../engine/rendering/camera";
+import {RenderCameraOverride} from "../../engine/rendering/renderCameraOverride";
 import {LocalToWorld} from "../../engine/translation";
 import {RenderMesh} from "../../engine/rendering/3d/renderMesh";
 import type {Mesh} from "../../engine/rendering/3d/mesh";
@@ -20,11 +21,14 @@ import {AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, 
 import {fromFloat32Array} from "../../engine/math/types/vec";
 import type {ReadonlyVec16} from "../../engine/math/types/vec";
 import {PixelFramebuffer} from "../pixels/pixelFramebuffer";
+import {PixelPresenterResource} from "../pixels/pixelPresenterResource";
 import {PixelRenderSystemGroup} from "../pixels/pixelRenderSystemGroup";
 import {backgroundColorOf, PixelRenderSettings} from "../pixels/pixelRenderSettings";
 import {asGpuBufferSource, GPU_BUFFER_USAGE} from "./gpuTypes";
 import type {GpuDevice} from "./gpuTypes";
 import {GpuDeviceResource} from "./gpuDeviceResource";
+import {gpuFrameOf} from "./gpuCanvasPixelPresenter";
+import type {GpuFrame} from "./gpuFrame";
 import {FRAME_UNIFORM_FLOATS, frameViewMatrix, perspectiveFocalLength, writeFrameTime, writeFrameUniforms} from "./gpuCamera";
 import {FLOAT_BYTES, GpuLightPacking, packSceneLights} from "./gpuLightPacking";
 import {GpuInstanceBatcher, INSTANCE_FLOATS} from "./gpuInstanceBatcher";
@@ -34,7 +38,7 @@ import {GpuMaterialCache} from "./gpuMaterialCache";
 import {GpuPipelineCache} from "./gpuPipelineCache";
 import {GpuShaderLibrary} from "./gpuShaderLibrary";
 import {GpuSurfaceShader, LIT_SURFACE_SHADER, NO_SURFACE_SHADER_PARAMS, sameSurfaceShader} from "./gpuSurfaceShader";
-import {GpuMeshPassSettings, MULTISAMPLE_COUNT, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
+import {effectiveRenderScale, GpuMeshPassSettings, MIN_RENDER_SCALE, MULTISAMPLE_COUNT, renderTargetPx, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import type {GpuSampleCount} from "./gpuMeshPassSettings";
 import {
     FRAME_BIND_GROUP,
@@ -61,6 +65,8 @@ const NOTHING_DRAWN = 0;
 const NO_BASE_VERTEX = 0;
 const INDEX_FORMAT: GPUIndexFormat = "uint32";
 const MS_PER_SECOND = 1000;
+const CAMERA_SPEC = {camera: Camera, localToWorld: LocalToWorld};
+const FIELD_OF_VIEW_SPEC = {fieldOfView: FieldOfView};
 
 type MeshSpan = ColumnSpan<"renderMesh" | "localToWorld" | "surfaceShader">;
 type BoundedMeshSpan = ColumnSpan<"renderMesh" | "localToWorld" | "bounds" | "surfaceShader">;
@@ -99,6 +105,8 @@ export class GpuMeshPassSystem extends System {
     private readonly _frameUniforms = new Float32Array(FRAME_UNIFORM_FLOATS);
     private readonly _lights = new GpuLightPacking();
     private readonly _projectedBounds = new ScreenProjectedBounds();
+    private _renderPxPerFramebufferPxX = MIN_RENDER_SCALE;
+    private _renderPxPerFramebufferPxY = MIN_RENDER_SCALE;
     private _rowLevels = new Int32Array(INITIAL_ROW_LEVEL_CAPACITY);
     private _rowLevelCursor = 0;
     private _frameNumber = 0;
@@ -130,7 +138,7 @@ export class GpuMeshPassSystem extends System {
     protected onCreate() {
         console.warn(GPU_BACKEND_EXPERIMENTAL_NOTICE);
         this.world.resources.getOrCreate(MeshRenderStats);
-        this.requireAllForUpdate(this._cameraQuery);
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride);
         this.requireAnyForUpdate(this._unboundedMeshQuery);
         this.requireAnyForUpdate(this._boundedMeshQuery);
         this.world.ensureSystemExists(RenderMeshBoundsSystem);
@@ -179,6 +187,9 @@ export class GpuMeshPassSystem extends System {
         const sampleCount: GpuSampleCount = settings.sampleCount > SINGLE_SAMPLE_COUNT ? MULTISAMPLE_COUNT : SINGLE_SAMPLE_COUNT;
         const device = this._gpu.device;
         const widthPx = framebuffer.widthPx, heightPx = framebuffer.heightPx;
+        const renderScale = effectiveRenderScale(settings.renderScale, widthPx, heightPx);
+        this._renderPxPerFramebufferPxX = renderTargetPx(widthPx, renderScale) / widthPx;
+        this._renderPxPerFramebufferPxY = renderTargetPx(heightPx, renderScale) / heightPx;
         this._frameNumber++;
 
         writeFrameUniforms(this._frameUniforms, this._cameraMatrix!, this._cameraFieldOfView, widthPx, heightPx,
@@ -194,10 +205,15 @@ export class GpuMeshPassSystem extends System {
         this.uploadInstances(device);
 
         const background = backgroundColorOf(this._renderSettingsQuery.tryGetSingleton({settings: PixelRenderSettings})?.settings);
-        const pass = this._gpu.frame.beginScene(background, sampleCount, widthPx, heightPx);
+        const pass = this.presentedFrame().beginScene(background, sampleCount, widthPx, heightPx, settings.renderScale);
         this.drawBatches(pass, settings, meshSettings, sampleCount, this.world.resources.getOrCreate(GpuShaderLibrary));
         pass.end();
         this.evictUnused(settings.evictUnusedAfterFrames);
+    }
+
+    private presentedFrame(): GpuFrame {
+        const presenter = this.world.resources.tryGet(PixelPresenterResource)?.presenter;
+        return (presenter === undefined ? undefined : gpuFrameOf(presenter)) ?? this._gpu.frame;
     }
 
     private evictUnused(maxUnusedFrames: number): void {
@@ -219,6 +235,8 @@ export class GpuMeshPassSystem extends System {
     }
 
     private readSingleCamera(): boolean {
+        const override = this.world.resources.tryGet(RenderCameraOverride);
+        if (override !== undefined) return this.readOverrideCamera(override);
         let cameras = 0;
         this._cameraQuery.stream({read: {localToWorld: LocalToWorld}, optional: {fieldOfView: FieldOfView}}).consume(({localToWorld, fieldOfView}) => {
             cameras++;
@@ -226,6 +244,14 @@ export class GpuMeshPassSystem extends System {
             this._cameraFieldOfView = fieldOfView?.radians;
         });
         return cameras === 1;
+    }
+
+    private readOverrideCamera(override: RenderCameraOverride): boolean {
+        const camera = override.componentsOf(this.world, CAMERA_SPEC);
+        if (camera === undefined) return false;
+        this._cameraMatrix = camera.localToWorld.matrix;
+        this._cameraFieldOfView = override.componentsOf(this.world, FIELD_OF_VIEW_SPEC)?.fieldOfView.radians;
+        return true;
     }
 
     private createLightBuffer(device: GpuDevice): void {
@@ -313,6 +339,7 @@ export class GpuMeshPassSystem extends System {
         const settings = this._settings;
         const meshSettings = this._meshSettings;
         const lodEnabled = meshSettings.lod;
+        const renderPxPerFramebufferPxX = this._renderPxPerFramebufferPxX, renderPxPerFramebufferPxY = this._renderPxPerFramebufferPxY;
         for (let row = start, out = firstLevel, b = start * AABB_STRIDE; row < end; row++, out++, b += AABB_STRIDE) {
             const mesh = (renderMeshes.get(row) as RenderMesh).mesh;
             const visible = mesh !== undefined && projected.project(
@@ -322,7 +349,10 @@ export class GpuMeshPassSystem extends System {
             if (!visible) {
                 levels[out] = CULLED;
             } else if (lodEnabled && mesh.lods.length > 1) {
-                levels[out] = selectLodLevel(mesh.lods, projected.width, projected.height, settings.lodTrianglesPerPixel, meshSettings.lodBias);
+                levels[out] = selectLodLevel(
+                    mesh.lods, projected.width * renderPxPerFramebufferPxX, projected.height * renderPxPerFramebufferPxY,
+                    settings.lodTrianglesPerPixel, meshSettings.lodBias,
+                );
             } else {
                 levels[out] = BASE_LOD_LEVEL;
             }

@@ -61,7 +61,6 @@ describe("editor protocol guards", () => {
             {op: "applyPrefabInstance", entity: ENTITY},
             {op: "updatePrefabInstances", sourcePath: "a.prefab.json", documentText: "{}"},
             {op: "pickEntities", x: 1.5, y: -2, view: "scene"},
-            {op: "setView", view: "game"},
             {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, 1]},
             {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, 1], fieldOfViewDegrees: 60},
             {op: "getViewInfo", view: "scene"},
@@ -77,7 +76,9 @@ describe("editor protocol guards", () => {
             {op: "setResourceField", typeName: "SwarmTuning", key: "waves", value: [{count: 3}]},
             {op: "setResourceField", typeName: "SwarmTuning", key: "limit", value: null},
             {op: "reloadDataAsset", path: "data/swarm.tuning.asset.json"},
+            {op: "reloadPrefab", path: "prefabs/enemy.prefab.json"},
             {op: "defaultResourceFields", typeName: "SwarmTuning"},
+            {op: "getField", entity: ENTITY, typeName: "Sprite", key: "image"},
         ];
         expect(requests.filter(request => !isEditorRequest(request))).toEqual([]);
         expect(requests.every(request => isEditorRequestMessage(message(request)))).toBe(true);
@@ -131,7 +132,7 @@ describe("editor protocol guards", () => {
             {op: "updatePrefabInstances", documentText: "{}"},
             {op: "pickEntities", x: Number.NaN, y: 0, view: "scene"},
             {op: "pickEntities", x: 0, y: 0, view: "top"},
-            {op: "setView", view: "both"},
+            {op: "setView", view: "game"},
             {op: "setEditorCamera", position: [0, 1], rotation: [0, 0, 0, 1]},
             {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, Number.POSITIVE_INFINITY]},
             {op: "setEditorCamera", position: [0, 1, 2], rotation: [0, 0, 0, 1], fieldOfViewDegrees: 180},
@@ -146,7 +147,11 @@ describe("editor protocol guards", () => {
             {op: "setResourceField", key: "speed", value: 2},
             {op: "reloadDataAsset"},
             {op: "reloadDataAsset", path: 1},
+            {op: "reloadPrefab"},
+            {op: "reloadPrefab", path: 1},
             {op: "defaultResourceFields"},
+            {op: "getField", entity: ENTITY, typeName: "Sprite"},
+            {op: "getField", entity: ENTITY, key: "image"},
         ];
         expect(requests.filter(request => isEditorRequest(request))).toEqual([]);
     });
@@ -180,7 +185,9 @@ describe("editor protocol guards", () => {
             {kind: "console", level: "error", text: "Error: boom", timeMs: 13, stack: "    at fail (game.js:1:2)"},
             {kind: "worldStopped", error: "boom"},
             {kind: "worldStopped", error: "boom", stack: "    at tick (game.js:3:4)"},
-            {kind: "modeChanged", mode: "play", gameplayTicks: 3, view: "game"},
+            {kind: "modeChanged", mode: "play", gameplayTicks: 3},
+            {kind: "gameCameraChanged", present: false},
+            {kind: "gameCameraChanged", present: true},
         ];
         for (const event of events) {
             const eventMessage = {type: EDITOR_MESSAGE_TYPE, event};
@@ -196,7 +203,10 @@ describe("editor protocol guards", () => {
             {kind: "console", level: "error", text: "x", timeMs: 1, stack: null},
             {kind: "worldStopped"},
             {kind: "worldStopped", error: "boom", stack: 3},
-            {kind: "modeChanged", mode: "play", gameplayTicks: 3},
+            {kind: "modeChanged", mode: "play", gameplayTicks: -1},
+            {kind: "gameCameraChanged"},
+            {kind: "gameCameraChanged", present: 0},
+            {kind: "gameCameraChanged", present: "false"},
             {kind: "explode"},
         ];
         expect(malformed.filter(event => isEditorEventMessage({type: EDITOR_MESSAGE_TYPE, event}))).toEqual([]);

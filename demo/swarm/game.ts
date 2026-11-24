@@ -12,7 +12,7 @@ import {
 } from "@jsengine/engine/rendering";
 import {Sprite} from "@jsengine/engine/rendering/2d";
 import {LocalPosition} from "@jsengine/engine/translation";
-import {DataAssets, dataAssetPathOf, PrefabSpawner} from "@jsengine/engine/scene";
+import {DataAssets, dataAssetPathOf, PrefabSpawner, SceneLoadCancelledError, SceneLoader} from "@jsengine/engine/scene";
 import type {PrefabAsset} from "@jsengine/engine/scene";
 import {Random} from "@jsengine/engine/math";
 import {Lifetime, LifetimeSystem, MotionSystem, Velocity} from "@jsengine/engine/motion";
@@ -69,6 +69,7 @@ const BLINK_PHASES = 2;
 const DEFEATED_HIT_POINTS = 0;
 const NO_EXTENT = 0;
 const STATE_FILE = "assets/swarm.state.asset.json";
+const GAMEPLAY_SCENE_FILE = "scenes/main.scene.json";
 const ENEMY_PREFAB_FIELD = "waves.enemies[].prefab";
 
 class SwarmArena extends Resource {
@@ -208,6 +209,7 @@ export class SwarmControlSystem extends System {
     private _bullets = this.createEntityQuery([Bullet]);
     private _sparks = this.createEntityQuery([Spark]);
     private _actions!: SwarmActions;
+    private _gameplaySceneLoading = false;
 
     override priority(): number {
         return CONTROL_PRIORITY;
@@ -227,14 +229,32 @@ export class SwarmControlSystem extends System {
             return;
         }
         if (input.actionPressed(this._actions.ToggleHud)) this.world.resources.tryGet(RenderPasses)?.toggle("hudText");
-        // Starting lasts one frame: the ECB destroyed the old entities at the end of the frame that queued it, so reset only now.
+        // Starting lasts until the gameplay scene is active and at least one frame: the ECB destroyed the old entities at the end of the frame that queued it, so reset only then.
         if (state.phase === SwarmPhase.Starting) {
-            startNewGame(this.world, state);
+            if (this.gameplaySceneReady()) startNewGame(this.world, state);
             return;
         }
-        const startPressed = state.phase === SwarmPhase.Title && input.actionPressed(this._actions.Start);
-        const restartPressed = state.phase === SwarmPhase.GameOver && input.actionPressed(this._actions.Restart);
-        if (startPressed || restartPressed) this.clearField(state);
+        if (state.phase === SwarmPhase.Title && input.actionPressed(this._actions.Start)) {
+            this.clearField(state);
+            this.loadGameplayScene();
+            return;
+        }
+        if (state.phase === SwarmPhase.GameOver && input.actionPressed(this._actions.Restart)) this.clearField(state);
+    }
+
+    private gameplaySceneReady(): boolean {
+        return !this._gameplaySceneLoading && this.world.resources.get(SceneLoader).active()?.path === GAMEPLAY_SCENE_FILE;
+    }
+
+    private loadGameplayScene(): void {
+        this._gameplaySceneLoading = true;
+        void this.world.resources.get(SceneLoader).load(GAMEPLAY_SCENE_FILE)
+            .catch(error => {
+                if (!(error instanceof SceneLoadCancelledError)) console.error(`Swarm could not load the gameplay scene ${GAMEPLAY_SCENE_FILE}`, error);
+            })
+            .finally(() => {
+                this._gameplaySceneLoading = false;
+            });
     }
 
     private clearField(state: SwarmState): void {

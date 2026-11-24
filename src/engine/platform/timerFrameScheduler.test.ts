@@ -1,7 +1,7 @@
 import {describe, expect, test} from "../testing/harness";
 import {timerFrameScheduler} from "./timerFrameScheduler";
-import {displayPacing, intervalPacing, UNCAPPED_PACING} from "./framePacing";
-import type {FramePacing} from "./platform";
+import {ASSUMED_DISPLAY_INTERVAL_MS, displayPacing, intervalPacing, UNCAPPED_PACING} from "./framePacing";
+import type {FramePacing, PresentationBacklog} from "./platform";
 
 const INTERVAL_MS = 10;
 const RUN_MS = 120;
@@ -11,9 +11,37 @@ const CAP_INTERVAL_MS = 25;
 const SETTLE_MS = 30;
 const FRAMES_BEFORE_STOP = 3;
 const FLOAT_TOLERANCE_MS = 1e-6;
+const FRAMES_BEFORE_THE_FIRST_WAIT = 1;
+const SPARE_WAIT_FRAMES = 3;
+const FIRST_FRAME_ONLY = 1;
 
 const now = (): number => performance.now();
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
+const nextImmediateTask = () => new Promise<void>(done => setImmediate(done));
+
+class ScriptedBacklog implements PresentationBacklog {
+    public isBacklogged = true;
+    private readonly listeners = new Set<() => void>();
+
+    public get listenerCount(): number {
+        return this.listeners.size;
+    }
+
+    public backlogged(): boolean {
+        return this.isBacklogged;
+    }
+
+    public onPresented(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => {
+            this.listeners.delete(listener);
+        };
+    }
+
+    public present(): void {
+        for (const listener of [...this.listeners]) listener();
+    }
+}
 
 async function framesDuring(pacing: FramePacing, runMs: number): Promise<number[]> {
     const frameTimes: number[] = [];
@@ -49,6 +77,62 @@ describe("timerFrameScheduler", () => {
         const frameTimes = await framesDuring(displayPacing(CAP_INTERVAL_MS), RUN_MS);
         expect(frameTimes.length).toBeGreaterThan(1);
         expect(gapsOf(frameTimes).every(gapMs => gapMs >= CAP_INTERVAL_MS - FLOAT_TOLERANCE_MS)).toBe(true);
+    });
+
+    test("uncapped pacing waits instead of spinning while the presentation is backlogged, and a presented frame wakes it at once", async () => {
+        const backlog = new ScriptedBacklog();
+        let frames = 0;
+        const stop = timerFrameScheduler(now).start(UNCAPPED_PACING, () => frames++, backlog);
+        try {
+            await sleep(RUN_MS);
+            expect(frames).toBeGreaterThan(FIRST_FRAME_ONLY);
+            expect(frames).toBeLessThan(Math.ceil(RUN_MS / ASSUMED_DISPLAY_INTERVAL_MS) + SPARE_WAIT_FRAMES);
+            const framesBeforePresenting = frames;
+            backlog.present();
+            await nextImmediateTask();
+            expect(frames).toBe(framesBeforePresenting + 1);
+        } finally {
+            stop();
+        }
+    });
+
+    test("uncapped pacing runs back to back again once the presentation catches up", async () => {
+        const backlog = new ScriptedBacklog();
+        let frames = 0;
+        const stop = timerFrameScheduler(now).start(UNCAPPED_PACING, () => frames++, backlog);
+        try {
+            await nextImmediateTask();
+            expect(frames).toBe(FRAMES_BEFORE_THE_FIRST_WAIT);
+            backlog.isBacklogged = false;
+            backlog.present();
+            await sleep(RUN_MS);
+        } finally {
+            stop();
+        }
+        expect(frames).toBeGreaterThan(MIN_UNCAPPED_FRAMES);
+    });
+
+    test("stopping a waiting loop stops listening and ignores later presented frames", async () => {
+        const backlog = new ScriptedBacklog();
+        let frames = 0;
+        const stop = timerFrameScheduler(now).start(UNCAPPED_PACING, () => frames++, backlog);
+        await nextImmediateTask();
+        expect(backlog.listenerCount).toBe(1);
+        stop();
+        expect(backlog.listenerCount).toBe(0);
+        backlog.present();
+        await sleep(SETTLE_MS);
+        expect(frames).toBe(FRAMES_BEFORE_THE_FIRST_WAIT);
+    });
+
+    test("interval pacing keeps its interval whatever the presentation backlog", async () => {
+        const backlog = new ScriptedBacklog();
+        const frameTimes: number[] = [];
+        const stop = timerFrameScheduler(now).start(intervalPacing(INTERVAL_MS), frameTimeMs => frameTimes.push(frameTimeMs), backlog);
+        await sleep(RUN_MS);
+        stop();
+        expect(frameTimes.length).toBeGreaterThan(MIN_INTERVAL_FRAMES);
+        expect(backlog.listenerCount).toBe(0);
     });
 
     test("a frame callback can stop its own loop", async () => {

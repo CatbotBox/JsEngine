@@ -9,6 +9,7 @@ import type {GpuDeviceResource} from "./gpuDeviceResource";
 export function installGpuBackend(world: World, device: GpuDeviceResource, presenter: PixelPresenter, passes: readonly RenderPassCtor[]): void {
     insertRenderBackendMarker(world, "gpu");
     world.resources.insert(device);
+    world.resources.insert(device.frame.stats);
     world.resources.insert(new PixelPresenterResource(presenter));
     createRenderPasses(world, passes);
 }

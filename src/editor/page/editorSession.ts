@@ -29,6 +29,7 @@ export type EditorNoticeLevel = "info" | "warn" | "error";
 
 export interface EditorShell {
     readonly viewport: HTMLElement;
+    readonly sceneViewport: HTMLElement;
     readonly commands: CommandRegistry;
 
     mount(session: EditorSession): Promise<void>;
@@ -40,4 +41,6 @@ export interface EditorShell {
     showTargetLabel(text: string): void;
 
     setGameTargetMenu(entries: readonly MenuEntry[]): void;
+
+    onSceneViewShown(listener: (shown: boolean) => void): () => void;
 }

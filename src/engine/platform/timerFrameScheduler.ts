@@ -1,8 +1,9 @@
-import type {FrameCallback, FramePacing, FrameScheduler} from "./platform";
-import {minimumFrameIntervalMs} from "./framePacing";
+import type {FrameCallback, FramePacing, FrameScheduler, PresentationBacklog} from "./platform";
+import {ASSUMED_DISPLAY_INTERVAL_MS, minimumFrameIntervalMs} from "./framePacing";
 
 const POLLS_PER_FRAME = 10;
 const NEXT_TASK_DELAY_MS = 0;
+const MAX_PRESENTATION_WAIT_MS = ASSUMED_DISPLAY_INTERVAL_MS;
 
 interface TaskYield {
     schedule(task: () => void): void;
@@ -28,8 +29,8 @@ interface YieldHost {
 
 export function timerFrameScheduler(now: () => number): FrameScheduler {
     return {
-        start(pacing: FramePacing, onFrame: FrameCallback): () => void {
-            if (pacing.kind === "uncapped") return startUncapped(now, onFrame);
+        start(pacing: FramePacing, onFrame: FrameCallback, backlog?: PresentationBacklog): () => void {
+            if (pacing.kind === "uncapped") return startUncapped(now, onFrame, backlog);
             return startInterval(now, minimumFrameIntervalMs(pacing), onFrame);
         },
     };
@@ -48,17 +49,30 @@ function startInterval(now: () => number, intervalMs: number, onFrame: FrameCall
     return () => clearInterval(handle);
 }
 
-function startUncapped(now: () => number, onFrame: FrameCallback): () => void {
+function startUncapped(now: () => number, onFrame: FrameCallback, backlog: PresentationBacklog | undefined): () => void {
     const taskYield = createTaskYield(globalThis as unknown as YieldHost);
     let running = true;
+    let presentationWait: ReturnType<typeof setTimeout> | undefined;
     const frame = (): void => {
         if (!running) return;
         onFrame(now());
-        if (running) taskYield.schedule(frame);
+        if (!running) return;
+        if (backlog?.backlogged() === true) presentationWait = setTimeout(endPresentationWait, MAX_PRESENTATION_WAIT_MS);
+        else taskYield.schedule(frame);
     };
+    const endPresentationWait = (): void => {
+        if (presentationWait === undefined) return;
+        clearTimeout(presentationWait);
+        presentationWait = undefined;
+        taskYield.schedule(frame);
+    };
+    const stopListening = backlog?.onPresented(endPresentationWait);
     taskYield.schedule(frame);
     return () => {
         running = false;
+        clearTimeout(presentationWait);
+        presentationWait = undefined;
+        stopListening?.();
         taskYield.cancel();
     };
 }

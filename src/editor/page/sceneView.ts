@@ -232,7 +232,6 @@ export class SceneView {
     private lastFrameMs: number | undefined;
     private frameHandle: number | undefined;
     private wasActive = false;
-    private shownView: string | undefined;
     private shownSelectionRotated = false;
 
     public constructor(
@@ -307,20 +306,17 @@ export class SceneView {
 
     private isActive(): boolean {
         const workspace = this.workspace;
-        return workspace.view === "scene" && workspace.mode !== "play" && !workspace.closed;
+        return workspace.sceneViewShown && !workspace.closed;
     }
 
     private stateChanged(): void {
         const active = this.isActive();
-        const view = `${this.workspace.view}:${this.workspace.mode}`;
-        if (view === this.shownView) return;
-        this.shownView = view;
+        if (active === this.wasActive) return;
         this.overlay.classList.toggle(INTERACTIVE_CLASS, active);
         if (!active) {
             this.gesture = undefined;
             this.flyKeys.clear();
-            if (this.wasActive) this.viewport.querySelector("canvas")?.focus();
-        } else if (!this.wasActive) {
+        } else {
             this.overlay.focus();
         }
         this.wasActive = active;

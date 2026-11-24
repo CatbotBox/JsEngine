@@ -118,6 +118,7 @@ const STEP_UP_CHORD = "ArrowUp";
 const ESCAPE_CHORD = "Escape";
 const ENTER_CHORD = "Enter";
 const BACKSPACE_CHORD = "Backspace";
+const TAB_CHORD = "Tab";
 const DISABLED_ATTRIBUTE = "disabled";
 const TITLE_ATTRIBUTE = "title";
 const MOVE_SNAP_SUBMENU = "snap.move3d";
@@ -125,6 +126,7 @@ const CREATE_SUBMENU = "create";
 const DATA_ASSET_SUBMENU = "createDataAsset";
 const COMMANDS = {
     undo: "edit.undo",
+    redo: "edit.redo",
     undoHistory: "edit.undoHistory",
     keyboardShortcuts: "help.keyboardShortcuts",
     toggleInspector: "window.toggleInspector",
@@ -157,6 +159,8 @@ const ENTITY_TEMPLATES: readonly TemplateCommand[] = [
     {command: "entity.createAmbientLight", name: "Ambient Light"},
 ];
 const ROTATED_TEMPLATE: TemplateCommand = {command: "entity.createDirectionalLight", name: "Directional Light"};
+const SPRITE_TEMPLATE: TemplateCommand = {command: "entity.createSprite", name: "Sprite"};
+const EDITED_PATTERN_ROW = "#";
 const PANEL_TOGGLES: readonly {readonly panel: LayoutPanel, readonly command: string}[] = [
     {panel: "hierarchy", command: "window.toggleHierarchy"},
     {panel: "inspector", command: COMMANDS.toggleInspector},
@@ -173,6 +177,7 @@ const CREATED_SCRIPT_NAME = "SmokeSpin";
 const RECOVERY_ESCAPES = 3;
 const SCRIPT_EXTENSION = ".ts";
 const ENABLED_NUMBER_FIELD = `${hookSelector(FIELD_INPUT_HOOK, "number")}:not(:disabled)`;
+const INSPECTOR_TEXT_LINES_FIELD = `${hookSelector(PANEL_HOOK, "inspector")} ${hookSelector(FIELD_INPUT_HOOK, "textLines")}`;
 
 function menuButton(menu: EditorMenuId): string {
     return hookSelector(MENU_HOOK, menu);
@@ -417,6 +422,38 @@ const entityTemplatesFlow: SmokeFlow = {
         }
         ui.expect(created > 0, "no entity template can be created in this project");
         if (unavailable.length > 0) note(`not offered by this game: ${unavailable.join(", ")}`);
+    },
+};
+
+const spritePatternFlow: SmokeFlow = {
+    name: "spritePattern",
+    async run({ui, note}) {
+        const rowsBefore = await ui.visibleCount(ENTITY_ROWS);
+        if (!await menuCommandEnabled(ui, "entity", SPRITE_TEMPLATE.command)) {
+            await closeMenus(ui);
+            note(`this game offers no ${SPRITE_TEMPLATE.name}, so no inline sprite pattern was edited`);
+            return;
+        }
+        await createFromTemplate(ui, SPRITE_TEMPLATE, rowsBefore);
+        const rows = INSPECTOR_TEXT_LINES_FIELD;
+        const rowsText = async (): Promise<string | null> => await ui.read<string | null>(`document.querySelector(${JSON.stringify(rows)})?.value ?? null`);
+        await ui.waitForVisible(rows, "the new sprite's pattern rows in the inspector");
+        const templateRows = await rowsText();
+        ui.expect(templateRows !== null && templateRows.length > 0 && templateRows !== EDITED_PATTERN_ROW, `the new sprite's pattern rows are ${JSON.stringify(templateRows)}`);
+        await ui.click(rows, "the pattern rows");
+        await ui.waitForFocus(rows, "the pattern rows");
+        await ui.press(SELECT_ALL_CHORD);
+        await ui.type(EDITED_PATTERN_ROW);
+        await ui.press(TAB_CHORD);
+        await ui.waitFor("the edited pattern rows to stay after leaving the field", async () => await rowsText() === EDITED_PATTERN_ROW);
+        await runFromMenu(ui, "edit", COMMANDS.undo);
+        await ui.waitFor("Undo to bring back the template's pattern rows", async () => await rowsText() === templateRows);
+        await runFromMenu(ui, "edit", COMMANDS.redo);
+        await ui.waitFor("Redo to bring back the edited pattern rows", async () => await rowsText() === EDITED_PATTERN_ROW);
+        await runFromMenu(ui, "edit", COMMANDS.undo);
+        await ui.waitFor("Undo to bring back the template's pattern rows again", async () => await rowsText() === templateRows);
+        await runFromMenu(ui, "edit", COMMANDS.undo);
+        await ui.waitForCount(ENTITY_ROWS, rowsBefore, "hierarchy entity rows after undoing the sprite");
     },
 };
 
@@ -753,6 +790,7 @@ export function editorSmokeFlows(): SmokeFlow[] {
         pivotCenterFlow,
         snapFlow,
         entityTemplatesFlow,
+        spritePatternFlow,
         localGlobalFlow,
         undoHistoryFlow,
         sceneTabsFlow,

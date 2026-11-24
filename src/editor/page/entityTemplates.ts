@@ -32,7 +32,6 @@ const LOCAL_POSITION = "LocalPosition";
 const LOCAL_ROTATION = "LocalRotation";
 const LOCAL_SCALE = "LocalScale";
 const SPRITE = "Sprite";
-const SPRITE_PATTERN = "SpritePattern";
 const TEXT_SPRITE = "TextSprite";
 const RENDER_MESH = "RenderMesh";
 const DIRECTIONAL_LIGHT = "DirectionalLight";
@@ -50,7 +49,7 @@ const ORIGIN = [0, 0, 0];
 
 const REQUIRED_TYPE_NAMES: Readonly<Record<EntityTemplate, readonly string[]>> = {
     camera: [CAMERA],
-    sprite: [SPRITE, SPRITE_PATTERN],
+    sprite: [SPRITE],
     text: [TEXT_SPRITE],
     mesh: [RENDER_MESH],
     directionalLight: [DIRECTIONAL_LIGHT],
@@ -77,10 +76,7 @@ function templateComponents(template: EntityTemplate, context: EntityTemplateCon
         case "camera":
             return cameraComponents(context);
         case "sprite":
-            return {
-                [SPRITE]: {tint: WHITE, opacity: FULL_INTENSITY},
-                [SPRITE_PATTERN]: {rows: solidSpriteRows(), palette: [{char: SPRITE_PATTERN_CHAR, rgb: WHITE}]},
-            };
+            return {[SPRITE]: {image: {rows: solidSpriteRows(), palette: [{char: SPRITE_PATTERN_CHAR, rgb: WHITE}]}, tint: WHITE, opacity: FULL_INTENSITY}};
         case "text":
             return {[TEXT_SPRITE]: {image: [TEXT_TEMPLATE_LINE]}};
         case "mesh":

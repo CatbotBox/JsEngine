@@ -1,44 +1,29 @@
 import {describe, expect, test} from "../../testing/harness";
 import {MemoryPlatform} from "../../testing/memoryPlatform";
-import {World} from "../../core/world";
-import {RootSystemGroup} from "../../core/rootSystemGroup";
-import type {Entity} from "../../core";
-import {LocalPosition} from "../../translation/localPosition";
-import {LocalToWorld} from "../../translation/localToWorld";
-import {Sprite} from "./sprite";
+import type {MemoryFileSource} from "../../testing/memoryPlatform";
+import {platformSceneAssetLoader} from "../../scene/sceneAssets";
 import {SpriteImage} from "./spriteImage";
-import {SpriteBoundsSystem} from "./spriteBoundsSystem";
-import {isSpritePatternImage, SpritePattern, SpritePatternColor, spritePatternImage} from "./spritePattern";
+import {SPRITE_IMAGE_ASSET_TYPE} from "./spriteImageAssetType";
+import {SpritePatternColor, spritePatternImage} from "./spritePattern";
+import {parseSpritePatternFile, SPRITE_PATTERN_FILE_FORMAT, SPRITE_PATTERN_FILE_SUFFIX, SPRITE_PATTERN_FILE_VERSION} from "./spritePatternFile";
 
 const SHIP_ROWS = ["  #  ", " #o# ", "#####", "#   #"];
 const HULL_RGB = 0x40E0FF;
 const COCKPIT_RGB = 0xFFFFFF;
 const BULLET_RGB = 0xFFFF80;
 const OTHER_RGB = 0x102030;
-const TICKS = 2;
-const DISABLED = false;
+const PATTERN_PATH = "sprites/ship.pattern.json";
+const NEWER_VERSION = SPRITE_PATTERN_FILE_VERSION + 1;
 
 function colors(...entries: readonly [string, number][]): SpritePatternColor[] {
     return entries.map(([char, rgb]) => new SpritePatternColor(char, rgb));
 }
 
-function makeWorld() {
-    const world = new World({platform: new MemoryPlatform()});
-    world.getOrCreateSystem(SpriteBoundsSystem);
-    return {world, root: world.getOrCreateSystem(RootSystemGroup), em: world.entityManager};
+function patternFile(fields: object): string {
+    return JSON.stringify({format: SPRITE_PATTERN_FILE_FORMAT, version: SPRITE_PATTERN_FILE_VERSION, ...fields});
 }
 
-function tick(root: {update(): void}): void {
-    for (let i = 0; i < TICKS; i++) root.update();
-}
-
-function patterned(world: World, pattern: SpritePattern): Entity {
-    return world.entityManager.createEntity("patterned", [new Sprite(), pattern, new LocalPosition(), new LocalToWorld()]);
-}
-
-function imageOf(world: World, entity: Entity): SpriteImage | undefined {
-    return world.entityManager.getComponent<Sprite>(entity, Sprite)!.image;
-}
+const SHIP_FILE_TEXT = patternFile({rows: SHIP_ROWS, palette: [{char: "#", rgb: "#40e0ff"}, {char: "o", rgb: "#ffffff"}]});
 
 describe("sprite patterns", () => {
     test("a pattern image has the same pixels as fromPattern and solid", () => {
@@ -54,31 +39,58 @@ describe("sprite patterns", () => {
         expect([...image.rgba]).toEqual([...SpriteImage.fromPattern(["#x"], {"#": BULLET_RGB}).rgba]);
     });
 
-    test("only images built from a pattern count as pattern images", () => {
-        expect(isSpritePatternImage(spritePatternImage(["#"], colors(["#", BULLET_RGB])))).toBe(true);
-        expect(isSpritePatternImage(SpriteImage.fromPattern(["#"], {"#": BULLET_RGB}))).toBe(false);
-        expect(isSpritePatternImage(SpriteImage.solid(1, 1, BULLET_RGB))).toBe(false);
+    test("a pattern image keeps a frozen copy of its rows and palette, and images made from pixels have no pattern", () => {
+        const rows = ["#o"];
+        const palette = colors(["#", HULL_RGB], ["o", COCKPIT_RGB]);
+        const image = spritePatternImage(rows, palette);
+        rows[0] = "oo";
+        palette[0].rgb = OTHER_RGB;
+        expect(image.pattern?.rows).toEqual(["#o"]);
+        expect(image.pattern?.palette).toEqual([{char: "#", rgb: HULL_RGB}, {char: "o", rgb: COCKPIT_RGB}]);
+        const pattern = image.pattern!;
+        expect([Object.isFrozen(pattern), Object.isFrozen(pattern.rows), Object.isFrozen(pattern.palette), Object.isFrozen(pattern.palette[0])]).toEqual([true, true, true, true]);
+        expect(image.sourcePath).toBeUndefined();
+        expect(SpriteImage.fromPattern(["#"], {"#": BULLET_RGB}).pattern).toBeUndefined();
+        expect(SpriteImage.solid(1, 1, BULLET_RGB).pattern).toBeUndefined();
+    });
+});
+
+describe("sprite pattern files", () => {
+    test("a jsengine-sprite-pattern document gives its rows and palette", () => {
+        const pattern = parseSpritePatternFile(SHIP_FILE_TEXT, PATTERN_PATH);
+        expect(pattern.rows).toEqual(SHIP_ROWS);
+        expect(pattern.palette).toEqual(colors(["#", HULL_RGB], ["o", COCKPIT_RGB]));
+        expect(parseSpritePatternFile(patternFile({rows: [], palette: []})).rows).toEqual([]);
     });
 
-    test("the sprite of a patterned entity gets its image before the bounds are computed, and equal patterns share one image", () => {
-        const {world, root} = makeWorld();
-        const first = patterned(world, new SpritePattern(["#"], colors(["#", BULLET_RGB])));
-        const second = patterned(world, new SpritePattern(["#"], colors(["#", BULLET_RGB])));
-        root.update();
-        const image = imageOf(world, first);
-        expect(image?.sizeX).toBe(1);
-        expect(imageOf(world, second)).toBe(image);
+    test("a malformed pattern file throws naming the file and the key at fault", () => {
+        const label = `Sprite pattern "${PATTERN_PATH}"`;
+        const failure = (source: unknown) => () => parseSpritePatternFile(source, PATTERN_PATH);
+        expect(failure("{")).toThrow(`${label} is not valid JSON`);
+        expect(failure("[]")).toThrow(`${label}: the document must be an object, got []`);
+        expect(failure(JSON.stringify({format: "jsengine-scene", version: 1}))).toThrow(`${label}: format must be "${SPRITE_PATTERN_FILE_FORMAT}", got "jsengine-scene"`);
+        expect(failure(JSON.stringify({format: SPRITE_PATTERN_FILE_FORMAT, version: "1"}))).toThrow(`${label}: version must be a whole number, got "1"`);
+        expect(failure(JSON.stringify({format: SPRITE_PATTERN_FILE_FORMAT, version: NEWER_VERSION, rows: [], palette: []})))
+            .toThrow(`${label}: version ${NEWER_VERSION} is newer than the supported version ${SPRITE_PATTERN_FILE_VERSION}`);
+        expect(failure(patternFile({rows: "#", palette: []}))).toThrow(`${label}: rows must be an array of strings, got "#"`);
+        expect(failure(patternFile({rows: ["#"]}))).toThrow(`${label}: palette must be an array, got nothing`);
+        expect(failure(patternFile({rows: ["#"], palette: [{char: "#", rgb: "#ffffff"}, {char: "o", rgb: "white"}]})))
+            .toThrow(`${label}: palette[1].rgb must be a "#rrggbb" colour, got "white"`);
+        expect(failure(patternFile({rows: ["#"], palette: [{rgb: "#ffffff"}]}))).toThrow(`${label}: palette[0].char must be a string, got nothing`);
     });
 
-    test("editing the pattern rebuilds the image, and disabled entities get theirs too", () => {
-        const {world, root, em} = makeWorld();
-        const entity = patterned(world, new SpritePattern(["#"], colors(["#", BULLET_RGB])));
-        const hidden = patterned(world, new SpritePattern(SHIP_ROWS, colors(["#", HULL_RGB])));
-        em.setEnabledState(hidden, DISABLED);
-        tick(root);
-        em.getComponent<SpritePattern>(entity, SpritePattern)!.rows = SHIP_ROWS;
-        tick(root);
-        expect([imageOf(world, entity)?.sizeX, imageOf(world, entity)?.sizeY]).toEqual([SHIP_ROWS[0].length, SHIP_ROWS.length]);
-        expect(imageOf(world, hidden)?.sizeY).toBe(SHIP_ROWS.length);
+    test("the spriteImage asset type loads a pattern file through the scene asset loader once per path and remembers the path", () => {
+        const platform = new MemoryPlatform({files: {[PATTERN_PATH]: SHIP_FILE_TEXT}});
+        const loader = platformSceneAssetLoader({files: platform.files, inflate: platform.inflate});
+        expect(SPRITE_IMAGE_ASSET_TYPE.fileSuffixes.includes(SPRITE_PATTERN_FILE_SUFFIX)).toBe(true);
+        const image = SPRITE_IMAGE_ASSET_TYPE.load(PATTERN_PATH, loader);
+        expect([image.sourcePath, image.sizeX, image.sizeY]).toEqual([PATTERN_PATH, SHIP_ROWS[0].length, SHIP_ROWS.length]);
+        expect(image.pattern?.rows).toEqual(SHIP_ROWS);
+        expect([...image.rgba]).toEqual([...SpriteImage.fromPattern(SHIP_ROWS, {"#": HULL_RGB, "o": COCKPIT_RGB}).rgba]);
+        (platform.files as MemoryFileSource).set(PATTERN_PATH, patternFile({rows: ["#"], palette: []}));
+        expect(SPRITE_IMAGE_ASSET_TYPE.load(PATTERN_PATH, loader)).toBe(image);
+        const fresh = SPRITE_IMAGE_ASSET_TYPE.load(PATTERN_PATH, platformSceneAssetLoader({files: platform.files, inflate: platform.inflate}));
+        expect(fresh.pattern?.rows).toEqual(["#"]);
+        expect(SPRITE_IMAGE_ASSET_TYPE.pathOf(image)).toBe(PATTERN_PATH);
     });
 });

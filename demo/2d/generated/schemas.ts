@@ -5,7 +5,7 @@ import {Demo2dHudTuning, Demo2dTuning} from "../tuning";
 import {PAN_CAMERA_SCHEMA_ENTRY} from "@jsengine/engine/cameraControllers/2d";
 import {INPUT_MAP_SCHEMA_ENTRY} from "@jsengine/engine/input";
 import {CAMERA_SCHEMA_ENTRY, HUD_ELEMENT_SCHEMA_ENTRY, RENDER_BOUNDS_SCHEMA_ENTRY, SCREEN_ANCHOR_SCHEMA_ENTRY, TEXT_SPRITE_SCHEMA_ENTRY} from "@jsengine/engine/rendering";
-import {SPRITE_IMAGE_ASSET_TYPE_ENTRY, SPRITE_PATTERN_SCHEMA_ENTRY, SPRITE_SCHEMA_ENTRY} from "@jsengine/engine/rendering/2d";
+import {SPRITE_IMAGE_ASSET_TYPE_ENTRY, SPRITE_SCHEMA_ENTRY} from "@jsengine/engine/rendering/2d";
 import {PREFAB_ASSET_TYPE_ENTRY} from "@jsengine/engine/scene";
 import {LOCAL_POSITION_SCHEMA_ENTRY, LOCAL_TO_WORLD_SCHEMA_ENTRY, PARENT_SCHEMA_ENTRY} from "@jsengine/engine/translation";
 
@@ -17,7 +17,6 @@ export const generatedSchemas: readonly SchemaEntry[] = [
     CAMERA_SCHEMA_ENTRY,
     PAN_CAMERA_SCHEMA_ENTRY,
     SPRITE_SCHEMA_ENTRY,
-    SPRITE_PATTERN_SCHEMA_ENTRY,
     TEXT_SPRITE_SCHEMA_ENTRY,
     SCREEN_ANCHOR_SCHEMA_ENTRY,
     HUD_ELEMENT_SCHEMA_ENTRY,
@@ -54,6 +53,9 @@ export const generatedSchemas: readonly SchemaEntry[] = [
             {key: "entitiesFormat", kind: "string", nullable: false},
             {key: "entitiesDecimals", kind: "integer"},
             {key: "fadeSystemInactiveText", kind: "string", nullable: false},
+            {key: "presentationWindowMs", kind: "number"},
+            {key: "presentationFormat", kind: "string", nullable: false},
+            {key: "presentationDecimals", kind: "integer"},
         ]},
     ]},
 ];
