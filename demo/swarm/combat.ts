@@ -13,10 +13,8 @@ import {BOMB_PRIORITY, BROADPHASE_PRIORITY, BULLET_HIT_PRIORITY, SHIP_CONTACT_PR
 import {SwarmPhase, SwarmState} from "./resources";
 import {
     commandBufferOf,
-    ENEMY_PREFAB_FIELD,
     fullExtentOf,
     HIDDEN_OPACITY,
-    NO_EXTENT,
     POSITION_STRIDE,
     POSITION_X,
     POSITION_Y,
@@ -30,16 +28,6 @@ import type {SparkConfig} from "./config";
 
 const FULL_TURN_RAD = 2 * Math.PI;
 const DEFEATED_HIT_POINTS = 0;
-
-function maxEnemyRadiusUnits(world: World, grid: EnemyGrid): number {
-    const spawner = world.resources.get(PrefabSpawner);
-    let max = grid.maxRadiusUnits;
-    for (const enemy of world.resources.get(SwarmConfig).waves.enemies) {
-        const radius = spawner.templateOf(requirePrefab(enemy.prefab, ENEMY_PREFAB_FIELD)).rootComponentDefaults(Enemy)?.radiusUnits ?? NO_EXTENT;
-        if (radius > max) max = radius;
-    }
-    return max;
-}
 
 function spawnSparks(buffer: EntityCommandBuffer, world: World, sparks: SparkConfig, x: number, y: number, count: number, reachUnits: number): void {
     const random = randomOf(world), spawner = world.resources.get(PrefabSpawner);
@@ -144,7 +132,6 @@ export class BulletHitSystem extends System {
         const grid = this.world.resources.get(EnemyGrid);
         if (state.phase !== SwarmPhase.Playing || grid.count === 0) return;
         const buffer = commandBufferOf(this.world);
-        const maxEnemyRadius = maxEnemyRadiusUnits(this.world, grid);
         this._bullets.stream({read: {position: LocalPosition}, write: {bullet: Bullet}}).consumeSpans(({start, end, cols, stores, entities}) => {
             const positions = cols.position!, bullets = stores.bullet!;
             for (let i = start; i < end; i++) {
@@ -152,7 +139,7 @@ export class BulletHitSystem extends System {
                 if (bullet.remainingDamage <= 0) continue;
                 const p = i * POSITION_STRIDE;
                 const x = positions[p + POSITION_X], y = positions[p + POSITION_Y] * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
-                const touching = grid.gatherTouching(x, y, bullet.radiusUnits, maxEnemyRadius);
+                const touching = grid.gatherTouching(x, y, bullet.radiusUnits);
                 for (let k = 0; k < touching && bullet.remainingDamage > 0; k++) {
                     const index = grid.candidates[k];
                     const enemy = grid.enemies[index];
@@ -195,7 +182,7 @@ export class BombSystem extends System {
         const radius = config.bomb.radiusUnits;
         const grid = this.world.resources.get(EnemyGrid);
         const buffer = commandBufferOf(this.world);
-        const touching = grid.gatherTouching(state.shipX, state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y, radius, maxEnemyRadiusUnits(this.world, grid));
+        const touching = grid.gatherTouching(state.shipX, state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y, radius);
         for (let k = 0; k < touching; k++) {
             const index = grid.candidates[k];
             scoreEnemyAt(state, grid, index);
@@ -221,7 +208,7 @@ export class ShipContactSystem extends System {
         const grid = this.world.resources.get(EnemyGrid);
         if (state.phase !== SwarmPhase.Playing || state.invulnerableRemainingMs > 0 || grid.count === 0) return;
         const config = this.world.resources.get(SwarmConfig);
-        const touching = grid.gatherTouching(state.shipX, state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y, config.ship.radiusUnits, maxEnemyRadiusUnits(this.world, grid));
+        const touching = grid.gatherTouching(state.shipX, state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y, config.ship.radiusUnits);
         if (touching > 0) this.loseLife(state, config, grid, grid.candidates[0]);
     }
 

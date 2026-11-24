@@ -73,8 +73,8 @@ export class EnemyGrid extends Resource {
         for (let i = 0; i < this.count; i++) this.enemiesByCell[cellCursor[cellOfEnemy[i]]++] = i;
     }
 
-    public gatherTouching(x: number, y: number, radius: number, maxEnemyRadius: number): number {
-        const found = this.gatherNear(x, y, radius + maxEnemyRadius);
+    public gatherTouching(x: number, y: number, radius: number): number {
+        const found = this.gatherNear(x, y, radius + this.maxRadiusUnits);
         const candidates = this.candidates, enemies = this.enemies;
         let touching = 0;
         for (let k = 0; k < found; k++) {

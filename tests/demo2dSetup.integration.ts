@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     const screen = Ansi.strip(gameTerminal.text());
     expect(framesWritten > FRAMES / 2, `frames written (${framesWritten}/${FRAMES})`);
     expect(screen.includes("FPS:"), "the FPS label rendered");
-    expect(screen.includes("Entities:"), "the entity counter rendered");
+    expect(screen.includes("Fading pixels:"), "the fading-pixel counter rendered");
     expect(world.enabledEntityCount === entitiesBeforeSpace + PIXELS_PER_SPACE, `Space spawned ${PIXELS_PER_SPACE} pixels (${entitiesBeforeSpace} -> ${world.enabledEntityCount})`);
     expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 

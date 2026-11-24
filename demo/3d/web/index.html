@@ -16,9 +16,16 @@
         across raster threads where the page is cross-origin isolated. The large bugatti downloads only when you
         select it with <kbd>n</kbd>. Open the page with <code>?backend=pixels</code> to draw into an RGBA framebuffer
         instead of cells, or <code>?backend=gpu</code> for the experimental WebGPU renderer.</p>
-    <p><kbd>wasd</kbd> move &middot; <kbd>q</kbd>/<kbd>e</kbd> down/up &middot; drag to look &middot; wheel zoom
-        &middot; <kbd>space</kbd> spawn &middot; <kbd>n</kbd> next model &middot; <kbd>arrows</kbd> rotate
-        &middot; <kbd>1</kbd>-<kbd>4</kbd> anti-aliasing &middot; <kbd>h</kbd> lights &middot; <kbd>esc</kbd> stop</p>
+    <p><kbd>wasd</kbd> move &middot; <kbd>q</kbd>/<kbd>e</kbd> down/up &middot; drag to look &middot; wheel or
+        <kbd>z</kbd>/<kbd>x</kbd> zoom &middot; <kbd>esc</kbd> stop</p>
+    <p><kbd>space</kbd> spawn &middot; <kbd>backspace</kbd> despawn &middot; <kbd>n</kbd> next model &middot;
+        <kbd>r</kbd> reload models &middot; <kbd>arrows</kbd> rotate &middot; <kbd>[</kbd>/<kbd>]</kbd> shrink/grow</p>
+    <p><kbd>h</kbd> lights &middot; <kbd>p</kbd> lamp &middot; <kbd>ijkl</kbd> turn the sun &middot; <kbd>t</kbd>
+        textures &middot; <kbd>f</kbd> LOD &middot; <kbd>-</kbd>/<kbd>=</kbd> less/more detail &middot; <kbd>1</kbd>-<kbd>4</kbd>
+        anti-aliasing &middot; <kbd>y</kbd> render pacing &middot; <kbd>v</kbd> meshes on/off &middot; <kbd>tab</kbd> HUD
+        &middot; <kbd>g</kbd> log system order</p>
+    <p>Cells only: <kbd>b</kbd> half-block. WebGPU only: <kbd>m</kbd> texture filtering &middot; <kbd>o</kbd> surface
+        shader.</p>
     <span class="start">Click to play</span>
 </button>
 <script type="module" src="3d.js"></script>

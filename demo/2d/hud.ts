@@ -57,7 +57,7 @@ export class Demo2dHudSystem extends System {
         const fadeSystem = this.world.tryGetSystem(ColorFadeSystem);
         const lines = [fadeSystem === undefined
             ? config.fadeSystemInactiveText
-            : formatHudText(config.entitiesFormat, {entities: fadeSystem.fadingCount().toFixed(config.entitiesDecimals)})];
+            : formatHudText(config.fadingPixelsFormat, {fading: fadeSystem.fadingCount()})];
         const presentation = this.world.resources.tryGet(PresentationStats);
         if (presentation !== undefined) {
             this.measurePresentation(presentation, config.presentationWindowMs);

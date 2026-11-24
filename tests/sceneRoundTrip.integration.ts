@@ -126,7 +126,7 @@ async function runDemo2dOnCells(): Promise<void> {
     const crossCells = screen.count("▀");
     expect(crossCells >= MIN_CROSS_CELLS, `the crosses are visible after loading (${crossCells} half-block cells)`);
     const text = Ansi.strip(output.text());
-    expect(text.includes("FPS:") && text.includes("Entities:"), "the saved HUD labels rendered");
+    expect(text.includes("FPS:") && text.includes("Fading pixels:"), "the saved HUD labels rendered");
     expect(sameDocument(serializeWorld(loaded, registry).document, saved.document), "ticking the loaded world changed no saved data");
 }
 

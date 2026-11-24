@@ -128,7 +128,7 @@ async function runDemo2d(): Promise<void> {
     const playerRgb = rgbAt(started, centerX, centerY);
     expect(playerRgb !== BACKGROUND_RGB, `the player cross's centre is painted at the screen centre (#${playerRgb.toString(16)})`);
     expect(rgbAt(started, crossLeft, crossTop) === BACKGROUND_RGB, "the player cross's transparent corner shows the background");
-    expect(glyphMatches(started, "E", 0, START.heightPx - PIXELS_PER_SCREEN_UNIT_Y, HUD_GREEN_RGB, BACKGROUND_RGB), "the entity counter's E is drawn in the 8x16 font, bottom-left, in green");
+    expect(glyphMatches(started, "F", 0, START.heightPx - PIXELS_PER_SCREEN_UNIT_Y, HUD_GREEN_RGB, BACKGROUND_RGB), "the fading-pixel counter's F is drawn in the 8x16 font, bottom-left, in green");
     const hudCrossCenter = rgbAt(started, START.widthPx - CROSS_SIDE_PX * HALF, START.heightPx - CROSS_SIDE_PX * HALF);
     expect(hudCrossCenter === HUD_CROSS_RGB, `the HUD cross is anchored bottom-right (#${hudCrossCenter.toString(16)})`);
 

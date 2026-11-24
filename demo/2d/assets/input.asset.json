@@ -118,7 +118,9 @@
       },
       {
         "name": "quit",
-        "keys": [],
+        "keys": [
+          "Escape"
+        ],
         "chords": [
           {
             "key": "C",

@@ -5,8 +5,7 @@ export class Demo2dHudConfig {
     public fpsAverageFrames: Int = 0;
     public fpsFormat = "";
     public fpsDecimals: Int = 0;
-    public entitiesFormat = "";
-    public entitiesDecimals: Int = 0;
+    public fadingPixelsFormat = "";
     public fadeSystemInactiveText = "";
     public presentationWindowMs = 0;
     public presentationFormat = "";

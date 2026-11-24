@@ -99,7 +99,8 @@ export class Demo2dControlsSystem extends System {
     private _players = this.createEntityQuery([Player, LocalPosition]);
     private _playerTransforms = this.createEntityQuery([Player, LocalToWorld]);
     private _actions!: ResolvedInputActions<typeof Demo2dAction>;
-    private _handlers: readonly ActionHandler[] = [];
+    private _keyDownHandlers: readonly ActionHandler[] = [];
+    private _commands: readonly ActionHandler[] = [];
 
     override priority(): number {
         return CONTROLS_PRIORITY;
@@ -109,12 +110,14 @@ export class Demo2dControlsSystem extends System {
         this.requireResourceForUpdate(Demo2dConfig);
         const actions = resolveInputActions(this.world, Demo2dAction);
         this._actions = actions;
-        this._handlers = [
+        this._keyDownHandlers = [
             {action: actions.MovePlayerUp, run: () => translate(this._players, NO_STEP, -this.config().playerStepYUnits)},
             {action: actions.MovePlayerDown, run: () => translate(this._players, NO_STEP, this.config().playerStepYUnits)},
             {action: actions.MovePlayerLeft, run: () => translate(this._players, -this.config().playerStepXUnits, NO_STEP)},
             {action: actions.MovePlayerRight, run: () => translate(this._players, this.config().playerStepXUnits, NO_STEP)},
             {action: actions.SpawnPixels, run: () => this.spawnFadingPixels()},
+        ];
+        this._commands = [
             {action: actions.ToggleRendering, run: () => toggle(this.world.tryGetSystem(RenderingSystemGroup))},
             {action: actions.ToggleSpritePass, run: () => this.world.resources.tryGet(RenderPasses)?.toggle("sprites")},
             {action: actions.LogSystemOrder, run: () => requireDebugWorld(this.world, DEMO_NAME).logSystemUpdateOrder()},
@@ -123,14 +126,15 @@ export class Demo2dControlsSystem extends System {
 
     onUpdate(): void {
         const input = this.world.resources.get(Input);
+        if (input.actionPressed(this._actions.Quit)) {
+            this.world.requestQuit();
+            return;
+        }
         for (const event of input.events) {
             if (event.type !== "keyDown") continue;
-            if (input.isActionEvent(event, this._actions.Quit)) {
-                this.world.requestQuit();
-                return;
-            }
-            for (const handler of this._handlers) if (input.isActionEvent(event, handler.action)) handler.run();
+            for (const handler of this._keyDownHandlers) if (input.isActionEvent(event, handler.action)) handler.run();
         }
+        for (const command of this._commands) if (input.actionPressed(command.action)) command.run();
     }
 
     private config(): Demo2dConfig {
