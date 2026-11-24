@@ -5,7 +5,11 @@ ECS modelled on Unity DOTS, 2D and 3D rendering, and a project editor.
 
 ## Quick start
 
-Requires [bun](https://bun.sh) (node is optional, used only by the tests and `--node` runs).
+The engine, the games and the tests run on [node](https://nodejs.org) (>= 22) or [bun](https://bun.sh)
+interchangeably. The `jsengine` CLI (building, serving, the editor, packaging) needs bun.
+
+- Run a game in the terminal under node: add `--node` to the `--target terminal` command below.
+- Tests: `bun run check` runs every suite under both runtimes; `bun run test:node` runs the unit tests under node only.
 
 ```sh
 bun install
