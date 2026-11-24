@@ -1,19 +1,22 @@
 import type {Entity} from "../../engine/core";
 import type {EditorMode, EditorView} from "../editorProtocol";
 import {showChoicePopup} from "./choicePopup";
-import {showCommandMenu} from "./commandMenus";
 import type {MenuEntry} from "./commandMenus";
 import {closeCommandPalette, isCommandPaletteOpen, showCommandPalette} from "./commandPalette";
 import {CommandRegistry, keyChordOf} from "./commandRegistry";
 import type {RegisteredCommand} from "./commandRegistry";
 import {ConsoleView} from "./consoleView";
 import {DataAssetsView, DIRTY_MARKER} from "./dataAssetsView";
-import {capturePointer, createButton, createElement, isTextEntryElement, readStorage, visualScaleOf, writeStorage} from "./dom";
+import {createElement, isTextEntryElement, readStorage, visualScaleOf, writeStorage} from "./dom";
+import {dockLayoutText, parseDockLayout} from "./dockLayout";
+import type {DockPanelId} from "./dockLayout";
+import {DockView} from "./dockView";
+import type {DockPanel} from "./dockView";
+import type {DockSize} from "./dockGeometry";
 import {registerEditorCommands} from "./editorCommands";
 import type {EditorCommandHost, EditorCommands} from "./editorCommands";
-import {editorMenuBar, FILE_MENU_LABEL} from "./editorMenus";
-import {BOTTOM_TAB_LABELS, BOTTOM_TABS, DEFAULT_BOTTOM_TAB} from "./editorPanels";
-import type {BottomTab} from "./editorPanels";
+import {dockTabMenu, editorMenuBar, FILE_MENU_LABEL} from "./editorMenus";
+import {DOCK_LAYOUT_STORAGE_KEY, DOCK_PANEL_HOMES, DOCK_PANEL_MINIMUMS, DOCK_PANEL_TITLES, defaultDockLayout} from "./editorPanels";
 import type {EditorNoticeLevel, EditorSession, EditorShell, EntityRemap} from "./editorSession";
 import {buildToolbar, EditorStatusView} from "./editorToolbar";
 import {EditorWorkspace} from "./editorWorkspace";
@@ -29,25 +32,6 @@ import type {ProjectTarget} from "../../engine/project/projectTargets";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {InspectorView} from "./inspectorView";
 import {MenuBar} from "./menuBar";
-import {
-    ALL_PANELS_SHOWN,
-    clampPanelSizes,
-    clampSceneViewShare,
-    DEFAULT_PANEL_SIZES,
-    DEFAULT_SCENE_VIEW_SHARE,
-    LAYOUT_PANELS,
-    PANEL_SIZES_STORAGE_KEY,
-    panelSizesText,
-    parsePanelSizes,
-    parsePanelVisibility,
-    parseSceneViewShare,
-    resizedPanel,
-    resizedSceneViewShare,
-    shownPanelSizes,
-    splitterThicknessPx,
-    withPanelToggled,
-} from "./panelSizes";
-import type {AvailableArea, LayoutPanel, PanelSizeKey, PanelSizes, PanelVisibility} from "./panelSizes";
 import {sceneAndPrefabPaths} from "./projectFiles";
 import {ProjectSettingsWindow} from "./projectSettingsWindow";
 import {openBuildWindow} from "./buildWindow";
@@ -62,45 +46,20 @@ import {SceneView} from "./sceneView";
 import {SettingsView} from "./settingsView";
 import {showKeyboardShortcuts} from "./shortcutsDialog";
 import {UndoHistoryView} from "./undoHistoryView";
-import {BOTTOM_PANEL_HOOK, BOTTOM_TAB_HOOK, EDITOR_VIEWPORT_HOOK, PANEL_HOOK, PREFAB_BREADCRUMB_HOOK, TOOLBAR_HOOK} from "../project/editorUiHooks";
+import {DOCK_PANEL_IDS, EDITOR_VIEWPORT_HOOK, PREFAB_BREADCRUMB_HOOK, TOOLBAR_HOOK} from "../project/editorUiHooks";
 
 export const EDITOR_VIEWPORT_ID = "viewport";
-export const BOTTOM_TAB_STORAGE_KEY = "jsengine.editor.bottomTab";
 export const UNSAVED_CHANGES_PROMPT = "A scene, a data asset or the project settings have unsaved changes.";
 
-const VIEW_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene", game: "Game"};
 const SCENE_VIEW: EditorView = "scene";
 const GAME_VIEW: EditorView = "game";
-const SCENE_VIEW_FRACTION_VARIABLE = "--scene-view-fr";
-const GAME_VIEW_FRACTION_VARIABLE = "--game-view-fr";
-const FRACTION_UNIT = "fr";
-const WHOLE_SHARE = 1;
-const VERTICAL_SPLITTER = true;
 const SCENE_VIEW_SHOWN_AT_START = true;
 const PLAY_MODE: EditorMode = "play";
 const EDIT_MODE: EditorMode = "edit";
 const CANVAS_SELECTOR = "canvas";
 const NOT_DISPLAYED = "none";
-const CSS_VARIABLES: Readonly<Record<PanelSizeKey, string>> = {
-    hierarchyWidthPx: "--hierarchy-width",
-    inspectorWidthPx: "--inspector-width",
-    bottomHeightPx: "--bottom-height",
-};
-const SPLITTER_CSS_VARIABLES: Readonly<Record<LayoutPanel, string>> = {
-    hierarchy: "--hierarchy-splitter",
-    inspector: "--inspector-splitter",
-    bottom: "--bottom-splitter",
-};
-const HIDDEN_PANEL_CLASSES: Readonly<Record<LayoutPanel, string>> = {
-    hierarchy: "hierarchy-hidden",
-    inspector: "inspector-hidden",
-    bottom: "bottom-hidden",
-};
 const CONNECTING_TEXT = "Waiting for the game…";
-const ACTIVE_CLASS = "active";
-const DRAGGING_CLASS = "resizing";
 const ASPECT_FRAMED_CLASS = "aspect-framed";
-const MAXIMIZED_CLASS = "maximized";
 const GAME_HEADER_TITLE = "The Game view: the game's own camera, input and aspect";
 const GAME_HEADER_MENU_HINT = "; right-click it to pick the target the Scene and Game views simulate";
 const SCENE_HEADER_TITLE = "The Scene view: the editor camera, picking and gizmos";
@@ -108,9 +67,9 @@ const NO_TARGET_LABEL = "";
 const FRAME_STYLE_PROPERTIES: readonly string[] = ["inset", "left", "top", "width", "height"];
 const FRAME_INSET = "auto";
 const PIXELS = "px";
-const HIERARCHY_PANEL: LayoutPanel = "hierarchy";
-const INSPECTOR_PANEL: LayoutPanel = "inspector";
-const BOTTOM_PANEL: LayoutPanel = "bottom";
+const SETTINGS_PANEL: DockPanelId = "settings";
+const ASSETS_PANEL: DockPanelId = "assets";
+const CONSOLE_PANEL: DockPanelId = "console";
 const OPEN_SCENE_LABEL = "Open scene";
 const OPEN_SCENE_PLACEHOLDER = "Search scenes and prefabs";
 const NO_SCENES_TEXT = "No scenes or prefabs in the project";
@@ -136,27 +95,22 @@ interface ShellLayout {
     readonly menuRow: HTMLElement;
     readonly menuStatus: HTMLElement;
     readonly toolbar: HTMLElement;
+    readonly dock: HTMLElement;
     readonly hierarchy: HTMLElement;
-    readonly center: HTMLElement;
     readonly sceneTabs: HTMLElement;
     readonly prefabBreadcrumb: HTMLElement;
-    readonly views: HTMLElement;
-    readonly viewsSplitter: HTMLElement;
     readonly sceneStage: HTMLElement;
     readonly sceneViewport: HTMLElement;
-    readonly gameHeader: HTMLElement;
     readonly stage: HTMLElement;
     readonly viewport: HTMLElement;
     readonly overlay: HTMLCanvasElement;
     readonly inspector: HTMLElement;
-    readonly bottom: HTMLElement;
-    readonly bottomTabs: HTMLElement;
     readonly projectPanel: HTMLElement;
     readonly consolePanel: HTMLElement;
     readonly historyPanel: HTMLElement;
     readonly settingsPanel: HTMLElement;
     readonly assetsPanel: HTMLElement;
-    readonly splitters: ReadonlyMap<PanelSizeKey, HTMLElement>;
+    readonly panels: Readonly<Record<DockPanelId, HTMLElement>>;
 }
 
 interface MountedViews {
@@ -184,9 +138,8 @@ function buildLayout(body: HTMLElement): ShellLayout {
     const toolbar = panel(document, "div", "editor-toolbar", "Toolbar");
     toolbar.setAttribute("role", "toolbar");
     toolbar.setAttribute(TOOLBAR_HOOK, "");
+    const dock = panel(document, "div", "dock-root", "Panels");
     const hierarchy = panel(document, "nav", "editor-hierarchy editor-panel", "Hierarchy");
-    hierarchy.setAttribute(PANEL_HOOK, HIERARCHY_PANEL);
-    const center = panel(document, "section", "editor-center", "Views");
     const sceneTabs = createElement(document, "div", "editor-tabs scene-tabs");
     sceneTabs.setAttribute("role", "tablist");
     sceneTabs.setAttribute("aria-label", "Open scenes and prefabs");
@@ -194,172 +147,36 @@ function buildLayout(body: HTMLElement): ShellLayout {
     prefabBreadcrumb.setAttribute("aria-label", "Prefab breadcrumb");
     prefabBreadcrumb.setAttribute(PREFAB_BREADCRUMB_HOOK, "");
     prefabBreadcrumb.hidden = true;
-    const sceneHeader = createElement(document, "div", "view-header", VIEW_LABELS[SCENE_VIEW]);
-    sceneHeader.title = SCENE_HEADER_TITLE;
     const sceneStage = createElement(document, "div", "editor-stage scene-stage");
     const sceneViewport = panel(document, "div", "editor-viewport scene-viewport", "Scene viewport");
     sceneViewport.setAttribute(EDITOR_VIEWPORT_HOOK, SCENE_VIEW);
     const overlay = createElement(document, "canvas", "scene-overlay");
     sceneStage.append(sceneViewport, overlay);
-    const sceneView = panel(document, "section", "editor-view scene-view", "Scene view");
-    sceneView.append(sceneHeader, sceneStage);
-    const viewsSplitter = createElement(document, "div", "splitter splitter-views");
-    viewsSplitter.setAttribute("role", "separator");
-    viewsSplitter.setAttribute("aria-orientation", "vertical");
-    const gameHeader = createElement(document, "div", "view-header", VIEW_LABELS[GAME_VIEW]);
-    gameHeader.title = GAME_HEADER_TITLE;
+    const scenePanel = panel(document, "section", "editor-view scene-view", "Scene view");
+    scenePanel.append(sceneTabs, prefabBreadcrumb, sceneStage);
     const stage = createElement(document, "div", "editor-stage game-stage");
     const viewport = panel(document, "main", "editor-viewport game-viewport", "Game viewport");
     viewport.id = EDITOR_VIEWPORT_ID;
     viewport.setAttribute(EDITOR_VIEWPORT_HOOK, GAME_VIEW);
     stage.append(viewport);
-    const gameView = panel(document, "section", "editor-view game-view", "Game view");
-    gameView.append(gameHeader, stage);
-    const views = createElement(document, "div", "editor-views");
-    views.append(sceneView, viewsSplitter, gameView);
-    center.append(sceneTabs, prefabBreadcrumb, views);
+    const gamePanel = panel(document, "section", "editor-view game-view", "Game view");
+    gamePanel.append(stage);
     const inspector = panel(document, "aside", "editor-inspector editor-panel", "Inspector");
-    inspector.setAttribute(PANEL_HOOK, INSPECTOR_PANEL);
-    const bottom = panel(document, "section", "editor-bottom", "Project, Console, History, Settings and Data Assets");
-    bottom.setAttribute(PANEL_HOOK, BOTTOM_PANEL);
-    const bottomTabs = createElement(document, "div", "editor-tabs bottom-tabs");
-    bottomTabs.setAttribute("role", "tablist");
-    const projectPanel = createElement(document, "div", "bottom-panel project-panel");
-    const consolePanel = createElement(document, "div", "bottom-panel console-panel");
-    const historyPanel = createElement(document, "div", "bottom-panel undo-history-panel");
-    const settingsPanel = createElement(document, "div", "bottom-panel settings-panel");
-    const assetsPanel = createElement(document, "div", "bottom-panel data-assets-panel");
-    const bottomPanels: Readonly<Record<BottomTab, HTMLElement>> = {project: projectPanel, console: consolePanel, history: historyPanel, settings: settingsPanel, assets: assetsPanel};
-    for (const tab of BOTTOM_TABS) bottomPanels[tab].setAttribute(BOTTOM_PANEL_HOOK, tab);
-    bottom.append(bottomTabs, projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel);
-    const splitters = new Map<PanelSizeKey, HTMLElement>();
-    for (const key of ["hierarchyWidthPx", "inspectorWidthPx", "bottomHeightPx"] as const) {
-        const splitter = createElement(document, "div", `splitter splitter-${key}`);
-        splitter.setAttribute("role", "separator");
-        splitter.setAttribute("aria-orientation", key === "bottomHeightPx" ? "horizontal" : "vertical");
-        splitters.set(key, splitter);
-    }
-    root.append(menuRow, toolbar, hierarchy, splitters.get("hierarchyWidthPx")!, center, splitters.get("inspectorWidthPx")!, inspector, splitters.get("bottomHeightPx")!, bottom);
+    const projectPanel = panel(document, "div", "project-panel", "Project");
+    const consolePanel = panel(document, "div", "console-panel", "Console");
+    const historyPanel = panel(document, "div", "undo-history-panel", "History");
+    const settingsPanel = panel(document, "div", "settings-panel", "Settings");
+    const assetsPanel = panel(document, "div", "data-assets-panel", "Data Assets");
+    root.append(menuRow, toolbar, dock);
     for (const element of [hierarchy, inspector, projectPanel, historyPanel, settingsPanel, assetsPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
     body.append(root);
-    return {
-        root, menuRow, menuStatus, toolbar, hierarchy, center, sceneTabs, prefabBreadcrumb, views, viewsSplitter, sceneStage, sceneViewport, gameHeader, stage, viewport, overlay,
-        inspector, bottom, bottomTabs, projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel, splitters,
+    const panels: Readonly<Record<DockPanelId, HTMLElement>> = {
+        hierarchy, inspector, scene: scenePanel, game: gamePanel, project: projectPanel, console: consolePanel, history: historyPanel, settings: settingsPanel, assets: assetsPanel,
     };
-}
-
-class PanelResizer {
-    private sizes: PanelSizes;
-    private visibility: PanelVisibility;
-    private sceneViewShare: number;
-
-    public constructor(private readonly layout: ShellLayout, private readonly window: Window | null) {
-        const stored = readStorage(window, PANEL_SIZES_STORAGE_KEY);
-        this.sizes = parsePanelSizes(stored);
-        this.visibility = parsePanelVisibility(stored);
-        this.sceneViewShare = parseSceneViewShare(stored);
-        this.apply(this.clamped(this.sizes));
-        this.applySceneViewShare(this.sceneViewShare);
-        for (const [key, splitter] of layout.splitters) this.installSplitter(key, splitter);
-        this.installViewsSplitter(layout.viewsSplitter);
-        window?.addEventListener("resize", () => {
-            this.apply(this.clamped(this.sizes));
-            this.applySceneViewShare(this.sceneViewShare);
-        });
-    }
-
-    public shown(panel: LayoutPanel): boolean {
-        return this.visibility[panel];
-    }
-
-    public toggle(panel: LayoutPanel): void {
-        this.visibility = withPanelToggled(this.visibility, panel);
-        this.apply(this.clamped(this.sizes));
-        this.store();
-    }
-
-    public reset(): void {
-        this.visibility = ALL_PANELS_SHOWN;
-        this.apply(this.clamped(DEFAULT_PANEL_SIZES));
-        this.applySceneViewShare(DEFAULT_SCENE_VIEW_SHARE);
-        this.store();
-    }
-
-    private store(): void {
-        writeStorage(this.window, PANEL_SIZES_STORAGE_KEY, panelSizesText(this.sizes, this.visibility, this.sceneViewShare));
-    }
-
-    private viewsWidthPx(): number {
-        return this.layout.views.getBoundingClientRect().width / visualScaleOf(this.layout.root);
-    }
-
-    private applySceneViewShare(share: number): void {
-        const width = this.viewsWidthPx();
-        this.sceneViewShare = width > 0 ? clampSceneViewShare(share, width) : share;
-        const style = this.layout.root.style;
-        style.setProperty(SCENE_VIEW_FRACTION_VARIABLE, `${this.sceneViewShare}${FRACTION_UNIT}`);
-        style.setProperty(GAME_VIEW_FRACTION_VARIABLE, `${WHOLE_SHARE - this.sceneViewShare}${FRACTION_UNIT}`);
-    }
-
-    private installViewsSplitter(splitter: HTMLElement): void {
-        this.installDrag(splitter, VERTICAL_SPLITTER, () => {
-            const startShare = this.sceneViewShare;
-            return deltaPx => this.applySceneViewShare(resizedSceneViewShare(startShare, deltaPx, this.viewsWidthPx()));
-        });
-    }
-
-    private area(): AvailableArea {
-        const bounds = this.layout.root.getBoundingClientRect();
-        const barsHeight = this.layout.menuRow.getBoundingClientRect().height + this.layout.toolbar.getBoundingClientRect().height;
-        const scale = visualScaleOf(this.layout.root);
-        return {widthPx: bounds.width / scale, heightPx: (bounds.height - barsHeight) / scale};
-    }
-
-    private clamped(sizes: PanelSizes): PanelSizes {
-        const area = this.area();
-        return area.widthPx > 0 && area.heightPx > 0 ? clampPanelSizes(sizes, area, this.visibility) : sizes;
-    }
-
-    private apply(sizes: PanelSizes): void {
-        this.sizes = sizes;
-        const shown = shownPanelSizes(sizes, this.visibility);
-        const root = this.layout.root;
-        for (const [key, variable] of Object.entries(CSS_VARIABLES) as [PanelSizeKey, string][]) root.style.setProperty(variable, `${shown[key]}${PIXELS}`);
-        for (const panel of LAYOUT_PANELS) {
-            root.style.setProperty(SPLITTER_CSS_VARIABLES[panel], `${splitterThicknessPx(this.visibility, panel)}${PIXELS}`);
-            root.classList.toggle(HIDDEN_PANEL_CLASSES[panel], !this.visibility[panel]);
-        }
-    }
-
-    private installSplitter(key: PanelSizeKey, splitter: HTMLElement): void {
-        this.installDrag(splitter, key !== "bottomHeightPx", () => {
-            const startSize = this.sizes[key];
-            return deltaPx => this.apply(resizedPanel(this.sizes, key, startSize, deltaPx, this.area(), this.visibility));
-        });
-    }
-
-    private installDrag(splitter: HTMLElement, vertical: boolean, begin: () => (deltaPx: number) => void): void {
-        splitter.addEventListener("pointerdown", event => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            capturePointer(splitter, event.pointerId);
-            const start = vertical ? event.clientX : event.clientY;
-            const scale = visualScaleOf(this.layout.root);
-            const moved = begin();
-            this.layout.root.classList.add(DRAGGING_CLASS);
-            const onMove = (move: PointerEvent): void => moved(((vertical ? move.clientX : move.clientY) - start) / scale);
-            const onUp = (): void => {
-                splitter.removeEventListener("pointermove", onMove);
-                splitter.removeEventListener("pointerup", onUp);
-                splitter.removeEventListener("pointercancel", onUp);
-                this.layout.root.classList.remove(DRAGGING_CLASS);
-                this.store();
-            };
-            splitter.addEventListener("pointermove", onMove);
-            splitter.addEventListener("pointerup", onUp);
-            splitter.addEventListener("pointercancel", onUp);
-        });
-    }
+    return {
+        root, menuRow, menuStatus, toolbar, dock, hierarchy, sceneTabs, prefabBreadcrumb, sceneStage, sceneViewport, stage, viewport, overlay,
+        inspector, projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel, panels,
+    };
 }
 
 function onSizeChange(element: HTMLElement, changed: () => void): void {
@@ -397,22 +214,21 @@ class EditorShellImplementation implements EditorShell {
     public readonly commands = new CommandRegistry();
     private readonly document: Document;
     private readonly layout: ShellLayout;
-    private readonly resizer: PanelResizer;
+    private readonly dock: DockView;
     private readonly editorCommands: EditorCommands;
     private readonly menuBar: MenuBar;
     private readonly pendingNotices: {readonly level: EditorNoticeLevel, readonly text: string, readonly stack: string | undefined}[] = [];
     private readonly focusValues = new WeakMap<Element, string>();
     private mounted: MountedViews | undefined;
-    private bottomTab: BottomTab;
     private gameViewAspectId: string;
     private targetLabel: string;
     private gameTargetMenu: readonly MenuEntry[] | undefined;
     private projectSettings: ProjectSettingsWindow | undefined;
     private buildWindow: BuildWindow | undefined;
     private preferences: PreferencesDialog | undefined;
-    private readonly bottomTabButtons = new Map<BottomTab, HTMLButtonElement>();
     private readonly sceneViewShownListeners = new Set<(shown: boolean) => void>();
     private sceneViewShown = SCENE_VIEW_SHOWN_AT_START;
+    private sceneViewDocked = SCENE_VIEW_SHOWN_AT_START;
     private shownMode: EditorMode | undefined;
 
     public constructor(body: HTMLElement, private readonly options: EditorShellOptions) {
@@ -422,12 +238,10 @@ class EditorShellImplementation implements EditorShell {
         this.viewport = this.layout.viewport;
         this.sceneViewport = this.layout.sceneViewport;
         applyPageUiScale(this.document.documentElement, storedPageUiScale(window));
-        this.resizer = new PanelResizer(this.layout, window);
+        this.dock = this.createDock(window);
         observeViewportSize(this.viewport);
         observeViewportSize(this.sceneViewport);
         onSizeChange(this.layout.stage, () => this.applyGameViewAspect());
-        const stored = readStorage(window, BOTTOM_TAB_STORAGE_KEY);
-        this.bottomTab = BOTTOM_TABS.find(tab => tab === stored) ?? DEFAULT_BOTTOM_TAB;
         this.gameViewAspectId = gameViewAspectOf(readStorage(window, GAME_VIEW_ASPECT_STORAGE_KEY)).id;
         this.targetLabel = options.targetLabel ?? NO_TARGET_LABEL;
         this.editorCommands = registerEditorCommands(this.commands, this.commandHost());
@@ -439,8 +253,6 @@ class EditorShellImplementation implements EditorShell {
             gameTargetMenu: () => this.gameTargetMenu,
             handleModes: () => this.mounted?.workspace.handleModes ?? DEFAULT_HANDLE_MODES,
         });
-        this.buildTabs();
-        this.showBottomTab(this.bottomTab);
         this.installKeyboard();
         this.installUnloadGuard();
     }
@@ -466,10 +278,10 @@ class EditorShellImplementation implements EditorShell {
         const settings = new SettingsView(this.layout.settingsPanel, workspace, rotations);
         const dataAssets = new DataAssetsView(this.layout.assetsPanel, workspace, rotations);
         this.mounted = {workspace, scene, hierarchy, project, settings, dataAssets, rotations};
-        settings.setVisible(this.bottomTab === "settings");
-        dataAssets.setVisible(this.bottomTab === "assets");
+        settings.setVisible(this.dock.isShown(SETTINGS_PANEL));
+        dataAssets.setVisible(this.dock.isShown(ASSETS_PANEL));
         dataAssets.onDirtyChanged(() => this.showDataAssetsTitle(dataAssets));
-        workspace.on("openDataAsset", () => this.showBottomTab("assets"));
+        workspace.on("openDataAsset", () => this.revealPanel(ASSETS_PANEL));
         workspace.on("state", () => this.stateChanged(workspace));
         workspace.on("document", () => this.commands.changed());
         workspace.on("handles", () => this.commands.changed());
@@ -508,13 +320,14 @@ class EditorShellImplementation implements EditorShell {
 
     public setGameTargetMenu(entries: readonly MenuEntry[]): void {
         this.gameTargetMenu = entries;
-        this.layout.gameHeader.title = this.gameTargetMenu === undefined ? GAME_HEADER_TITLE : GAME_HEADER_TITLE + GAME_HEADER_MENU_HINT;
+        this.dock.setTabTooltip(GAME_VIEW, GAME_HEADER_TITLE + GAME_HEADER_MENU_HINT);
         this.commands.changed();
     }
 
     public onSceneViewShown(listener: (shown: boolean) => void): () => void {
         const entry = (shown: boolean): void => listener(shown);
         this.sceneViewShownListeners.add(entry);
+        if (this.sceneViewShown !== SCENE_VIEW_SHOWN_AT_START) entry(this.sceneViewShown);
         return () => {
             this.sceneViewShownListeners.delete(entry);
         };
@@ -524,14 +337,16 @@ class EditorShellImplementation implements EditorShell {
         return {
             closeProject: this.options.closeProject,
             views: () => this.mounted,
-            bottomTab: () => this.bottomTab,
-            showBottomTab: tab => this.showBottomTab(tab),
-            resetLayout: () => this.resetLayout(),
-            panelShown: panel => this.resizer.shown(panel),
-            togglePanel: panel => {
-                this.resizer.toggle(panel);
+            showPanel: panel => this.showPanel(panel),
+            panelOpen: panel => this.dock.isOpen(panel),
+            closePanel: panel => this.dock.closePanel(panel),
+            panelMaximized: panel => this.dock.isMaximized(panel),
+            toggleMaximized: panel => {
+                this.dock.toggleMaximized(panel);
                 this.commands.changed();
             },
+            addPanelBeside: (panel, besidePanel) => this.dock.addPanelBeside(panel, besidePanel),
+            resetLayout: () => this.resetLayout(),
             gameViewAspect: () => this.gameViewAspectId,
             setGameViewAspect: id => this.setGameViewAspect(id),
             textSelected: () => this.document.getSelection()?.isCollapsed === false,
@@ -547,52 +362,71 @@ class EditorShellImplementation implements EditorShell {
         };
     }
 
-    private buildTabs(): void {
-        const document = this.document;
-        this.layout.gameHeader.addEventListener("contextmenu", event => {
-            const menu = this.gameTargetMenu;
-            if (menu === undefined) return;
-            event.preventDefault();
-            showCommandMenu(document, event.clientX, event.clientY, menu);
+    private createDock(window: Window | null): DockView {
+        const panels = new Map<DockPanelId, DockPanel>(DOCK_PANEL_IDS.map(id => [id, {
+            id,
+            title: DOCK_PANEL_TITLES[id],
+            element: this.layout.panels[id],
+            onShown: shown => this.panelShown(id, shown),
+        }]));
+        const dock = new DockView(this.layout.dock, parseDockLayout(readStorage(window, DOCK_LAYOUT_STORAGE_KEY)) ?? defaultDockLayout(this.dockArea()), {
+            panels,
+            minimums: DOCK_PANEL_MINIMUMS,
+            changed: layout => {
+                writeStorage(window, DOCK_LAYOUT_STORAGE_KEY, dockLayoutText(layout));
+                this.commands.changed();
+            },
+            closeRequested: panel => void this.editorCommands.window.closePanel.runWith(panel),
+            tabMenu: panel => dockTabMenu(this.editorCommands, panel, this.dock.closedPanels(), panel === GAME_VIEW ? this.gameTargetMenu ?? [] : []),
         });
-        for (const tab of BOTTOM_TABS) {
-            const button = createButton(document, {className: "editor-tab", text: BOTTOM_TAB_LABELS[tab], title: `Show the ${BOTTOM_TAB_LABELS[tab]}`, onClick: () => this.showBottomTab(tab)});
-            button.setAttribute("role", "tab");
-            button.setAttribute(BOTTOM_TAB_HOOK, tab);
-            this.bottomTabButtons.set(tab, button);
-            this.layout.bottomTabs.append(button);
+        dock.setTabTooltip(SCENE_VIEW, SCENE_HEADER_TITLE);
+        dock.setTabTooltip(GAME_VIEW, GAME_HEADER_TITLE);
+        return dock;
+    }
+
+    private dockArea(): DockSize {
+        const dock = this.layout.dock;
+        return {widthPx: dock.clientWidth, heightPx: dock.clientHeight};
+    }
+
+    private panelShown(panel: DockPanelId, shown: boolean): void {
+        if (panel === SETTINGS_PANEL) this.mounted?.settings.setVisible(shown);
+        else if (panel === ASSETS_PANEL) this.mounted?.dataAssets.setVisible(shown);
+        else if (panel === SCENE_VIEW) {
+            this.sceneViewDocked = shown;
+            this.updateSceneViewShown();
         }
     }
 
-    private showBottomTab(tab: BottomTab): void {
-        this.bottomTab = tab;
-        writeStorage(this.document.defaultView, BOTTOM_TAB_STORAGE_KEY, tab);
-        for (const [key, button] of this.bottomTabButtons) {
-            button.classList.toggle(ACTIVE_CLASS, key === tab);
-            button.setAttribute("aria-selected", String(key === tab));
+    private revealPanel(panel: DockPanelId): void {
+        this.dock.revealPanel(panel, DOCK_PANEL_HOMES[panel]);
+    }
+
+    private showPanel(panel: DockPanelId): void {
+        if (panel === SCENE_VIEW || panel === GAME_VIEW) {
+            this.focusView(panel);
+            return;
         }
-        this.layout.projectPanel.hidden = tab !== "project";
-        this.layout.consolePanel.hidden = tab !== "console";
-        this.layout.historyPanel.hidden = tab !== "history";
-        this.layout.settingsPanel.hidden = tab !== "settings";
-        this.layout.assetsPanel.hidden = tab !== "assets";
-        this.mounted?.settings.setVisible(tab === "settings");
-        this.mounted?.dataAssets.setVisible(tab === "assets");
-        this.commands.changed();
+        this.revealPanel(panel);
+        this.dock.focusPanel(panel);
     }
 
     private resetLayout(): void {
-        this.resizer.reset();
-        this.showBottomTab(DEFAULT_BOTTOM_TAB);
+        this.dock.setLayout(defaultDockLayout(this.dockArea()));
     }
 
     private stateChanged(workspace: EditorWorkspace): void {
         this.layout.toolbar.dataset.mode = workspace.mode;
-        this.layout.root.classList.toggle(MAXIMIZED_CLASS, isLayoutMaximized(workspace.gameViewOptions, workspace.mode));
-        this.showSceneViewShown(workspace.sceneViewShown);
+        this.dock.setForcedPanel(isLayoutMaximized(workspace.gameViewOptions, workspace.mode) ? GAME_VIEW : undefined);
+        this.updateSceneViewShown();
         this.moveFocusWithMode(workspace.mode);
         this.applyGameViewAspect();
         this.commands.changed();
+    }
+
+    private updateSceneViewShown(): void {
+        const workspace = this.mounted?.workspace;
+        this.showSceneViewShown(this.sceneViewDocked && (workspace === undefined || workspace.sceneViewShown));
     }
 
     private showSceneViewShown(shown: boolean): void {
@@ -606,10 +440,11 @@ class EditorShellImplementation implements EditorShell {
         this.shownMode = mode;
         if (previous === undefined || previous === mode) return;
         if (mode === PLAY_MODE) this.focusView(GAME_VIEW);
-        else if (mode === EDIT_MODE && this.viewport.contains(this.document.activeElement)) this.focusView(SCENE_VIEW);
+        else if (mode === EDIT_MODE && this.viewport.contains(this.document.activeElement) && this.dock.isOpen(SCENE_VIEW)) this.focusView(SCENE_VIEW);
     }
 
     private focusView(view: EditorView): void {
+        this.revealPanel(view);
         if (view === SCENE_VIEW) {
             this.layout.overlay.focus();
             return;
@@ -730,17 +565,15 @@ class EditorShellImplementation implements EditorShell {
     }
 
     private showDataAssetsTitle(dataAssets: DataAssetsView): void {
-        const button = this.bottomTabButtons.get("assets");
-        if (button !== undefined) button.textContent = BOTTOM_TAB_LABELS.assets + (dataAssets.dirty ? DIRTY_MARKER : "");
+        this.dock.setTabTitle(ASSETS_PANEL, DOCK_PANEL_TITLES.assets + (dataAssets.dirty ? DIRTY_MARKER : ""));
     }
 
     private showConsoleBadge(workspace: EditorWorkspace): void {
         const counts = workspace.consoleLog.levelCounts;
-        const button = this.bottomTabButtons.get("console");
-        if (button === undefined) return;
         const problems = counts.error + counts.warn;
-        button.textContent = problems === 0 ? BOTTOM_TAB_LABELS.console : `${BOTTOM_TAB_LABELS.console} (${problems})`;
-        button.classList.toggle("has-errors", counts.error > 0);
+        const title = DOCK_PANEL_TITLES.console;
+        this.dock.setTabTitle(CONSOLE_PANEL, problems === 0 ? title : `${title} (${problems})`);
+        this.dock.setTabAlert(CONSOLE_PANEL, counts.error > 0);
     }
 
     private hasUnsavedChanges(): boolean {

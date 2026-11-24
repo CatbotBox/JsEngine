@@ -1,7 +1,5 @@
 import {join} from "path";
 import {
-    BOTTOM_PANEL_HOOK,
-    BOTTOM_TAB_HOOK,
     BUILD_ACTION_HOOK,
     BUILD_TARGET_HOOK,
     BUILD_TARGET_STATE_HOOK,
@@ -22,6 +20,10 @@ import {
     DATA_ASSET_FIELDS_HOOK,
     DATA_ASSET_HOOK,
     DATA_ASSETS_ACTION_HOOK,
+    DOCK_PANEL_HOOK,
+    DOCK_STACK_HOOK,
+    DOCK_TAB_CLOSE_HOOK,
+    DOCK_TAB_HOOK,
     DROPDOWN_HOOK,
     EDITOR_MENU_IDS,
     EDITOR_TITLE_HOOK,
@@ -33,7 +35,6 @@ import {
     MENU_HOOK,
     MODAL_HOOK,
     MODAL_INPUT_HOOK,
-    PANEL_HOOK,
     POPUP_MENU_HOOK,
     PREFAB_BREADCRUMB_HOOK,
     PROJECT_ITEM_HOOK,
@@ -45,7 +46,7 @@ import {
     SUBMENU_HOOK,
     TOOLBAR_HOOK,
 } from "../project/editorUiHooks";
-import type {EditorMenuId, ModalKind} from "../project/editorUiHooks";
+import type {DockPanelId, EditorMenuId, ModalKind} from "../project/editorUiHooks";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import type {SmokeFlow} from "./smokeFlows";
 import {SmokeFailure} from "./smokeUi";
@@ -61,16 +62,14 @@ interface SmokeProject {
     readonly name: string;
 }
 
-type LayoutPanel = "hierarchy" | "inspector" | "bottom";
-type BottomTab = "project" | "console" | "history" | "settings" | "assets";
-
 const POPUP = hookSelector(POPUP_MENU_HOOK);
 const PALETTE = hookSelector(COMMAND_PALETTE_HOOK);
 const PALETTE_SEARCH = `${PALETTE} ${hookSelector(COMMAND_PALETTE_SEARCH_HOOK)}`;
 const PALETTE_COMMANDS = `${PALETTE} ${hookSelector(COMMAND_HOOK)}`;
 const PALETTE_HIGHLIGHTED = `${PALETTE_COMMANDS}[aria-selected="true"]`;
 const TOOLBAR = hookSelector(TOOLBAR_HOOK);
-const ENTITY_ROWS = `${hookSelector(PANEL_HOOK, "hierarchy")} ${hookSelector(HIERARCHY_ENTITY_HOOK)}`;
+const DOCK_STACK = hookSelector(DOCK_STACK_HOOK);
+const ENTITY_ROWS = `${hookSelector(DOCK_PANEL_HOOK, "hierarchy")} ${hookSelector(HIERARCHY_ENTITY_HOOK)}`;
 const SELECTED_ENTITY_ROWS = `${ENTITY_ROWS}[aria-selected="true"]`;
 const SCENE_TABS = hookSelector(SCENE_TAB_HOOK);
 const ACTIVE_SCENE_TAB = `${SCENE_TABS}[aria-selected="true"]`;
@@ -97,9 +96,7 @@ const FALSE_TEXT = "false";
 const NO_SUCH_COMMAND_TEXT = "zqxj no such command";
 const INSPECTOR_QUERY = "Inspector";
 const PALETTE_MIN_COMMANDS = 10;
-const SHOWN = true;
-const HIDDEN = false;
-const INSPECTOR_SHOWN_AFTER_EACH_TOGGLE: readonly boolean[] = [HIDDEN, SHOWN];
+const DEFAULT_SHOWN_PANELS: readonly DockPanelId[] = ["hierarchy", "scene", "game", "inspector", "project"];
 const FIELDS_OPEN_TIMEOUT_MS = 5_000;
 const SAVE_WHILE_PLAYING_PRESSES = 3;
 const SAVE_WHILE_PLAYING_SEARCH = "saved while editing";
@@ -129,7 +126,7 @@ const COMMANDS = {
     redo: "edit.redo",
     undoHistory: "edit.undoHistory",
     keyboardShortcuts: "help.keyboardShortcuts",
-    toggleInspector: "window.toggleInspector",
+    showInspector: "window.inspector",
     resetLayout: "window.resetLayout",
     showDataAssets: "window.assets",
     pivotCenter: "tools.togglePivotCenter",
@@ -161,11 +158,6 @@ const ENTITY_TEMPLATES: readonly TemplateCommand[] = [
 const ROTATED_TEMPLATE: TemplateCommand = {command: "entity.createDirectionalLight", name: "Directional Light"};
 const SPRITE_TEMPLATE: TemplateCommand = {command: "entity.createSprite", name: "Sprite"};
 const EDITED_PATTERN_ROW = "#";
-const PANEL_TOGGLES: readonly {readonly panel: LayoutPanel, readonly command: string}[] = [
-    {panel: "hierarchy", command: "window.toggleHierarchy"},
-    {panel: "inspector", command: COMMANDS.toggleInspector},
-    {panel: "bottom", command: "window.toggleBottomPanel"},
-];
 const CREATED_ASSETS: readonly {readonly command: string, readonly name: string, readonly path: string}[] = [
     {command: "assets.createFolder", name: "Smoke Folder", path: "Smoke Folder"},
     {command: "assets.createScene", name: "Smoke Scene", path: "Smoke Scene.scene.json"},
@@ -177,7 +169,7 @@ const CREATED_SCRIPT_NAME = "SmokeSpin";
 const RECOVERY_ESCAPES = 3;
 const SCRIPT_EXTENSION = ".ts";
 const ENABLED_NUMBER_FIELD = `${hookSelector(FIELD_INPUT_HOOK, "number")}:not(:disabled)`;
-const INSPECTOR_TEXT_LINES_FIELD = `${hookSelector(PANEL_HOOK, "inspector")} ${hookSelector(FIELD_INPUT_HOOK, "textLines")}`;
+const INSPECTOR_TEXT_LINES_FIELD = `${hookSelector(DOCK_PANEL_HOOK, "inspector")} ${hookSelector(FIELD_INPUT_HOOK, "textLines")}`;
 
 function menuButton(menu: EditorMenuId): string {
     return hookSelector(MENU_HOOK, menu);
@@ -195,16 +187,20 @@ function toolbarCommand(command: string): string {
     return `${TOOLBAR} ${hookSelector(COMMAND_HOOK, command)}`;
 }
 
-function panel(name: LayoutPanel): string {
-    return hookSelector(PANEL_HOOK, name);
+function dockPanel(panel: DockPanelId): string {
+    return hookSelector(DOCK_PANEL_HOOK, panel);
 }
 
-function bottomTab(tab: BottomTab): string {
-    return hookSelector(BOTTOM_TAB_HOOK, tab);
+function dockTab(panel: DockPanelId): string {
+    return hookSelector(DOCK_TAB_HOOK, panel);
 }
 
-function bottomPanel(tab: BottomTab): string {
-    return hookSelector(BOTTOM_PANEL_HOOK, tab);
+function sameStackScript(first: DockPanelId, second: DockPanelId): string {
+    const stackOf = (panel: DockPanelId): string => `document.querySelector(${JSON.stringify(dockTab(panel))})?.closest(${JSON.stringify(DOCK_STACK)})`;
+    return `(() => {
+        const first = ${stackOf(first)};
+        return first !== null && first !== undefined && first === ${stackOf(second)};
+    })()`;
 }
 
 function modal(kind: ModalKind): string {
@@ -216,7 +212,7 @@ function sceneTab(key: string): string {
 }
 
 function projectItem(path: string): string {
-    return `${bottomPanel("project")} ${hookSelector(PROJECT_ITEM_HOOK, path)}`;
+    return `${dockPanel("project")} ${hookSelector(PROJECT_ITEM_HOOK, path)}`;
 }
 
 function samePath(a: string, b: string): boolean {
@@ -258,10 +254,14 @@ async function menuCommandEnabled(ui: SmokeUi, menu: EditorMenuId, command: stri
     return await ui.attribute(popupCommand(command), DISABLED_ATTRIBUTE) === null;
 }
 
-async function showBottomTab(ui: SmokeUi, tab: BottomTab): Promise<void> {
-    await ui.click(bottomTab(tab), `the ${tab} tab`);
-    await ui.waitForAttribute(bottomTab(tab), ARIA_SELECTED, TRUE_TEXT, `the ${tab} tab`);
-    await ui.waitForVisible(bottomPanel(tab), `the ${tab} panel`);
+async function showDockTab(ui: SmokeUi, panel: DockPanelId): Promise<void> {
+    await ui.click(dockTab(panel), `the ${panel} tab`);
+    await ui.waitForAttribute(dockTab(panel), ARIA_SELECTED, TRUE_TEXT, `the ${panel} tab`);
+    await ui.waitForVisible(dockPanel(panel), `the ${panel} panel`);
+}
+
+async function inSameStack(ui: SmokeUi, first: DockPanelId, second: DockPanelId): Promise<boolean> {
+    return await ui.read<boolean>(sameStackScript(first, second));
 }
 
 async function answerTextPrompt(ui: SmokeUi, text: string): Promise<void> {
@@ -320,35 +320,38 @@ const commandPaletteFlow: SmokeFlow = {
         await ui.waitForCount(PALETTE_COMMANDS, 0, "palette commands matching nonsense");
         await ui.press(ESCAPE_CHORD);
         await ui.waitForNone(PALETTE, "the command palette after Escape");
-        for (const shown of INSPECTOR_SHOWN_AFTER_EACH_TOGGLE) {
-            await ui.press(PALETTE_CHORD);
-            await ui.waitForFocus(PALETTE_SEARCH, "the palette search");
-            await ui.type(INSPECTOR_QUERY);
-            await ui.waitForAttribute(PALETTE_HIGHLIGHTED, COMMAND_HOOK, COMMANDS.toggleInspector, "the highlighted palette command");
-            await ui.press(ENTER_CHORD);
-            await ui.waitForNone(PALETTE, "the command palette after running a command");
-            if (shown) await ui.waitForVisible(panel("inspector"), "the inspector");
-            else await ui.waitForNone(panel("inspector"), "the inspector");
-        }
+        await ui.middleClick(dockTab("inspector"), "the Inspector tab");
+        await ui.waitForNone(dockPanel("inspector"), "the inspector after middle-clicking its tab");
+        await ui.press(PALETTE_CHORD);
+        await ui.waitForFocus(PALETTE_SEARCH, "the palette search");
+        await ui.type(INSPECTOR_QUERY);
+        await ui.waitForAttribute(PALETTE_HIGHLIGHTED, COMMAND_HOOK, COMMANDS.showInspector, "the highlighted palette command");
+        await ui.press(ENTER_CHORD);
+        await ui.waitForNone(PALETTE, "the command palette after running a command");
+        await ui.waitForVisible(dockPanel("inspector"), "the inspector reopened from the palette");
     },
 };
 
-const panelTogglesFlow: SmokeFlow = {
-    name: "panelToggles",
+const dockingFlow: SmokeFlow = {
+    name: "docking",
     async run({ui}) {
-        for (const toggle of PANEL_TOGGLES) {
-            await ui.waitForVisible(panel(toggle.panel), `the ${toggle.panel} panel`);
-            await runFromMenu(ui, "window", toggle.command);
-            await ui.waitForNone(panel(toggle.panel), `the ${toggle.panel} panel`);
-            await openMenu(ui, "window");
-            await ui.waitForAttribute(popupCommand(toggle.command), ARIA_CHECKED, FALSE_TEXT, `${toggle.command} in the window menu`);
-            await ui.click(popupCommand(toggle.command), toggle.command);
-            await ui.waitForVisible(panel(toggle.panel), `the ${toggle.panel} panel`);
-        }
-        for (const toggle of PANEL_TOGGLES) await runFromMenu(ui, "window", toggle.command);
-        for (const toggle of PANEL_TOGGLES) await ui.waitForNone(panel(toggle.panel), `the ${toggle.panel} panel`);
+        await ui.waitForVisible(dockPanel("inspector"), "the inspector");
+        await ui.click(`${dockTab("inspector")} ${hookSelector(DOCK_TAB_CLOSE_HOOK)}`, "the Inspector tab's close button");
+        await ui.waitForNone(dockTab("inspector"), "the Inspector tab after closing it");
+        await ui.waitForNone(dockPanel("inspector"), "the inspector after closing its tab");
+        await runFromMenu(ui, "window", COMMANDS.showInspector);
+        await ui.waitForAttribute(dockTab("inspector"), ARIA_SELECTED, TRUE_TEXT, "the reopened Inspector tab");
+        await ui.waitForVisible(dockPanel("inspector"), "the inspector after Window > Inspector");
+        ui.expect(!await inSameStack(ui, "console", "hierarchy"), "the Console tab already shares the Hierarchy's stack");
+        await ui.drag(dockTab("console"), dockTab("hierarchy"), "dragging the Console tab onto the Hierarchy tab");
+        await ui.waitFor("the Console tab to join the Hierarchy's stack", () => inSameStack(ui, "console", "hierarchy"));
+        await ui.waitForAttribute(dockTab("console"), ARIA_SELECTED, TRUE_TEXT, "the moved Console tab");
+        await ui.waitForVisible(dockPanel("console"), "the console in the Hierarchy's stack");
+        await ui.waitForNone(dockPanel("hierarchy"), "the hierarchy behind the Console tab");
         await runFromMenu(ui, "window", COMMANDS.resetLayout);
-        for (const toggle of PANEL_TOGGLES) await ui.waitForVisible(panel(toggle.panel), `the ${toggle.panel} panel after Reset Layout`);
+        await ui.waitFor("Reset Layout to put the Console tab back beside the Project tab", () => inSameStack(ui, "console", "project"));
+        ui.expect(!await inSameStack(ui, "console", "hierarchy"), "the Console tab stayed in the Hierarchy's stack after Reset Layout");
+        for (const panel of DEFAULT_SHOWN_PANELS) await ui.waitForVisible(dockPanel(panel), `the ${panel} panel after Reset Layout`);
     },
 };
 
@@ -486,14 +489,14 @@ const undoHistoryFlow: SmokeFlow = {
     name: "undoHistory",
     async run({ui}) {
         await runFromMenu(ui, "edit", COMMANDS.undoHistory);
-        await ui.waitForAttribute(bottomTab("history"), ARIA_SELECTED, TRUE_TEXT, "the history tab");
-        const steps = `${bottomPanel("history")} ${hookSelector(HISTORY_STEP_HOOK)}`;
-        const current = `${bottomPanel("history")} ${hookSelector(HISTORY_STATE_HOOK, "current")}`;
-        const undone = `${bottomPanel("history")} ${hookSelector(HISTORY_STATE_HOOK, "undone")}`;
+        await ui.waitForAttribute(dockTab("history"), ARIA_SELECTED, TRUE_TEXT, "the history tab");
+        const steps = `${dockPanel("history")} ${hookSelector(HISTORY_STEP_HOOK)}`;
+        const current = `${dockPanel("history")} ${hookSelector(HISTORY_STATE_HOOK, "current")}`;
+        const undone = `${dockPanel("history")} ${hookSelector(HISTORY_STATE_HOOK, "undone")}`;
         await ui.waitForVisible(current, "the current history step");
         const startDepth = Number(await ui.attribute(current, HISTORY_STEP_HOOK));
         const rowsBefore = await ui.visibleCount(ENTITY_ROWS);
-        const createEmpty = `${panel("hierarchy")} ${hookSelector(COMMAND_HOOK, COMMANDS.createEmpty)}`;
+        const createEmpty = `${dockPanel("hierarchy")} ${hookSelector(COMMAND_HOOK, COMMANDS.createEmpty)}`;
         for (const depth of [startDepth + 1, startDepth + 2]) {
             await ui.click(createEmpty, "the hierarchy's Create button");
             await ui.waitForAttribute(current, HISTORY_STEP_HOOK, String(depth), "the current history step");
@@ -556,14 +559,14 @@ const consoleFlow: SmokeFlow = {
     name: "console",
     async run({ui}) {
         const play = toolbarCommand(COMMANDS.play);
-        const warnings = `${bottomPanel("console")} ${hookSelector(CONSOLE_ENTRY_HOOK, "warn")}`;
+        const warnings = `${dockPanel("console")} ${hookSelector(CONSOLE_ENTRY_HOOK, "warn")}`;
         const repeat = `${warnings} ${hookSelector(CONSOLE_REPEAT_HOOK)}`;
-        const collapse = `${bottomPanel("console")} ${hookSelector(CONSOLE_ACTION_HOOK, "collapse")}`;
-        const search = `${bottomPanel("console")} ${hookSelector(CONSOLE_SEARCH_HOOK)}`;
-        const warnFilter = `${bottomPanel("console")} ${hookSelector(CONSOLE_LEVEL_HOOK, "warn")}`;
-        const entries = `${bottomPanel("console")} ${hookSelector(CONSOLE_ENTRY_HOOK)}`;
-        await showBottomTab(ui, "console");
-        await ui.click(`${bottomPanel("console")} ${hookSelector(CONSOLE_ACTION_HOOK, "clear")}`, "the console's Clear button");
+        const collapse = `${dockPanel("console")} ${hookSelector(CONSOLE_ACTION_HOOK, "collapse")}`;
+        const search = `${dockPanel("console")} ${hookSelector(CONSOLE_SEARCH_HOOK)}`;
+        const warnFilter = `${dockPanel("console")} ${hookSelector(CONSOLE_LEVEL_HOOK, "warn")}`;
+        const entries = `${dockPanel("console")} ${hookSelector(CONSOLE_ENTRY_HOOK)}`;
+        await showDockTab(ui, "console");
+        await ui.click(`${dockPanel("console")} ${hookSelector(CONSOLE_ACTION_HOOK, "clear")}`, "the console's Clear button");
         await ui.waitForCount(entries, 0, "console entries after Clear");
         await ui.click(play, "the Play button");
         await ui.waitForAttribute(play, ARIA_PRESSED, TRUE_TEXT, "the Play button");
@@ -574,7 +577,7 @@ const consoleFlow: SmokeFlow = {
         for (let press = 0; press < SAVE_WHILE_PLAYING_PRESSES; press++) await ui.press(SAVE_CHORD);
         await ui.click(play, "the Stop button");
         await ui.waitForAttribute(play, ARIA_PRESSED, FALSE_TEXT, "the Play button");
-        await showBottomTab(ui, "console");
+        await showDockTab(ui, "console");
         await ui.waitForCount(warnings, SAVE_WHILE_PLAYING_PRESSES, "warnings about saving while playing");
         await ui.click(collapse, "the console's Collapse button");
         await ui.waitForAttribute(collapse, ARIA_PRESSED, TRUE_TEXT, "the Collapse button");
@@ -598,15 +601,15 @@ const consoleFlow: SmokeFlow = {
 };
 
 async function editableDataAsset(ui: SmokeUi): Promise<string | undefined> {
-    const items = `${bottomPanel("assets")} ${hookSelector(DATA_ASSET_HOOK)}`;
+    const items = `${dockPanel("assets")} ${hookSelector(DATA_ASSET_HOOK)}`;
     const count = await ui.visibleCount(items);
     for (let index = 0; index < count; index++) {
         const paths = await ui.read<string[]>(`[...document.querySelectorAll(${JSON.stringify(items)})].map(item => item.getAttribute(${JSON.stringify(DATA_ASSET_HOOK)}))`);
         const path = paths[index];
-        const item = `${bottomPanel("assets")} ${hookSelector(DATA_ASSET_HOOK, path)}`;
+        const item = `${dockPanel("assets")} ${hookSelector(DATA_ASSET_HOOK, path)}`;
         await ui.click(item, `the data asset ${path}`);
         await ui.waitForAttribute(item, ARIA_SELECTED, TRUE_TEXT, `the data asset ${path}`);
-        const fields = `${bottomPanel("assets")} ${hookSelector(DATA_ASSET_FIELDS_HOOK, path)}`;
+        const fields = `${dockPanel("assets")} ${hookSelector(DATA_ASSET_FIELDS_HOOK, path)}`;
         const opened = await ui.waitFor(`the fields of ${path}`, () => ui.isVisible(fields), FIELDS_OPEN_TIMEOUT_MS).then(() => true, () => false);
         if (opened && await ui.isVisible(`${fields} ${ENABLED_NUMBER_FIELD}`)) return path;
     }
@@ -617,15 +620,15 @@ const dataAssetsFlow: SmokeFlow = {
     name: "dataAssets",
     async run({ui}) {
         await runFromMenu(ui, "window", COMMANDS.showDataAssets);
-        await ui.waitForAttribute(bottomTab("assets"), ARIA_SELECTED, TRUE_TEXT, "the data assets tab");
-        const items = `${bottomPanel("assets")} ${hookSelector(DATA_ASSET_HOOK)}`;
+        await ui.waitForAttribute(dockTab("assets"), ARIA_SELECTED, TRUE_TEXT, "the data assets tab");
+        const items = `${dockPanel("assets")} ${hookSelector(DATA_ASSET_HOOK)}`;
         await ui.waitFor("the project's data assets to be listed", async () => await ui.visibleCount(items) > 0);
         const path = await editableDataAsset(ui);
         ui.expect(path !== undefined, "no listed data asset has a number field to edit");
-        const item = `${bottomPanel("assets")} ${hookSelector(DATA_ASSET_HOOK, path)}`;
-        const field = `${bottomPanel("assets")} ${hookSelector(DATA_ASSET_FIELDS_HOOK, path)} ${ENABLED_NUMBER_FIELD}`;
-        const save = `${bottomPanel("assets")} ${hookSelector(DATA_ASSETS_ACTION_HOOK, "save")}`;
-        const revert = `${bottomPanel("assets")} ${hookSelector(DATA_ASSETS_ACTION_HOOK, "revert")}`;
+        const item = `${dockPanel("assets")} ${hookSelector(DATA_ASSET_HOOK, path)}`;
+        const field = `${dockPanel("assets")} ${hookSelector(DATA_ASSET_FIELDS_HOOK, path)} ${ENABLED_NUMBER_FIELD}`;
+        const save = `${dockPanel("assets")} ${hookSelector(DATA_ASSETS_ACTION_HOOK, "save")}`;
+        const revert = `${dockPanel("assets")} ${hookSelector(DATA_ASSETS_ACTION_HOOK, "revert")}`;
         const valueScript = `document.querySelector(${JSON.stringify(field)})?.value ?? null`;
         const before = await ui.read<string | null>(valueScript);
         await ui.click(field, "the first number field");
@@ -700,7 +703,7 @@ function projectFlows(): SmokeFlow[] {
         budgetMs: PROJECT_BUDGET_MS,
         async run({ui, host, note}) {
             const {folder} = created();
-            await showBottomTab(ui, "project");
+            await showDockTab(ui, "project");
             for (const asset of CREATED_ASSETS) {
                 await runFromMenu(ui, "assets", asset.command, [CREATE_SUBMENU]);
                 await answerTextPrompt(ui, asset.name);
@@ -719,14 +722,14 @@ function projectFlows(): SmokeFlow[] {
                 await ui.click(popupCommand(COMMANDS.createDataAsset), "the first data asset type");
                 await ui.waitForNone(POPUP, "the popup menu");
                 await answerTextPrompt(ui, CREATED_DATA_ASSET_NAME);
-                const opened = `${bottomPanel("assets")} ${hookSelector(DATA_ASSET_HOOK, CREATED_DATA_ASSET_PATH)}`;
-                await ui.waitForAttribute(bottomTab("assets"), ARIA_SELECTED, TRUE_TEXT, "the data assets tab showing the new asset");
+                const opened = `${dockPanel("assets")} ${hookSelector(DATA_ASSET_HOOK, CREATED_DATA_ASSET_PATH)}`;
+                await ui.waitForAttribute(dockTab("assets"), ARIA_SELECTED, TRUE_TEXT, "the data assets tab showing the new asset");
                 await ui.waitForAttribute(opened, ARIA_SELECTED, TRUE_TEXT, `${CREATED_DATA_ASSET_PATH} in the Data Assets panel`);
                 ui.expect(await host.fileExists(join(folder, CREATED_DATA_ASSET_PATH)), `${CREATED_DATA_ASSET_PATH} was not written to disk`);
-                await showBottomTab(ui, "project");
+                await showDockTab(ui, "project");
                 await ui.waitForVisible(projectItem(CREATED_DATA_ASSET_PATH), `${CREATED_DATA_ASSET_PATH} in the Project panel`);
             }
-            const scripts = `${bottomPanel("project")} ${hookSelector(PROJECT_ITEM_HOOK)}[${PROJECT_ITEM_HOOK}$="${SCRIPT_EXTENSION}"]`;
+            const scripts = `${dockPanel("project")} ${hookSelector(PROJECT_ITEM_HOOK)}[${PROJECT_ITEM_HOOK}$="${SCRIPT_EXTENSION}"]`;
             const scriptsBefore = await ui.visibleCount(scripts);
             await runFromMenu(ui, "assets", COMMANDS.createScript, [CREATE_SUBMENU]);
             await answerTextPrompt(ui, CREATED_SCRIPT_NAME);
@@ -738,18 +741,18 @@ function projectFlows(): SmokeFlow[] {
         requires: [newProject.name],
         async run({ui, host}) {
             const {folder} = created();
-            const errors = `${bottomPanel("console")} ${hookSelector(CONSOLE_ENTRY_HOOK, "error")}`;
+            const errors = `${dockPanel("console")} ${hookSelector(CONSOLE_ENTRY_HOOK, "error")}`;
             const expander = `${errors} ${hookSelector(CONSOLE_EXPANDER_HOOK)}`;
             const stack = `${errors} ${hookSelector(CONSOLE_STACK_HOOK)}`;
-            await showBottomTab(ui, "console");
-            await ui.click(`${bottomPanel("console")} ${hookSelector(CONSOLE_ACTION_HOOK, "clear")}`, "the console's Clear button");
+            await showDockTab(ui, "console");
+            await ui.click(`${dockPanel("console")} ${hookSelector(CONSOLE_ACTION_HOOK, "clear")}`, "the console's Clear button");
             await ui.waitForCount(errors, 0, "console errors after Clear");
             await host.writeFile(join(folder, BROKEN_PREFAB_FILE), BROKEN_PREFAB_TEXT);
-            await showBottomTab(ui, "project");
+            await showDockTab(ui, "project");
             await ui.waitForVisible(projectItem(BROKEN_PREFAB_FILE), `${BROKEN_PREFAB_FILE} in the Project panel`);
             await ui.rightClick(projectItem(BROKEN_PREFAB_FILE), BROKEN_PREFAB_FILE);
             await ui.click(popupCommand(COMMANDS.openAsset), "Open in the file's context menu");
-            await showBottomTab(ui, "console");
+            await showDockTab(ui, "console");
             await ui.waitForCount(errors, 1, "console errors from opening the broken prefab");
             ui.expect(((await ui.text(errors)) ?? "").includes(FAILED_LOAD_TEXT), `the console error does not report the failed load: ${(await ui.text(errors)) ?? ""}`);
             await ui.waitForVisible(expander, "the error's stack expander");
@@ -786,7 +789,7 @@ export function editorSmokeFlows(): SmokeFlow[] {
     return [
         menusFlow,
         commandPaletteFlow,
-        panelTogglesFlow,
+        dockingFlow,
         pivotCenterFlow,
         snapFlow,
         entityTemplatesFlow,

@@ -1,8 +1,9 @@
+import {SPRITE_PATTERN_FILE_SUFFIX} from "../../engine/rendering/2d/spritePatternFile";
 import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {PROJECT_ENTRY_EXTENSIONS} from "../../engine/project/projectManifest";
 
-export type ProjectFileKind = "scene" | "prefab" | "dataAsset" | "mesh" | "image" | "code" | "other";
+export type ProjectFileKind = "scene" | "prefab" | "dataAsset" | "mesh" | "image" | "pattern" | "code" | "other";
 
 export interface ProjectFolder {
     readonly path: string;
@@ -21,6 +22,7 @@ export const PROJECT_FILE_KIND_TITLES: Readonly<Record<ProjectFileKind, string>>
     dataAsset: "Data Asset",
     mesh: "Mesh",
     image: "Image",
+    pattern: "Sprite Pattern",
     code: "Code",
     other: "File",
 };
@@ -36,7 +38,7 @@ const FIRST_DUPLICATE_SUFFIX = 1;
 const DUPLICATE_SEPARATOR = " ";
 const MESH_EXTENSIONS: readonly string[] = [".obj"];
 const IMAGE_EXTENSIONS: readonly string[] = [".png", ".jpg", ".jpeg", ".ppm"];
-const COMPOUND_EXTENSIONS: readonly string[] = [SCENE_EXTENSION, PREFAB_EXTENSION, DATA_ASSET_FILE_SUFFIX];
+const COMPOUND_EXTENSIONS: readonly string[] = [SCENE_EXTENSION, PREFAB_EXTENSION, DATA_ASSET_FILE_SUFFIX, SPRITE_PATTERN_FILE_SUFFIX];
 
 export function normalizeProjectPath(path: string): string {
     return path.replace(BACKSLASH, PATH_SEPARATOR).replace(LEADING_DOT_SLASH, "").replace(REPEATED_SLASHES, PATH_SEPARATOR).replace(EDGE_SLASHES, "");
@@ -47,14 +49,19 @@ export function projectFileKind(path: string): ProjectFileKind {
     if (lower.endsWith(SCENE_EXTENSION)) return "scene";
     if (lower.endsWith(PREFAB_EXTENSION)) return "prefab";
     if (lower.endsWith(DATA_ASSET_FILE_SUFFIX)) return "dataAsset";
+    if (lower.endsWith(SPRITE_PATTERN_FILE_SUFFIX)) return "pattern";
     if (MESH_EXTENSIONS.some(extension => lower.endsWith(extension))) return "mesh";
     if (IMAGE_EXTENSIONS.some(extension => lower.endsWith(extension))) return "image";
     if (PROJECT_ENTRY_EXTENSIONS.some(extension => lower.endsWith(extension))) return "code";
     return "other";
 }
 
-export function isAssetKind(kind: ProjectFileKind): kind is "mesh" | "image" | "prefab" {
-    return kind === "mesh" || kind === "image" || kind === "prefab";
+export function isImageKind(kind: ProjectFileKind): kind is "image" | "pattern" {
+    return kind === "image" || kind === "pattern";
+}
+
+export function isAssetKind(kind: ProjectFileKind): kind is "mesh" | "image" | "pattern" | "prefab" {
+    return kind === "mesh" || isImageKind(kind) || kind === "prefab";
 }
 
 export function parentFolderOf(path: string): string {

@@ -1,5 +1,6 @@
 import {readFileSync, writeFileSync} from "fs";
 import {join} from "path";
+import {isSpritePatternFile, migrateSpritePatternJson, parseSpritePatternFile, spritePatternFileText} from "../engine/rendering/2d/spritePatternFile";
 import {
     dataAssetDocumentText,
     migrateDataAssetJson,
@@ -11,7 +12,7 @@ import {
 import type {SceneJsonObject} from "../engine/scene";
 import {CliError} from "./cliArguments";
 import {displayPath} from "./project";
-import {documentPathsUnder, isSceneOrPrefab} from "./projectDocuments";
+import {documentPathsUnder, isSceneOrPrefab, isVersionedProjectFile} from "./projectDocuments";
 
 const LF = "\n";
 const CRLF = "\r\n";
@@ -22,6 +23,30 @@ export interface MigratedDocument {
     readonly toVersion: number;
     readonly text: string;
 }
+
+interface VersionedFileKind {
+    migrate(source: unknown, path: string): SceneJsonObject;
+    validate(migrated: SceneJsonObject, path: string): void;
+    text(migrated: SceneJsonObject): string;
+}
+
+const SCENE_FILES: VersionedFileKind = {
+    migrate: migrateSceneJson,
+    validate: (migrated, path) => void parseSceneDocument(migrated, path),
+    text: sceneDocumentText,
+};
+
+const DATA_ASSET_FILES: VersionedFileKind = {
+    migrate: migrateDataAssetJson,
+    validate: (migrated, path) => void parseDataAssetDocument(migrated, path),
+    text: dataAssetDocumentText,
+};
+
+const SPRITE_PATTERN_FILES: VersionedFileKind = {
+    migrate: migrateSpritePatternJson,
+    validate: (migrated, path) => void parseSpritePatternFile(migrated, path),
+    text: spritePatternFileText,
+};
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -42,22 +67,25 @@ function parsedJson(path: string, text: string): unknown {
     }
 }
 
+function fileKindOf(path: string): VersionedFileKind {
+    if (isSceneOrPrefab(path)) return SCENE_FILES;
+    return isSpritePatternFile(path) ? SPRITE_PATTERN_FILES : DATA_ASSET_FILES;
+}
+
 function migratedDocument(path: string, original: string): MigratedDocument | undefined {
     const source = parsedJson(path, original);
-    const sceneOrPrefab = isSceneOrPrefab(path);
-    const migrated = sceneOrPrefab ? migrateSceneJson(source, path) : migrateDataAssetJson(source, path);
+    const kind = fileKindOf(path);
+    const migrated = kind.migrate(source, path);
     const fromVersion = (source as SceneJsonObject).version as number;
     if (migrated.version === fromVersion) return undefined;
-    if (sceneOrPrefab) parseSceneDocument(migrated, path);
-    else parseDataAssetDocument(migrated, path);
-    const text = sceneOrPrefab ? sceneDocumentText(migrated) : dataAssetDocumentText(migrated);
-    return {path, fromVersion, toVersion: migrated.version as number, text: withLineBreaksOf(original, text)};
+    kind.validate(migrated, path);
+    return {path, fromVersion, toVersion: migrated.version as number, text: withLineBreaksOf(original, kind.text(migrated))};
 }
 
 export function pendingMigrations(folder: string): MigratedDocument[] {
     const migrated: MigratedDocument[] = [];
     const problems: string[] = [];
-    for (const path of documentPathsUnder(folder)) {
+    for (const path of documentPathsUnder(folder, isVersionedProjectFile)) {
         try {
             const document = migratedDocument(path, readFileSync(join(folder, path), "utf8"));
             if (document !== undefined) migrated.push(document);

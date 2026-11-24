@@ -1,4 +1,4 @@
-export type SmokeModifier = "control" | "shift" | "alt" | "meta";
+export type SmokeModifier = "control" | "shift" | "alt" | "meta" | "leftbuttondown";
 export type SmokeMouseButton = "left" | "middle" | "right";
 
 export interface SmokeKeyEvent {
@@ -24,6 +24,8 @@ export class SmokeChordError extends Error {
 const CHORD_SEPARATOR = "+";
 const SINGLE_CLICK = 1;
 const NO_CLICK = 0;
+const DRAG_STEPS = 8;
+const LEFT_BUTTON_HELD: SmokeModifier = "leftbuttondown";
 const MODIFIER_NAMES: Readonly<Record<string, SmokeModifier>> = {ctrl: "control", control: "control", shift: "shift", alt: "alt", meta: "meta", cmd: "meta"};
 const TYPED_WITHOUT_COMMAND_MODIFIERS = /^[ -~]$/;
 const SINGLE_LETTER = /^[a-z]$/i;
@@ -58,4 +60,26 @@ export function mouseEventsOfClick(x: number, y: number, button: SmokeMouseButto
 
 export function mouseEventOfHover(x: number, y: number): SmokeMouseEvent {
     return {type: "mouseMove", x: Math.round(x), y: Math.round(y), button: "left", clickCount: NO_CLICK, modifiers: []};
+}
+
+export function mouseEventsOfDrag(fromX: number, fromY: number, toX: number, toY: number): SmokeMouseEvent[] {
+    const start = {x: Math.round(fromX), y: Math.round(fromY), button: "left" as const, modifiers: []};
+    const end = {x: Math.round(toX), y: Math.round(toY), button: "left" as const, modifiers: []};
+    const moves = Array.from({length: DRAG_STEPS}, (_, step): SmokeMouseEvent => {
+        const progress = (step + 1) / DRAG_STEPS;
+        return {
+            type: "mouseMove",
+            x: Math.round(fromX + (toX - fromX) * progress),
+            y: Math.round(fromY + (toY - fromY) * progress),
+            button: "left",
+            clickCount: NO_CLICK,
+            modifiers: [LEFT_BUTTON_HELD],
+        };
+    });
+    return [
+        {...start, type: "mouseMove", clickCount: NO_CLICK},
+        {...start, type: "mouseDown", clickCount: SINGLE_CLICK},
+        ...moves,
+        {...end, type: "mouseUp", clickCount: SINGLE_CLICK},
+    ];
 }

@@ -1,6 +1,6 @@
 import type {Entity} from "../../engine/core";
 import {describe, expect, test} from "../../engine/testing/harness";
-import {menuItemsOf} from "./commandMenus";
+import {commandEntry, menuItemsOf} from "./commandMenus";
 import type {MenuEntry} from "./commandMenus";
 import {CommandRegistry, keyChordOf} from "./commandRegistry";
 import type {KeyEventLike, RegisteredCommand} from "./commandRegistry";
@@ -8,10 +8,13 @@ import {
     ALREADY_START_SCENE_REASON,
     CLOSE_PROJECT_UNAVAILABLE_REASON,
     EXTRACT_ONE_ENTITY_REASON,
+    INLINE_ONE_ENTITY_REASON,
     LAST_TAB_REASON,
     NO_RECENT_SCENES_REASON,
     PREFAB_START_SCENE_REASON,
     NOTHING_SELECTED_IN_PROJECT_REASON,
+    PANEL_ALREADY_OPEN_REASON,
+    PANEL_CLOSED_REASON,
     registerEditorCommands,
     SHOW_IN_EXPLORER_UNAVAILABLE_REASON,
     STOP_GAME_REASON,
@@ -19,12 +22,13 @@ import {
     WAITING_REASON,
 } from "./editorCommands";
 import type {EditorCommandHost, EditorCommands, EditorCommandViews} from "./editorCommands";
-import {componentMenu, editorMenuBar, hierarchyMenu, projectFolderMenu, projectItemMenu, sceneMenu, sceneTabMenu, snapMenu} from "./editorMenus";
+import {componentMenu, dockTabMenu, editorMenuBar, hierarchyMenu, projectFolderMenu, projectItemMenu, sceneMenu, sceneTabMenu, snapMenu} from "./editorMenus";
 import {LAST_LOADED_SCENE_REASON, PREFAB_TAB_SCENES_REASON} from "./sceneDocuments";
 import type {EditorSceneTab, TabHistory} from "./sceneDocuments";
 import {SceneTabs} from "./sceneTabs";
 import type {SceneEntry} from "./sceneTabs";
-import type {BottomTab} from "./editorPanels";
+import type {DockPanelId} from "./dockLayout";
+import {DOCK_PANEL_IDS} from "../project/editorUiHooks";
 import {MENU_SEPARATOR} from "./popupMenu";
 import type {MenuAction, MenuItem, MenuSubmenu} from "./popupMenu";
 import {shortcutRows} from "./shortcutsDialog";
@@ -35,8 +39,6 @@ import {entityTemplateProblem} from "./entityTemplates";
 import type {EntityTemplate} from "./entityTemplates";
 import {DEFAULT_HANDLE_MODES, HANDLE_ROTATION_MOVE_ONLY_REASON, HANDLE_ROTATION_UNROTATED_REASON} from "./handleModes";
 import type {HandleModes} from "./handleModes";
-import {ALL_PANELS_SHOWN, withPanelToggled} from "./panelSizes";
-import type {PanelVisibility} from "./panelSizes";
 import type {SnapStepChoice} from "./snapSteps";
 
 const FIRST = 3 as Entity;
@@ -91,8 +93,8 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
         worldStoppedError: null, snapSteps: DEFAULT_SNAP_STEPS, snapEnabled: false, selectionRotated: false, openExternally: false, showInFolder: false, undoLabel: undefined, entityKeysFocused: true,
         gameViewOptions: DEFAULT_GAME_VIEW_OPTIONS, projectSelection: [], handleModes: DEFAULT_HANDLE_MODES,
     };
-    let panels: PanelVisibility = ALL_PANELS_SHOWN;
-    let bottomTab: BottomTab = "project";
+    const openPanels = new Set<DockPanelId>(DOCK_PANEL_IDS);
+    let maximized: DockPanelId | undefined;
     let aspect = "free";
     let mounted = false;
     const scenes: FakeScenes = {tabs: new SceneTabs<TabHistory>(() => FAKE_HISTORY), startScene: null, activeSceneId: MAIN_SCENE_ID, recent: []};
@@ -160,6 +162,7 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
             templateProblem: (template: EntityTemplate) => entityTemplateProblem(template, GAME_TYPE_NAMES),
             createFromTemplate: (template: EntityTemplate) => calls.push(`createFromTemplate ${template}`),
             extractInlineImage: (entity: Entity, typeName: string, key: string) => calls.push(`extractInlineImage ${entity} ${typeName}.${key}`),
+            inlinePatternFile: (entity: Entity, typeName: string, key: string) => calls.push(`inlinePatternFile ${entity} ${typeName}.${key}`),
         },
         scene: {capturesKeys: false, get selectionRotated() { return workspace.selectionRotated; }},
         hierarchy: {beginRename: (entity: Entity) => calls.push(`beginRename ${entity}`)},
@@ -179,14 +182,22 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
     const host: EditorCommandHost = {
         closeProject,
         views: () => mounted ? views : undefined,
-        bottomTab: () => bottomTab,
-        showBottomTab: tab => bottomTab = tab,
-        resetLayout: () => calls.push("resetLayout"),
-        panelShown: panel => panels[panel],
-        togglePanel: panel => {
-            panels = withPanelToggled(panels, panel);
-            calls.push(`togglePanel ${panel}`);
+        showPanel: panel => {
+            openPanels.add(panel);
+            calls.push(`showPanel ${panel}`);
         },
+        panelOpen: panel => openPanels.has(panel),
+        closePanel: panel => {
+            openPanels.delete(panel);
+            calls.push(`closePanel ${panel}`);
+        },
+        panelMaximized: panel => maximized === panel,
+        toggleMaximized: panel => maximized = maximized === panel ? undefined : panel,
+        addPanelBeside: (panel, besidePanel) => {
+            openPanels.add(panel);
+            calls.push(`addPanelBeside ${panel} ${besidePanel}`);
+        },
+        resetLayout: () => calls.push("resetLayout"),
         openPreferences: () => calls.push("openPreferences"),
         gameViewAspect: () => aspect,
         setGameViewAspect: id => aspect = id,
@@ -267,7 +278,7 @@ describe("editor menu bar", () => {
             "Create Empty", "Create Empty Child", "-", "Camera", "Sprite", "Text", "Mesh", "-", "Directional Light", "Point Light", "Ambient Light",
         ]);
         expect(labels(menuNamed(menus, "Window"))).toEqual([
-            "Focus Scene View", "Focus Game View", "Maximize on Play", "Stats", "-", "Project", "Console", "History", "Settings", "Data Assets", "-", "Hierarchy", "Inspector", "Bottom Panel", "-", "Reset Layout",
+            "Maximize on Play", "Stats", "-", "Scene", "Game", "Hierarchy", "Inspector", "-", "Project", "Console", "History", "Settings", "Data Assets", "-", "Reset Layout",
         ]);
         expect(labels(menuNamed(menus, "Help"))).toEqual(["Command Palette…", "Keyboard Shortcuts"]);
     });
@@ -308,17 +319,29 @@ describe("editor menu bar", () => {
         expect(editor.registry.get("entity.createCamera")?.stateAlone().label).toBe("Create Camera");
     });
 
-    test("the panel toggles show their panel's visibility and flip it; Reset Layout is the host's", () => {
+    test("every panel has a window command that shows it through the host; Reset Layout is the host's", () => {
         const editor = fakeEditor();
         const windowMenu = (): MenuItem[] => menuNamed(menuBarItems(editor), "Window");
-        expect(["Hierarchy", "Inspector", "Bottom Panel"].map(label => action(windowMenu(), label).checked)).toEqual([true, true, true]);
-        action(windowMenu(), "Inspector").run();
-        action(windowMenu(), "Bottom Panel").run();
-        expect(["Hierarchy", "Inspector", "Bottom Panel"].map(label => action(windowMenu(), label).checked)).toEqual([true, false, false]);
-        action(windowMenu(), "Bottom Panel").run();
-        expect(action(windowMenu(), "Bottom Panel").checked).toBe(true);
+        for (const label of ["Scene", "Game", "Hierarchy", "Inspector", "Data Assets"]) action(windowMenu(), label).run();
         action(windowMenu(), "Reset Layout").run();
-        expect(editor.calls).toEqual(["togglePanel inspector", "togglePanel bottom", "togglePanel bottom", "resetLayout"]);
+        expect(editor.calls).toEqual(["showPanel scene", "showPanel game", "showPanel hierarchy", "showPanel inspector", "showPanel assets", "resetLayout"]);
+        expect(DOCK_PANEL_IDS.map(panel => editor.registry.get(`window.${panel}`)?.stateAlone().enabled)).toEqual(DOCK_PANEL_IDS.map(() => true));
+    });
+
+    test("a dock tab's menu closes, maximizes and adds closed panels beside it, after the panel's own entries", () => {
+        const editor = fakeEditor();
+        const tabMenu = (panel: DockPanelId, closed: readonly DockPanelId[], leading: readonly MenuEntry[] = []): MenuItem[] => items(dockTabMenu(editor.commands, panel, closed, leading));
+        expect(labels(tabMenu("console", ["inspector", "history"]))).toEqual(["Close Tab", "Maximize", "-", "Add Tab"]);
+        expect(labels((find(tabMenu("console", ["inspector", "history"]), "Add Tab") as MenuSubmenu).items)).toEqual(["Inspector", "History"]);
+        expect(labels(tabMenu("game", [], [commandEntry(editor.commands.help.keyboardShortcuts)]))).toEqual(["Keyboard Shortcuts", "-", "Close Tab", "Maximize", "-", "Add Tab"]);
+        action(tabMenu("console", []), "Maximize").run();
+        expect(action(tabMenu("console", []), "Maximize").checked).toBe(true);
+        expect(action(tabMenu("project", []), "Maximize").checked).toBe(false);
+        action(tabMenu("console", []), "Close Tab").run();
+        expect([action(tabMenu("console", []), "Close Tab").disabled, action(tabMenu("console", []), "Close Tab").title]).toEqual([true, PANEL_CLOSED_REASON]);
+        action(tabMenu("project", ["console"]), "Add Tab", "Console").run();
+        expect(editor.calls).toEqual(["closePanel console", "addPanelBeside console project"]);
+        expect(action(tabMenu("project", ["console"]), "Add Tab", "Console").title).toBe(PANEL_ALREADY_OPEN_REASON);
     });
 
     test("Preferences… opens before the game connects", () => {
@@ -389,10 +412,9 @@ describe("editor menu bar", () => {
             expect(action(menuNamed(menus, menu), label).disabled).toBe(false);
         }
         action(menuNamed(menus, "Window"), "Console").run();
-        expect(action(menuNamed(menuBarItems(editor), "Window"), "Console").checked).toBe(true);
         expect(action(menuNamed(menus, "Edit"), "Undo History").disabled).toBe(false);
         action(menuNamed(menus, "Edit"), "Undo History").run();
-        expect(action(menuNamed(menuBarItems(editor), "Window"), "History").checked).toBe(true);
+        expect(editor.calls).toEqual(["showPanel console", "showPanel history"]);
     });
 
     test("Close Project works only when the page can return to the start screen", () => {
@@ -736,5 +758,21 @@ describe("scene management commands", () => {
         editor.workspace.mode = "edit";
         action(menu([FIRST]), "Extract image to File…").run();
         expect(editor.calls).toEqual([`extractInlineImage ${FIRST} Sprite.image`]);
+    });
+
+    test("a component menu offers Extract for an inline pattern and Inline for a pattern file, on one entity while editing", () => {
+        const editor = fakeEditor();
+        editor.mount();
+        const inlinePattern = {rows: ["#"], palette: [{char: "#", rgb: "#ffffff"}]};
+        const first = {typeName: "Sprite", inspectable: true, inferred: false, fields: {image: inlinePattern, mask: {path: "art/mask.pattern.json"}}};
+        const menu = (entities: readonly Entity[]) => items(componentMenu(editor.commands, {entities, typeName: "Sprite", first, resettable: true}));
+        expect(labels(menu([FIRST]))).toEqual(["Reset", "Remove Component", "-", "Copy Component Values", "Paste Component Values", "-", "Extract image to File…", "Inline mask Pattern File"]);
+        expect(action(menu([FIRST, SECOND]), "Inline mask Pattern File").title).toBe(INLINE_ONE_ENTITY_REASON);
+        editor.workspace.mode = "play";
+        expect(action(menu([FIRST]), "Inline mask Pattern File").title).toBe(STOP_GAME_REASON);
+        editor.workspace.mode = "edit";
+        action(menu([FIRST]), "Inline mask Pattern File").run();
+        action(menu([FIRST]), "Extract image to File…").run();
+        expect(editor.calls).toEqual([`inlinePatternFile ${FIRST} Sprite.mask`, `extractInlineImage ${FIRST} Sprite.image`]);
     });
 });

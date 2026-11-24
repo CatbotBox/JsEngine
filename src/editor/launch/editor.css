@@ -18,15 +18,6 @@
     --menubar-height: 1.9rem;
     --toolbar-height: 2.4rem;
     --tab-height: 1.9rem;
-    --hierarchy-width: 260px;
-    --inspector-width: 340px;
-    --bottom-height: 220px;
-    --splitter: 5px;
-    --hierarchy-splitter: var(--splitter);
-    --inspector-splitter: var(--splitter);
-    --bottom-splitter: var(--splitter);
-    --scene-view-fr: 0.5fr;
-    --game-view-fr: 0.5fr;
     --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
     color-scheme: dark;
 }
@@ -71,44 +62,172 @@ button.primary {
 .editor {
     display: grid;
     height: 100%;
-    grid-template-columns: var(--hierarchy-width) var(--hierarchy-splitter) minmax(0, 1fr) var(--inspector-splitter) var(--inspector-width);
-    grid-template-rows: var(--menubar-height) var(--toolbar-height) minmax(0, 1fr) var(--bottom-splitter) var(--bottom-height);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--menubar-height) var(--toolbar-height) minmax(0, 1fr);
     grid-template-areas:
-        "menubar menubar menubar menubar menubar"
-        "toolbar toolbar toolbar toolbar toolbar"
-        "hierarchy split-left center split-right inspector"
-        "split-bottom split-bottom split-bottom split-right inspector"
-        "bottom bottom bottom split-right inspector";
+        "menubar"
+        "toolbar"
+        "dock";
 }
 
-.editor.resizing {
+.dock-root {
+    grid-area: dock;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--background);
+}
+
+.dock-root.resizing,
+.dock-root.dock-dragging {
     user-select: none;
 }
 
-.editor.maximized {
-    grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
-    grid-template-rows: var(--menubar-height) var(--toolbar-height) minmax(0, 1fr) 0 0;
-}
-
-.editor.maximized .editor-hierarchy,
-.editor.maximized .editor-inspector,
-.editor.maximized .editor-bottom,
-.editor.maximized .splitter {
-    display: none;
-}
-
-.editor.hierarchy-hidden .editor-hierarchy,
-.editor.hierarchy-hidden .splitter-hierarchyWidthPx,
-.editor.inspector-hidden .editor-inspector,
-.editor.inspector-hidden .splitter-inspectorWidthPx,
-.editor.bottom-hidden .editor-bottom,
-.editor.bottom-hidden .splitter-bottomHeightPx {
-    display: none;
-}
-
-.editor.resizing .scene-overlay,
-.editor.resizing .editor-viewport {
+.dock-root.resizing .scene-overlay,
+.dock-root.resizing .editor-viewport,
+.dock-root.dock-dragging .scene-overlay,
+.dock-root.dock-dragging .editor-viewport {
     pointer-events: none;
+}
+
+.dock-stack {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--panel);
+}
+
+.dock-stack[hidden] {
+    display: none;
+}
+
+.dock-tabs {
+    display: flex;
+    flex: none;
+    align-items: stretch;
+    height: var(--tab-height);
+    gap: 1px;
+    padding: 0 0.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    overflow: hidden;
+    user-select: none;
+}
+
+.dock-tab {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 14rem;
+    padding: 0 0.2rem 0 0.6rem;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    white-space: nowrap;
+    touch-action: none;
+}
+
+.dock-tab:hover {
+    background: var(--panel-hover);
+}
+
+.dock-tab.active {
+    border-bottom-color: var(--accent);
+    color: var(--text);
+}
+
+.dock-tab.has-errors {
+    color: var(--danger);
+}
+
+.dock-tab.dragged {
+    opacity: 0.6;
+}
+
+.dock-tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dock-tab-close {
+    padding: 0 0.3rem;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    line-height: 1.2;
+    visibility: hidden;
+}
+
+.dock-tab.active .dock-tab-close,
+.dock-tab:hover .dock-tab-close {
+    visibility: visible;
+}
+
+.dock-tab-close:hover {
+    background: var(--panel-raised);
+    color: var(--text);
+}
+
+.dock-content {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.dock-panel {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.dock-content > .dock-panel[hidden] {
+    display: none;
+}
+
+.dock-panel:focus {
+    outline: none;
+}
+
+.dock-splitter {
+    position: absolute;
+    z-index: 1;
+    background: var(--border);
+}
+
+.dock-splitter.row {
+    cursor: col-resize;
+}
+
+.dock-splitter.column {
+    cursor: row-resize;
+}
+
+.dock-splitter:hover,
+.dock-splitter.dragged {
+    background: var(--accent);
+}
+
+.dock-drop-preview {
+    position: absolute;
+    z-index: 2;
+    box-sizing: border-box;
+    border: 1px solid var(--accent);
+    background: rgba(79, 163, 247, 0.22);
+    pointer-events: none;
+}
+
+.dock-drop-preview[hidden] {
+    display: none;
 }
 
 .editor-menubar {
@@ -276,36 +395,6 @@ button.primary {
     color: var(--danger);
 }
 
-.splitter {
-    background: var(--border);
-    z-index: 1;
-}
-
-.splitter:hover,
-.editor.resizing .splitter {
-    background: var(--accent);
-}
-
-.splitter-hierarchyWidthPx {
-    grid-area: split-left;
-    cursor: col-resize;
-}
-
-.splitter-inspectorWidthPx {
-    grid-area: split-right;
-    cursor: col-resize;
-}
-
-.splitter-bottomHeightPx {
-    grid-area: split-bottom;
-    cursor: row-resize;
-}
-
-.splitter-views {
-    grid-column: 2;
-    cursor: col-resize;
-}
-
 .editor-panel {
     display: flex;
     flex-direction: column;
@@ -313,14 +402,6 @@ button.primary {
     min-height: 0;
     overflow: auto;
     background: var(--panel);
-}
-
-.editor-hierarchy {
-    grid-area: hierarchy;
-}
-
-.editor-inspector {
-    grid-area: inspector;
 }
 
 .panel-placeholder,
@@ -524,15 +605,6 @@ button.primary {
     font-size: 0.85em;
 }
 
-.editor-center {
-    grid-area: center;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    background: #000;
-}
-
 .editor-tabs {
     display: flex;
     flex: none;
@@ -542,23 +614,6 @@ button.primary {
     padding: 0 0.4rem;
     border-bottom: 1px solid var(--border);
     background: var(--panel);
-}
-
-.editor-tab {
-    border: 0;
-    border-radius: 0;
-    border-bottom: 2px solid transparent;
-    background: transparent;
-    color: var(--muted);
-}
-
-.editor-tab.active {
-    border-bottom-color: var(--accent);
-    color: var(--text);
-}
-
-.editor-tab.has-errors {
-    color: var(--danger);
 }
 
 .scene-tabs {
@@ -644,49 +699,12 @@ button.primary {
     color: var(--text);
 }
 
-.editor-views {
-    display: grid;
-    flex: 1;
-    min-height: 0;
-    grid-template-columns: minmax(0, var(--scene-view-fr)) var(--splitter) minmax(0, var(--game-view-fr));
-    grid-template-rows: minmax(0, 1fr);
-}
-
-.editor.maximized .editor-views {
-    grid-template-columns: 0 0 minmax(0, 1fr);
-}
-
-.editor.maximized .scene-view {
-    display: none;
-}
-
 .editor-view {
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-}
-
-.scene-view {
-    grid-column: 1;
-}
-
-.game-view {
-    grid-column: 3;
-}
-
-.view-header {
-    flex: none;
-    height: var(--tab-height);
-    padding: 0 0.6rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel);
-    color: var(--muted);
-    line-height: var(--tab-height);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    user-select: none;
+    background: #000;
 }
 
 .editor-stage {
@@ -799,26 +817,6 @@ button.primary {
 
 .scene-overlay.interactive:focus-visible {
     box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.editor-bottom {
-    grid-area: bottom;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    background: var(--panel);
-}
-
-.bottom-panel {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-height: 0;
-}
-
-.bottom-panel[hidden] {
-    display: none;
 }
 
 .entity-inspector {
@@ -1347,6 +1345,16 @@ button.primary {
     background: repeating-conic-gradient(#3a3f4a 0% 25%, #2a2e36 0% 50%) 0 0 / 0.8rem 0.8rem;
 }
 
+.project-preview-orbit {
+    image-rendering: auto;
+    cursor: grab;
+    touch-action: none;
+}
+
+.project-preview-orbit:active {
+    cursor: grabbing;
+}
+
 .project-preview-heading {
     margin: 0.2rem 0 0.15rem;
     color: var(--muted);
@@ -1549,6 +1557,11 @@ button.primary {
 
 .file-icon.kind-image {
     background: #2d5a3a;
+}
+
+.file-icon.kind-pattern {
+    background: #3a5a2d;
+    color: #e4ffd0;
 }
 
 .file-icon.kind-code {

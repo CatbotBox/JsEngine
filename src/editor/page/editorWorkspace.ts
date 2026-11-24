@@ -39,7 +39,15 @@ import {ENTITY_TEMPLATE_NAMES, entityTemplateProblem, entityTemplateRequest, has
 import type {EntityTemplate} from "./entityTemplates";
 import {entitySummaryLabel} from "./entityTree";
 import {isInlineAssetSummary} from "./fieldValueText";
-import {extractedImagePath, extractedImagePathProblem, imageExtraction, imageExtractionCommand} from "./imageExtraction";
+import {
+    extractedImagePath,
+    extractedImagePathProblem,
+    imageExtraction,
+    imageExtractionCommand,
+    imageFileFormatOf,
+    patternFilePathOf,
+    patternInlining,
+} from "./imageExtraction";
 import {parentLookupOf, planMoves, siblingIndexIn, siblingListsOf, subtreeInListOrder, topmostEntities} from "./hierarchyDrop";
 import type {DropTarget, HierarchyLink} from "./hierarchyDrop";
 import {
@@ -50,6 +58,7 @@ import {
 import {
     allProjectPaths,
     fileNameProblem,
+    isImageKind,
     normalizeProjectPath,
     PREFAB_EXTENSION,
     projectFileKind,
@@ -794,7 +803,7 @@ export class EditorWorkspace implements UndoContext {
                     : {op: "instantiateEntities", documentText, parent, siblingIndex, prefabSourcePath: path};
                 const created = await this.request(request);
                 root = created.roots[0];
-            } else if (kind === "mesh" || kind === "image") {
+            } else if (kind === "mesh" || isImageKind(kind)) {
                 const created = await this.request(parent === null ? {op: "createEntity", name: stemOf(path)} : {op: "createEntity", name: stemOf(path), parent});
                 root = created.entity;
                 if (kind === "mesh") await this.request({op: "addComponent", entity: root, typeName: RENDER_MESH_TYPE_NAME, values: {[RENDER_MESH_KEY]: {path}}});
@@ -842,24 +851,31 @@ export class EditorWorkspace implements UndoContext {
     }
 
     public async extractInlineImage(entity: Entity, typeName: string, key: string): Promise<string | undefined> {
+        const current = await this.run(() => this.request({op: "getField", entity, typeName, key}));
+        if (current === undefined) return undefined;
+        const format = imageFileFormatOf(current.value);
+        if (format === undefined) {
+            this.notice("warn", `${typeName}.${key} does not hold an inline image`);
+            return undefined;
+        }
         const summary = this.summaries.get(entity);
         const existing = allProjectPaths(await this.files.list());
         const chosen = await askForText(this.document, {
-            title: `Extract ${typeName}.${key} to a PNG file`,
+            title: `Extract ${typeName}.${key} to a ${format.title} file`,
             label: "File path in the project",
-            initialValue: extractedImagePath(existing, safeFileStem(summary === undefined ? DEFAULT_ENTITY_NAME : entitySummaryLabel(summary))),
+            initialValue: extractedImagePath(existing, safeFileStem(summary === undefined ? DEFAULT_ENTITY_NAME : entitySummaryLabel(summary)), format),
             confirmText: "Extract",
-            validate: value => extractedImagePathProblem(value, existing),
+            validate: value => extractedImagePathProblem(value, existing, format),
         });
         if (chosen === undefined) return undefined;
         const path = normalizeProjectPath(chosen.trim());
         return this.run(async () => {
             if (!this.recording) throw new Error("Images can only be extracted while editing; stop the game first");
             const {value} = await this.request({op: "getField", entity, typeName, key});
-            const extraction = imageExtraction(entity, typeName, key, value, path);
-            const problem = extractedImagePathProblem(path, allProjectPaths(await this.files.list()));
+            const extraction = imageExtraction(entity, typeName, key, value, path, format);
+            const problem = extractedImagePathProblem(path, allProjectPaths(await this.files.list()), format);
             if (problem !== undefined) throw new Error(problem);
-            await this.files.write(path, extraction.png);
+            await this.files.write(path, extraction.contents);
             try {
                 await this.applyFieldChanges([extraction.change]);
             } catch (error) {
@@ -870,6 +886,19 @@ export class EditorWorkspace implements UndoContext {
             this.reveal(path);
             this.notice("info", `Extracted ${typeName}.${key} to ${path}`);
             return path;
+        });
+    }
+
+    public async inlinePatternFile(entity: Entity, typeName: string, key: string): Promise<void> {
+        await this.run(async () => {
+            if (!this.recording) throw new Error("Pattern files can only be inlined while editing; stop the game first");
+            const {value} = await this.request({op: "getField", entity, typeName, key});
+            const path = patternFilePathOf(value);
+            if (path === undefined) throw new Error(`${typeName}.${key} does not name a sprite pattern file`);
+            const change = patternInlining(entity, typeName, key, path, await this.currentSession.files.readText(path));
+            await this.applyFieldChanges([change]);
+            this.record(FieldsCommand.record(this.refs, `Inline ${typeName}.${key}`, [change]));
+            this.notice("info", `Inlined ${path} into ${typeName}.${key}`);
         });
     }
 

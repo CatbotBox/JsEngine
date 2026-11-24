@@ -10,7 +10,8 @@ import type {FieldEditor, FieldEditorServices} from "./fieldEditorBase";
 import {workspaceFieldServices} from "./fieldEditorServices";
 import {createFieldEditor} from "./fieldEditors";
 import {entityLabel} from "./fieldValueText";
-import type {InlineImageTarget} from "./imageExtraction";
+import type {ImageFieldTarget} from "./imageExtraction";
+import type {Command} from "./commandRegistry";
 import {fieldValuesOf, missingInSome, sharedBoolean, sharedComponents} from "./multiSelection";
 import type {SharedComponent} from "./multiSelection";
 import {isComponentOverridden, overriddenFieldKeys, pathWithinInstance} from "./prefabInstancePaths";
@@ -158,7 +159,11 @@ export class InspectorView {
     public constructor(private readonly container: HTMLElement, public readonly workspace: EditorWorkspace, public readonly rotations: RotationEulerCache, public readonly commands: EditorCommands) {
         const document = container.ownerDocument;
         this.document = document;
-        this.fieldServices = {...workspaceFieldServices(workspace, rotations), extractInlineImage: target => this.extractInlineImage(target)};
+        this.fieldServices = {
+            ...workspaceFieldServices(workspace, rotations),
+            extractInlineImage: target => this.runFieldCommand(commands.component.extractImage, target),
+            inlinePatternFile: target => this.runFieldCommand(commands.component.inlinePattern, target),
+        };
         this.placeholder = createElement(document, "p", "inspector-placeholder", NO_SELECTION_TEXT);
         this.root = createElement(document, "div", "entity-inspector");
         const header = createElement(document, "header", "entity-header");
@@ -333,8 +338,7 @@ export class InspectorView {
         for (const entity of entities) void this.workspace.rename(entity, text.length === 0 ? null : text);
     }
 
-    private extractInlineImage(target: InlineImageTarget): void {
-        const command = this.commands.component.extractImage;
+    private runFieldCommand(command: Command<ImageFieldTarget>, target: ImageFieldTarget): void {
         if (command.runWith(target)) return;
         const reason = command.stateOf(target).reason;
         if (reason !== undefined) this.workspace.notice("warn", reason);

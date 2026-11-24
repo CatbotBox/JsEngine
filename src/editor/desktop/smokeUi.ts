@@ -1,4 +1,4 @@
-import {keyEventsOfChord, mouseEventOfHover, mouseEventsOfClick} from "./smokeInput";
+import {keyEventsOfChord, mouseEventOfHover, mouseEventsOfClick, mouseEventsOfDrag} from "./smokeInput";
 import type {SmokeInputEvent, SmokeMouseButton} from "./smokeInput";
 
 export interface SmokePage {
@@ -182,6 +182,13 @@ export class SmokeUi {
         const point = await this.clickablePoint(selector, description);
         const zoom = this.page.zoomFactor();
         this.page.sendInput(mouseEventOfHover(point.x * zoom, point.y * zoom));
+    }
+
+    public async drag(fromSelector: string, toSelector: string, description: string): Promise<void> {
+        const from = await this.clickablePoint(fromSelector, `the start of ${description}`);
+        const to = await this.clickablePoint(toSelector, `the end of ${description}`);
+        const zoom = this.page.zoomFactor();
+        for (const event of mouseEventsOfDrag(from.x * zoom, from.y * zoom, to.x * zoom, to.y * zoom)) this.page.sendInput(event);
     }
 
     public async press(chord: string): Promise<void> {

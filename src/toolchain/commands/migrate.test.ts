@@ -3,6 +3,7 @@ import {tmpdir} from "os";
 import {dirname, join} from "path";
 import {afterEach, beforeEach, describe, expect, test} from "../../engine/testing/harness";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
+import {SPRITE_PATTERN_FILE_FORMAT, SPRITE_PATTERN_FILE_VERSION} from "../../engine/rendering/2d/spritePatternFile";
 import {DATA_ASSET_FORMAT, DATA_ASSET_VERSION, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "../../engine/scene";
 import {CliError, EXIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE} from "../cliArguments";
 import {migrateCommand} from "./migrate";
@@ -16,6 +17,8 @@ const SCENE_PATH = "scenes/main.scene.json";
 const PREFAB_PATH = "prefabs/ship.prefab.json";
 const ASSET_PATH = "assets/tuning.asset.json";
 const GENERATED_SCENE_PATH = "generated/copy.scene.json";
+const PATTERN_PATH = "sprites/ship.pattern.json";
+const MISNAMED_PATTERN_PATH = "sprites/other.pattern.json";
 
 let root = "";
 
@@ -56,6 +59,7 @@ const MIGRATED_SCENE_TEXT = formatted(sceneJson(SCENE_DOCUMENT_VERSION, "evictUn
 const CURRENT_PREFAB_TEXT = formatted({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: []}, LF, LF);
 const ASSET_TEXT = formatted({format: DATA_ASSET_FORMAT, version: DATA_ASSET_VERSION, type: "Tuning", fields: {}}, LF, LF);
 const GENERATED_SCENE_TEXT = formatted(sceneJson(OLD_SCENE_VERSION, "evictUnusedMeshAfterFrames"), LF, "");
+const PATTERN_TEXT = formatted({format: SPRITE_PATTERN_FILE_FORMAT, version: SPRITE_PATTERN_FILE_VERSION, rows: ["#"], palette: [{char: "#", rgb: "#ffffff"}]}, LF, LF);
 
 describe("jsengine migrate", () => {
     beforeEach(() => {
@@ -65,6 +69,7 @@ describe("jsengine migrate", () => {
         writeProjectFile(PREFAB_PATH, CURRENT_PREFAB_TEXT);
         writeProjectFile(ASSET_PATH, ASSET_TEXT);
         writeProjectFile(GENERATED_SCENE_PATH, GENERATED_SCENE_TEXT);
+        writeProjectFile(PATTERN_PATH, PATTERN_TEXT);
     });
 
     afterEach(() => {
@@ -85,7 +90,19 @@ describe("jsengine migrate", () => {
         expect(readProjectFile(PREFAB_PATH)).toBe(CURRENT_PREFAB_TEXT);
         expect(readProjectFile(ASSET_PATH)).toBe(ASSET_TEXT);
         expect(readProjectFile(GENERATED_SCENE_PATH)).toBe(GENERATED_SCENE_TEXT);
+        expect(readProjectFile(PATTERN_PATH)).toBe(PATTERN_TEXT);
         expect(await migrateCommand(["--project", root, "--check"])).toBe(EXIT_SUCCESS);
+    });
+
+    test("sprite pattern files are checked too, and one it cannot read fails the run naming the file", async () => {
+        writeProjectFile(PATTERN_PATH, formatted({format: SPRITE_PATTERN_FILE_FORMAT, version: SPRITE_PATTERN_FILE_VERSION + 1, rows: [], palette: []}, LF, LF));
+        writeProjectFile(MISNAMED_PATTERN_PATH, formatted({format: DATA_ASSET_FORMAT, version: DATA_ASSET_VERSION}, LF, LF));
+        const failure = await failureOf(["--project", root, "--check"]);
+        expect(failure.exitCode).toBe(EXIT_FAILURE);
+        expect(failure.details).toEqual([
+            `Sprite pattern "${MISNAMED_PATTERN_PATH}": format must be "${SPRITE_PATTERN_FILE_FORMAT}", got "${DATA_ASSET_FORMAT}"`,
+            `Sprite pattern "${PATTERN_PATH}": version ${SPRITE_PATTERN_FILE_VERSION + 1} is newer than the supported version ${SPRITE_PATTERN_FILE_VERSION}`,
+        ]);
     });
 
     test("a document it cannot migrate fails the run before anything is written", async () => {

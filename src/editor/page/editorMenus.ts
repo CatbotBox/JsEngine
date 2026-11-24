@@ -2,15 +2,16 @@ import type {Entity} from "../../engine/core";
 import {choiceEntries, commandEntry, commandEntryFor, submenuEntry} from "./commandMenus";
 import type {MenuEntry} from "./commandMenus";
 import type {ComponentTarget, EditorCommands, ProjectItem} from "./editorCommands";
+import type {DockPanelId} from "./dockLayout";
 import type {EditorSceneTab} from "./sceneDocuments";
 import type {SceneEntry} from "./sceneTabs";
-import {BOTTOM_TABS} from "./editorPanels";
+import {BOTTOM_PANELS} from "./editorPanels";
 import {gameViewAspectOf} from "./gameViewAspect";
 import {GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import type {MenuBarMenu} from "./menuBar";
 import type {EditorMenuId} from "../project/editorUiHooks";
 import {MENU_SEPARATOR} from "./popupMenu";
-import {inlineImageFieldKeys} from "./imageExtraction";
+import {extractableImageFieldKeys, patternFileFieldKeys} from "./imageExtraction";
 import {isAssetKind} from "./projectFiles";
 import {SNAP_KIND_LABELS, SNAP_KINDS, snapStepText} from "./snapSteps";
 import type {SnapKind, SnapStepChoice} from "./snapSteps";
@@ -33,6 +34,9 @@ const OPEN_RECENT_SUBMENU = "openRecent";
 const CREATE_SUBMENU = "create";
 const DATA_ASSET_SUBMENU = "createDataAsset";
 const SNAP_SUBMENU_PREFIX = "snap.";
+const ADD_TAB_LABEL = "Add Tab";
+const ADD_TAB_SUBMENU = "addTab";
+const VIEW_PANELS: readonly DockPanelId[] = ["scene", "game", "hierarchy", "inspector"];
 const MENU_IDS: Readonly<Record<EditorMenuId, EditorMenuId>> = {file: "file", edit: "edit", assets: "assets", entity: "entity", window: "window", help: "help"};
 
 function dataAssetEntries(commands: EditorCommands, folder: string | undefined): MenuEntry[] {
@@ -126,15 +130,11 @@ function entityMenu(commands: EditorCommands): MenuEntry[] {
 function windowMenu(commands: EditorCommands): MenuEntry[] {
     const {view, window} = commands;
     return [
-        commandEntry(view.views.scene),
-        commandEntry(view.views.game),
         ...GAME_VIEW_OPTIONS.map(option => commandEntry(view.gameViewOptions[option])),
         MENU_SEPARATOR,
-        ...BOTTOM_TABS.map(tab => commandEntry(window.bottomTabs[tab])),
+        ...VIEW_PANELS.map(panel => commandEntry(window.panels[panel])),
         MENU_SEPARATOR,
-        commandEntry(window.toggleHierarchy),
-        commandEntry(window.toggleInspector),
-        commandEntry(window.toggleBottomPanel),
+        ...BOTTOM_PANELS.map(panel => commandEntry(window.panels[panel])),
         MENU_SEPARATOR,
         commandEntry(window.resetLayout),
     ];
@@ -152,6 +152,18 @@ export function editorMenuBar(commands: EditorCommands): MenuBarMenu[] {
         {id: MENU_IDS.entity, label: ENTITY_MENU_LABEL, entries: () => entityMenu(commands)},
         {id: MENU_IDS.window, label: WINDOW_MENU_LABEL, entries: () => windowMenu(commands)},
         {id: MENU_IDS.help, label: HELP_MENU_LABEL, entries: () => helpMenu(commands)},
+    ];
+}
+
+export function dockTabMenu(commands: EditorCommands, panel: DockPanelId, closedPanels: readonly DockPanelId[], leading: readonly MenuEntry[] = []): MenuEntry[] {
+    const window = commands.window;
+    return [
+        ...leading,
+        MENU_SEPARATOR,
+        commandEntryFor(window.closePanel, panel),
+        commandEntryFor(window.maximizePanel, panel),
+        MENU_SEPARATOR,
+        submenuEntry(ADD_TAB_SUBMENU, ADD_TAB_LABEL, closedPanels.map(closed => commandEntryFor(window.addPanel, {panel: closed, beside: panel}))),
     ];
 }
 
@@ -242,9 +254,11 @@ export function componentMenu(commands: EditorCommands, target: ComponentTarget)
         commandEntryFor(component.copyValues, target),
         commandEntryFor(component.pasteValues, target),
     ];
-    const imageKeys = inlineImageFieldKeys(target.first);
-    if (imageKeys.length > 0) entries.push(MENU_SEPARATOR);
-    for (const key of imageKeys) entries.push(commandEntryFor(component.extractImage, {entities: target.entities, typeName: target.typeName, key}));
+    const extractableKeys = extractableImageFieldKeys(target.first);
+    const patternFileKeys = patternFileFieldKeys(target.first);
+    if (extractableKeys.length + patternFileKeys.length > 0) entries.push(MENU_SEPARATOR);
+    for (const key of extractableKeys) entries.push(commandEntryFor(component.extractImage, {entities: target.entities, typeName: target.typeName, key}));
+    for (const key of patternFileKeys) entries.push(commandEntryFor(component.inlinePattern, {entities: target.entities, typeName: target.typeName, key}));
     return entries;
 }
 
