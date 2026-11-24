@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import {TOOLCHAIN_SERVER_COMMAND} from "../editor/desktop/toolchainServerProtocol";
 import {CliError, EXIT_FAILURE, EXIT_USAGE, usageError} from "./cliArguments";
 import {KEEP_RUNNING} from "./commands/command";
 import type {Command, CommandResult} from "./commands/command";
@@ -13,6 +14,7 @@ const COMMANDS: Readonly<Record<string, Command>> = {
     edit: async args => (await import("./commands/edit")).editCommand(args),
     migrate: async args => (await import("./commands/migrate")).migrateCommand(args),
     link: async args => (await import("./commands/link")).linkCommand(args),
+    [TOOLCHAIN_SERVER_COMMAND]: async args => (await import("./commands/toolchainServer")).toolchainServerCommand(args),
     help: helpCommand,
 };
 

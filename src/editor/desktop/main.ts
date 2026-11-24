@@ -1,6 +1,6 @@
-import {app, BrowserWindow, dialog, Menu, protocol, screen, shell} from "electron";
-import type {Details} from "electron";
-import {existsSync, mkdtempSync, readFileSync, rmSync} from "fs";
+import {app, BrowserWindow, crashReporter, dialog, Menu, protocol, screen, shell} from "electron";
+import type {Details, GPUFeatureStatus} from "electron";
+import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync} from "fs";
 import {access, mkdtemp, readFile, rm, writeFile} from "fs/promises";
 import {tmpdir} from "os";
 import {join} from "path";
@@ -58,11 +58,21 @@ const RECURSIVE_REMOVAL = {recursive: true, force: true, maxRetries: SMOKE_REMOV
 const SMOKE_PASSED_EXIT_CODE = 0;
 const SMOKE_FAILED_EXIT_CODE = 1;
 const SMOKE_FAILURE_REPORT_DELAY_MS = 1000;
+const SMOKE_CRASH_DUMPS_FOLDER = "jsengine-smoke-crashes";
+const CRASH_DUMP_EXTENSION = ".dmp";
+const CLEAN_EXIT_REASON = "clean-exit";
+const RENDERER_CONSOLE_LINES = 50;
+const LISTED_RECURSIVELY = {recursive: true, encoding: "utf8"} as const;
 
 interface SmokeFailure {
     readonly rendererGone?: string;
     readonly exitCode?: number;
     readonly error?: string;
+}
+
+interface CrashEvidence {
+    readonly crashDumps: readonly string[];
+    readonly gpuFeatureStatus: GPUFeatureStatus;
 }
 
 interface ViewportReport extends CapturedRect {
@@ -112,6 +122,9 @@ const requestedFlows = flagValue("flows");
 const smokeFolderAnswers: string[] = [];
 const smokeTempFolders: string[] = [];
 const goneChildProcesses: Details[] = [];
+const rendererConsole: string[] = [];
+const smokeCrashDumps = join(tmpdir(), SMOKE_CRASH_DUMPS_FOLDER);
+let crashDumpsBeforeSmoke: ReadonlySet<string> = new Set();
 let mainWindow: BrowserWindow | undefined;
 let pendingSmokeFailure: SmokeFailure | undefined;
 
@@ -125,8 +138,31 @@ function isolatedSmokeProfile(): string {
     }
 }
 
+function crashDumpFiles(): string[] {
+    if (!existsSync(smokeCrashDumps)) return [];
+    return readdirSync(smokeCrashDumps, LISTED_RECURSIVELY).filter(name => name.endsWith(CRASH_DUMP_EXTENSION)).map(name => join(smokeCrashDumps, name));
+}
+
+function crashed(reason: string | undefined): boolean {
+    return reason !== undefined && reason !== CLEAN_EXIT_REASON;
+}
+
+function crashEvidence(): CrashEvidence | undefined {
+    const crashSeen = crashed(pendingSmokeFailure?.rendererGone) || goneChildProcesses.some(details => crashed(details.reason));
+    if (!crashSeen) return undefined;
+    return {crashDumps: crashDumpFiles().filter(path => !crashDumpsBeforeSmoke.has(path)), gpuFeatureStatus: app.getGPUFeatureStatus()};
+}
+
+function keepRendererConsoleLine(line: string): void {
+    rendererConsole.push(line);
+    if (rendererConsole.length > RENDERER_CONSOLE_LINES) rendererConsole.shift();
+}
+
 if (smoke) {
     app.setPath("userData", isolatedSmokeProfile());
+    app.setPath("crashDumps", smokeCrashDumps);
+    crashReporter.start({uploadToServer: false});
+    crashDumpsBeforeSmoke = new Set(crashDumpFiles());
     app.on("child-process-gone", (_event, details) => goneChildProcesses.push(details));
 }
 
@@ -284,7 +320,7 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     const passed = pagePassed && smokeFlowsPassed(flows);
     if (pendingSmokeFailure !== undefined) return;
     const {crossOriginIsolated, canvas, renderBackend} = report;
-    console.log(JSON.stringify({page, crossOriginIsolated, canvas, renderBackend, requestedBackend, editorState, drawnPixels, viewportDrawnPixels, pageErrors: loadErrors, flows, childProcessesGone: goneChildProcesses, passed}));
+    console.log(JSON.stringify({page, crossOriginIsolated, canvas, renderBackend, requestedBackend, editorState, drawnPixels, viewportDrawnPixels, pageErrors: loadErrors, flows, childProcessesGone: goneChildProcesses, ...crashEvidence(), ...(passed ? {} : {rendererConsole}), passed}));
     app.exit(passed ? SMOKE_PASSED_EXIT_CODE : SMOKE_FAILED_EXIT_CODE);
 }
 
@@ -293,7 +329,7 @@ function failSmoke(failure: SmokeFailure): void {
     pendingSmokeFailure = {...pendingSmokeFailure, ...failure};
     if (reportScheduled) return;
     setTimeout(() => {
-        console.log(JSON.stringify({page, ...pendingSmokeFailure, childProcessesGone: goneChildProcesses, passed: false}));
+        console.log(JSON.stringify({page, ...pendingSmokeFailure, childProcessesGone: goneChildProcesses, ...crashEvidence(), rendererConsole, passed: false}));
         app.exit(SMOKE_FAILED_EXIT_CODE);
     }, SMOKE_FAILURE_REPORT_DELAY_MS);
 }
@@ -394,6 +430,7 @@ async function openWindow(): Promise<void> {
     const pageErrors: string[] = [];
     window.webContents.on("console-message", event => {
         if (event.level === "error") pageErrors.push(event.message);
+        if (smoke) keepRendererConsoleLine(`${event.level}: ${event.message}`);
     });
     if (smoke) failWhenTheRendererDies(window);
     await window.loadURL(`${SCHEME}://${HOST}/${page}`);

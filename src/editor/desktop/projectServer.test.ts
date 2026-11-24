@@ -9,8 +9,11 @@ import {STARTER_SCENE_FILE} from "../project/projectTemplate";
 import {EDITOR_SETTINGS_FILE} from "../project/editorSettings";
 import type {GameTarget} from "../project/editorSettings";
 import {EDITOR_SETTINGS_UPDATE_METHOD} from "../project/projectServerApi";
-import type {OpenProjectResult, PackageResult, TargetFeatureReport, TargetReportResult} from "../project/projectServerApi";
+import type {BuildProjectResult, GenerateProjectReport, OpenProjectResult, PackageResult, TargetFeatureReport, TargetReportResult} from "../project/projectServerApi";
 import type {ProjectTarget} from "../../engine/project/projectTargets";
+import type {ToolchainServerEvents} from "./toolchainServerClient";
+import {parseToolchainRequest, toolchainReplyRecord} from "./toolchainServerProtocol";
+import type {ToolchainRequest} from "./toolchainServerProtocol";
 
 const fs = require("fs") as typeof Fs;
 const os = require("os") as typeof Os;
@@ -47,6 +50,19 @@ const DOM_PROBLEM_REPORT: TargetFeatureReport = {
     errors: [],
 };
 
+const GENERATED: GenerateProjectReport = {ok: true, written: ["generated/game.ts"], unchanged: [], warnings: ["Spawner.rate: unsupported type"]};
+const TOOLCHAIN_SERVER_EXITED = "jsengine toolchain-server exited with 1";
+const SOURCE_CHANGE_NOTICE_MS = 5_000;
+const POLL_INTERVAL_MS = 20;
+
+interface FakeToolchainServer {
+    readonly requests: ToolchainRequest[];
+    readonly events: ToolchainServerEvents;
+    killed: boolean;
+}
+
+type ToolchainServerAnswer = (request: ToolchainRequest, fake: FakeToolchainServer) => void;
+
 let folder = "";
 let checkout = "";
 let server: ProjectServer;
@@ -76,6 +92,60 @@ function serverWithToolchain(respond: (args: readonly string[]) => Promise<Toolc
         return await respond(args);
     }});
     return runs;
+}
+
+function serverWithToolchainServer(answer: ToolchainServerAnswer): FakeToolchainServer[] {
+    server.close();
+    const started: FakeToolchainServer[] = [];
+    server = createProjectServer({
+        repoRoot: checkout,
+        bun: {path: BUN_STUB},
+        browse: false,
+        allowedHostnames: ["localhost"],
+        runToolchain: async () => ({stdout: "", stderr: "", exitCode: EXIT_SUCCESS}),
+        startToolchainServer: (_repoRoot, _bunPath, events) => {
+            const fake: FakeToolchainServer = {requests: [], events, killed: false};
+            started.push(fake);
+            return {
+                write: text => {
+                    const parsed = parseToolchainRequest(text);
+                    if (!parsed.ok) throw new Error(parsed.problem);
+                    fake.requests.push(parsed.request);
+                    setTimeout(() => answer(parsed.request, fake), 0);
+                },
+                kill: () => {
+                    fake.killed = true;
+                },
+            };
+        },
+    });
+    return started;
+}
+
+function replyTo(request: ToolchainRequest, fake: FakeToolchainServer, report: unknown): void {
+    fake.events.stdout(toolchainReplyRecord({id: request.id, report}));
+}
+
+function writeBundle(): string {
+    const bundle = path.join(checkout, "editor.web-pixels.worker.js");
+    fs.writeFileSync(bundle, "export {};");
+    return bundle;
+}
+
+function builtReport(bundlePath: string): unknown {
+    return {ok: true, bundlePath, inputs: [bundlePath], warnings: [], generatedFiles: []};
+}
+
+async function createProject(name: string): Promise<OpenProjectResult> {
+    return await (await post("create", {path: folder, name})).json() as OpenProjectResult;
+}
+
+async function buildProject(id: string, body: unknown = {}): Promise<BuildProjectResult> {
+    return await (await post(`${id}/build`, body)).json() as BuildProjectResult;
+}
+
+async function generateProject(id: string): Promise<GenerateProjectReport> {
+    return await (await post(`${id}/generate`, {})).json() as GenerateProjectReport;
 }
 
 function makeCheckout(): string {
@@ -110,6 +180,12 @@ async function targetReport(id: string, target: unknown): Promise<TargetReportRe
 
 function nextTask(): Promise<void> {
     return new Promise(resolveTask => setTimeout(resolveTask, 0));
+}
+
+async function becomesTrue(condition: () => boolean, withinMs: number): Promise<boolean> {
+    const deadline = Date.now() + withinMs;
+    while (!condition() && Date.now() < deadline) await new Promise(resolvePoll => setTimeout(resolvePoll, POLL_INTERVAL_MS));
+    return condition();
 }
 
 async function packaged(id: string): Promise<PackageResult> {
@@ -455,6 +531,67 @@ describe("project server target builds", () => {
         const {id} = await opened(folder);
         expect(await targetReport(id, "web")).toEqual({report: {ok: false, target: "web", bundles: [], errors: [UNAVAILABLE_REASON]}, output: []});
         expect(await packaged(id)).toEqual({ok: false, output: [UNAVAILABLE_REASON]});
+    });
+});
+
+describe("project server toolchain server", () => {
+    test("builds and generates go to one toolchain server, started on the first of them and stopped when the server closes", async () => {
+        const bundle = writeBundle();
+        const started = serverWithToolchainServer((request, fake) => replyTo(request, fake, request.op === "build-editor" ? builtReport(bundle) : GENERATED));
+        const project = await createProject("Warm");
+        expect(started.length).toBe(0);
+        const result = await buildProject(project.id, {gameTarget: WINDOW_GPU});
+        expect("workerUrl" in result && result.gameTarget).toEqual(WINDOW_GPU);
+        expect(await generateProject(project.id)).toEqual(GENERATED);
+        expect(started.length).toBe(1);
+        expect(started[0].requests).toEqual([
+            {id: 1, op: "build-editor", project: project.path, simulate: "window", backend: "gpu"},
+            {id: 2, op: "generate", project: project.path},
+        ]);
+        expect(started[0].killed).toBe(false);
+        server.close();
+        expect(started[0].killed).toBe(true);
+    });
+
+    test("a toolchain server that dies mid-build fails that build with what it printed, and the next build starts a new one", async () => {
+        const bundle = writeBundle();
+        const started = serverWithToolchainServer((request, fake) => {
+            if (started.length > 1) {
+                replyTo(request, fake, builtReport(bundle));
+                return;
+            }
+            fake.events.stderr("bun crashed\n");
+            fake.events.ended(TOOLCHAIN_SERVER_EXITED);
+        });
+        const project = await createProject("Crashing");
+        expect(await buildProject(project.id)).toEqual({errors: [`Could not run ${BUN_STUB}: ${TOOLCHAIN_SERVER_EXITED}: bun crashed`]});
+        expect("workerUrl" in await buildProject(project.id)).toBe(true);
+        expect(started.length).toBe(2);
+    });
+
+    test("a code change under the checkout's src/ stops the toolchain server, so the next build loads the changed code", async () => {
+        const bundle = writeBundle();
+        const started = serverWithToolchainServer((request, fake) => replyTo(request, fake, builtReport(bundle)));
+        const project = await createProject("Restarting");
+        expect("workerUrl" in await buildProject(project.id)).toBe(true);
+        expect(started[0].killed).toBe(false);
+        fs.writeFileSync(path.join(checkout, ENGINE_WORKSPACE, "changed.ts"), "export {};");
+        expect(await becomesTrue(() => started[0].killed, SOURCE_CHANGE_NOTICE_MS)).toBe(true);
+        expect("workerUrl" in await buildProject(project.id)).toBe(true);
+        expect(started.length).toBe(2);
+    });
+
+    test("a toolchain server that cannot start fails the generate with the reason, like a failed spawn", async () => {
+        serverWithToolchainServer((_request, fake) => fake.events.ended(`spawn ${BUN_STUB} ENOENT`));
+        const project = await createProject("Unstartable");
+        expect(await generateProject(project.id)).toEqual({ok: false, errors: [`Could not run ${BUN_STUB}: spawn ${BUN_STUB} ENOENT`]});
+    });
+
+    test("a reply that is not the report asked for fails the request", async () => {
+        serverWithToolchainServer((request, fake) => replyTo(request, fake, {ok: true}));
+        const project = await createProject("Garbled");
+        expect(await buildProject(project.id)).toEqual({errors: ["jsengine toolchain-server answered without a build report"]});
+        expect(await generateProject(project.id)).toEqual({ok: false, errors: ["jsengine toolchain-server answered without a generate report"]});
     });
 });
 

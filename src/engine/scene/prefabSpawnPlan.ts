@@ -17,6 +17,8 @@ type FieldValues = Record<string, unknown>;
 
 type FieldSetter = (value: unknown) => void;
 
+type FieldGetter = () => unknown;
+
 export interface PrefabFieldScope {
     readonly context: FieldDecodeContext;
 
@@ -188,6 +190,17 @@ class VectorInPlaceWrite implements FieldWrite {
     }
 }
 
+class VectorViewWrite implements FieldWrite {
+    public constructor(private readonly getter: FieldGetter, private readonly vector: VectorFieldValue, private readonly fallback: FieldWrite) {
+    }
+
+    public write(component: Component, entities: readonly Entity[]): void {
+        const view = this.getter.call(component);
+        if (isNumberSlots(view) && this.vector.fits(view)) this.vector.copyInto(view);
+        else this.fallback.write(component, entities);
+    }
+}
+
 function structMemberValues(type: StructFieldType, json: SceneJsonObject, scope: PrefabFieldScope, path: string): StructMemberValue[] {
     const members: StructMemberValue[] = [];
     for (const member of type.fields) {
@@ -227,20 +240,31 @@ function compileFieldValue(type: FieldType, json: SceneJsonValue, decoded: unkno
     }
 }
 
-function inheritedSetterOf(target: object, key: string): FieldSetter | undefined {
+function inheritedDescriptorOf(target: object, key: string): PropertyDescriptor | undefined {
     if (Object.prototype.hasOwnProperty.call(target, key)) return undefined;
     for (let owner: object | null = Object.getPrototypeOf(target); owner !== null; owner = Object.getPrototypeOf(owner)) {
         const descriptor = Object.getOwnPropertyDescriptor(owner, key);
-        if (descriptor !== undefined) return descriptor.set;
+        if (descriptor !== undefined) return descriptor;
     }
     return undefined;
 }
 
-function fieldWriteFor(probe: Component, field: FieldSchema, source: FieldValueSource): FieldWrite {
+function liveViewGetterOf(probe: Component, otherProbe: Component, getter: FieldGetter | undefined, vector: VectorFieldValue): FieldGetter | undefined {
+    if (getter === undefined) return undefined;
+    const view = getter.call(probe);
+    const ownView = view === getter.call(probe) && view !== getter.call(otherProbe);
+    return ownView && isNumberSlots(view) && vector.fits(view) ? getter : undefined;
+}
+
+function fieldWriteFor(probe: Component, otherProbe: Component, field: FieldSchema, source: FieldValueSource): FieldWrite {
     if (source instanceof VectorFieldValue && copiesVectorInPlace(probe, field)) return new VectorInPlaceWrite(field.key, source);
-    const setter = inheritedSetterOf(probe, field.key);
+    const descriptor = inheritedDescriptorOf(probe, field.key);
+    const setter: FieldSetter | undefined = descriptor?.set;
     if (source instanceof SharedFieldValue) return setter === undefined ? new SharedPropertyWrite(field.key, source.value) : new SharedSetterWrite(setter, source.value);
-    return setter === undefined ? new PropertyWrite(field.key, source) : new SetterWrite(setter, source);
+    const write = setter === undefined ? new PropertyWrite(field.key, source) : new SetterWrite(setter, source);
+    if (!(source instanceof VectorFieldValue)) return write;
+    const liveView = liveViewGetterOf(probe, otherProbe, descriptor?.get, source);
+    return liveView === undefined ? write : new VectorViewWrite(liveView, source, write);
 }
 
 export class ComponentSpawnPlan {
@@ -272,6 +296,7 @@ export class ComponentSpawnPlan {
 
 export function compileComponentSpawnPlan(schema: ComponentSchema, fields: readonly AuthoredField[], scope: PrefabFieldScope): ComponentSpawnPlan {
     const probe = schema.create();
-    const writes = fields.map(authored => fieldWriteFor(probe, authored.field, compileFieldValue(authored.field, authored.json, authored.decoded, scope, authored.path)));
+    const otherProbe = schema.create();
+    const writes = fields.map(authored => fieldWriteFor(probe, otherProbe, authored.field, compileFieldValue(authored.field, authored.json, authored.decoded, scope, authored.path)));
     return new ComponentSpawnPlan(schema, writes);
 }

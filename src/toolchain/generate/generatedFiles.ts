@@ -28,6 +28,8 @@ export interface GeneratedFiles {
     readonly warnings: readonly string[];
 }
 
+export type ProjectGeneration = (projectFolder: string) => GeneratedFiles;
+
 function stateOf(generator: ProjectGenerator, existing: string | undefined, source: string): Pick<GeneratedFile, "state" | "writtenByVersion"> {
     if (existing === undefined) return {state: "missing"};
     if (existing === source) return {state: "upToDate"};

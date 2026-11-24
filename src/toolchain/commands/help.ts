@@ -28,6 +28,8 @@ export const USAGE = `jsengine <command> [options] (runs under bun)
             files at the current version and lists them; --check lists them and fails instead of writing
   link      [--project <dir>]                   points the project's package.json at this checkout's engine packages
             (link:), writes a tsconfig.json if it has none and runs bun install
+  toolchain-server                              answers editor build and generate requests, one JSON line each on stdin,
+            with one reply record each on stdout, from a warm generator until stdin closes (the editor's project server runs it)
   help
 
 Defaults: --target web; --backend from the manifest's "targets", else pixels on web and window, cells on the terminal; --simulate web.

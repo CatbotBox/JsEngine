@@ -3,7 +3,7 @@ import {MemoryFileSource, MemoryPlatform} from "../testing/memoryPlatform";
 import {Component, EntityCommandBufferSystem, Resource, World} from "../core";
 import type {Entity} from "../core";
 import {NULL_ENTITY} from "../core/entity";
-import {asFloat32Array, Vec3} from "../math/types/vec";
+import {asFloat32Array, Vec, Vec3} from "../math/types/vec";
 import {LocalPosition} from "../translation/localPosition";
 import {ComponentSchemaRegistry} from "./componentSchemaRegistry";
 import {componentSchema, resourceSchema, structFields} from "./componentSchemaBuilder";
@@ -41,6 +41,9 @@ const OTHER_XYZ = [9, 9, 9];
 const NESTED_OVERRIDES = ["LocalPosition.xyz"];
 const EDITED = 42;
 const ENABLED = true;
+const AIM = [10, 11, 12];
+const ORIGIN = [13, 14, 15];
+const SHARED_ORIGIN = Vec3.alloc();
 
 class Marker {
     public label = "unset";
@@ -65,6 +68,7 @@ class Mover extends Component {
 
     public readonly heading = Vec3.alloc();
     public readonly constructedHeading: Vec3;
+    public readonly constructedTarget: Vec3;
     public notes: string[] = [];
     public steps: number[] = [];
     public marker = new Marker();
@@ -77,6 +81,7 @@ class Mover extends Component {
     public constructor() {
         super();
         this.constructedHeading = this.heading;
+        this.constructedTarget = this._target;
     }
 
     public get target(): Vec3 {
@@ -94,6 +99,34 @@ class Mover extends Component {
     public set speed(value: number) {
         this._speed = value;
         this.speedWrites++;
+    }
+}
+
+class Snapshot extends Component {
+    public static readonly schema = componentSchema(Snapshot, "Snapshot").vec3("aim").build();
+    public aimWrites = 0;
+    private readonly _aim = Vec3.alloc();
+
+    public get aim(): Vec3 {
+        return Vec.clone(this._aim);
+    }
+
+    public set aim(value: Vec3) {
+        Vec.copy(this._aim, value);
+        this.aimWrites++;
+    }
+}
+
+class Anchored extends Component {
+    public static readonly schema = componentSchema(Anchored, "Anchored").vec3("origin").build();
+    private _origin: Vec3 | undefined = undefined;
+
+    public get origin(): Vec3 {
+        return this._origin ?? SHARED_ORIGIN;
+    }
+
+    public set origin(value: Vec3) {
+        this._origin = value;
     }
 }
 
@@ -144,7 +177,7 @@ interface Setup {
 function schemaRegistry(): ComponentSchemaRegistry {
     const registry = new ComponentSchemaRegistry();
     registerEngineComponentSchemas(registry);
-    registry.registerComponentClasses([Mover, Link, Tether, Emitter]);
+    registry.registerComponentClasses([Mover, Snapshot, Anchored, Link, Tether, Emitter]);
     registry.registerFieldType(TAG_TYPE);
     registry.registerGeneratedComponent(Labelled, "Labelled", [{key: "tag", kind: "custom", typeName: TAG_TYPE.name}]);
     registry.registerResourceClass(SpawnTable);
@@ -198,17 +231,52 @@ function bufferOf(world: World) {
 }
 
 describe("prefab spawn plan", () => {
-    test("copies an own vector field into the array its constructor made, and hands a vector accessor a fresh vector per spawn", () => {
+    test("copies an own vector field into the array its constructor made", () => {
+        const {world, spawner} = setup();
+        const first = spawner.spawn(world.entityManager, moverPrefab()).rootComponent(Mover);
+        expect(first.heading).toBe(first.constructedHeading);
+        expect(numbersOf(first.heading)).toEqual(HEADING);
+    });
+
+    test("copies into the vector a vector accessor's getter returns when that is the component's own live vector, separately per spawn", () => {
         const {world, spawner} = setup();
         const prefab = moverPrefab();
         const first = spawner.spawn(world.entityManager, prefab).rootComponent(Mover);
         const second = spawner.spawn(world.entityManager, prefab).rootComponent(Mover);
-        expect(first.heading).toBe(first.constructedHeading);
-        expect(numbersOf(first.heading)).toEqual(HEADING);
+        expect(first.target).toBe(first.constructedTarget);
         expect(numbersOf(first.target)).toEqual(TARGET);
         expect(first.target).not.toBe(second.target);
         asFloat32Array(first.target)[0] = EDITED;
         expect(numbersOf(second.target)).toEqual(TARGET);
+    });
+
+    test("assigns through a vector accessor's setter when its getter returns a fresh copy", () => {
+        const {world, spawner} = setup();
+        const prefab = prefabOf(record(FIRST_SCENE_ENTITY_ID, "aiming", {Snapshot: {aim: AIM}}));
+        const first = spawner.spawn(world.entityManager, prefab).rootComponent(Snapshot);
+        const second = spawner.spawn(world.entityManager, prefab).rootComponent(Snapshot);
+        expect(numbersOf(first.aim)).toEqual(AIM);
+        expect([first.aimWrites, second.aimWrites]).toEqual([1, 1]);
+    });
+
+    test("assigns through a vector accessor's setter when its getter returns a vector every instance shares", () => {
+        const {world, spawner} = setup();
+        const prefab = prefabOf(record(FIRST_SCENE_ENTITY_ID, "anchored", {Anchored: {origin: ORIGIN}}));
+        const first = spawner.spawn(world.entityManager, prefab).rootComponent(Anchored);
+        const second = spawner.spawn(world.entityManager, prefab).rootComponent(Anchored);
+        expect(numbersOf(first.origin)).toEqual(ORIGIN);
+        expect(first.origin).not.toBe(second.origin);
+        expect(numbersOf(SHARED_ORIGIN)).toEqual([0, 0, 0]);
+    });
+
+    test("keeps each spawn's LocalPosition.xyz after command buffer playback", () => {
+        const {world, spawner} = setup();
+        const prefab = prefabOf(positioned(INNER_XYZ));
+        const first = spawner.spawn(bufferOf(world), prefab), second = spawner.spawn(bufferOf(world), prefab);
+        playback(world);
+        expect([positionOf(world, first.root), positionOf(world, second.root)]).toEqual([INNER_XYZ, INNER_XYZ]);
+        world.entityManager.getComponent<LocalPosition>(first.root, LocalPosition)!.x = EDITED;
+        expect(positionOf(world, second.root)).toEqual(INNER_XYZ);
     });
 
     test("assigns through a field's setter once per spawn, as an assignment would", () => {

@@ -9,7 +9,7 @@ import {
     writeBundleBaseline,
 } from "../build/bundleReport";
 import type {BundleComparison} from "../build/bundleReport";
-import {buildEditorWorker} from "../build/editorBuild";
+import {buildEditorWorker, editorWorkerReport} from "../build/editorBuild";
 import {
     checkBundleFeatures,
     FEATURE_PROBLEM_FIX,
@@ -27,7 +27,6 @@ import {projectFolderOf} from "../project";
 import {repoRelative} from "../repoPaths";
 import {BACKEND_OPTION, backendFor, BUILD_TARGETS, editorSimulationOf, PROJECT_OPTION, SIMULATE_OPTION, targetOf} from "../targets";
 import type {EditorSimulation, RunTarget, Target} from "../targets";
-import type {ProjectWorkerBuildReport} from "../../editor/desktop";
 import {requireScope} from "./command";
 import type {CommandResult} from "./command";
 
@@ -89,17 +88,9 @@ function siteProjectOf(projectOption: string | undefined): string | undefined {
     return projectOption === undefined ? undefined : projectFolderOf(projectOption);
 }
 
-async function editorReport(projectOption: string | undefined, simulation: EditorSimulation): Promise<ProjectWorkerBuildReport> {
-    try {
-        return await buildEditorWorker(projectFolderOf(projectOption), simulation);
-    } catch (error) {
-        return {ok: false, errors: [describeError(error)], generatedFiles: []};
-    }
-}
-
 async function buildEditor(projectOption: string | undefined, simulation: EditorSimulation, jsonReport: boolean): Promise<CommandResult> {
     if (jsonReport) {
-        const report = await editorReport(projectOption, simulation);
+        const report = await editorWorkerReport(projectOption, simulation);
         process.stdout.write(JSON.stringify(report) + "\n");
         return report.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
