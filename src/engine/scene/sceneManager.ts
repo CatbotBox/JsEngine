@@ -10,6 +10,7 @@ import {parseSceneDocument} from "./sceneDocument";
 import type {SceneDocument} from "./sceneDocument";
 import {dataAssetsOf} from "./dataAssets";
 import {prefabSpawnerOf} from "./prefabSpawner";
+import {SceneLoader} from "./sceneLoader";
 import {preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
 import type {AssetPreload, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
 import {parentEntityOf, SceneRootOrder, untrackedComponentOf} from "./sceneHierarchy";
@@ -62,6 +63,15 @@ const DEFAULT_ACTIVATION: SceneActivation = "immediate";
 const ENABLED = true;
 const DISABLED = false;
 const NO_ENTITIES: readonly Entity[] = [];
+const FIRST_LOAD_GENERATION = 0;
+
+export class SceneLoadCancelledError extends Error {
+    public override readonly name = "SceneLoadCancelledError";
+
+    public constructor(public readonly path: string) {
+        super(`Loading the scene ${path} was cancelled: cancelPendingLoads ran before it finished`);
+    }
+}
 
 function noPreload(): Promise<void> {
     return Promise.resolve();
@@ -87,6 +97,7 @@ export class SceneManager {
     private readonly listeners = new Set<SceneLoadedListener>();
     private readonly handles = new Map<number, SceneHandle>();
     private lastSceneId = NO_SCENE_ID;
+    private loadGeneration = FIRST_LOAD_GENERATION;
 
     public constructor(private readonly world: World, private readonly registry: ComponentSchemaRegistry, private readonly options: SceneManagerOptions = {}) {
         requireMembershipSchemas(registry);
@@ -95,13 +106,21 @@ export class SceneManager {
         this.preload = options.preload ?? noPreload;
         prefabSpawnerOf(world, registry, this.assets, {unknownComponentTypes: options.unknownComponentTypes, schemaChanges: options.schemaChanges});
         world.resources.getOrCreate(ActiveScene);
+        world.resources.insert(new SceneLoader(this));
     }
 
     public async load(path: string, request: SceneLoadRequest = {}): Promise<SceneHandle> {
+        const generation = this.loadGeneration;
         await this.preload([path]);
+        this.requireLoadNotCancelled(generation, path);
         const document = parseSceneDocument(this.files.readText(path), path);
         await this.preloadAssets(sceneAssetPaths(document, this.registry));
+        this.requireLoadNotCancelled(generation, path);
         return this.loadDocument(document, {...request, path}).handle;
+    }
+
+    public cancelPendingLoads(): void {
+        this.loadGeneration++;
     }
 
     public preloadAssets(references: readonly SceneAssetReference[]): Promise<void> {
@@ -191,6 +210,10 @@ export class SceneManager {
         return () => {
             this.listeners.delete(listener);
         };
+    }
+
+    private requireLoadNotCancelled(generation: number, path: string): void {
+        if (generation !== this.loadGeneration) throw new SceneLoadCancelledError(path);
     }
 
     private activateOnCommandBufferPlayback(entities: readonly Entity[]): void {

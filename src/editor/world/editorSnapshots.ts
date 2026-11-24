@@ -1,5 +1,7 @@
 import type {Entity, World} from "../../engine/core";
 import {NULL_ENTITY} from "../../engine/core/entity";
+import {ComponentType} from "../../engine/core/componentType";
+import {InterpolatedTransform} from "../../engine/translation/interpolatedTransform";
 import {serializeWorld} from "../../engine/scene";
 import type {ComponentSchemaRegistry, SceneDocument, SceneSnapshot} from "../../engine/scene";
 import type {EditorMode, ExportSnapshotResult} from "../editorProtocol";
@@ -28,6 +30,16 @@ export function exportWorldSnapshot(world: World, registry: ComponentSchemaRegis
         editSnapshotText: JSON.stringify(state.editSnapshot.document),
         editSnapshotRecords: state.editSnapshot.entities.map(entity => recordByEntity.get(entity) ?? MISSING_SNAPSHOT_RECORD),
     };
+}
+
+export function snapInterpolatedTransforms(world: World): void {
+    const interpolatedType = ComponentType.of(InterpolatedTransform);
+    for (const archetype of world.archetypes.values()) {
+        const column = archetype.getColumn(interpolatedType);
+        if (column === undefined) continue;
+        const count = archetype.entityCountIncludingDisabled;
+        for (let row = 0; row < count; row++) (column.get(row) as InterpolatedTransform).snap();
+    }
 }
 
 export function importedEditSnapshot(document: SceneDocument, records: readonly number[] | undefined, loaded: readonly Entity[]): SceneSnapshot {

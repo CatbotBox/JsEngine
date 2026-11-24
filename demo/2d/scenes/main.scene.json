@@ -1,6 +1,6 @@
 {
   "format": "jsengine-scene",
-  "version": 2,
+  "version": 3,
   "entities": [
     {
       "id": 1,
@@ -58,22 +58,21 @@
           "entity": 2
         },
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              " # ",
+              "###",
+              " # "
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#ffffff",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            " # ",
-            "###",
-            " # "
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "LocalToWorld": {},
         "RenderBounds": {},
@@ -97,22 +96,21 @@
           "entity": 3
         },
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              " # ",
+              "###",
+              " # "
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#ffffff",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            " # ",
-            "###",
-            " # "
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "LocalToWorld": {},
         "RenderBounds": {},
@@ -135,22 +133,21 @@
           "entity": 3
         },
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              " # ",
+              "###",
+              " # "
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#ffffff",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            " # ",
-            "###",
-            " # "
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "LocalToWorld": {},
         "RenderBounds": {},
@@ -173,22 +170,21 @@
           "entity": 3
         },
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              " # ",
+              "###",
+              " # "
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#ffffff",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            " # ",
-            "###",
-            " # "
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "LocalToWorld": {},
         "RenderBounds": {},
@@ -211,22 +207,21 @@
           "entity": 3
         },
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              " # ",
+              "###",
+              " # "
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#ffffff",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            " # ",
-            "###",
-            " # "
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "LocalToWorld": {},
         "RenderBounds": {},
@@ -283,22 +278,21 @@
       "enabled": true,
       "components": {
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              " # ",
+              "###",
+              " # "
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#00ffcc",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            " # ",
-            "###",
-            " # "
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "ScreenAnchor": {
           "anchorPosition": "bottom-right"

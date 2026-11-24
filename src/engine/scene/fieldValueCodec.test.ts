@@ -22,6 +22,8 @@ const KNOWN_ENTITY = makeEntityHandle(5, 1);
 const UNKNOWN_ENTITY = makeEntityHandle(6, 1);
 const KNOWN_SCENE_ID = 3;
 const PATTERN_RGB = 0x40E0FF;
+const OTHER_PATTERN_RGB = 0x102030;
+const PATTERN_FILE_PATH = "sprites/ship.pattern.json";
 const UNKNOWN_SCENE_ID = 99;
 const LONGEST_BASE64_TEST_LENGTH = 10;
 const BYTE_VALUES = 256;
@@ -237,6 +239,12 @@ describe("field value codec", () => {
             loadPrefab: path => {
                 throw new Error(`no prefab ${path}`);
             },
+            isPrefabLoaded: path => {
+                throw new Error(`no prefab ${path}`);
+            },
+            reloadPrefab: path => {
+                throw new Error(`no prefab ${path}`);
+            },
             loadText: path => {
                 throw new Error(`no text ${path}`);
             },
@@ -267,12 +275,40 @@ describe("field value codec", () => {
         expect(decode(field.spriteImage, null)).toBeUndefined();
     });
 
-    test("a spriteImage rebuilt from a sprite pattern saves as null without counting as unsaved", () => {
+    test("a spriteImage made from a sprite pattern saves inline as its rows and palette and decodes back to the same pixels", () => {
         const recorder = encodeRecorder();
-        const image = spritePatternImage(["#"], [new SpritePatternColor("#", PATTERN_RGB)]);
-        expect(encodeFieldValue(field.spriteImage, image, recorder.context, PATH)).toBe(null);
+        const image = spritePatternImage(["#.", ".o"], [new SpritePatternColor("#", PATTERN_RGB), new SpritePatternColor("o", OTHER_PATTERN_RGB)]);
+        const encoded = encodeFieldValue(field.spriteImage, image, recorder.context, PATH);
+        expect(encoded).toEqual({rows: ["#.", ".o"], palette: [{char: "#", rgb: "#40e0ff"}, {char: "o", rgb: "#102030"}]});
         expect(recorder.unsaved).toEqual([]);
-        expect(encode(field.spriteImage, SpriteImage.fromPattern(["#"], {"#": PATTERN_RGB}))).toEqual({width: 1, height: 1, rgbaBase64: encodeBase64(image.rgba)});
+        const decoded = decode(field.spriteImage, encoded) as SpriteImage;
+        expect([decoded.sizeX, decoded.sizeY, decoded.sourcePath]).toEqual([2, 2, undefined]);
+        expect(Array.from(decoded.rgba)).toEqual(Array.from(image.rgba));
+        expect(encode(field.spriteImage, decoded)).toEqual(encoded);
+        expect(encode(field.spriteImage, SpriteImage.fromPattern(["#"], {"#": PATTERN_RGB}))).toEqual({width: 1, height: 1, rgbaBase64: encodeBase64(SpriteImage.solid(1, 1, PATTERN_RGB).rgba)});
+    });
+
+    test("equal inline patterns decode to one shared image within a decode context and to separate images across contexts", () => {
+        const pattern = {rows: ["#"], palette: [{char: "#", rgb: "#40e0ff"}]};
+        const reordered = {palette: [{rgb: "#40e0ff", char: "#"}], rows: ["#"]};
+        const decoder = decodeRecorder();
+        const first = decodeFieldValue(field.spriteImage, pattern, decoder.context, PATH);
+        expect(decodeFieldValue(field.spriteImage, reordered, decoder.context, PATH)).toBe(first);
+        expect(decodeFieldValue(field.spriteImage, {rows: ["##"], palette: pattern.palette}, decoder.context, PATH)).not.toBe(first);
+        expect(decodeFieldValue(field.spriteImage, pattern, decodeRecorder().context, PATH)).not.toBe(first);
+    });
+
+    test("a spriteImage loaded from a pattern file saves as its path", () => {
+        const image = SpriteImage.fromPatternSource({rows: ["#"], palette: [new SpritePatternColor("#", PATTERN_RGB)]}, PATTERN_FILE_PATH);
+        expect(encode(field.spriteImage, image)).toEqual({path: PATTERN_FILE_PATH});
+    });
+
+    test("inline pattern errors name the field path", () => {
+        expect(() => decode(field.spriteImage, {rows: ["#", 3], palette: []})).toThrow(`Scene field ${PATH}.rows: expected an array of strings, got ["#",3]`);
+        expect(() => decode(field.spriteImage, {rows: ["#"]})).toThrow(`Scene field ${PATH}.palette: expected an array, got nothing`);
+        expect(() => decode(field.spriteImage, {rows: [], palette: ["#"]})).toThrow(`Scene field ${PATH}.palette[0]: expected an object with "char" and "rgb", got "#"`);
+        expect(() => decode(field.spriteImage, {rows: [], palette: [{char: 1, rgb: "#000000"}]})).toThrow(`Scene field ${PATH}.palette[0].char: expected a string, got 1`);
+        expect(() => decode(field.spriteImage, {rows: [], palette: [{char: "#", rgb: "#00000"}]})).toThrow(`Scene field ${PATH}.palette[0].rgb: expected a "#rrggbb" colour, got "#00000"`);
     });
 
     test("spriteImage errors name the field path", () => {

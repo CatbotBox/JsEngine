@@ -8,12 +8,15 @@ import {Children} from "../../engine/translation/children";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Parent, ParentTransform} from "../../engine/translation/parent";
+import {InterpolatedTransform} from "../../engine/translation/interpolatedTransform";
+import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {Sprite} from "../../engine/rendering/2d/sprite";
 import {SpriteImage} from "../../engine/rendering/2d/spriteImage";
 import {Vec} from "../../engine/math/types/vec";
 import type {SceneJsonValue} from "../../engine/scene";
+import {encodeBase64} from "../../engine/scene/base64";
 import {EDITOR_MESSAGE_TYPE, isEditorEventMessage} from "../editorProtocol";
-import type {EditorMode, EditorRequest, EditorServiceState, EditorView} from "../editorProtocol";
+import type {EditorMode, EditorRequest, EditorServiceState} from "../editorProtocol";
 import {subtreeOf} from "./hierarchyEditing";
 import {
     ask,
@@ -46,8 +49,45 @@ const GREEN_RGB = 0x00FF00;
 const DISABLED = false;
 const THROWING_WORLD_SOURCE = "entityInspection.ts:";
 const PAGE_CLIENT_SOURCE = "editorClient.ts:";
+const BEFORE_TRANSLATION_PRIORITY = -50;
+const MOVER_STEP_X = 10;
+const PLAYED_TICKS = 3;
+const RESTORED_X = 0;
 
 class UnregisteredTag extends Component {
+}
+
+class StepMoverSystem extends System {
+    private readonly movers = this.createEntityQuery([InterpolatedTransform, LocalPosition]);
+
+    override priority(): number {
+        return BEFORE_TRANSLATION_PRIORITY;
+    }
+
+    public onUpdate(): void {
+        this.movers.stream({write: {position: LocalPosition}}).consume(row => {
+            row.position.x = row.position.x + MOVER_STEP_X;
+        });
+    }
+}
+
+class PresentedMoverProbe extends System {
+    public readonly xs: number[] = [];
+    private readonly movers = this.createEntityQuery([InterpolatedTransform, LocalToWorld]);
+
+    override systemGroup() {
+        return RenderingSystemGroup;
+    }
+
+    public onUpdate(): void {
+        this.movers.stream({read: {localToWorld: LocalToWorld}}).consume(row => {
+            this.xs.push(Vec.x(row.localToWorld.position));
+        });
+    }
+
+    public lastX(): number | undefined {
+        return this.xs[this.xs.length - 1];
+    }
 }
 
 class UnlistedRootSystem extends System {
@@ -75,8 +115,8 @@ class NestedGameplaySystem extends System {
 
 afterEach(disposeEditorWorlds);
 
-function serviceState(mode: EditorMode, gameplayTicks: number, view: EditorView): EditorServiceState {
-    return {mode, gameplayTicks, view, worldStoppedError: null};
+function serviceState(mode: EditorMode, gameplayTicks: number): EditorServiceState {
+    return {mode, gameplayTicks, worldStoppedError: null};
 }
 
 describe("EditorWorldService requests", () => {
@@ -141,6 +181,22 @@ describe("EditorWorldService requests", () => {
         expect(fieldsOf(details, "Sprite")).toEqual({image: {inline: {width: INLINE_SPRITE_WIDTH, height: INLINE_SPRITE_HEIGHT}}, tint: "#00ff00", opacity: 1});
         expect(fieldsOf(details, "UnregisteredTag")).toEqual({});
         expect(await failureOf(ask(harnessed, {op: "getEntity", entity: NULL_ENTITY}))).toBe('Editor request "getEntity" failed: No entity 0 in this world');
+    });
+
+    test("getField returns an inline sprite image in full, which setField takes back after a path replaced it", async () => {
+        let entity = NULL_ENTITY;
+        const harnessed = editorWorld(world => {
+            const sprite = new Sprite(SpriteImage.solid(INLINE_SPRITE_WIDTH, INLINE_SPRITE_HEIGHT, GREEN_RGB), GREEN_RGB);
+            entity = world.entityManager.createEntity("dot", [new LocalPosition(), sprite, new LocalToWorld()]);
+        });
+        const {value} = await ask(harnessed, {op: "getField", entity, typeName: "Sprite", key: "image"});
+        const greenPixel = [0, 255, 0, 255];
+        const rgba = new Uint8Array(Array.from({length: INLINE_SPRITE_WIDTH * INLINE_SPRITE_HEIGHT}, () => greenPixel).flat());
+        expect(value).toEqual({width: INLINE_SPRITE_WIDTH, height: INLINE_SPRITE_HEIGHT, rgbaBase64: encodeBase64(rgba)});
+        await ask(harnessed, {op: "setField", entity, typeName: "Sprite", key: "image", value: {path: SPRITE_PATH}});
+        expect(await ask(harnessed, {op: "getField", entity, typeName: "Sprite", key: "image"})).toEqual({value: {path: SPRITE_PATH}});
+        expect(await ask(harnessed, {op: "setField", entity, typeName: "Sprite", key: "image", value})).toEqual({value: {inline: {width: INLINE_SPRITE_WIDTH, height: INLINE_SPRITE_HEIGHT}}});
+        expect(await failureOf(ask(harnessed, {op: "getField", entity, typeName: "Sprite", key: "missing"}))).toBe('Editor request "getField" failed: Sprite has no field "missing"');
     });
 
     test("a failed request reaches the page with the stack of the world code that threw", async () => {
@@ -373,7 +429,7 @@ describe("EditorWorldService modes", () => {
         expect(counter.runs).toBe(0);
         expect([counter.enabled, switchedOff.enabled]).toEqual([false, false]);
 
-        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 0, "game"));
+        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 0));
         expect(counter.enabled).toBe(true);
         expect(switchedOff.enabled).toBe(false);
         expect(await waitUntil(() => counter.runs >= PLAY_RUNS)).toBe(true);
@@ -388,20 +444,20 @@ describe("EditorWorldService modes", () => {
         expect(counter.runs).toBe(runsWhenPaused);
 
         const stepped = await ask(harnessed, {op: "step"});
-        expect(stepped).toEqual(serviceState("paused", paused.gameplayTicks + 1, "game"));
+        expect(stepped).toEqual(serviceState("paused", paused.gameplayTicks + 1));
         expect(counter.runs).toBe(runsWhenPaused + 1);
         expect(await framesPass(harnessed)).toBe(true);
         expect(counter.runs).toBe(runsWhenPaused + 1);
 
-        expect(await ask(harnessed, {op: "setMode", mode: "edit"})).toEqual(serviceState("edit", 0, "scene"));
+        expect(await ask(harnessed, {op: "setMode", mode: "edit"})).toEqual(serviceState("edit", 0));
         expect(await framesPass(harnessed)).toBe(true);
         expect(counter.runs).toBe(runsWhenPaused + 1);
 
         const fromEdit = await ask(harnessed, {op: "step"});
-        expect(fromEdit).toEqual(serviceState("paused", 1, "scene"));
+        expect(fromEdit).toEqual(serviceState("paused", 1));
         expect(counter.runs).toBe(runsWhenPaused + 2);
 
-        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 1, "game"));
+        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 1));
         await ask(harnessed, {op: "setMode", mode: "edit"});
         service.detach();
         expect([counter.enabled, switchedOff.enabled]).toEqual([true, false]);
@@ -489,6 +545,25 @@ describe("EditorWorldService modes", () => {
         expect(byName(entities, "kept")?.entity).toBe(kept);
         expect(fieldsOf(await ask(harnessed, {op: "getEntity", entity: kept}), "LocalPosition")).toEqual({xyz: [1, 2, 3]});
         expect(fieldsOf(await ask(harnessed, {op: "getEntity", entity: byName(entities, "doomed")!.entity}), "LocalPosition")).toEqual({xyz: [7, 7, 7]});
+    });
+
+    test("stop snaps interpolated transforms to the restored pose instead of blending back from the last played one", async () => {
+        const harnessed = editorWorld(world => {
+            world.getOrCreateSystem(StepMoverSystem);
+            world.getOrCreateSystem(PresentedMoverProbe);
+            world.entityManager.createEntity("mover", [new LocalPosition(RESTORED_X, 0, 0), new LocalToWorld(), new InterpolatedTransform()]);
+        }, {drivenFrames: false, gameplaySystems: [StepMoverSystem]});
+        const {world} = harnessed;
+        const probe = world.tryGetSystem(PresentedMoverProbe)!;
+        const runFrameOfOneTick = (): void => harnessed.frameAfter(world.loopTiming.tickDeltaMs);
+        runFrameOfOneTick();
+        await ask(harnessed, {op: "setMode", mode: "play"});
+        for (let tick = 0; tick < PLAYED_TICKS; tick++) runFrameOfOneTick();
+        expect(probe.lastX()).toBeGreaterThan(RESTORED_X);
+
+        await ask(harnessed, {op: "setMode", mode: "edit"});
+        runFrameOfOneTick();
+        expect(probe.lastX()).toBe(RESTORED_X);
     });
 
     test("loading a scene while playing stops play first and loads into edit mode", async () => {

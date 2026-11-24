@@ -57,6 +57,7 @@ export class SpritePixelRasterizer {
         const left = Math.max(0, xPx), right = Math.min(framebufferWidthPx, xPx + destinationWidthPx);
         const top = Math.max(0, yPx), bottom = Math.min(framebuffer.heightPx, yPx + destinationHeightPx);
         if (left >= right || top >= bottom) return;
+        framebuffer.markDrawn(left, top, right, bottom);
 
         const fade = depthFadeOf(depth, this.config.maxDepthFade);
         const tinted = tint !== WHITE_RGB;

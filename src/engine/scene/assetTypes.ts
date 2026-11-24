@@ -1,6 +1,7 @@
 import {SPRITE_IMAGE_ASSET_TYPE} from "../rendering/2d/spriteImageAssetType";
 import {MESH_ASSET_TYPE} from "../rendering/3d/meshAssetType";
 import {SHADER_ASSET_TYPE} from "../rendering/shaderAssetType";
+import type {StructFieldType} from "./fieldSchema";
 import type {FieldDecodeContext, FieldEncodeContext} from "./fieldValueCodec";
 import {PREFAB_ASSET_TYPE} from "./prefabAssetType";
 import type {SceneAssetLoader} from "./sceneAssets";
@@ -11,6 +12,8 @@ export {MESH_ASSET_TYPE, PREFAB_ASSET_TYPE, SHADER_ASSET_TYPE, SPRITE_IMAGE_ASSE
 
 export interface InlineAssetCodec<A> {
     readonly expectation: string;
+
+    editableStruct?(): StructFieldType;
 
     matches(json: SceneJsonObject): boolean;
 
@@ -27,8 +30,6 @@ export interface AssetType<A = unknown> {
     readonly inline?: InlineAssetCodec<A>;
 
     isAsset(value: unknown): value is A;
-
-    isDerived?(value: A): boolean;
 
     load(path: string, loader: SceneAssetLoader): A;
 

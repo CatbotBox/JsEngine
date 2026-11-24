@@ -51,6 +51,9 @@ import type {
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {ISOLATION_HEADERS, ServerSentEventChannel} from "../../hosts/desktop";
 import {folderKey, isLinkedToCheckout} from "./projectLinks";
+import {spawnToolchainServer, toolchainCliPath, ToolchainServerClient, watchSourceTree} from "./toolchainServerClient";
+import type {ToolchainServerStarter} from "./toolchainServerClient";
+import {TOOLCHAIN_SERVER_COMMAND} from "./toolchainServerProtocol";
 
 export type ExternalOpener = (absolutePath: string) => Promise<void>;
 
@@ -78,6 +81,7 @@ export interface ProjectServerOptions {
     readonly openExternally?: ExternalOpener;
     readonly showInFolder?: ExternalOpener;
     readonly runToolchain?: ToolchainRunner;
+    readonly startToolchainServer?: ToolchainServerStarter;
 }
 
 export type ProjectWorkerBuildReport =
@@ -120,9 +124,6 @@ const PROJECT_ID_BYTES = 12;
 const DIRECTORY_SIZE = 0;
 const CHANGE_DEBOUNCE_MS = 200;
 const REBUILD_DEBOUNCE_MS = 250;
-const TOOLCHAIN_CLI: readonly string[] = ["src", "toolchain", "cli.ts"];
-const EDITOR_BUILD_ARGUMENTS: readonly string[] = ["build", "--target", "editor", "--report", "json"];
-const GENERATE_ARGUMENTS: readonly string[] = ["generate", "--report", "json"];
 const BUILD_COMMAND = "build";
 const PACKAGE_COMMAND = "package";
 const LINK_COMMAND = "link";
@@ -132,8 +133,6 @@ const EXIT_SUCCESS = 0;
 const LINE_BREAKS = /\r?\n/;
 const NOT_FOUND_INDEX = -1;
 const PROJECT_ARGUMENT = "--project";
-const SIMULATE_ARGUMENT = "--simulate";
-const BACKEND_ARGUMENT = "--backend";
 const SOURCE_DIRECTORY = "src";
 const BUILD_OUTPUT_DIRECTORY = "dist";
 const IGNORED_LISTING_DIRECTORIES: ReadonlySet<string> = new Set([".git", "node_modules", ".jsengine"]);
@@ -236,40 +235,8 @@ export function locateBun(explicitPath?: string): BunLocation {
     return {unavailableReason: `bun is not on PATH, and building project code needs it (install it from https://bun.sh)`};
 }
 
-function lastJsonLine(text: string): unknown {
-    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
-    for (let index = lines.length - 1; index >= 0; index--) {
-        try {
-            return JSON.parse(lines[index]);
-        } catch {
-            continue;
-        }
-    }
-    return undefined;
-}
-
-interface ToolchainRun {
-    readonly report: unknown;
-    readonly stderr: string;
-    readonly exitCode: number | null;
-}
-
-function runBuildCommand(request: ProjectBuildRequest): Promise<ToolchainRun> {
-    return runToolchainCommand(request.repoRoot, request.bunPath, [
-        ...EDITOR_BUILD_ARGUMENTS,
-        SIMULATE_ARGUMENT, request.gameTarget.target,
-        BACKEND_ARGUMENT, request.gameTarget.backend,
-        PROJECT_ARGUMENT, resolve(request.folder),
-    ]);
-}
-
-async function runToolchainCommand(repoRoot: string, bunPath: string, args: readonly string[]): Promise<ToolchainRun> {
-    const {stdout, stderr, exitCode} = await spawnToolchainCommand(repoRoot, bunPath, args);
-    return {report: lastJsonLine(stdout), stderr, exitCode};
-}
-
 export function spawnToolchainCommand(repoRoot: string, bunPath: string, args: readonly string[]): Promise<ToolchainOutput> {
-    const command = [join(repoRoot, ...TOOLCHAIN_CLI), ...args];
+    const command = [toolchainCliPath(repoRoot), ...args];
     return new Promise((resolveRun, rejectRun) => {
         const child = spawn(bunPath, command, {
             cwd: repoRoot,
@@ -317,28 +284,26 @@ function isBuildReport(value: unknown): value is ProjectWorkerBuildReport {
     return succeeded || (report.ok === false && isStringArray(report.errors));
 }
 
-export async function generateProjectFiles(request: ProjectGenerateRequest): Promise<GenerateProjectReport> {
-    let run: ToolchainRun;
+export async function generateProjectFiles(request: ProjectGenerateRequest, toolchain: ToolchainServerClient): Promise<GenerateProjectReport> {
+    let report: unknown;
     try {
-        run = await runToolchainCommand(request.repoRoot, request.bunPath, [...GENERATE_ARGUMENTS, PROJECT_ARGUMENT, resolve(request.folder)]);
+        report = await toolchain.generate(resolve(request.folder));
     } catch (error) {
         return {ok: false, errors: [`Could not run ${request.bunPath}: ${describeError(error)}`]};
     }
-    if (isGenerateProjectReport(run.report)) return run.report;
-    const output = run.stderr.trim();
-    return {ok: false, errors: [`jsengine generate exited with ${run.exitCode}${output.length > 0 ? `: ${output}` : " and no report"}`]};
+    if (isGenerateProjectReport(report)) return report;
+    return {ok: false, errors: [`jsengine ${TOOLCHAIN_SERVER_COMMAND} answered without a generate report`]};
 }
 
-export async function buildProjectEditorWorker(request: ProjectBuildRequest): Promise<ProjectBuildOutcome> {
-    let run: ToolchainRun;
+export async function buildProjectEditorWorker(request: ProjectBuildRequest, toolchain: ToolchainServerClient): Promise<ProjectBuildOutcome> {
+    let report: unknown;
     try {
-        run = await runBuildCommand(request);
+        report = await toolchain.buildEditor(resolve(request.folder), request.gameTarget);
     } catch (error) {
         return {ok: false, errors: [`Could not run ${request.bunPath}: ${describeError(error)}`], generatedFiles: []};
     }
-    if (isBuildReport(run.report)) return run.report.ok ? {...run.report, inputs: run.report.inputs.map(input => resolve(input))} : run.report;
-    const output = run.stderr.trim();
-    return {ok: false, errors: [`bun build exited with ${run.exitCode}${output.length > 0 ? `: ${output}` : " and no report"}`], generatedFiles: []};
+    if (isBuildReport(report)) return report.ok ? {...report, inputs: report.inputs.map(input => resolve(input))} : report;
+    return {ok: false, errors: [`jsengine ${TOOLCHAIN_SERVER_COMMAND} answered without a build report`], generatedFiles: []};
 }
 
 export async function checkProjectTarget(request: ProjectTargetRequest, runToolchain: ToolchainRunner = spawnToolchainCommand): Promise<TargetReportResult> {
@@ -505,6 +470,7 @@ export class ProjectServer {
     private readonly repoSource: string | undefined;
     private readonly repoBuildOutput: string | undefined;
     private readonly runToolchain: ToolchainRunner;
+    private readonly toolchainServer: ToolchainServerClient | undefined;
     private sourceWatcher: FSWatcher | undefined;
     private siteChain: Promise<unknown> = Promise.resolve();
 
@@ -512,6 +478,7 @@ export class ProjectServer {
         this.runToolchain = options.runToolchain ?? spawnToolchainCommand;
         this.repoSource = options.repoRoot === undefined ? undefined : join(options.repoRoot, SOURCE_DIRECTORY);
         this.repoBuildOutput = options.repoRoot === undefined ? undefined : join(options.repoRoot, BUILD_OUTPUT_DIRECTORY);
+        this.toolchainServer = this.toolchainServerClient();
     }
 
     public handles(url: URL): boolean {
@@ -544,6 +511,20 @@ export class ProjectServer {
         }
         this.sourceWatcher?.close();
         this.sourceWatcher = undefined;
+        this.toolchainServer?.close();
+    }
+
+    private toolchainServerClient(): ToolchainServerClient | undefined {
+        const repoRoot = this.options.repoRoot;
+        const bun = this.options.bun;
+        if (repoRoot === undefined || !("path" in bun)) return undefined;
+        return new ToolchainServerClient({
+            repoRoot,
+            bunPath: bun.path,
+            sourceRoot: join(repoRoot, SOURCE_DIRECTORY),
+            start: this.options.startToolchainServer ?? spawnToolchainServer,
+            watchSources: watchSourceTree,
+        });
     }
 
     private buildUnavailableReason(): string | undefined {
@@ -874,9 +855,10 @@ export class ProjectServer {
     private async runGenerate(project: OpenProject): Promise<GenerateProjectReport> {
         const repoRoot = this.options.repoRoot;
         const bun = this.options.bun;
+        const toolchain = this.toolchainServer;
         const unavailable = this.buildUnavailableReason();
-        if (unavailable !== undefined || repoRoot === undefined || !("path" in bun)) return {ok: false, errors: [unavailable ?? "generating is unavailable"]};
-        return await generateProjectFiles({repoRoot, bunPath: bun.path, folder: project.folder});
+        if (unavailable !== undefined || repoRoot === undefined || !("path" in bun) || toolchain === undefined) return {ok: false, errors: [unavailable ?? "generating is unavailable"]};
+        return await generateProjectFiles({repoRoot, bunPath: bun.path, folder: project.folder}, toolchain);
     }
 
     private onSiteChain<T>(work: () => Promise<T>): Promise<T> {
@@ -913,12 +895,13 @@ export class ProjectServer {
     private async runBuild(project: OpenProject, chosen: GameTarget | undefined): Promise<BuildProjectResult> {
         const repoRoot = this.options.repoRoot;
         const bun = this.options.bun;
+        const toolchain = this.toolchainServer;
         const unavailable = this.buildUnavailableReason();
-        if (unavailable !== undefined || repoRoot === undefined || !("path" in bun)) return {errors: [unavailable ?? "building is unavailable"]};
+        if (unavailable !== undefined || repoRoot === undefined || !("path" in bun) || toolchain === undefined) return {errors: [unavailable ?? "building is unavailable"]};
         const validation = await this.validate(project);
         if (!validation.ok) return {errors: validation.problems};
         const gameTarget = chosen ?? await this.rememberedGameTarget(project);
-        const outcome = await buildProjectEditorWorker({repoRoot, bunPath: bun.path, folder: project.folder, gameTarget});
+        const outcome = await buildProjectEditorWorker({repoRoot, bunPath: bun.path, folder: project.folder, gameTarget}, toolchain);
         project.generatedTexts = await this.readGeneratedFiles(project, outcome.generatedFiles);
         if (!outcome.ok) return {errors: outcome.errors};
         project.bundlePath = outcome.bundlePath;

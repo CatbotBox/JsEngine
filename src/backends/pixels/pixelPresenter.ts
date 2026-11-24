@@ -10,6 +10,7 @@ export interface PixelPresenter {
     size(): PixelPresenterSize;
     onResize(listener: () => void): () => void;
     backlogged?(): boolean;
+    onPresented?(listener: () => void): () => void;
     start(): void;
     stop(): void;
     dispose?(): void;

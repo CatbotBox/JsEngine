@@ -1,8 +1,8 @@
 import {Component} from "./component";
-import type {FramePacing} from "../platform/platform";
+import type {CappedPacingKind, FramePacing} from "../platform/platform";
 import type {RendererKind} from "./activeRenderers";
 import {MAX_FRAME_DELTA_MS} from "./frameLoop";
-import {displayPacing, interleavedFrameIntervalMs, intervalPacing, limitPacing, UNCAPPED_PACING} from "../platform/framePacing";
+import {cappedFramePacing, displayPacing, INTERVAL_CAPPED_PACING, interleavedFrameIntervalMs, intervalPacing, limitPacing, UNCAPPED_PACING} from "../platform/framePacing";
 
 const MS_PER_SECOND = 1000;
 const DEFAULT_SIMULATION_TICK_RATE = 60;
@@ -30,7 +30,11 @@ export interface LoopTiming {
     readonly maxTicksPerFrame: number;
 }
 
-export function resolveLoopTiming(settings: FrameLoopSettings, frameRenderer: RendererKind | undefined): LoopTiming {
+export function resolveLoopTiming(
+    settings: FrameLoopSettings,
+    frameRenderer: RendererKind | undefined,
+    cappedPacing: CappedPacingKind = INTERVAL_CAPPED_PACING,
+): LoopTiming {
     const {simulationTickRate, renderRate, matchDisplay, cpuRenderRateLimit, maxCatchUpTicks} = settings;
     const validTickRate = Number.isFinite(simulationTickRate) && simulationTickRate > 0;
     if (!validTickRate) {
@@ -54,18 +58,18 @@ export function resolveLoopTiming(settings: FrameLoopSettings, frameRenderer: Re
     const renderRateLimit = renderRateLimited ? cpuRenderRateLimit : UNCAPPED_RENDER_RATE;
     const pacing = frameRenderer === undefined
         ? intervalPacing(Math.min(tickDeltaMs, MAX_FRAME_DELTA_MS))
-        : presentationPacing(renderRate, matchDisplay, renderRateLimit);
+        : presentationPacing(renderRate, matchDisplay, renderRateLimit, cappedPacing);
     const frameIntervalMs = interleavedFrameIntervalMs(pacing);
     const maxTicksPerFrame = ticksPerFrame(frameIntervalMs, tickDeltaMs) * maxCatchUpTicks;
     return {tickDeltaMs, pacing, renderRateLimit, maxTicksPerFrame};
 }
 
-function presentationPacing(renderRate: number, matchDisplay: boolean, renderRateLimit: number): FramePacing {
+function presentationPacing(renderRate: number, matchDisplay: boolean, renderRateLimit: number, cappedPacing: CappedPacingKind): FramePacing {
     const renderCapped = Number.isFinite(renderRate);
     const renderIntervalMs = MS_PER_SECOND / renderRate;
     const requestedPacing = matchDisplay
         ? displayPacing(renderCapped ? renderIntervalMs : undefined)
-        : renderCapped ? intervalPacing(renderIntervalMs) : UNCAPPED_PACING;
+        : renderCapped ? cappedFramePacing(cappedPacing, renderIntervalMs) : UNCAPPED_PACING;
     return Number.isFinite(renderRateLimit) ? limitPacing(requestedPacing, MS_PER_SECOND / renderRateLimit) : requestedPacing;
 }
 
@@ -81,8 +85,13 @@ export class LoopTimingResolver {
     private _cpuRenderRateLimit = DEFAULT_CPU_RENDER_RATE_LIMIT;
     private _maxCatchUpTicks = DEFAULT_MAX_CATCH_UP_TICKS;
     private _frameRenderer: RendererKind | undefined;
+    private _cappedPacing = INTERVAL_CAPPED_PACING;
 
-    public resolve(settings: FrameLoopSettings, frameRenderer: RendererKind | undefined): LoopTiming {
+    public resolve(
+        settings: FrameLoopSettings,
+        frameRenderer: RendererKind | undefined,
+        cappedPacing: CappedPacingKind = INTERVAL_CAPPED_PACING,
+    ): LoopTiming {
         const resolved = this._resolved;
         if (resolved !== undefined
             && settings.simulationTickRate === this._simulationTickRate
@@ -90,14 +99,16 @@ export class LoopTimingResolver {
             && settings.matchDisplay === this._matchDisplay
             && settings.cpuRenderRateLimit === this._cpuRenderRateLimit
             && settings.maxCatchUpTicks === this._maxCatchUpTicks
-            && frameRenderer === this._frameRenderer) return resolved;
-        const timing = resolveLoopTiming(settings, frameRenderer);
+            && frameRenderer === this._frameRenderer
+            && cappedPacing === this._cappedPacing) return resolved;
+        const timing = resolveLoopTiming(settings, frameRenderer, cappedPacing);
         this._simulationTickRate = settings.simulationTickRate;
         this._renderRate = settings.renderRate;
         this._matchDisplay = settings.matchDisplay;
         this._cpuRenderRateLimit = settings.cpuRenderRateLimit;
         this._maxCatchUpTicks = settings.maxCatchUpTicks;
         this._frameRenderer = frameRenderer;
+        this._cappedPacing = cappedPacing;
         this._resolved = timing;
         return timing;
     }

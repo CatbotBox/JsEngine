@@ -24,7 +24,7 @@ const SMOKE_FLAG = "--smoke";
 const WINDOW_TARGET: HostTarget = "window";
 
 export async function buildWindowSite(project?: string): Promise<WindowSiteBuild> {
-    const features = await buildWebSite({prod: false, withEditor: true, target: WINDOW_TARGET, project});
+    const features = await buildWebSite({prod: false, withEditor: true, target: WINDOW_TARGET, project, regenerate: true});
     return {mainProcess: await bundleMainProcess(), features};
 }
 

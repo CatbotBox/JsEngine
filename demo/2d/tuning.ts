@@ -8,6 +8,9 @@ export class Demo2dHudTuning {
     public entitiesFormat = "";
     public entitiesDecimals: Int = 0;
     public fadeSystemInactiveText = "";
+    public presentationWindowMs = 0;
+    public presentationFormat = "";
+    public presentationDecimals: Int = 0;
 }
 
 export class Demo2dTuning extends Resource {

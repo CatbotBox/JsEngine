@@ -1,6 +1,6 @@
 {
   "format": "jsengine-scene",
-  "version": 2,
+  "version": 3,
   "entities": [
     {
       "id": 1,
@@ -15,20 +15,19 @@
           ]
         },
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              "#"
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#ffffff",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            "#"
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "LocalToWorld": {},
         "RenderBounds": {},

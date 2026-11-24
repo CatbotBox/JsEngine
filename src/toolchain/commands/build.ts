@@ -9,7 +9,7 @@ import {
     writeBundleBaseline,
 } from "../build/bundleReport";
 import type {BundleComparison} from "../build/bundleReport";
-import {buildEditorWorker} from "../build/editorBuild";
+import {buildEditorWorker, editorWorkerReport} from "../build/editorBuild";
 import {
     checkBundleFeatures,
     FEATURE_PROBLEM_FIX,
@@ -27,14 +27,14 @@ import {projectFolderOf} from "../project";
 import {repoRelative} from "../repoPaths";
 import {BACKEND_OPTION, backendFor, BUILD_TARGETS, editorSimulationOf, PROJECT_OPTION, SIMULATE_OPTION, targetOf} from "../targets";
 import type {EditorSimulation, RunTarget, Target} from "../targets";
-import type {ProjectWorkerBuildReport} from "../../editor/desktop";
 import {requireScope} from "./command";
 import type {CommandResult} from "./command";
 
 const JSON_REPORT = "json";
 const BUNDLES_REPORT = "bundles";
 const UPDATE_BASELINE_OPTION = "update-baseline";
-const BUNDLES_REPORT_EXCLUDED_OPTIONS: readonly string[] = ["target", "simulate", "backend", "project", "prod", "with-editor"];
+const NO_GENERATE_OPTION = "no-generate";
+const BUNDLES_REPORT_EXCLUDED_OPTIONS: readonly string[] = ["target", "simulate", "backend", "project", "prod", "with-editor", NO_GENERATE_OPTION];
 const EDITOR_TARGET = "editor" satisfies Target;
 
 const OPTIONS = {
@@ -44,6 +44,7 @@ const OPTIONS = {
     backend: BACKEND_OPTION,
     prod: {kind: "flag"},
     "with-editor": {kind: "flag"},
+    [NO_GENERATE_OPTION]: {kind: "flag"},
     report: {kind: "value", values: [JSON_REPORT, BUNDLES_REPORT]},
     [UPDATE_BASELINE_OPTION]: {kind: "flag"},
 } as const;
@@ -87,17 +88,9 @@ function siteProjectOf(projectOption: string | undefined): string | undefined {
     return projectOption === undefined ? undefined : projectFolderOf(projectOption);
 }
 
-async function editorReport(projectOption: string | undefined, simulation: EditorSimulation): Promise<ProjectWorkerBuildReport> {
-    try {
-        return await buildEditorWorker(projectFolderOf(projectOption), simulation);
-    } catch (error) {
-        return {ok: false, errors: [describeError(error)], generatedFiles: []};
-    }
-}
-
 async function buildEditor(projectOption: string | undefined, simulation: EditorSimulation, jsonReport: boolean): Promise<CommandResult> {
     if (jsonReport) {
-        const report = await editorReport(projectOption, simulation);
+        const report = await editorWorkerReport(projectOption, simulation);
         process.stdout.write(JSON.stringify(report) + "\n");
         return report.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
@@ -183,7 +176,7 @@ export async function buildCommand(args: readonly string[]): Promise<CommandResu
     if (reportKind === BUNDLES_REPORT) return await bundlesReport(options);
     const target = targetOf(options.value("target"), BUILD_TARGETS);
     requireScope(options, ["simulate"], target === EDITOR_TARGET, `--target ${EDITOR_TARGET}`);
-    requireScope(options, ["prod", "with-editor"], target === "web", "--target web");
+    requireScope(options, ["prod", "with-editor", NO_GENERATE_OPTION], target === "web", "--target web");
     const requestedBackend = options.value("backend");
     const jsonReport = reportKind === JSON_REPORT;
     if (target === EDITOR_TARGET) return await buildEditor(options.value("project"), editorSimulationOf(options.value("simulate"), requestedBackend), jsonReport);
@@ -194,7 +187,8 @@ export async function buildCommand(args: readonly string[]): Promise<CommandResu
             return await finishFeatureCheck(target, jsonReport, () => checkTerminalBuild(projectFolderOf(options.value("project"))));
         case "web": {
             const prod = options.flag("prod");
-            return await finishFeatureCheck(target, jsonReport, () => buildWebSite({prod, withEditor: !prod || options.flag("with-editor"), target, project: siteProjectOf(options.value("project"))}));
+            const regenerate = !options.flag(NO_GENERATE_OPTION);
+            return await finishFeatureCheck(target, jsonReport, () => buildWebSite({prod, withEditor: !prod || options.flag("with-editor"), target, project: siteProjectOf(options.value("project")), regenerate}));
         }
         case "window":
             return await finishFeatureCheck(target, jsonReport, () => builtWindowFeatures(siteProjectOf(options.value("project"))));

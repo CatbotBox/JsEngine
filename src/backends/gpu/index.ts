@@ -1,10 +1,10 @@
 export {GPU_BUFFER_USAGE, GPU_SHADER_STAGE, GPU_TEXTURE_USAGE} from "./gpuTypes";
 export type {GpuBufferDevice, GpuCanvasContext, GpuCanvasSurface, GpuDevice, GpuQueue, GpuShader, GpuTextureDevice} from "./gpuTypes";
 export {GpuDeviceResource} from "./gpuDeviceResource";
-export type {GpuEntryPoint} from "./gpuDeviceResource";
+export type {GpuCanvasAttacher, GpuEntryPoint} from "./gpuDeviceResource";
 export {GpuFrame, DEPTH_FORMAT, clearColorOf} from "./gpuFrame";
-export {GpuCanvasPixelPresenter, MAX_GPU_FRAMES_IN_FLIGHT} from "./gpuCanvasPixelPresenter";
-export type {ScreenUnitReport} from "./gpuCanvasPixelPresenter";
+export {GpuCanvasPixelPresenter, gpuCanvasPresenterFactory, gpuFrameOf, MAX_GPU_FRAMES_IN_FLIGHT} from "./gpuCanvasPixelPresenter";
+export type {GpuCanvasPresenterFactory, GpuCanvasSurfaceSize, ScreenUnitReport} from "./gpuCanvasPixelPresenter";
 export {GpuMeshPassSettings, LINEAR_TEXTURE_FILTERING, MULTISAMPLE_COUNT, NEAREST_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 export type {GpuSampleCount, GpuTextureFiltering} from "./gpuMeshPassSettings";
 export {GpuMeshPassSystem, GPU_BACKEND_EXPERIMENTAL_NOTICE} from "./gpuMeshPassSystem";

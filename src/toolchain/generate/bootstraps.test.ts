@@ -163,7 +163,10 @@ describe("mains generator", () => {
         const gpu = linesOf(output, editorWorkerMainFile("gpu"));
         expectLine(gpu, `    const device = await requestGpuDevice(page);`);
         expectLine(gpu, `    installGpuBackend(world, device, presenter, GPU_STANDARD_PASSES);`);
-        expectLine(linesOf(output, editorWorkerMainFile("pixels")), `    installPixelsBackend(world, presenter, PIXELS_STANDARD_PASSES);`);
+        expectLine(gpu, `    return {canvasPresenter: gpuCanvasPresenterFactory(device)};`);
+        const pixels = linesOf(output, editorWorkerMainFile("pixels"));
+        expectLine(pixels, `    installPixelsBackend(world, presenter, PIXELS_STANDARD_PASSES);`);
+        expect([...cells, ...pixels].some(line => line.includes("canvasPresenter"))).toBe(false);
     });
 
     test("every main starts the manifest's own entry when it names one", () => {

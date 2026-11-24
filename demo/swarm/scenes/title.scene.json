@@ -1,0 +1,125 @@
+{
+  "format": "jsengine-scene",
+  "version": 3,
+  "entities": [
+    {
+      "id": 1,
+      "name": "swarmRenderSettings",
+      "enabled": true,
+      "components": {
+        "SpriteCellPassSettings": {
+          "maxDepthFade": "Infinity",
+          "colorQuantMask": 16579836,
+          "backgroundColor": "#000000",
+          "halfBlockCells": true
+        },
+        "SpritePixelPassSettings": {
+          "maxDepthFade": "Infinity"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "camera",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "Camera": {
+          "nearPlaneDistance": 0.1,
+          "farPlaneDistance": 100
+        },
+        "LocalToWorld": {}
+      }
+    },
+    {
+      "id": 3,
+      "name": "swarmStatus",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            ""
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 10
+          },
+          "background": {
+            "palette": 0
+          }
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "top-left"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 4,
+      "name": "swarmStats",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            ""
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 2
+          },
+          "background": {
+            "palette": 0
+          }
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "top-right"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 5,
+      "name": "swarmBanner",
+      "enabled": true,
+      "components": {
+        "TextSprite": {
+          "image": [
+            ""
+          ],
+          "transparentChar": null,
+          "foreground": {
+            "palette": 14
+          },
+          "background": {
+            "palette": 0
+          }
+        },
+        "ScreenAnchor": {
+          "anchorPosition": "middle-center"
+        },
+        "HudElement": {},
+        "RenderBounds": {}
+      }
+    },
+    {
+      "id": 6,
+      "name": "swarmHud",
+      "enabled": true,
+      "components": {
+        "SwarmHud": {
+          "status": 3,
+          "stats": 4,
+          "banner": 5
+        }
+      }
+    }
+  ]
+}

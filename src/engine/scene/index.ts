@@ -138,7 +138,8 @@ export {
     SceneInstance,
     withoutSceneMembership,
 } from "./sceneInstance";
-export {SceneManager} from "./sceneManager";
+export {SceneLoadCancelledError, SceneManager} from "./sceneManager";
+export {SceneLoader} from "./sceneLoader";
 export type {
     LoadedScene,
     PersistentEntityPolicy,

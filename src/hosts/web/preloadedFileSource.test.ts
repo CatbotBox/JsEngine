@@ -194,6 +194,42 @@ describe("PreloadedFileSource", () => {
     });
 });
 
+describe("PreloadedFileSource refetch", () => {
+    test("refetch replaces the bytes of each path once, asking the server to revalidate its cache", async () => {
+        const served: Record<string, string> = {"assets/tuning.asset.json": "old"};
+        const requests: {url: string, cache: string | undefined}[] = [];
+        const files = new PreloadedFileSource({
+            fetch: async (url, options) => {
+                requests.push({url, cache: options?.cache});
+                const body = served[url];
+                return body === undefined ? response(404) : response(200, body);
+            },
+        });
+        await files.preload(["assets/tuning.asset.json"]);
+        served["assets/tuning.asset.json"] = "new and longer";
+        await files.refetch(["assets/tuning.asset.json", "./assets/tuning.asset.json"]);
+        expect(files.readText("assets/tuning.asset.json")).toBe("new and longer");
+        expect(requests).toEqual([
+            {url: "assets/tuning.asset.json", cache: undefined},
+            {url: "assets/tuning.asset.json", cache: "no-cache"},
+        ]);
+    });
+
+    test("a refetched file the server no longer has is gone; an HTTP failure rejects and keeps the old bytes", async () => {
+        const served: Record<string, string> = {"a.asset.json": "a", "b.asset.json": "b"};
+        const files = new PreloadedFileSource({fetch: stubFetch(served)});
+        await files.preload(["a.asset.json", "b.asset.json"]);
+        delete served["a.asset.json"];
+        await files.refetch(["a.asset.json"]);
+        expect(files.exists("a.asset.json")).toBe(false);
+        let fetches = 0;
+        const failing = new PreloadedFileSource({fetch: async () => fetches++ === 0 ? response(200, "b") : response(500)});
+        await failing.preload(["b.asset.json"]);
+        expect((await rejection(failing.refetch(["b.asset.json"])))?.message.includes("HTTP 500")).toBe(true);
+        expect(failing.readText("b.asset.json")).toBe("b");
+    });
+});
+
 describe("PreloadedFileSource lazy entries", () => {
     test("a lazy entry is registered, not fetched: it exists and stats, reads throw until ensureLoaded", async () => {
         const requested: string[] = [];

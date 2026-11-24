@@ -4,7 +4,6 @@ import type {EditorWorkspace} from "./editorWorkspace";
 import {GAME_STATS_POLL_INTERVAL_MS, gameStatsLines, tickRates} from "./gameStats";
 import type {TickRates} from "./gameStats";
 
-const GAME_VIEW = "game";
 const LINE_BREAK = "\n";
 const VIEWPORT_CANVAS_SELECTOR = "canvas";
 
@@ -26,7 +25,7 @@ export class GameStatsOverlay {
 
     public update(): void {
         const workspace = this.workspace;
-        const shown = workspace.gameViewOptions.stats && workspace.view === GAME_VIEW && !workspace.closed;
+        const shown = workspace.gameViewOptions.stats && !workspace.closed;
         this.element.hidden = !shown;
         if (shown) this.start();
         else this.stop();

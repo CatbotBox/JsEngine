@@ -1,0 +1,11 @@
+export const TRS_POSITION_X = 0;
+export const TRS_POSITION_Y = 1;
+export const TRS_POSITION_Z = 2;
+export const TRS_ROTATION_X = 3;
+export const TRS_ROTATION_Y = 4;
+export const TRS_ROTATION_Z = 5;
+export const TRS_ROTATION_W = 6;
+export const TRS_SCALE_X = 7;
+export const TRS_SCALE_Y = 8;
+export const TRS_SCALE_Z = 9;
+export const TRS_FLOATS = 10;

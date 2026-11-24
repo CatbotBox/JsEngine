@@ -1,6 +1,6 @@
 {
   "format": "jsengine-scene",
-  "version": 2,
+  "version": 3,
   "entities": [
     {
       "id": 1,
@@ -15,27 +15,26 @@
           ]
         },
         "Sprite": {
-          "image": null,
+          "image": {
+            "rows": [
+              "  #  ",
+              " #o# ",
+              "#####",
+              "#   #"
+            ],
+            "palette": [
+              {
+                "char": "#",
+                "rgb": "#40e0ff"
+              },
+              {
+                "char": "o",
+                "rgb": "#ffffff"
+              }
+            ]
+          },
           "tint": "#ffffff",
           "opacity": 1
-        },
-        "SpritePattern": {
-          "rows": [
-            "  #  ",
-            " #o# ",
-            "#####",
-            "#   #"
-          ],
-          "palette": [
-            {
-              "char": "#",
-              "rgb": "#40e0ff"
-            },
-            {
-              "char": "o",
-              "rgb": "#ffffff"
-            }
-          ]
         },
         "LocalToWorld": {},
         "RenderBounds": {},

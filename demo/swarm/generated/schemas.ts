@@ -7,7 +7,7 @@ import {ArenaTuning, BombTuning, ControlHint, EnemySpawn, GameOverBanner, HudTun
 import {INPUT_MAP_SCHEMA_ENTRY} from "@jsengine/engine/input";
 import {LIFETIME_SCHEMA_ENTRY, VELOCITY_SCHEMA_ENTRY} from "@jsengine/engine/motion";
 import {CAMERA_SCHEMA_ENTRY, HUD_ELEMENT_SCHEMA_ENTRY, RENDER_BOUNDS_SCHEMA_ENTRY, SCREEN_ANCHOR_SCHEMA_ENTRY, SCREEN_SIZE_SCHEMA_ENTRY, TEXT_SPRITE_SCHEMA_ENTRY} from "@jsengine/engine/rendering";
-import {SPRITE_IMAGE_ASSET_TYPE_ENTRY, SPRITE_PATTERN_SCHEMA_ENTRY, SPRITE_SCHEMA_ENTRY} from "@jsengine/engine/rendering/2d";
+import {SPRITE_IMAGE_ASSET_TYPE_ENTRY, SPRITE_SCHEMA_ENTRY} from "@jsengine/engine/rendering/2d";
 import {PREFAB_ASSET_TYPE_ENTRY, PREFAB_INSTANCE_SCHEMA_ENTRY} from "@jsengine/engine/scene";
 import {LOCAL_POSITION_SCHEMA_ENTRY, LOCAL_TO_WORLD_SCHEMA_ENTRY} from "@jsengine/engine/translation";
 
@@ -17,7 +17,6 @@ export const generatedSchemas: readonly SchemaEntry[] = [
     LOCAL_POSITION_SCHEMA_ENTRY,
     CAMERA_SCHEMA_ENTRY,
     SPRITE_SCHEMA_ENTRY,
-    SPRITE_PATTERN_SCHEMA_ENTRY,
     TEXT_SPRITE_SCHEMA_ENTRY,
     SCREEN_ANCHOR_SCHEMA_ENTRY,
     HUD_ELEMENT_SCHEMA_ENTRY,

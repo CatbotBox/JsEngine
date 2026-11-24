@@ -10,6 +10,7 @@ import {GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import type {MenuBarMenu} from "./menuBar";
 import type {EditorMenuId} from "../project/editorUiHooks";
 import {MENU_SEPARATOR} from "./popupMenu";
+import {inlineImageFieldKeys} from "./imageExtraction";
 import {isAssetKind} from "./projectFiles";
 import {SNAP_KIND_LABELS, SNAP_KINDS, snapStepText} from "./snapSteps";
 import type {SnapKind, SnapStepChoice} from "./snapSteps";
@@ -234,13 +235,17 @@ export function sceneTabMenu(commands: EditorCommands, tab: EditorSceneTab, acti
 
 export function componentMenu(commands: EditorCommands, target: ComponentTarget): MenuEntry[] {
     const component = commands.component;
-    return [
+    const entries: MenuEntry[] = [
         commandEntryFor(component.reset, target),
         commandEntryFor(component.remove, target),
         MENU_SEPARATOR,
         commandEntryFor(component.copyValues, target),
         commandEntryFor(component.pasteValues, target),
     ];
+    const imageKeys = inlineImageFieldKeys(target.first);
+    if (imageKeys.length > 0) entries.push(MENU_SEPARATOR);
+    for (const key of imageKeys) entries.push(commandEntryFor(component.extractImage, {entities: target.entities, typeName: target.typeName, key}));
+    return entries;
 }
 
 function snapKindEntries(commands: EditorCommands, kind: SnapKind): MenuEntry[] {

@@ -3,12 +3,16 @@ import {App} from "../../engine/core";
 import type {DebugWorld, RequestedQuitHandling, System, SystemCtor} from "../../engine/core";
 import type {Platform} from "../../engine/platform/platform";
 import {Mesh} from "../../engine/rendering/3d/mesh";
+import {activeRenderBackend} from "../../engine/rendering/renderBackend";
 import {Input} from "../../engine/input";
+import type {GpuCanvasPresenterFactory} from "../../backends/gpu/gpuCanvasPixelPresenter";
 import {TerminalInput} from "../../hosts/terminalInput/terminalInput";
 import type {KeyReporting} from "../../hosts/terminalInput/terminalInput";
 import {PageConnection} from "../../hosts/web/worldWorkerPlatform";
 import type {WorldWorkerScope} from "../../hosts/web/worldWorkerPlatform";
 import {TerminalInputChannel} from "./terminalInputChannel";
+import {SceneViewChannel} from "./sceneViewChannel";
+import type {SceneViewScope} from "./sceneViewChannel";
 import {EDITOR_SCHEMAS} from "../world/editorSchemas";
 import {attachEditorWorldService} from "../world/editorWorldService";
 import type {EditorServiceScope, EditorWorldService} from "../world/editorWorldService";
@@ -22,7 +26,7 @@ import type {
     ProjectLoadProgressListener,
 } from "../../engine/project/assetFiles";
 
-type ProjectEditorWorkerScope = WorldWorkerScope & EditorServiceScope & ProjectFilesChannel;
+type ProjectEditorWorkerScope = WorldWorkerScope & EditorServiceScope & ProjectFilesChannel & SceneViewScope;
 type SystemList = readonly SystemCtor<System>[];
 
 export interface ProjectSystemLists {
@@ -30,7 +34,11 @@ export interface ProjectSystemLists {
     readonly backend: SystemList;
 }
 
-export type EditorBackendInstaller = (world: DebugWorld, page: PageConnection) => Promise<void>;
+export interface EditorBackend {
+    readonly canvasPresenter?: GpuCanvasPresenterFactory;
+}
+
+export type EditorBackendInstaller = (world: DebugWorld, page: PageConnection) => Promise<EditorBackend | void>;
 
 const MESH_EXTENSION = ".obj";
 const BYTES_PER_MB = 1024 * 1024;
@@ -101,6 +109,7 @@ async function startProjectWorld(
     scope: ProjectEditorWorkerScope,
     page: PageConnection,
     files: ProjectFileSource,
+    sceneView: SceneViewChannel,
     startProject: StartProject,
     systemLists: ProjectSystemLists,
     installBackend: EditorBackendInstaller,
@@ -109,7 +118,7 @@ async function startProjectWorld(
     let editorService: EditorWorldService | undefined;
     const app = new App({platform: page.platform, handleRequestedQuit: () => editorService?.handleRequestedQuit() ?? QUIT_WITHOUT_EDITOR});
     const world = app.createDebugWorld();
-    await installBackend(world, page);
+    const installed = await installBackend(world, page);
     const backendSystems = systemLists.backend;
     await files.whenListed();
     const input = world.resources.getOrCreate(Input);
@@ -132,21 +141,30 @@ async function startProjectWorld(
         schemaChanges: REPORTED_SCHEMA_CHANGES,
     });
     assetFiles.stopReporting();
-    editorService = attachEditorWorldService(scope, world, game.registry, {
+    const service = attachEditorWorldService(scope, world, game.registry, {
         preloadAssets,
         scenes: game.scenes,
         gameplaySystems: [...backendSystems, ...systemLists.shared],
         refetchFiles: paths => files.refetch(paths),
         onFirstFrame: () => page.reportReady(),
     });
+    editorService = service;
+    const backend = activeRenderBackend(world);
+    if (backend === undefined) return;
+    sceneView.attach({
+        backend,
+        ...(installed?.canvasPresenter === undefined ? {} : {canvasPresenter: installed.canvasPresenter}),
+        show: view => service.showSceneView(view),
+    });
 }
 
 export function runProjectEditorWorker(startProject: StartProject, systemLists: ProjectSystemLists, installBackend: EditorBackendInstaller): void {
     const scope = globalThis as unknown as ProjectEditorWorkerScope;
     const files = new ProjectFileSource(scope);
+    const sceneView = new SceneViewChannel(scope);
     void PageConnection.open(scope, files).then(async page => {
         try {
-            await startProjectWorld(scope, page, files, startProject, systemLists, installBackend);
+            await startProjectWorld(scope, page, files, sceneView, startProject, systemLists, installBackend);
         } catch (error) {
             console.error(error);
             page.fail(error);

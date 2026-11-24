@@ -54,6 +54,7 @@ export class PixelTextRasterizer {
         const left = Math.max(0, boxXPx), right = Math.min(widthPx, boxXPx + unitWidthPx);
         const top = Math.max(0, boxYPx), bottom = Math.min(framebuffer.heightPx, boxYPx + unitHeightPx);
         if (left >= right || top >= bottom) return;
+        framebuffer.markDrawn(left, top, right, bottom);
 
         const font = this.font;
         const glyphWidthPx = font.glyphWidthPx, glyphHeightPx = font.glyphHeightPx;

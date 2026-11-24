@@ -30,7 +30,7 @@ import type {ModuleImport} from "./generatedModule";
 import type {ProjectSources} from "./projectSources";
 
 export const MAINS_GENERATOR_NAME = "mains";
-export const MAINS_GENERATOR_VERSION = 5;
+export const MAINS_GENERATOR_VERSION = 6;
 export const MAINS_GENERATED_HEADER = generatedFileHeader(MAINS_GENERATOR_NAME, MAINS_GENERATOR_VERSION);
 
 interface ModuleExport {
@@ -46,6 +46,7 @@ interface BackendMain {
     readonly presenterSetup: readonly string[];
     readonly installArguments: string;
     readonly setupImports: readonly ModuleExport[];
+    readonly editorCanvasPresenter?: ModuleExport;
 }
 
 const TERMINAL_BACKEND: RenderBackendKind = "cells";
@@ -90,8 +91,10 @@ const BACKEND_MAINS: Readonly<Record<RenderBackendKind, BackendMain>> = {
             {entryPoint: "hosts/web/worker/gpu", name: "requestGpuDevice"},
             {entryPoint: "hosts/web/worker/gpu", name: "gpuCanvasPresenter"},
         ],
+        editorCanvasPresenter: {entryPoint: "backends/gpu", name: "gpuCanvasPresenterFactory"},
     },
 };
+const GPU_DEVICE_VARIABLE = "device";
 
 class MainsWriter {
     private readonly slug: string;
@@ -214,7 +217,9 @@ class MainsWriter {
 
     private editorWorkerMain(kind: RenderBackendKind): GeneratedSource {
         const backend = BACKEND_MAINS[kind];
+        const canvasPresenter = backend.editorCanvasPresenter;
         return this.source(editorWorkerMainFile(kind), [
+            ...(canvasPresenter === undefined ? [] : [this.exported(canvasPresenter)]),
             this.exported(backend.installer),
             this.exported(backend.editorPasses),
             ...backend.setupImports.map(module => this.exported(module)),
@@ -226,6 +231,7 @@ class MainsWriter {
             `runProjectEditorWorker(${START_PROJECT_EXPORT}, {shared: ${GENERATED_SYSTEMS_EXPORT}, backend: ${generatedBackendSystemsExport(kind)}}, async (world, page) => {`,
             ...backend.presenterSetup.map(line => GENERATED_INDENT + line),
             `${GENERATED_INDENT}${backend.installer.name}(world, ${backend.installArguments}, ${backend.editorPasses.name});`,
+            ...(canvasPresenter === undefined ? [] : [`${GENERATED_INDENT}return {canvasPresenter: ${canvasPresenter.name}(${GPU_DEVICE_VARIABLE})};`]),
             "});",
         ]);
     }

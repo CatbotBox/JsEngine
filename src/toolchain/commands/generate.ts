@@ -2,7 +2,7 @@ import {relative, resolve} from "path";
 import type {GenerateProjectReport} from "../../editor/project/projectServerApi";
 import {CliError, EXIT_FAILURE, EXIT_SUCCESS, parseOptions, usageError} from "../cliArguments";
 import {checkGeneratedFiles, writeGeneratedFiles} from "../generate/generatedFiles";
-import type {GeneratedFiles} from "../generate/generatedFiles";
+import type {GeneratedFiles, ProjectGeneration} from "../generate/generatedFiles";
 import {reportGeneratedFiles} from "../generate/generatedFilesReport";
 import {displayPath, projectFolderOf} from "../project";
 import {slashed} from "../repoPaths";
@@ -32,10 +32,10 @@ function projectPaths(folder: string, generated: GeneratedFiles, written: boolea
     return generated.files.filter(file => (file.state !== "upToDate") === written).map(file => slashed(relative(folder, file.path)));
 }
 
-export function generateReport(projectOption: string | undefined): GenerateProjectReport {
+export function generateReport(projectOption: string | undefined, generate: ProjectGeneration = writeGeneratedFiles): GenerateProjectReport {
     try {
         const folder = projectFolderOf(projectOption);
-        const generated = writeGeneratedFiles(folder);
+        const generated = generate(folder);
         return {ok: true, written: projectPaths(folder, generated, true), unchanged: projectPaths(folder, generated, false), warnings: [...generated.warnings]};
     } catch (error) {
         return {ok: false, errors: errorLines(error)};

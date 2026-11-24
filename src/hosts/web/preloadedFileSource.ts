@@ -2,6 +2,7 @@ import type {FileSource, FileStat} from "../../engine/platform/platform";
 import {normalizePath} from "../../engine/platform/paths";
 
 const HTTP_NOT_FOUND = 404;
+const REVALIDATED: FetchFileOptions = {cache: "no-cache"};
 
 export interface ByteStreamReader {
     read(): Promise<{readonly done: boolean, readonly value?: Uint8Array}>;
@@ -18,7 +19,11 @@ export interface FetchedFile {
     readonly body?: ByteStream | null;
 }
 
-export type FetchFile = (url: string) => Promise<FetchedFile>;
+export interface FetchFileOptions {
+    readonly cache?: "no-cache";
+}
+
+export type FetchFile = (url: string, options?: FetchFileOptions) => Promise<FetchedFile>;
 
 export interface PreloadEntry {
     readonly path: string;
@@ -75,7 +80,7 @@ export class PreloadedFileSource implements FileSource {
 
     public constructor(options: PreloadedFileSourceOptions = {}) {
         this.baseUrl = options.baseUrl ?? "";
-        this.fetchFile = options.fetch ?? (url => (globalThis as unknown as {fetch: FetchFile}).fetch(url));
+        this.fetchFile = options.fetch ?? ((url, fetchOptions) => (globalThis as unknown as {fetch: FetchFile}).fetch(url, fetchOptions));
     }
 
     public urlFor(path: string): string {
@@ -108,6 +113,11 @@ export class PreloadedFileSource implements FileSource {
             loadedBytes += expected - counted;
             report();
         }));
+    }
+
+    public async refetch(paths: readonly string[]): Promise<void> {
+        const unique = [...new Set(paths.map(normalizePath))];
+        await Promise.all(unique.map(path => this.preloadOne({path}, ignoreBytes, REVALIDATED)));
     }
 
     public isPending(path: string): boolean {
@@ -228,7 +238,7 @@ export class PreloadedFileSource implements FileSource {
         }
     }
 
-    private async preloadOne(entry: PreloadEntry, onBytes: (count: number) => void): Promise<void> {
+    private async preloadOne(entry: PreloadEntry, onBytes: (count: number) => void, fetchOptions?: FetchFileOptions): Promise<void> {
         const path = normalizePath(entry.path);
         if (entry.statOnly === true) {
             if (entry.size === undefined || entry.mtimeMs === undefined) {
@@ -238,15 +248,15 @@ export class PreloadedFileSource implements FileSource {
             return;
         }
         const bytes = entry.gzipParts === undefined
-            ? await this.fetchPlainOrUndefined(entry, onBytes)
+            ? await this.fetchPlainOrUndefined(entry, onBytes, fetchOptions)
             : await this.fetchGzipPartsOrUndefined(entry, entry.gzipParts, onBytes);
         if (bytes === undefined) this.entries.delete(path);
         else this.entries.set(path, {bytes, size: bytes.length, mtimeMs: entry.mtimeMs});
     }
 
-    private async fetchPlainOrUndefined(entry: PreloadEntry, onBytes: (count: number) => void): Promise<Uint8Array | undefined> {
+    private async fetchPlainOrUndefined(entry: PreloadEntry, onBytes: (count: number) => void, fetchOptions?: FetchFileOptions): Promise<Uint8Array | undefined> {
         const url = this.urlFor(entry.path);
-        const response = await this.fetchFile(url);
+        const response = await this.fetchFile(url, fetchOptions);
         if (response.status === HTTP_NOT_FOUND) return undefined;
         if (!response.ok) throw httpFailure(entry.path, url, response.status);
         if (response.body === undefined || response.body === null) {
@@ -303,6 +313,9 @@ export class PreloadedFileSource implements FileSource {
         if (entry === undefined) throw notPreloaded(path);
         return entry;
     }
+}
+
+function ignoreBytes(): void {
 }
 
 function transferBytesOf(entry: PreloadEntry): number {

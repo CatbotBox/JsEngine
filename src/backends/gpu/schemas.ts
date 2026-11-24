@@ -18,6 +18,7 @@ export const GPU_MESH_PASS_SETTINGS_SCHEMA_ENTRY: SchemaEntry = {
         .number("orthographicDepthRange")
         .integer("evictUnusedAfterFrames")
         .number("lodTrianglesPerPixel")
+        .number("renderScale")
         .category(ENGINE_COMPONENT_CATEGORIES.settings)
         .build(),
 };

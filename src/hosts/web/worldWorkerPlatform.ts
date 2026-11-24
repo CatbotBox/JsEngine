@@ -14,6 +14,7 @@ import type {BrowserWorkerHost} from "./browserWorkers";
 import {inflate} from "../../engine/assets/image/inflate";
 import {PixelFrameBufferPool} from "./pixelFrameBufferPool";
 import {timerFrameScheduler} from "../../engine/platform/timerFrameScheduler";
+import {DISPLAY_CAPPED_PACING} from "../../engine/platform/framePacing";
 import {displayFrameScheduler} from "./animationFrameScheduler";
 import type {MaybeAnimationFrameHost} from "./animationFrameScheduler";
 
@@ -50,6 +51,7 @@ export class PageConnection {
     private inputSink: InputEventSink | undefined;
     private readonly resizeListeners = new Set<() => void>();
     private readonly exitCallbacks = new Set<() => void>();
+    private readonly dataAssetReloadListeners = new Set<(paths: readonly string[]) => void>();
     private framesInFlight = 0;
     private readyReported = false;
     private readonly returnedPixelBuffers = new PixelFrameBufferPool(MAX_FRAMES_IN_FLIGHT);
@@ -67,7 +69,7 @@ export class PageConnection {
             hardwareConcurrency: () => scope.navigator?.hardwareConcurrency ?? 1,
             requestedRasterWorkers: () => requestedRasterWorkers,
             now,
-            frameScheduler: canvasDrivesDisplayFrames ? displayFrameScheduler(scope, now) : timerFrameScheduler(now),
+            frameScheduler: canvasDrivesDisplayFrames ? displayFrameScheduler(scope, now, DISPLAY_CAPPED_PACING) : timerFrameScheduler(now),
             onExit: callback => {
                 const entry = () => callback();
                 this.exitCallbacks.add(entry);
@@ -144,6 +146,14 @@ export class PageConnection {
         };
     }
 
+    public onReloadDataAssets(listener: (paths: readonly string[]) => void): () => void {
+        const entry = (paths: readonly string[]) => listener(paths);
+        this.dataAssetReloadListeners.add(entry);
+        return () => {
+            this.dataAssetReloadListeners.delete(entry);
+        };
+    }
+
     public showStatus(text: string): void {
         this.scope.postMessage({type: "status", text});
     }
@@ -214,6 +224,9 @@ export class PageConnection {
             case "presented":
                 this.framesInFlight = Math.max(0, this.framesInFlight - 1);
                 if (message.returnedBuffer !== undefined) this.returnedPixelBuffers.give(message.returnedBuffer);
+                break;
+            case "reloadDataAssets":
+                for (const listener of [...this.dataAssetReloadListeners]) listener(message.paths);
                 break;
             case "exit": {
                 const callbacks = [...this.exitCallbacks];

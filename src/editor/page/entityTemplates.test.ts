@@ -15,7 +15,7 @@ import {
 import type {EntityTemplateContext} from "./entityTemplates";
 
 const EVERY_TYPE = new Set([
-    "Camera", "FieldOfView", "LocalPosition", "LocalRotation", "LocalScale", "Sprite", "SpritePattern", "TextSprite", "RenderMesh",
+    "Camera", "FieldOfView", "LocalPosition", "LocalRotation", "LocalScale", "Sprite", "TextSprite", "RenderMesh",
     "DirectionalLight", "PointLight", "AmbientLight",
 ]);
 const FLAT: EntityTemplateContext = {knownTypeNames: EVERY_TYPE, perspective: false};
@@ -32,7 +32,9 @@ describe("entity templates", () => {
             expect([request.op, request.name, request.parent]).toEqual(["createEntity", ENTITY_TEMPLATE_NAMES[template], undefined]);
         }
         expect(Object.keys(entityTemplateRequest("camera", FLAT).components ?? {})).toEqual(["LocalPosition", "Camera"]);
-        expect(entityTemplateRequest("sprite", FLAT).components?.SpritePattern).toEqual({rows: [SPRITE_ROW, SPRITE_ROW, SPRITE_ROW, SPRITE_ROW], palette: [{char: "#", rgb: "#ffffff"}]});
+        expect(entityTemplateRequest("sprite", FLAT).components).toEqual({
+            Sprite: {image: {rows: [SPRITE_ROW, SPRITE_ROW, SPRITE_ROW, SPRITE_ROW], palette: [{char: "#", rgb: "#ffffff"}]}, tint: "#ffffff", opacity: 1},
+        });
         expect(entityTemplateRequest("text", FLAT).components).toEqual({TextSprite: {image: [TEXT_TEMPLATE_LINE]}});
         expect(Object.keys(entityTemplateRequest("mesh", FLAT).components ?? {})).toEqual(["LocalRotation", "LocalScale", "RenderMesh"]);
         expect(entityTemplateRequest("mesh", FLAT).components?.RenderMesh.mesh).toEqual({path: UNIT_CUBE_MESH_PATH});
@@ -48,7 +50,7 @@ describe("entity templates", () => {
     });
 
     test("optional components the game does not register are left out; missing required ones disable the template", () => {
-        const flatGame = new Set(["Camera", "LocalPosition", "Sprite", "SpritePattern", "TextSprite"]);
+        const flatGame = new Set(["Camera", "LocalPosition", "Sprite", "TextSprite"]);
         expect(Object.keys(entityTemplateRequest("camera", {knownTypeNames: flatGame, perspective: true}).components ?? {})).toEqual(["LocalPosition", "Camera"]);
         expect(entityTemplateProblem("sprite", flatGame)).toBeUndefined();
         expect(entityTemplateProblem("mesh", flatGame)).toBe("This game registers no RenderMesh component, so it cannot make a Mesh");

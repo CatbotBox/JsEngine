@@ -41,6 +41,7 @@ export const START_ACTION_HOOK = "data-start-action";
 export const START_MESSAGE_ACTION_HOOK = "data-start-message-action";
 export const RECENT_PROJECT_HOOK = "data-recent-project";
 export const EDITOR_TITLE_HOOK = "data-editor-title";
+export const EDITOR_VIEWPORT_HOOK = "data-editor-viewport";
 
 export type EditorMenuId = "file" | "edit" | "assets" | "entity" | "window" | "help";
 export type DropdownId = "snapSteps" | "gameTarget" | "gameViewAspect";
@@ -51,9 +52,10 @@ export type BuildWindowAction = "build" | "package" | "buildAll" | "close";
 export type BuildTargetState = "idle" | "running" | "ok" | "failing";
 export type HistoryStepState = "done" | "current" | "undone";
 export type DataAssetsAction = "save" | "revert" | "refresh";
-export type FieldInputKind = "number";
+export type FieldInputKind = "number" | "textLines";
 export type StartAction = "open" | "sample";
 export type StartMessageAction = "createProject" | "retry" | "back";
+export type EditorViewportId = "scene" | "game";
 
 export const EDITOR_MENU_IDS: readonly EditorMenuId[] = ["file", "edit", "assets", "entity", "window", "help"];
 

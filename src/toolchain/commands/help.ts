@@ -12,6 +12,7 @@ export const USAGE = `jsengine <command> [options] (runs under bun)
             web and window write the project to dist/web/<folder name>/, its page from <dir>/web/index.html
             or made from the manifest; without --project, every sample project and the landing page
             [--prod] [--with-editor]            web only
+            [--no-generate]                     web only: bundles generated/ as it is (jsengine serve regenerates it in-process first)
             [--simulate web|window|terminal] [--backend cells|pixels|gpu]
                                                 editor only: the editor worker with that target's features and backend
             [--report json]                     the result as JSON on the last line
@@ -27,6 +28,8 @@ export const USAGE = `jsengine <command> [options] (runs under bun)
             files at the current version and lists them; --check lists them and fails instead of writing
   link      [--project <dir>]                   points the project's package.json at this checkout's engine packages
             (link:), writes a tsconfig.json if it has none and runs bun install
+  toolchain-server                              answers editor build and generate requests, one JSON line each on stdin,
+            with one reply record each on stdout, from a warm generator until stdin closes (the editor's project server runs it)
   help
 
 Defaults: --target web; --backend from the manifest's "targets", else pixels on web and window, cells on the terminal; --simulate web.

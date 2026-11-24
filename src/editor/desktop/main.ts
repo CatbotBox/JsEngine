@@ -1,5 +1,6 @@
-import {app, BrowserWindow, dialog, Menu, protocol, screen, shell} from "electron";
-import {existsSync, mkdtempSync, readFileSync, rmSync} from "fs";
+import {app, BrowserWindow, crashReporter, dialog, Menu, protocol, screen, shell} from "electron";
+import type {Details, GPUFeatureStatus} from "electron";
+import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync} from "fs";
 import {access, mkdtemp, readFile, rm, writeFile} from "fs/promises";
 import {tmpdir} from "os";
 import {join} from "path";
@@ -12,6 +13,9 @@ import type {SmokeFlow, SmokeFlowResult, SmokeHost} from "./smokeFlows";
 import type {SmokeInputEvent} from "./smokeInput";
 import type {SmokeClock, SmokePage} from "./smokeUi";
 import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../project/windowZoom";
+import {EDITOR_VIEWPORT_HOOK, hookSelector} from "../project/editorUiHooks";
+import {BITMAP_BYTES_PER_PIXEL, bitmapWidthPx, drawnPixelsIn, scaledRect} from "./capturedViews";
+import type {CapturedRect} from "./capturedViews";
 
 const SCHEME = "app";
 const HOST = "bundle";
@@ -29,7 +33,6 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_BAD_REQUEST = 400;
 const HTTP_PUT = "PUT";
 const JSON_CONTENT_TYPE = "application/json";
-const BITMAP_BYTES_PER_PIXEL = 4;
 const ARGV_APP_ARGS_START_UNPACKAGED = 2;
 const ARGV_APP_ARGS_START_PACKAGED = 1;
 const AS_USER_GESTURE = true;
@@ -52,6 +55,38 @@ const NO_FLOWS = "none";
 const FLOW_SELECTION = "flowSelection";
 const NO_DURATION_MS = 0;
 const RECURSIVE_REMOVAL = {recursive: true, force: true, maxRetries: SMOKE_REMOVE_RETRIES};
+const SMOKE_PASSED_EXIT_CODE = 0;
+const SMOKE_FAILED_EXIT_CODE = 1;
+const SMOKE_FAILURE_REPORT_DELAY_MS = 1000;
+const SMOKE_CRASH_DUMPS_FOLDER = "jsengine-smoke-crashes";
+const CRASH_DUMP_EXTENSION = ".dmp";
+const CLEAN_EXIT_REASON = "clean-exit";
+const RENDERER_CONSOLE_LINES = 50;
+const LISTED_RECURSIVELY = {recursive: true, encoding: "utf8"} as const;
+
+interface SmokeFailure {
+    readonly rendererGone?: string;
+    readonly exitCode?: number;
+    readonly error?: string;
+}
+
+interface CrashEvidence {
+    readonly crashDumps: readonly string[];
+    readonly gpuFeatureStatus: GPUFeatureStatus;
+}
+
+interface ViewportReport extends CapturedRect {
+    readonly id: string;
+    readonly canvas: boolean;
+}
+
+interface PageReport {
+    readonly crossOriginIsolated: boolean;
+    readonly canvas: boolean;
+    readonly renderBackend: string | undefined;
+    readonly cssWidthPx: number;
+    readonly viewports: readonly ViewportReport[];
+}
 
 export interface PackagedLaunch {
     readonly page: string;
@@ -81,11 +116,17 @@ const smoke = args.includes("--smoke");
 const screenshotPath = flagValue("screenshot");
 const MIN_DRAWN_PIXELS = 256;
 const DISPLAY_CANVAS_SELECTOR = "#terminal canvas, #viewport canvas, [data-editor-viewport] canvas";
+const EDITOR_VIEWPORT_SELECTOR = hookSelector(EDITOR_VIEWPORT_HOOK);
 const repoRoot = flagValue("repo");
 const requestedFlows = flagValue("flows");
 const smokeFolderAnswers: string[] = [];
 const smokeTempFolders: string[] = [];
+const goneChildProcesses: Details[] = [];
+const rendererConsole: string[] = [];
+const smokeCrashDumps = join(tmpdir(), SMOKE_CRASH_DUMPS_FOLDER);
+let crashDumpsBeforeSmoke: ReadonlySet<string> = new Set();
 let mainWindow: BrowserWindow | undefined;
+let pendingSmokeFailure: SmokeFailure | undefined;
 
 function isolatedSmokeProfile(): string {
     const fixed = join(tmpdir(), SMOKE_PROFILE_FOLDER);
@@ -97,7 +138,33 @@ function isolatedSmokeProfile(): string {
     }
 }
 
-if (smoke) app.setPath("userData", isolatedSmokeProfile());
+function crashDumpFiles(): string[] {
+    if (!existsSync(smokeCrashDumps)) return [];
+    return readdirSync(smokeCrashDumps, LISTED_RECURSIVELY).filter(name => name.endsWith(CRASH_DUMP_EXTENSION)).map(name => join(smokeCrashDumps, name));
+}
+
+function crashed(reason: string | undefined): boolean {
+    return reason !== undefined && reason !== CLEAN_EXIT_REASON;
+}
+
+function crashEvidence(): CrashEvidence | undefined {
+    const crashSeen = crashed(pendingSmokeFailure?.rendererGone) || goneChildProcesses.some(details => crashed(details.reason));
+    if (!crashSeen) return undefined;
+    return {crashDumps: crashDumpFiles().filter(path => !crashDumpsBeforeSmoke.has(path)), gpuFeatureStatus: app.getGPUFeatureStatus()};
+}
+
+function keepRendererConsoleLine(line: string): void {
+    rendererConsole.push(line);
+    if (rendererConsole.length > RENDERER_CONSOLE_LINES) rendererConsole.shift();
+}
+
+if (smoke) {
+    app.setPath("userData", isolatedSmokeProfile());
+    app.setPath("crashDumps", smokeCrashDumps);
+    crashReporter.start({uploadToServer: false});
+    crashDumpsBeforeSmoke = new Set(crashDumpFiles());
+    app.on("child-process-gone", (_event, details) => goneChildProcesses.push(details));
+}
 
 const projectServer = createProjectServer({
     repoRoot,
@@ -126,6 +193,7 @@ async function respond(request: Request): Promise<Response> {
         headers: {...ISOLATION_HEADERS, "Content-Type": contentTypeOf(path)},
     });
 }
+
 
 function drawnPixelCount(bitmap: Buffer): number {
     let drawn = 0;
@@ -218,16 +286,31 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     await sleep(SMOKE_SETTLE_MS);
     const editorState = await editorStateOf(window);
     const report = await window.webContents.executeJavaScript(`(() => {
+        const sized = canvas => canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0 && canvas.style.display !== "none";
         const canvas = document.querySelector(${JSON.stringify(DISPLAY_CANVAS_SELECTOR)});
+        const viewports = [...document.querySelectorAll(${JSON.stringify(EDITOR_VIEWPORT_SELECTOR)})].map(viewport => {
+            const bounds = viewport.getBoundingClientRect();
+            return {
+                id: viewport.getAttribute(${JSON.stringify(EDITOR_VIEWPORT_HOOK)}),
+                canvas: [...viewport.querySelectorAll("canvas")].some(sized),
+                left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height,
+            };
+        });
         return {
             crossOriginIsolated,
-            canvas: canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0,
+            canvas: viewports.length > 0 ? viewports.every(viewport => viewport.canvas) : sized(canvas),
             renderBackend: document.documentElement.dataset.renderBackend,
+            cssWidthPx: window.innerWidth,
+            viewports,
         };
-    })()`) as {crossOriginIsolated: boolean, canvas: boolean, renderBackend: string | undefined};
+    })()`) as PageReport;
     const image = await window.webContents.capturePage();
     if (screenshotPath !== undefined) await writeFile(screenshotPath, image.toPNG());
-    const drawnPixels = drawnPixelCount(image.toBitmap());
+    const bitmap = image.toBitmap();
+    const widthPx = bitmapWidthPx(bitmap.length, image.getSize());
+    const pxPerCssPx = report.cssWidthPx > 0 ? widthPx / report.cssWidthPx : 0;
+    const drawnPixels = drawnPixelCount(bitmap);
+    const viewportDrawnPixels = Object.fromEntries(report.viewports.map(viewport => [viewport.id, drawnPixelsIn(bitmap, widthPx, scaledRect(viewport, pxPerCssPx))]));
     const editorReady = editorState === undefined || editorState === EDITOR_READY_STATE;
     const requestedBackend = requestedRenderBackend(page);
     const backendMatches = renderBackendMatches(requestedBackend, report.renderBackend);
@@ -235,8 +318,24 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     const loadErrors = [...pageErrors];
     const flows = pagePassed && editorState !== undefined ? await runEditorFlows(window, pageErrors) : [];
     const passed = pagePassed && smokeFlowsPassed(flows);
-    console.log(JSON.stringify({page, ...report, requestedBackend, editorState, drawnPixels, pageErrors: loadErrors, flows, passed}));
-    app.exit(passed ? 0 : 1);
+    if (pendingSmokeFailure !== undefined) return;
+    const {crossOriginIsolated, canvas, renderBackend} = report;
+    console.log(JSON.stringify({page, crossOriginIsolated, canvas, renderBackend, requestedBackend, editorState, drawnPixels, viewportDrawnPixels, pageErrors: loadErrors, flows, childProcessesGone: goneChildProcesses, ...crashEvidence(), ...(passed ? {} : {rendererConsole}), passed}));
+    app.exit(passed ? SMOKE_PASSED_EXIT_CODE : SMOKE_FAILED_EXIT_CODE);
+}
+
+function failSmoke(failure: SmokeFailure): void {
+    const reportScheduled = pendingSmokeFailure !== undefined;
+    pendingSmokeFailure = {...pendingSmokeFailure, ...failure};
+    if (reportScheduled) return;
+    setTimeout(() => {
+        console.log(JSON.stringify({page, ...pendingSmokeFailure, childProcessesGone: goneChildProcesses, ...crashEvidence(), rendererConsole, passed: false}));
+        app.exit(SMOKE_FAILED_EXIT_CODE);
+    }, SMOKE_FAILURE_REPORT_DELAY_MS);
+}
+
+function failWhenTheRendererDies(window: BrowserWindow): void {
+    window.webContents.on("render-process-gone", (_event, details) => failSmoke({rendererGone: details.reason, exitCode: details.exitCode}));
 }
 
 async function renderBackendScriptPending(window: BrowserWindow): Promise<boolean> {
@@ -331,7 +430,9 @@ async function openWindow(): Promise<void> {
     const pageErrors: string[] = [];
     window.webContents.on("console-message", event => {
         if (event.level === "error") pageErrors.push(event.message);
+        if (smoke) keepRendererConsoleLine(`${event.level}: ${event.message}`);
     });
+    if (smoke) failWhenTheRendererDies(window);
     await window.loadURL(`${SCHEME}://${HOST}/${page}`);
     await pressPlay(window);
     if (smoke) await smokeTest(window, pageErrors);
@@ -339,4 +440,7 @@ async function openWindow(): Promise<void> {
 
 app.on("window-all-closed", () => app.quit());
 app.on("will-quit", () => projectServer.close());
-void app.whenReady().then(openWindow);
+void app.whenReady().then(openWindow).catch((error: unknown) => {
+    if (!smoke) throw error;
+    failSmoke({error: error instanceof Error ? error.message : String(error)});
+});

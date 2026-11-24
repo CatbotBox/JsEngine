@@ -3,12 +3,16 @@ import {MemoryPlatform} from "../../engine/testing/memoryPlatform";
 import {World} from "../../engine/core/world";
 import {RootSystemGroup} from "../../engine/core/rootSystemGroup";
 import {System} from "../../engine/core/system";
+import type {Entity} from "../../engine/core/entity";
+import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Camera} from "../../engine/rendering/camera";
 import {ScreenSize} from "../../engine/rendering/screenSize";
+import {RenderCameraOverride} from "../../engine/rendering/renderCameraOverride";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
 import {DEFAULT_TEXT_FOREGROUND_RGB} from "../../engine/rendering/textColorPalette";
 import {MemoryPixelPresenter} from "./memoryPixelPresenter";
-import {PixelPresenterResource} from "./pixelPresenterResource";
+import {PixelPresenterResource, PixelRenderTargets} from "./pixelPresenterResource";
+import {PixelFramebuffer} from "./pixelFramebuffer";
 import {PixelRenderSystemGroup} from "./pixelRenderSystemGroup";
 import {PixelCameraSizingSystem} from "./pixelCameraSizingSystem";
 import {PixelRenderSettings} from "./pixelRenderSettings";
@@ -17,6 +21,7 @@ import type {PixelFrame} from "./pixelFrame";
 
 const BACKGROUND_RGB = 0x203040;
 const RED_SHIFT = 16, GREEN_SHIFT = 8;
+const DISABLED = false;
 
 class PixelPassProbeSystem extends System {
     public frames = 0;
@@ -27,6 +32,25 @@ class PixelPassProbeSystem extends System {
 
     onUpdate() {
         this.frames++;
+    }
+}
+
+class PresentationReportingPresenter extends MemoryPixelPresenter {
+    private readonly presentedListeners = new Set<() => void>();
+
+    public onPresented(listener: () => void): () => void {
+        this.presentedListeners.add(listener);
+        return () => {
+            this.presentedListeners.delete(listener);
+        };
+    }
+
+    public get presentedListenerCount(): number {
+        return this.presentedListeners.size;
+    }
+
+    public reportPresented(): void {
+        for (const listener of [...this.presentedListeners]) listener();
     }
 }
 
@@ -125,6 +149,32 @@ describe("PixelRenderSystemGroup frames", () => {
         }
     });
 
+    test("a presenter that reports presented frames paces the loop through the world's presenter backlogs while the group is enabled", () => {
+        const presenter = new PresentationReportingPresenter();
+        const world = worldPresentingOn(presenter);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const backlogs = world.presenterBacklogs;
+        let presented = 0;
+        backlogs.onPresented(() => presented++);
+        expect([backlogs.count, backlogs.backlogged()]).toEqual([1, false]);
+        presenter.isBacklogged = true;
+        expect(backlogs.backlogged()).toBe(true);
+        presenter.reportPresented();
+        expect(presented).toBe(1);
+        group.enabled = false;
+        expect([backlogs.count, backlogs.backlogged(), presenter.presentedListenerCount]).toEqual([0, false, 0]);
+        group.enabled = true;
+        expect(backlogs.count).toBe(1);
+        group.destroy();
+        expect(backlogs.count).toBe(0);
+    });
+
+    test("a presenter without presented frames leaves the loop unpaced", () => {
+        const world = worldPresentingOn(new MemoryPixelPresenter());
+        world.getOrCreateSystem(PixelRenderSystemGroup);
+        expect(world.presenterBacklogs.count).toBe(0);
+    });
+
     test("a backlogged presenter gets no frame and the passes skip", () => {
         const presenter = new MemoryPixelPresenter({widthPx: 8, heightPx: 8});
         const world = worldPresentingOn(presenter);
@@ -169,6 +219,216 @@ describe("PixelRenderSystemGroup frames", () => {
     });
 });
 
+function disabledCamera(world: World): Entity {
+    const em = world.entityManager;
+    const camera = em.createEntity("override camera", [new Camera(), new LocalToWorld()]);
+    em.setEnabledState(camera, DISABLED);
+    return camera;
+}
+
+function screenSizeOf(world: World, camera: Entity): number[] {
+    const size = world.entityManager.getComponent<ScreenSize>(camera, ScreenSize)!;
+    return [size.x, size.y];
+}
+
+describe("PixelRenderSystemGroup render camera override", () => {
+    test("without a game camera nothing renders until an override names a camera, which the presenter sizes", () => {
+        const presenter = new MemoryPixelPresenter({widthPx: 640, heightPx: 384});
+        const world = worldPresentingOn(presenter);
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const probe = world.getOrCreateSystem(PixelPassProbeSystem);
+        const camera = disabledCamera(world);
+        try {
+            root.update();
+            expect([presenter.frames.length, probe.frames]).toEqual([0, 0]);
+
+            world.resources.insert(new RenderCameraOverride(camera));
+            root.update();
+            expect([presenter.frames.length, probe.frames]).toEqual([1, 1]);
+            expect(screenSizeOf(world, camera)).toEqual([80, 24]);
+            presenter.resize(320, 160);
+            root.update();
+            expect(screenSizeOf(world, camera)).toEqual([40, 10]);
+
+            world.resources.remove(RenderCameraOverride);
+            root.update();
+            expect([presenter.frames.length, probe.frames]).toEqual([2, 2]);
+        } finally {
+            group.enabled = false;
+        }
+    });
+
+    test("the override wins over several game cameras, which still report as an error without it", () => {
+        const presenter = new MemoryPixelPresenter({widthPx: 64, heightPx: 32});
+        const world = worldPresentingOn(presenter);
+        const em = world.entityManager;
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        em.addComponent(em.createEntity("camera 1"), new Camera());
+        em.addComponent(em.createEntity("camera 2"), new Camera());
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const probe = world.getOrCreateSystem(PixelPassProbeSystem);
+        try {
+            world.resources.insert(new RenderCameraOverride(disabledCamera(world)));
+            root.update();
+            expect(probe.frames).toBe(1);
+            world.resources.remove(RenderCameraOverride);
+            root.update();
+            expect(probe.frames).toBe(1);
+            expect(rgbAt(presenter.lastFrame!, 0, 0)).toBe(DEFAULT_TEXT_FOREGROUND_RGB);
+        } finally {
+            group.enabled = false;
+        }
+    });
+
+    test("an override that names no live camera is written into the frame and skips the passes", () => {
+        const presenter = new MemoryPixelPresenter({widthPx: 64, heightPx: 32});
+        const world = worldPresentingOn(presenter);
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const probe = world.getOrCreateSystem(PixelPassProbeSystem);
+        const camera = disabledCamera(world);
+        try {
+            world.resources.insert(new RenderCameraOverride(camera));
+            world.entityManager.destroyEntity(camera);
+            root.update();
+            expect(presenter.frames.length).toBe(1);
+            expect(rgbAt(presenter.lastFrame!, 0, 0)).toBe(DEFAULT_TEXT_FOREGROUND_RGB);
+            expect(probe.frames).toBe(0);
+        } finally {
+            group.enabled = false;
+        }
+    });
+});
+
+class RenderedCameraProbeSystem extends System {
+    public readonly cameras: Entity[] = [];
+    public readonly framebufferWidths: number[] = [];
+
+    override systemGroup() {
+        return PixelRenderSystemGroup;
+    }
+
+    onUpdate() {
+        const override = this.world.resources.tryGet(RenderCameraOverride);
+        if (override !== undefined) this.cameras.push(override.camera);
+        this.framebufferWidths.push(this.world.resources.get(PixelFramebuffer).widthPx);
+    }
+}
+
+describe("PixelRenderSystemGroup render targets", () => {
+    test("each target renders its own camera into its own framebuffer and presenter, sized by it; the host presenter draws only as a listed target", () => {
+        const host = new MemoryPixelPresenter({widthPx: 640, heightPx: 384});
+        const scene = new MemoryPixelPresenter({widthPx: 320, heightPx: 160});
+        const world = worldPresentingOn(host);
+        const em = world.entityManager;
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const probe = world.getOrCreateSystem(RenderedCameraProbeSystem);
+        const gameCamera = em.createEntity("game camera", [new Camera()]);
+        const sceneCamera = disabledCamera(world);
+        try {
+            world.resources.insert(new PixelRenderTargets([{camera: sceneCamera, presenter: scene}, {camera: undefined, presenter: host}]));
+            root.update();
+            root.update();
+            expect(probe.cameras).toEqual([sceneCamera, gameCamera, sceneCamera, gameCamera]);
+            expect(probe.framebufferWidths).toEqual([320, 640, 320, 640]);
+            expect([scene.frames.length, host.frames.length]).toEqual([2, 2]);
+            expect([scene.lastFrame!.widthPx, host.lastFrame!.widthPx]).toEqual([320, 640]);
+            expect([screenSizeOf(world, sceneCamera), screenSizeOf(world, gameCamera)]).toEqual([[40, 10], [80, 24]]);
+            expect(PixelPresenterResource.presenterOf(world)).toBe(host);
+            expect(group.walkCount).toBe(4);
+
+            world.resources.remove(PixelRenderTargets);
+            root.update();
+            expect(world.resources.tryGet(RenderCameraOverride)).toBeUndefined();
+            expect([scene.frames.length, host.frames.length]).toEqual([2, 3]);
+        } finally {
+            group.enabled = false;
+        }
+    });
+
+    test("a backlogged or zero-size target is skipped without holding up the others, and keeps its camera's size", () => {
+        const host = new MemoryPixelPresenter({widthPx: 640, heightPx: 384});
+        const scene = new MemoryPixelPresenter({widthPx: 320, heightPx: 160});
+        const world = worldPresentingOn(host);
+        const em = world.entityManager;
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const gameCamera = em.createEntity("game camera", [new Camera()]);
+        const sceneCamera = disabledCamera(world);
+        try {
+            world.resources.insert(new PixelRenderTargets([{camera: sceneCamera, presenter: scene}, {camera: undefined, presenter: host}]));
+            root.update();
+            scene.isBacklogged = true;
+            root.update();
+            expect([scene.frames.length, host.frames.length]).toEqual([1, 2]);
+            scene.isBacklogged = false;
+            scene.resize(0, 0);
+            host.resize(160, 64);
+            root.update();
+            expect([scene.frames.length, host.frames.length]).toEqual([1, 3]);
+            expect([screenSizeOf(world, sceneCamera), screenSizeOf(world, gameCamera)]).toEqual([[40, 10], [20, 4]]);
+            scene.resize(480, 320);
+            root.update();
+            expect(screenSizeOf(world, sceneCamera)).toEqual([60, 20]);
+            expect(scene.frames.length).toBe(2);
+        } finally {
+            group.enabled = false;
+        }
+    });
+
+    test("each target presenter that reports presentation registers its backlog while it is listed and the group is enabled", () => {
+        const host = new PresentationReportingPresenter();
+        const scene = new PresentationReportingPresenter();
+        const world = worldPresentingOn(host);
+        const em = world.entityManager;
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        em.createEntity("game camera", [new Camera()]);
+        const backlogs = world.presenterBacklogs;
+        expect(backlogs.count).toBe(1);
+        world.resources.insert(new PixelRenderTargets([{camera: disabledCamera(world), presenter: scene}, {camera: undefined, presenter: host}]));
+        root.update();
+        expect([backlogs.count, scene.presentedListenerCount]).toEqual([2, 1]);
+        scene.isBacklogged = true;
+        expect(backlogs.backlogged()).toBe(true);
+        group.enabled = false;
+        expect([backlogs.count, scene.presentedListenerCount]).toEqual([0, 0]);
+        group.enabled = true;
+        expect(backlogs.count).toBe(2);
+        world.resources.insert(new PixelRenderTargets([{camera: undefined, presenter: host}]));
+        root.update();
+        expect([backlogs.count, scene.presentedListenerCount]).toEqual([1, 0]);
+        group.enabled = false;
+    });
+
+    test("a target without a camera draws nothing, a world camera target among several writes the error, and a displaced override comes back", () => {
+        const host = new MemoryPixelPresenter({widthPx: 64, heightPx: 32});
+        const scene = new MemoryPixelPresenter({widthPx: 64, heightPx: 32});
+        const world = worldPresentingOn(host);
+        const em = world.entityManager;
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const group = world.getOrCreateSystem(PixelRenderSystemGroup);
+        const probe = world.getOrCreateSystem(PixelPassProbeSystem);
+        const displaced = new RenderCameraOverride(disabledCamera(world));
+        try {
+            em.createEntity("camera 1", [new Camera()]);
+            em.createEntity("camera 2", [new Camera()]);
+            world.resources.insert(displaced);
+            world.resources.insert(new PixelRenderTargets([{camera: em.createEntity("not a camera"), presenter: scene}, {camera: undefined, presenter: host}]));
+            root.update();
+            expect([scene.frames.length, host.frames.length, probe.frames]).toEqual([0, 1, 0]);
+            expect(rgbAt(host.lastFrame!, 0, 0)).toBe(DEFAULT_TEXT_FOREGROUND_RGB);
+            world.resources.remove(PixelRenderTargets);
+            group.update();
+            expect(world.resources.tryGet(RenderCameraOverride)).toBe(displaced);
+        } finally {
+            group.enabled = false;
+        }
+    });
+});
+
 describe("PixelCameraSizingSystem", () => {
     test("sizes the camera in screen units, fractional when the surface is, and follows resizes", () => {
         const presenter = new MemoryPixelPresenter({widthPx: 640, heightPx: 384});
@@ -206,6 +466,22 @@ describe("PixelCameraSizingSystem", () => {
         settings.pixelsPerScreenUnitX = 4;
         root.update();
         expect([size.x, size.y]).toEqual([80, 20]);
+    });
+
+    test("sizes a camera that replaced the sized one without a resize", () => {
+        const world = worldPresentingOn(new MemoryPixelPresenter({widthPx: 640, heightPx: 384}));
+        world.getOrCreateSystem(PixelCameraSizingSystem);
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const em = world.entityManager;
+        const replaced = em.createEntity("camera");
+        em.addComponent(replaced, new Camera());
+        root.update();
+        em.destroyEntity(replaced);
+        const camera = em.createEntity("camera");
+        em.addComponent(camera, new Camera());
+        root.update();
+        const size = em.getComponent<ScreenSize>(camera, ScreenSize)!;
+        expect([size.x, size.y]).toEqual([80, 24]);
     });
 
     test("screenSizeFor divides by a 1:2 screen unit", () => {

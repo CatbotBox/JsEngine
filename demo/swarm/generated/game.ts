@@ -12,7 +12,7 @@ export const projectResources: readonly ProjectResourceBinding[] = [
     {type: "SwarmState", path: "assets/swarm.state.asset.json"},
 ];
 
-export const projectStartScene: string | undefined = "scenes/main.scene.json";
+export const projectStartScene: string | undefined = "scenes/title.scene.json";
 
 export const projectImageDecoders: readonly ImageDecoderEntry[] = [];
 

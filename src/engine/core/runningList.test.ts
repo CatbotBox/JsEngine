@@ -299,6 +299,9 @@ describe("running list: enabled and requirements", () => {
 class Setup extends Resource {
 }
 
+class OtherSetup extends Resource {
+}
+
 class Tuning extends Resource {
 }
 
@@ -372,6 +375,107 @@ describe("running list: resource requirements", () => {
             }
         });
         expect(stepLog()).toEqual(["loader", "needs setup"]);
+    });
+});
+
+function queryOrResourceRequirer(name: string): SystemCtor<System> {
+    return class extends System {
+        private readonly lenses = this.createEntityQuery([Lens]);
+
+        protected override onCreate(): void {
+            this.requireQueryOrResourceForUpdate(this.lenses, Setup);
+            this.requireAllForUpdate([Marker]);
+        }
+
+        onUpdate(): void {
+            log.push(name);
+        }
+    };
+}
+
+describe("running list: query-or-resource requirements", () => {
+    test("a system runs while its query is occupied or its resource is present, and its other requirements still hold", () => {
+        const requirer = world.createSystem(queryOrResourceRequirer("requirer"));
+        em.createEntity("marker", [new Marker()]);
+        expect(requirer.requirementsMet).toBe(false);
+        expect(stepLog()).toEqual([]);
+
+        world.resources.insert(new Setup());
+        expect(stepLog()).toEqual(["requirer"]);
+        const lens = em.createEntity("lens", [new Lens()]);
+        world.resources.remove(Setup);
+        expect(stepLog()).toEqual(["requirer"]);
+        em.setEnabledState(lens, DISABLED);
+        expect(requirer.requirementsMet).toBe(false);
+        expect(stepLog()).toEqual([]);
+
+        world.resources.insert(new Setup());
+        em.setEnabledState(lens, ENABLED);
+        world.resources.remove(Setup);
+        expect(stepLog()).toEqual(["requirer"]);
+        em.destroyEntity(lens);
+        expect(stepLog()).toEqual([]);
+    });
+
+    test("an occupied query or a present resource at registration counts as satisfied", () => {
+        world.resources.insert(new Setup());
+        em.createEntity("marker", [new Marker()]);
+        const fromResource = world.createSystem(queryOrResourceRequirer("from resource"));
+        expect(fromResource.requirementsMet).toBe(true);
+        world.resources.remove(Setup);
+        em.createEntity("lens", [new Lens()]);
+        expect(fromResource.requirementsMet).toBe(true);
+    });
+
+    test("with several resources any one present satisfies it, and it stays satisfied while another is swapped out", () => {
+        const requirer = world.createSystem(class extends System {
+            private readonly lenses = this.createEntityQuery([Lens]);
+
+            protected override onCreate(): void {
+                this.requireQueryOrResourceForUpdate(this.lenses, Setup, OtherSetup);
+            }
+
+            onUpdate(): void {
+                log.push("either");
+            }
+        });
+        expect(requirer.requirementsMet).toBe(false);
+        world.resources.insert(new OtherSetup());
+        expect(stepLog()).toEqual(["either"]);
+        world.resources.insert(new Setup());
+        world.resources.remove(OtherSetup);
+        expect(requirer.requirementsMet).toBe(true);
+        world.resources.remove(Setup);
+        expect(requirer.requirementsMet).toBe(false);
+        expect(world.resources.listenerCount(OtherSetup)).toBe(1);
+    });
+
+    test("a destroyed system stops watching its query and resource", () => {
+        const ctor = queryOrResourceRequirer("requirer");
+        const requirer = world.createSystem(ctor);
+        expect(world.resources.listenerCount(Setup)).toBe(1);
+        world.removeSystem(ctor);
+        expect(world.resources.listenerCount(Setup)).toBe(0);
+        world.resources.insert(new Setup());
+        em.createEntity("lens", [new Lens()]);
+        expect(requirer.requirementsMet).toBe(true);
+    });
+
+    test("a query made by another system is refused", () => {
+        const other = world.createSystem(class extends System {
+            public readonly lenses = this.createEntityQuery([Lens]);
+
+            onUpdate(): void {
+            }
+        });
+        expect(() => world.createSystem(class extends System {
+            protected override onCreate(): void {
+                this.requireQueryOrResourceForUpdate(other.lenses, Setup);
+            }
+
+            onUpdate(): void {
+            }
+        })).toThrow(/requireQueryOrResourceForUpdate: the query \(include \[Lens\], exclude \[\]\) was created by .*, not by this system/);
     });
 });
 
