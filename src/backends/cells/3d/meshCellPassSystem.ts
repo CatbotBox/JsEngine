@@ -4,6 +4,7 @@ import {Camera} from "../../../engine/rendering/camera";
 import {CellGrid} from "../cellGrid";
 import {LocalToWorld} from "../../../engine/translation";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
+import {RenderCameraOverride, renderCameraComponents} from "../../../engine/rendering/renderCameraOverride";
 import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {RenderMesh} from "../../../engine/rendering/3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
@@ -17,6 +18,14 @@ import {MeshCellPassSettings} from "./meshCellPassSettings";
 import {RenderMeshBoundsSystem} from "../../../engine/rendering/3d/renderMeshBoundsSystem";
 import {SceneLights} from "../../../engine/rendering/3d/lighting/sceneLights";
 import {SceneLightsGatherSystem} from "../../../engine/rendering/3d/lighting/sceneLightsGatherSystem";
+
+const CAMERA_SPEC = {
+    camera: Camera,
+    screenSize: ScreenSize,
+    cellAspectRatio: CellAspectRatio,
+    localToWorld: LocalToWorld,
+    fov: FieldOfView,
+};
 
 export class MeshCellPassSystem extends System {
     public static readonly renderPass: RenderPassKind = "meshes";
@@ -46,7 +55,7 @@ export class MeshCellPassSystem extends System {
         }, this.world.platform.workers);
         this.world.resources.getOrCreate(MeshRenderStats);
         this.requireAllForUpdate(this._settingsQuery);
-        this.requireAllForUpdate(this._cameraQuery);
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
         this.requireAnyForUpdate(this._selectiveRenderQuery);
         this.world.ensureSystemExists(RenderMeshBoundsSystem);
@@ -62,13 +71,8 @@ export class MeshCellPassSystem extends System {
     private draw(): void {
         const settings = this._settingsQuery.getSingleton({settings: MeshCellPassSettings}).settings;
         const meshSettings = this._meshSettingsQuery.tryGetSingleton({settings: MeshRenderSettings})?.settings ?? this._defaultMeshSettings;
-        const cameraEntity = this._cameraQuery.getSingleton({
-            camera: Camera,
-            screenSize: ScreenSize,
-            cellAspectRatio: CellAspectRatio,
-            localToWorld: LocalToWorld,
-            fov: FieldOfView,
-        });
+        const cameraEntity = renderCameraComponents(this.world, this._cameraQuery, CAMERA_SPEC);
+        if (cameraEntity === undefined) return;
 
         const dualScreenBuffer = this.world.resources.tryGet(CellGrid);
         if (!dualScreenBuffer) return;

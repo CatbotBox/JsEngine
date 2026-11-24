@@ -3,6 +3,7 @@ import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {HudElement} from "../../../engine/rendering/hudElement";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
+import {RenderCameraOverride} from "../../../engine/rendering/renderCameraOverride";
 import {anchorFractionX, anchorFractionY, anchoredStart, ScreenAnchor} from "../../../engine/rendering/screenAnchor";
 import {RenderBoundsOffset} from "../../../engine/rendering/renderBoundsOffset";
 import {Sprite} from "../../../engine/rendering/2d/sprite";
@@ -35,7 +36,7 @@ export class HudSpritePixelPassSystem extends System {
 
     protected onCreate() {
         this.requireAllForUpdate(this._settingsQuery);
-        this.requireAllForUpdate(this._cameraQuery);
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride);
         this.requireAnyForUpdate(this._hudObjectQuery);
     }
 

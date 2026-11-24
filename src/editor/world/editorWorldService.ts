@@ -43,7 +43,6 @@ import type {
     EditorResult,
     EditorSceneRef,
     EditorServiceState,
-    EditorView,
     EditorWorldMessage,
     ExportSnapshotResult,
     ImportSnapshotRequest,
@@ -72,15 +71,17 @@ import {
     createEditorEntity,
     destroyAllEntities,
     destroyWithDescendants,
+    fullFieldValueOf,
     removeComponentFrom,
     renameEntity,
     setEntityEnabled,
 } from "./entityEditing";
 import {duplicateEntities, setParent} from "./hierarchyEditing";
 import {EditorViews} from "./editorViews";
+import type {SceneViewPresenter} from "./editorViews";
 import {PrefabLibrary} from "./prefabEditing";
 import {ConsoleForwarder} from "./consoleForwarding";
-import {exportWorldSnapshot, importedEditSnapshot} from "./editorSnapshots";
+import {exportWorldSnapshot, importedEditSnapshot, snapInterpolatedTransforms} from "./editorSnapshots";
 import {
     assignResourceField,
     defaultResourceFields,
@@ -148,7 +149,6 @@ function liveOnly(world: World, entities: readonly (Entity | undefined)[]): Enti
 export class EditorWorldService {
     private _mode: EditorMode = "edit";
     private snapshot: SceneSnapshot | undefined;
-    private viewBeforePlay: EditorView | undefined;
     private frames: FrameRunner | undefined;
     private tickCount = 0;
     private tickMsTotal = 0;
@@ -195,8 +195,12 @@ export class EditorWorldService {
         return this.tickCounter.ticks;
     }
 
-    public get view(): EditorView {
-        return this.views.view;
+    public showSceneView(view: SceneViewPresenter): void {
+        if (this.attached) this.views.showScene(view);
+    }
+
+    public get sceneCamera(): Entity | undefined {
+        return this.views.editorCamera;
     }
 
     public get worldStoppedError(): string | undefined {
@@ -247,7 +251,7 @@ export class EditorWorldService {
         const requestId = message.requestId;
         let response: EditorResponseMessage;
         try {
-            response = {type: EDITOR_MESSAGE_TYPE, requestId, ok: true, result: await this.perform(message.request)};
+            response = {type: EDITOR_MESSAGE_TYPE, requestId, ok: true, result: await this.performApplyingViews(message.request)};
         } catch (error) {
             response = failureMessage(requestId, errorText(error), error);
         }
@@ -255,6 +259,14 @@ export class EditorWorldService {
             this.post(response);
         } catch (error) {
             this.post(failureMessage(requestId, `The result could not be sent: ${errorText(error)}`, error));
+        }
+    }
+
+    private async performApplyingViews(request: EditorRequest): Promise<EditorResult> {
+        try {
+            return await this.perform(request);
+        } finally {
+            if (this.attached) this.views.apply();
         }
     }
 
@@ -266,19 +278,13 @@ export class EditorWorldService {
         this.post({type: EDITOR_MESSAGE_TYPE, event});
     }
 
-    private inGameView<T>(action: () => T): T {
-        return this.views.withGameView(action);
-    }
-
     private edit<T>(touched: readonly (Entity | undefined)[], action: () => T, touchedAfter: (result: T) => readonly (Entity | undefined)[] = () => NO_ENTITIES): T {
-        return this.inGameView(() => {
-            const scenesBefore = this.scenesOf(touched);
-            const result = action();
-            const after = liveOnly(this.world, [...touched, ...touchedAfter(result)]);
-            this.prefabs.refreshAround(after);
-            this.markScenesEdited([...scenesBefore, ...this.scenesOf(after)]);
-            return result;
-        });
+        const scenesBefore = this.scenesOf(touched);
+        const result = action();
+        const after = liveOnly(this.world, [...touched, ...touchedAfter(result)]);
+        this.prefabs.refreshAround(after);
+        this.markScenesEdited([...scenesBefore, ...this.scenesOf(after)]);
+        return result;
     }
 
     private recordsSceneEdits(): boolean {
@@ -317,11 +323,13 @@ export class EditorWorldService {
         const {world, registry} = this;
         switch (request.op) {
             case "describeSchemas":
-                return this.inGameView(() => describeSchemas(world, registry));
+                return describeSchemas(world, registry);
             case "listEntities":
-                return this.inGameView(() => this.listEntities());
+                return this.listEntities();
             case "getEntity":
-                return this.inGameView(() => entityDetails(world, registry, request.entity));
+                return entityDetails(world, registry, request.entity);
+            case "getField":
+                return {value: fullFieldValueOf(world, registry, request.entity, request.typeName, request.key)};
             case "setField":
                 await this.preloadForEdit(assetReferencesOf(registry, request.typeName, {[request.key]: request.value}));
                 return this.edit([request.entity], () => ({value: assignField(world, registry, this.assets, request)}));
@@ -346,14 +354,13 @@ export class EditorWorldService {
                 await this.preloadForEdit(Object.entries(components).flatMap(([typeName, values]) => assetReferencesOf(registry, typeName, values)));
                 return this.edit([request.parent], () => entityDetails(world, registry, createEditorEntity(world, registry, this.assets, request.name, request.parent, components)), created => [created.entity]);
             }
-            case "destroyEntity":
-                return this.inGameView(() => {
-                    const parent = parentOf(world, requireSceneEntity(world, request.entity));
-                    const scenes = this.scenesOf([request.entity]);
-                    const destroyed = this.edit([parent], () => ({destroyed: destroyWithDescendants(world, request.entity)}));
-                    this.markScenesEdited(scenes);
-                    return destroyed;
-                });
+            case "destroyEntity": {
+                const parent = parentOf(world, requireSceneEntity(world, request.entity));
+                const scenes = this.scenesOf([request.entity]);
+                const destroyed = this.edit([parent], () => ({destroyed: destroyWithDescendants(world, request.entity)}));
+                this.markScenesEdited(scenes);
+                return destroyed;
+            }
             case "setEnabled":
                 return this.edit([request.entity], () => {
                     setEntityEnabled(world, request.entity, request.enabled);
@@ -364,89 +371,74 @@ export class EditorWorldService {
                     renameEntity(world, request.entity, request.name);
                     return entityDetails(world, registry, request.entity);
                 });
-            case "setParent":
-                return this.inGameView(() => {
-                    const previous = parentOf(world, requireSceneEntity(world, request.entity));
-                    const sceneBefore = this.membership.rootSceneOf(request.entity);
-                    return this.edit([previous, request.parent ?? undefined, request.entity], () => {
-                        setParent(world, request.entity, request.parent, request.siblingIndex);
-                        if (request.parent === null) this.membership.placeRoot(request.entity, sceneBefore);
-                        return entityDetails(world, registry, request.entity);
-                    });
+            case "setParent": {
+                const previous = parentOf(world, requireSceneEntity(world, request.entity));
+                const sceneBefore = this.membership.rootSceneOf(request.entity);
+                return this.edit([previous, request.parent ?? undefined, request.entity], () => {
+                    setParent(world, request.entity, request.parent, request.siblingIndex);
+                    if (request.parent === null) this.membership.placeRoot(request.entity, sceneBefore);
+                    return entityDetails(world, registry, request.entity);
                 });
-            case "duplicateEntities":
-                return this.inGameView(() => {
-                    const parents = request.entities.map(entity => parentOf(world, requireSceneEntity(world, entity)));
-                    return this.edit(parents, () => ({roots: duplicateEntities(world, registry, this.assets, request.entities)}), result => result.roots);
-                });
-            case "serializeEntities":
-                return this.inGameView(() => {
-                    const saved = serializeEntities(world, registry, request.entities.map(entity => requireSceneEntity(world, entity)));
-                    return {documentText: documentText(saved.document), report: saved.report};
-                });
+            }
+            case "duplicateEntities": {
+                const parents = request.entities.map(entity => parentOf(world, requireSceneEntity(world, entity)));
+                return this.edit(parents, () => ({roots: duplicateEntities(world, registry, this.assets, request.entities)}), result => result.roots);
+            }
+            case "serializeEntities": {
+                const saved = serializeEntities(world, registry, request.entities.map(entity => requireSceneEntity(world, entity)));
+                return {documentText: documentText(saved.document), report: saved.report};
+            }
             case "instantiateEntities":
                 return this.instantiateEntities(request);
             case "getPrefabOverrides":
-                return this.inGameView(() => this.prefabs.overridesOf(request.entity));
-            case "revertPrefabInstance":
-                return this.inGameView(() => {
-                    const scenes = this.scenesOf([request.entity]);
-                    const reverted = this.prefabs.revert(request.entity, request.paths);
-                    this.markScenesEdited(scenes);
-                    return reverted;
-                });
-            case "applyPrefabInstance":
-                return this.inGameView(() => {
-                    const applied = {documentText: documentText(this.prefabs.apply(request.entity))};
-                    this.markScenesEdited(this.scenesOf([request.entity]));
-                    return applied;
-                });
+                return this.prefabs.overridesOf(request.entity);
+            case "revertPrefabInstance": {
+                const scenes = this.scenesOf([request.entity]);
+                const reverted = this.prefabs.revert(request.entity, request.paths);
+                this.markScenesEdited(scenes);
+                return reverted;
+            }
+            case "applyPrefabInstance": {
+                const applied = {documentText: documentText(this.prefabs.apply(request.entity))};
+                this.markScenesEdited(this.scenesOf([request.entity]));
+                return applied;
+            }
             case "updatePrefabInstances": {
                 const document = parseSceneDocument(request.documentText);
                 await this.preloadDocument(document);
-                return this.inGameView(() => ({updated: this.prefabs.update(request.sourcePath, document)}));
+                return {updated: this.prefabs.update(request.sourcePath, document)};
             }
             case "pickEntities":
-                return this.inGameView(() => ({entities: this.views.pick(request.x, request.y, request.view)}));
-            case "setView":
-                return this.inGameView(() => {
-                    if (request.view === "scene" && this._mode === "play") {
-                        throw new Error("The Scene view is not available while the game plays; pause first");
-                    }
-                    this.views.setView(request.view);
-                    return {view: this.views.view};
-                });
+                return {entities: this.views.pick(request.x, request.y, request.view)};
             case "setEditorCamera":
-                return this.inGameView(() => {
-                    this.views.setEditorCamera(request.position, request.rotation, request.fieldOfViewDegrees);
-                    return this.views.viewInfo("scene", NO_ENTITIES);
-                });
+                this.views.setEditorCamera(request.position, request.rotation, request.fieldOfViewDegrees);
+                return this.views.viewInfo("scene", NO_ENTITIES);
             case "getViewInfo":
-                return this.inGameView(() => this.views.viewInfo(request.view, request.entities ?? NO_ENTITIES));
+                return this.views.viewInfo(request.view, request.entities ?? NO_ENTITIES);
             case "saveScene":
-                return this.inGameView(() => this.saveScene(request.scene));
+                return this.saveScene(request.scene);
             case "loadScene":
                 return await this.loadScene(request);
             case "unloadScene":
-                return this.inGameView(() => this.unloadScene(request.sceneId));
+                return this.unloadScene(request.sceneId);
             case "setActiveScene":
-                return this.inGameView(() => this.setActiveScene(request.scene));
+                return this.setActiveScene(request.scene);
             case "exportSnapshot":
-                return this.inGameView(() => this.exportSnapshot());
+                return this.exportSnapshot();
             case "importSnapshot":
                 return await this.importSnapshot(request);
             case "setMode":
-                return this.inGameView(() => this.changeMode(() => this.setMode(request.mode)));
+                return this.changeMode(() => this.setMode(request.mode));
             case "step":
-                return this.inGameView(() => this.changeMode(() => this.step()));
+                return this.changeMode(() => this.step());
             case "describeAssetTypes":
                 return describeAssetTypes(registry);
             case "getTickStats":
                 return {ticks: this.tickCount, tickMsTotal: this.tickMsTotal, timeMs: performance.now()};
             case "listSettings":
-                return this.inGameView(() => listSettings(world, registry));
+                return listSettings(world, registry);
             case "getResource":
-                return this.inGameView(() => resourceDetails(world, registry, request.typeName));
+                return resourceDetails(world, registry, request.typeName);
             case "setResourceField":
                 return this.setResourceField(request);
             case "reloadDataAsset":
@@ -488,31 +480,29 @@ export class EditorWorldService {
             throw new Error(`${request.typeName} is read-only while editing: resources are live game state, so edit them while the game plays or is paused`);
         }
         await this.preloadForEdit(resourceFieldAssetReferences(this.registry, request));
-        return this.inGameView(() => ({value: assignResourceField(this.world, this.registry, this.assets, request)}));
+        return {value: assignResourceField(this.world, this.registry, this.assets, request)};
     }
 
     private async instantiateEntities(request: InstantiateEntitiesRequest): Promise<InstantiateEntitiesResult> {
         const document = withoutSceneMembership(parseSceneDocument(request.documentText));
         await this.preloadForEdit(sceneAssetPaths(document, this.registry));
-        return this.inGameView(() => {
-            const parent = request.parent ?? null;
-            if (parent !== null) requireSceneEntity(this.world, parent);
-            const instantiated = this.edit([parent ?? undefined], () => {
-                const created = request.prefabSourcePath !== undefined
-                    ? this.prefabs.instantiate(document, request.prefabSourcePath, parent, request.siblingIndex)
-                    : instantiateDocument(this.world, this.registry, document, {
-                        assets: this.assets,
-                        parent,
-                        siblingIndex: request.siblingIndex,
-                        unknownComponentTypes: SKIPPED_UNKNOWN_TYPES,
-                        schemaChanges: REPORTED_SCHEMA_CHANGES,
-                    });
-                if (parent === null && request.scene !== undefined) for (const root of created.roots) this.membership.placeRoot(root, request.scene);
-                return {roots: created.roots, entities: created.entities, report: created.report};
-            });
-            this.markScenesEdited(this.scenesOf(instantiated.roots));
-            return instantiated;
+        const parent = request.parent ?? null;
+        if (parent !== null) requireSceneEntity(this.world, parent);
+        const instantiated = this.edit([parent ?? undefined], () => {
+            const created = request.prefabSourcePath !== undefined
+                ? this.prefabs.instantiate(document, request.prefabSourcePath, parent, request.siblingIndex)
+                : instantiateDocument(this.world, this.registry, document, {
+                    assets: this.assets,
+                    parent,
+                    siblingIndex: request.siblingIndex,
+                    unknownComponentTypes: SKIPPED_UNKNOWN_TYPES,
+                    schemaChanges: REPORTED_SCHEMA_CHANGES,
+                });
+            if (parent === null && request.scene !== undefined) for (const root of created.roots) this.membership.placeRoot(root, request.scene);
+            return {roots: created.roots, entities: created.entities, report: created.report};
         });
+        this.markScenesEdited(this.scenesOf(instantiated.roots));
+        return instantiated;
     }
 
     private listEntities(): ListEntitiesResult {
@@ -602,8 +592,8 @@ export class EditorWorldService {
         const document = parseSceneDocument(request.sceneText);
         if (request.additive === true) this.requireEditing("add a scene");
         await this.preloadDocument(document);
-        if (request.additive === true) return this.inGameView(() => this.addScene(document, request.path));
-        return this.inGameView(() => this.changeMode(() => {
+        if (request.additive === true) return this.addScene(document, request.path);
+        return this.changeMode(() => {
             this.abandonPlay();
             const loaded = this.scenes.loadDocument(document, {
                 mode: OPENED_SCENE_MODE,
@@ -613,7 +603,7 @@ export class EditorWorldService {
             this.editedScenes.clear();
             this.clearWorldStop();
             return {entityCount: loaded.entities.length, report: loaded.report, sceneId: loaded.handle.id};
-        }));
+        });
     }
 
     private addScene(document: SceneDocument, path: string | undefined): LoadSceneResult {
@@ -628,7 +618,7 @@ export class EditorWorldService {
         const editDocument = request.editSnapshotText === undefined ? undefined : parseSceneDocument(request.editSnapshotText);
         await this.preloadDocument(document);
         if (editDocument !== undefined) await this.preloadDocument(editDocument);
-        return this.inGameView(() => this.changeMode(() => {
+        return this.changeMode(() => {
             const loaded = this.replaceWorldWith(document);
             if (request.mode === "play") this.play();
             else if (request.mode === "paused") this.pause();
@@ -637,18 +627,18 @@ export class EditorWorldService {
             }
             this.tickCounter.ticks = request.gameplayTicks ?? 0;
             return {entities: loaded.entities, report: loaded.report};
-        }));
+        });
     }
 
     private state(): EditorServiceState {
-        return {mode: this._mode, gameplayTicks: this.gameplayTicks, view: this.views.view, worldStoppedError: this.stoppedError ?? null};
+        return {mode: this._mode, gameplayTicks: this.gameplayTicks, worldStoppedError: this.stoppedError ?? null};
     }
 
     private changeMode<T>(action: () => T): T {
         try {
             return action();
         } finally {
-            this.postEvent({kind: "modeChanged", mode: this._mode, gameplayTicks: this.gameplayTicks, view: this.views.view});
+            this.postEvent({kind: "modeChanged", mode: this._mode, gameplayTicks: this.gameplayTicks});
         }
     }
 
@@ -677,7 +667,6 @@ export class EditorWorldService {
         if (this._mode !== "edit") return;
         this.membership.adoptUntaggedRoots();
         this.snapshot = serializeWorld(this.world, this.registry);
-        this.viewBeforePlay = this.views.view;
     }
 
     private play(): void {
@@ -685,7 +674,6 @@ export class EditorWorldService {
         if (this._mode === "play") return;
         this.leaveEditMode();
         this.gate.resume();
-        this.views.setView("game");
         this._mode = "play";
     }
 
@@ -704,9 +692,10 @@ export class EditorWorldService {
         this.tickCounter.ticks = 0;
         const snapshot = this.snapshot;
         this.snapshot = undefined;
-        if (snapshot !== undefined) applySceneInPlace(this.world, this.registry, snapshot, {assets: this.assets, schemaChanges: REPORTED_SCHEMA_CHANGES});
-        if (this.viewBeforePlay !== undefined) this.views.setView(this.viewBeforePlay);
-        this.viewBeforePlay = undefined;
+        if (snapshot !== undefined) {
+            applySceneInPlace(this.world, this.registry, snapshot, {assets: this.assets, schemaChanges: REPORTED_SCHEMA_CHANGES});
+            snapInterpolatedTransforms(this.world);
+        }
     }
 
     private step(): EditorServiceState {
@@ -730,7 +719,7 @@ export class EditorWorldService {
         if (!this.stepping && this._mode !== "play") return;
         this.quitStops++;
         if (this.stepping) this.stop();
-        else this.inGameView(() => this.changeMode(() => this.stop()));
+        else this.changeMode(() => this.stop());
     }
 
     private discardPendingCommands(): void {

@@ -14,6 +14,7 @@ import {GpuSurfaceShader, LIT_SURFACE_SHADER} from "./gpuSurfaceShader";
 const DEPTH_RANGE = 250;
 const EVICT_AFTER_FRAMES = 30;
 const LOD_TRIANGLES_PER_PIXEL = 0.5;
+const RENDER_SCALE = 2;
 const HOLOGRAM = "hologram";
 const HOLOGRAM_PARAMS = [0.25, 0.5, 1, 1.75, -2, 0, 8, 0.125];
 
@@ -42,17 +43,19 @@ describe("gpu component schemas", () => {
         settings.evictUnusedAfterFrames = EVICT_AFTER_FRAMES;
         settings.textureFiltering = LINEAR_TEXTURE_FILTERING;
         settings.lodTrianglesPerPixel = LOD_TRIANGLES_PER_PIXEL;
+        settings.renderScale = RENDER_SCALE;
         const source = new World({platform: new MemoryPlatform()});
         source.entityManager.createEntity("settings", [settings]);
         const saved = serializeWorld(source, registry);
         expect(saved.document.entities[0].components.GpuMeshPassSettings).toEqual({
-            textureFiltering: "linear", sampleCount: "single", orthographicDepthRange: DEPTH_RANGE, evictUnusedAfterFrames: EVICT_AFTER_FRAMES, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL,
+            textureFiltering: "linear", sampleCount: "single", orthographicDepthRange: DEPTH_RANGE, evictUnusedAfterFrames: EVICT_AFTER_FRAMES, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL, renderScale: RENDER_SCALE,
         });
 
         const target = new World({platform: new MemoryPlatform()});
         const loaded = deserializeInto(target, registry, parseSceneDocument(JSON.stringify(saved.document)));
         const loadedSettings = target.entityManager.getComponent<GpuMeshPassSettings>(loaded.entities[0], GpuMeshPassSettings)!;
-        expect([loadedSettings.textureFiltering, loadedSettings.sampleCount, loadedSettings.orthographicDepthRange, loadedSettings.lodTrianglesPerPixel]).toEqual([LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT, DEPTH_RANGE, LOD_TRIANGLES_PER_PIXEL]);
+        expect([loadedSettings.textureFiltering, loadedSettings.sampleCount, loadedSettings.orthographicDepthRange, loadedSettings.lodTrianglesPerPixel, loadedSettings.renderScale])
+            .toEqual([LINEAR_TEXTURE_FILTERING, SINGLE_SAMPLE_COUNT, DEPTH_RANGE, LOD_TRIANGLES_PER_PIXEL, RENDER_SCALE]);
         expect(serializeWorld(target, registry).document).toEqual(saved.document);
     });
 

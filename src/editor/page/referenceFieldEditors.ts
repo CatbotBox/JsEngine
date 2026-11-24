@@ -16,7 +16,7 @@ import {
     textInput,
 } from "./fieldEditorBase";
 import type {FieldEditorContext} from "./fieldEditorBase";
-import {assetPathOf, assetText, entityLabel, entityOptionValue, inlineImageSize, NO_ENTITY_OPTION_VALUE, parseAssetPathText, parseEntityOptionValue} from "./fieldValueText";
+import {assetPathOf, assetText, entityLabel, entityOptionValue, inlineImageSize, isInlineAssetSummary, NO_ENTITY_OPTION_VALUE, parseAssetPathText, parseEntityOptionValue} from "./fieldValueText";
 import {mixedValueOf} from "./multiSelection";
 
 const NO_ENTITY_LABEL = "(none)";
@@ -26,6 +26,7 @@ const PICK_ENTITY_TEXT = "◎";
 const PICK_ASSET_TEXT = "…";
 const OPEN_DATA_ASSET_TEXT = "Open";
 const CREATE_DATA_ASSET_TEXT = "New";
+const EXTRACT_IMAGE_TEXT = "Extract…";
 const ARMED_CLASS = "armed";
 const DROPPED_ENTITY_COUNT = 1;
 const DROP_EFFECT = "copy";
@@ -125,6 +126,7 @@ export class AssetFieldEditor extends FieldEditorBase {
     private readonly input: HTMLInputElement;
     private readonly inline: HTMLElement;
     private readonly openButton: HTMLButtonElement | undefined;
+    private readonly extractButton: HTMLButtonElement | undefined;
 
     public constructor(context: FieldEditorContext, document: Document, private readonly assetType: string) {
         super(context, document);
@@ -139,6 +141,15 @@ export class AssetFieldEditor extends FieldEditorBase {
             onClick: () => this.openPicker(),
         });
         this.element.append(this.input, this.inline, pick);
+        if (this.services.extractInlineImage !== undefined) {
+            this.extractButton = createButton(document, {
+                className: "field-pick",
+                text: EXTRACT_IMAGE_TEXT,
+                title: `Extract the inline image of ${this.fieldLabel} to a PNG file in the project and use that file`,
+                onClick: () => this.services.extractInlineImage?.({entities: context.entities, typeName: context.typeName, key: context.field.key}),
+            });
+            this.element.append(this.extractButton);
+        }
         if (this.services.isDataAssetType(assetType)) {
             this.openButton = createButton(document, {
                 className: "field-pick",
@@ -165,6 +176,7 @@ export class AssetFieldEditor extends FieldEditorBase {
         this.inline.hidden = !inline;
         if (inline) this.inline.textContent = assetText(value);
         else showText(this.input, value === undefined ? undefined : assetText(value));
+        if (this.extractButton !== undefined) this.extractButton.hidden = value === undefined || !isInlineAssetSummary(value);
         if (this.openButton !== undefined) this.openButton.disabled = assetPathOf(value) === undefined;
     }
 

@@ -23,9 +23,10 @@ import type {
     SceneAssetLoader,
     SceneAssetReference,
     SceneJsonObject,
+    SceneJsonValue,
 } from "../../engine/scene";
 import type {EditorComponentValues, EditorFieldEdit, EditorFieldValue} from "../editorProtocol";
-import {encodeEditorFieldValue, isSceneEntityHandle, parentOf, requireSceneEntity, unregisteredComponentTypes} from "./entityInspection";
+import {encodeEditorFieldValue, encodeFullFieldValue, isSceneEntityHandle, parentOf, requireSceneEntity, unregisteredComponentTypes} from "./entityInspection";
 import {linkChild, reparentKeepingLocals, requireNoCycle, subtreeOf, unlinkChild} from "./hierarchyEditing";
 
 interface EditableComponent {
@@ -152,6 +153,14 @@ function applyEdit(world: World, prepared: PreparedEdit): void {
 function encodedValueOf(world: World, registry: ComponentSchemaRegistry, prepared: PreparedEdit): EditorFieldValue {
     const component = untrackedComponentOf<Component>(world, prepared.edit.entity, prepared.target.type)!;
     return encodeEditorFieldValue(world, registry, prepared.field, fieldsOf(component)[prepared.field.key], `${prepared.edit.typeName}.${prepared.edit.key}`);
+}
+
+export function fullFieldValueOf(world: World, registry: ComponentSchemaRegistry, entity: Entity, typeName: string, key: string): SceneJsonValue {
+    requireSceneEntity(world, entity);
+    const target = editableComponentOf(world, registry, entity, typeName);
+    const field = requireField(target.schema, key);
+    const component = untrackedComponentOf<Component>(world, entity, target.type)!;
+    return encodeFullFieldValue(world, registry, field, fieldsOf(component)[key], `${typeName}.${key}`);
 }
 
 export function assignField(world: World, registry: ComponentSchemaRegistry, assets: SceneAssetLoader, edit: EditorFieldEdit): EditorFieldValue {

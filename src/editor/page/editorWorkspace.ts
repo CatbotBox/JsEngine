@@ -18,7 +18,6 @@ import type {
     EditorResourceDescription,
     EditorResultOf,
     EditorServiceState,
-    EditorView,
     InstantiateEntitiesRequest,
     ListEntitiesResult,
     SetFieldResult,
@@ -40,6 +39,7 @@ import {ENTITY_TEMPLATE_NAMES, entityTemplateProblem, entityTemplateRequest, has
 import type {EntityTemplate} from "./entityTemplates";
 import {entitySummaryLabel} from "./entityTree";
 import {isInlineAssetSummary} from "./fieldValueText";
+import {extractedImagePath, extractedImagePathProblem, imageExtraction, imageExtractionCommand} from "./imageExtraction";
 import {parentLookupOf, planMoves, siblingIndexIn, siblingListsOf, subtreeInListOrder, topmostEntities} from "./hierarchyDrop";
 import type {DropTarget, HierarchyLink} from "./hierarchyDrop";
 import {
@@ -59,7 +59,7 @@ import {
 import type {ProjectFileKind} from "./projectFiles";
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {FileExistenceCommand, newFileSnapshot, ObservedProjectFiles} from "./fileUndo";
-import {GAME_VIEW_OPTIONS_STORAGE_KEY, gameViewOptionsText, parseGameViewOptions, withGameViewOption} from "./gameViewOptions";
+import {GAME_VIEW_OPTIONS_STORAGE_KEY, gameViewOptionsText, isLayoutMaximized, parseGameViewOptions, withGameViewOption} from "./gameViewOptions";
 import type {GameViewOptionChoice, GameViewOptions} from "./gameViewOptions";
 import {HANDLE_MODES_STORAGE_KEY, handleModesText, parseHandleModes} from "./handleModes";
 import type {HandleModes} from "./handleModes";
@@ -120,7 +120,7 @@ const UNSAFE_FILE_NAME_CHARACTERS = /[\\/:*?"<>|\u0000-\u001f]/g;
 const SAFE_REPLACEMENT = "_";
 const NO_VALUES: SceneJsonObject = {};
 const ENTITY_PICK_HINT = "Click an entity in the Scene view to pick it (Esc cancels)";
-const ENTITY_PICK_SCENE_VIEW_HINT = "Switch to the Scene view and click an entity to pick it (Esc cancels)";
+const ENTITY_PICK_SCENE_VIEW_HINT = "The Scene view is hidden while the game view is maximized: stop the game and click an entity in the Scene view to pick it (Esc cancels)";
 const CANCEL_KEY = "Escape";
 const DATA_ASSETS_FOLDER = "assets";
 
@@ -128,7 +128,7 @@ interface EntityPick {
     finish(entity: Entity | undefined): void;
 }
 
-type ServiceStateUpdate = Pick<EditorServiceState, "mode" | "gameplayTicks" | "view"> & {readonly worldStoppedError?: string | null};
+type ServiceStateUpdate = Pick<EditorServiceState, "mode" | "gameplayTicks"> & {readonly worldStoppedError?: string | null};
 
 function samePosition(a: SceneJsonValue, b: Vector3): boolean {
     return Array.isArray(a) && a.length === b.length && a.every((value, index) => value === b[index]);
@@ -150,7 +150,6 @@ export class EditorWorkspace implements UndoContext {
     public readonly files: ObservedProjectFiles;
     public mode: EditorMode = "edit";
     public gameplayTicks = 0;
-    public view: EditorView = "scene";
     public tool: EditorTool = "move";
     public snapSteps: SnapSteps;
     public snapEnabled: boolean;
@@ -230,6 +229,10 @@ export class EditorWorkspace implements UndoContext {
 
     public get recording(): boolean {
         return this.mode === "edit";
+    }
+
+    public get sceneViewShown(): boolean {
+        return !isLayoutMaximized(this.gameViewOptions, this.mode);
     }
 
     public get primary(): Entity | undefined {
@@ -417,7 +420,6 @@ export class EditorWorkspace implements UndoContext {
         const modeChanged = state.mode !== this.mode;
         this.mode = state.mode;
         this.gameplayTicks = state.gameplayTicks;
-        this.view = state.view;
         if (state.worldStoppedError !== undefined) this.worldStoppedError = state.worldStoppedError;
         this.refresh.setMode(state.mode);
         if (modeChanged && state.mode === "edit") this.refresh.refreshAll();
@@ -441,7 +443,7 @@ export class EditorWorkspace implements UndoContext {
                 },
             };
             this.emit("entityPick");
-            this.notice("info", this.view === "scene" && this.mode !== "play" ? ENTITY_PICK_HINT : ENTITY_PICK_SCENE_VIEW_HINT);
+            this.notice("info", this.sceneViewShown ? ENTITY_PICK_HINT : ENTITY_PICK_SCENE_VIEW_HINT);
         });
     }
 
@@ -529,14 +531,6 @@ export class EditorWorkspace implements UndoContext {
 
     public async step(): Promise<void> {
         await this.run(async () => this.applyServiceState(await this.request({op: "step"})));
-    }
-
-    public async setView(view: EditorView): Promise<void> {
-        await this.run(async () => {
-            const result = await this.request({op: "setView", view});
-            this.view = result.view;
-            this.emit("state");
-        });
     }
 
     public async undoLast(): Promise<void> {
@@ -829,6 +823,38 @@ export class EditorWorkspace implements UndoContext {
             this.select([root]);
             this.reveal(path);
             this.notice("info", `Created prefab ${path}`);
+        });
+    }
+
+    public async extractInlineImage(entity: Entity, typeName: string, key: string): Promise<string | undefined> {
+        const summary = this.summaries.get(entity);
+        const existing = allProjectPaths(await this.files.list());
+        const chosen = await askForText(this.document, {
+            title: `Extract ${typeName}.${key} to a PNG file`,
+            label: "File path in the project",
+            initialValue: extractedImagePath(existing, safeFileStem(summary === undefined ? DEFAULT_ENTITY_NAME : entitySummaryLabel(summary))),
+            confirmText: "Extract",
+            validate: value => extractedImagePathProblem(value, existing),
+        });
+        if (chosen === undefined) return undefined;
+        const path = normalizeProjectPath(chosen.trim());
+        return this.run(async () => {
+            if (!this.recording) throw new Error("Images can only be extracted while editing; stop the game first");
+            const {value} = await this.request({op: "getField", entity, typeName, key});
+            const extraction = imageExtraction(entity, typeName, key, value, path);
+            const problem = extractedImagePathProblem(path, allProjectPaths(await this.files.list()));
+            if (problem !== undefined) throw new Error(problem);
+            await this.files.write(path, extraction.png);
+            try {
+                await this.applyFieldChanges([extraction.change]);
+            } catch (error) {
+                await this.files.remove(path);
+                throw error;
+            }
+            this.record(imageExtractionCommand(this.refs, `Extract ${typeName}.${key}`, extraction));
+            this.reveal(path);
+            this.notice("info", `Extracted ${typeName}.${key} to ${path}`);
+            return path;
         });
     }
 

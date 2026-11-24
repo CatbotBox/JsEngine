@@ -5,7 +5,7 @@ import {MemoryPixelPresenter} from "../pixels/memoryPixelPresenter";
 import {clearColorOf, DEPTH_FORMAT, GpuFrame} from "./gpuFrame";
 import {GpuDeviceResource} from "./gpuDeviceResource";
 import {GpuCanvasPixelPresenter, MAX_GPU_FRAMES_IN_FLIGHT} from "./gpuCanvasPixelPresenter";
-import {MULTISAMPLE_COUNT, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
+import {MIN_RENDER_SCALE, MULTISAMPLE_COUNT, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 import {OVERLAY_TEXTURE_FORMAT} from "./gpuOverlayPass";
 import {FULL_SCREEN_TRIANGLE_VERTICES} from "./shaders/overlayShader";
 import {FakeCanvas, FakeCanvasContext, FakeGpuDevice, FakeGpuTexture} from "./testing/fakeGpuDevice";
@@ -16,6 +16,8 @@ const WIDTH = 64, HEIGHT = 32;
 const RESIZED_WIDTH = 128, RESIZED_HEIGHT = 48;
 const BACKGROUND = 0x102030;
 const UNIT_X = 8, UNIT_Y = 16;
+const UNSCALED = MIN_RENDER_SCALE;
+const DEVICE_RENDER_SCALE = 2;
 
 interface Rig {
     readonly device: FakeGpuDevice;
@@ -70,7 +72,7 @@ describe("GpuFrame", () => {
 
     test("a scene pass clears to the background with reversed depth, resolves its multisamples into the canvas, and the overlay blends over it", () => {
         const {device, context, frame} = rig();
-        const scene = frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT);
+        const scene = frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED);
         scene.end();
         frame.finish(pixelFrame());
         const [scenePass, overlayPass] = device.submittedPasses;
@@ -87,7 +89,7 @@ describe("GpuFrame", () => {
 
     test("a single-sample scene draws straight into the canvas texture", () => {
         const {device, context, frame} = rig();
-        frame.beginScene(BACKGROUND, SINGLE_SAMPLE_COUNT, WIDTH, HEIGHT).end();
+        frame.beginScene(BACKGROUND, SINGLE_SAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED).end();
         frame.finish(pixelFrame());
         const sceneColor = colorAttachment(device.submittedPasses[0]);
         expect([textureOf(sceneColor.view), sceneColor.resolveTarget, sceneColor.storeOp]).toEqual([context.currentTextures[0], undefined, "store"]);
@@ -96,20 +98,48 @@ describe("GpuFrame", () => {
     test("depth and multisample targets follow the canvas size and sample count, and are kept otherwise", () => {
         const {device, canvas, frame} = rig();
         const sceneTargets = () => device.textures.filter(texture => texture.descriptor.label?.startsWith("scene"));
-        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT).end();
+        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED).end();
         frame.finish(pixelFrame());
-        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT).end();
+        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED).end();
         frame.finish(pixelFrame());
         expect(sceneTargets().length).toBe(2);
-        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, RESIZED_WIDTH, RESIZED_HEIGHT).end();
+        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, RESIZED_WIDTH, RESIZED_HEIGHT, UNSCALED).end();
         frame.finish(pixelFrame(RESIZED_WIDTH, RESIZED_HEIGHT));
         expect([canvas.width, canvas.height]).toEqual([RESIZED_WIDTH, RESIZED_HEIGHT]);
         const live = sceneTargets().filter(texture => !texture.destroyed);
         expect(live.map(texture => texture.descriptor.size)).toEqual([{width: RESIZED_WIDTH, height: RESIZED_HEIGHT}, {width: RESIZED_WIDTH, height: RESIZED_HEIGHT}]);
         expect(sceneTargets().length).toBe(4);
-        frame.beginScene(BACKGROUND, SINGLE_SAMPLE_COUNT, RESIZED_WIDTH, RESIZED_HEIGHT).end();
+        frame.beginScene(BACKGROUND, SINGLE_SAMPLE_COUNT, RESIZED_WIDTH, RESIZED_HEIGHT, UNSCALED).end();
         frame.finish(pixelFrame(RESIZED_WIDTH, RESIZED_HEIGHT));
         expect(sceneTargets().filter(texture => !texture.destroyed).map(texture => texture.descriptor.format)).toEqual([DEPTH_FORMAT]);
+    });
+
+    test("a render scale draws the scene into a canvas that many times the framebuffer, and the framebuffer-sized overlay stretches over it", () => {
+        const {device, canvas, context, frame} = rig();
+        const scaledSize = {width: WIDTH * DEVICE_RENDER_SCALE, height: HEIGHT * DEVICE_RENDER_SCALE};
+        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT, DEVICE_RENDER_SCALE).end();
+        frame.finish(pixelFrame());
+        expect([canvas.width, canvas.height]).toEqual([scaledSize.width, scaledSize.height]);
+        const [scenePass, overlayPass] = device.submittedPasses;
+        expect(textureOf(colorAttachment(scenePass).view)?.descriptor.size).toEqual(scaledSize);
+        expect(textureOf(scenePass.descriptor.depthStencilAttachment!.view)?.descriptor.size).toEqual(scaledSize);
+        expect(textureOf(colorAttachment(overlayPass).view)).toBe(context.currentTextures[0]);
+        expect(context.currentTextures[0].descriptor.size).toEqual(scaledSize);
+        expect([colorAttachment(overlayPass).loadOp, context.currentTextures.length, device.queue.submissions.length]).toEqual(["load", 1, 1]);
+        expect(overlayPass.callsOf("draw").map(call => call.args[0])).toEqual([FULL_SCREEN_TRIANGLE_VERTICES]);
+        expect(device.queue.textureWrites[0].size).toEqual({width: WIDTH, height: HEIGHT});
+    });
+
+    test("frames without a scene keep the last render scale, so the canvas is not resized between them", () => {
+        const {canvas, context, frame} = rig();
+        frame.beginScene(BACKGROUND, SINGLE_SAMPLE_COUNT, WIDTH, HEIGHT, DEVICE_RENDER_SCALE).end();
+        frame.finish(pixelFrame());
+        frame.finish(pixelFrame());
+        expect([canvas.width, canvas.height]).toEqual([WIDTH * DEVICE_RENDER_SCALE, HEIGHT * DEVICE_RENDER_SCALE]);
+        expect(context.currentTextures.length).toBe(2);
+        frame.beginScene(BACKGROUND, SINGLE_SAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED).end();
+        frame.finish(pixelFrame());
+        expect([canvas.width, canvas.height]).toEqual([WIDTH, HEIGHT]);
     });
 
     test("an empty frame submits nothing", () => {
@@ -121,7 +151,7 @@ describe("GpuFrame", () => {
 
     test("dispose destroys the targets and the overlay texture", () => {
         const {device, frame} = rig();
-        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT).end();
+        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED).end();
         frame.finish(pixelFrame());
         frame.dispose();
         expect(device.liveTextures().length).toBe(0);

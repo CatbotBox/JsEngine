@@ -240,12 +240,16 @@ function editorEncodeContext(world: World, registry: ComponentSchemaRegistry): F
     };
 }
 
+export function encodeFullFieldValue(world: World, registry: ComponentSchemaRegistry, field: FieldSchema, value: unknown, path: string): SceneJsonValue {
+    return encodeFieldValue(field, value, editorEncodeContext(world, registry), path);
+}
+
 export function encodeEditorFieldValue(world: World, registry: ComponentSchemaRegistry, field: FieldSchema, value: unknown, path: string): EditorFieldValue {
     const isSpriteImageField = field.kind === "asset" && field.assetType === SPRITE_IMAGE_ASSET_TYPE_NAME;
     if (isSpriteImageField && value instanceof SpriteImage && value.sourcePath === undefined) {
         return {inline: {width: value.sizeX, height: value.sizeY}};
     }
-    return encodeFieldValue(field, value, editorEncodeContext(world, registry), path);
+    return encodeFullFieldValue(world, registry, field, value, path);
 }
 
 export function schemaOfComponent(registry: ComponentSchemaRegistry, type: AnyCT, component: Component): ComponentSchema {

@@ -1,10 +1,13 @@
-import type {FrameCallback, FramePacing, FrameScheduler, PresentationBacklog} from "../platform/platform";
+import type {CappedPacingKind, FrameCallback, FramePacing, FrameScheduler, PresentationBacklog} from "../platform/platform";
 
 export class ManualFrameScheduler implements FrameScheduler {
     public starts = 0;
     private _pacing: FramePacing | undefined;
     private _onFrame: FrameCallback | undefined;
     private _backlog: PresentationBacklog | undefined;
+
+    public constructor(public readonly cappedPacing?: CappedPacingKind) {
+    }
 
     public get pacing(): FramePacing | undefined {
         return this._pacing;

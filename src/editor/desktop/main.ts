@@ -12,6 +12,9 @@ import type {SmokeFlow, SmokeFlowResult, SmokeHost} from "./smokeFlows";
 import type {SmokeInputEvent} from "./smokeInput";
 import type {SmokeClock, SmokePage} from "./smokeUi";
 import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../project/windowZoom";
+import {EDITOR_VIEWPORT_HOOK, hookSelector} from "../project/editorUiHooks";
+import {BITMAP_BYTES_PER_PIXEL, bitmapWidthPx, drawnPixelsIn, scaledRect} from "./capturedViews";
+import type {CapturedRect} from "./capturedViews";
 
 const SCHEME = "app";
 const HOST = "bundle";
@@ -29,7 +32,6 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_BAD_REQUEST = 400;
 const HTTP_PUT = "PUT";
 const JSON_CONTENT_TYPE = "application/json";
-const BITMAP_BYTES_PER_PIXEL = 4;
 const ARGV_APP_ARGS_START_UNPACKAGED = 2;
 const ARGV_APP_ARGS_START_PACKAGED = 1;
 const AS_USER_GESTURE = true;
@@ -52,6 +54,21 @@ const NO_FLOWS = "none";
 const FLOW_SELECTION = "flowSelection";
 const NO_DURATION_MS = 0;
 const RECURSIVE_REMOVAL = {recursive: true, force: true, maxRetries: SMOKE_REMOVE_RETRIES};
+const SMOKE_PASSED_EXIT_CODE = 0;
+const SMOKE_FAILED_EXIT_CODE = 1;
+
+interface ViewportReport extends CapturedRect {
+    readonly id: string;
+    readonly canvas: boolean;
+}
+
+interface PageReport {
+    readonly crossOriginIsolated: boolean;
+    readonly canvas: boolean;
+    readonly renderBackend: string | undefined;
+    readonly cssWidthPx: number;
+    readonly viewports: readonly ViewportReport[];
+}
 
 export interface PackagedLaunch {
     readonly page: string;
@@ -81,6 +98,7 @@ const smoke = args.includes("--smoke");
 const screenshotPath = flagValue("screenshot");
 const MIN_DRAWN_PIXELS = 256;
 const DISPLAY_CANVAS_SELECTOR = "#terminal canvas, #viewport canvas, [data-editor-viewport] canvas";
+const EDITOR_VIEWPORT_SELECTOR = hookSelector(EDITOR_VIEWPORT_HOOK);
 const repoRoot = flagValue("repo");
 const requestedFlows = flagValue("flows");
 const smokeFolderAnswers: string[] = [];
@@ -126,6 +144,7 @@ async function respond(request: Request): Promise<Response> {
         headers: {...ISOLATION_HEADERS, "Content-Type": contentTypeOf(path)},
     });
 }
+
 
 function drawnPixelCount(bitmap: Buffer): number {
     let drawn = 0;
@@ -218,16 +237,31 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     await sleep(SMOKE_SETTLE_MS);
     const editorState = await editorStateOf(window);
     const report = await window.webContents.executeJavaScript(`(() => {
+        const sized = canvas => canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0 && canvas.style.display !== "none";
         const canvas = document.querySelector(${JSON.stringify(DISPLAY_CANVAS_SELECTOR)});
+        const viewports = [...document.querySelectorAll(${JSON.stringify(EDITOR_VIEWPORT_SELECTOR)})].map(viewport => {
+            const bounds = viewport.getBoundingClientRect();
+            return {
+                id: viewport.getAttribute(${JSON.stringify(EDITOR_VIEWPORT_HOOK)}),
+                canvas: [...viewport.querySelectorAll("canvas")].some(sized),
+                left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height,
+            };
+        });
         return {
             crossOriginIsolated,
-            canvas: canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0,
+            canvas: viewports.length > 0 ? viewports.every(viewport => viewport.canvas) : sized(canvas),
             renderBackend: document.documentElement.dataset.renderBackend,
+            cssWidthPx: window.innerWidth,
+            viewports,
         };
-    })()`) as {crossOriginIsolated: boolean, canvas: boolean, renderBackend: string | undefined};
+    })()`) as PageReport;
     const image = await window.webContents.capturePage();
     if (screenshotPath !== undefined) await writeFile(screenshotPath, image.toPNG());
-    const drawnPixels = drawnPixelCount(image.toBitmap());
+    const bitmap = image.toBitmap();
+    const widthPx = bitmapWidthPx(bitmap.length, image.getSize());
+    const pxPerCssPx = report.cssWidthPx > 0 ? widthPx / report.cssWidthPx : 0;
+    const drawnPixels = drawnPixelCount(bitmap);
+    const viewportDrawnPixels = Object.fromEntries(report.viewports.map(viewport => [viewport.id, drawnPixelsIn(bitmap, widthPx, scaledRect(viewport, pxPerCssPx))]));
     const editorReady = editorState === undefined || editorState === EDITOR_READY_STATE;
     const requestedBackend = requestedRenderBackend(page);
     const backendMatches = renderBackendMatches(requestedBackend, report.renderBackend);
@@ -235,8 +269,16 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     const loadErrors = [...pageErrors];
     const flows = pagePassed && editorState !== undefined ? await runEditorFlows(window, pageErrors) : [];
     const passed = pagePassed && smokeFlowsPassed(flows);
-    console.log(JSON.stringify({page, ...report, requestedBackend, editorState, drawnPixels, pageErrors: loadErrors, flows, passed}));
-    app.exit(passed ? 0 : 1);
+    const {crossOriginIsolated, canvas, renderBackend} = report;
+    console.log(JSON.stringify({page, crossOriginIsolated, canvas, renderBackend, requestedBackend, editorState, drawnPixels, viewportDrawnPixels, pageErrors: loadErrors, flows, passed}));
+    app.exit(passed ? SMOKE_PASSED_EXIT_CODE : SMOKE_FAILED_EXIT_CODE);
+}
+
+function failWhenTheRendererDies(window: BrowserWindow): void {
+    window.webContents.on("render-process-gone", (_event, details) => {
+        console.log(JSON.stringify({page, rendererGone: details.reason, exitCode: details.exitCode, passed: false}));
+        app.exit(SMOKE_FAILED_EXIT_CODE);
+    });
 }
 
 async function renderBackendScriptPending(window: BrowserWindow): Promise<boolean> {
@@ -332,6 +374,7 @@ async function openWindow(): Promise<void> {
     window.webContents.on("console-message", event => {
         if (event.level === "error") pageErrors.push(event.message);
     });
+    if (smoke) failWhenTheRendererDies(window);
     await window.loadURL(`${SCHEME}://${HOST}/${page}`);
     await pressPlay(window);
     if (smoke) await smokeTest(window, pageErrors);

@@ -4,6 +4,7 @@ import {Camera} from "../../../engine/rendering/camera";
 import {CellGrid} from "../cellGrid";
 import {HudElement} from "../../../engine/rendering/hudElement";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
+import {RenderCameraOverride, renderCameraComponents} from "../../../engine/rendering/renderCameraOverride";
 import {anchorFractionX, anchorFractionY, ScreenAnchor} from "../../../engine/rendering/screenAnchor";
 import {RenderBoundsOffset} from "../../../engine/rendering/renderBoundsOffset";
 import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
@@ -11,6 +12,7 @@ import {Sprite} from "../../../engine/rendering/2d/sprite";
 import {SpriteCellPassSettings} from "./spriteCellPassSettings";
 import {SpriteCellRasterizer} from "./spriteCellRasterizer";
 
+const CAMERA_SPEC = {screenSize: ScreenSize};
 const DEFAULT_ANCHOR = new ScreenAnchor();
 const DEFAULT_OFFSET = new RenderBoundsOffset();
 const PRIORITY_BEFORE_TEXT_HUD = 99;
@@ -35,7 +37,7 @@ export class HudSpriteCellPassSystem extends System {
 
     protected onCreate() {
         this.requireAllForUpdate(this._settingsQuery);
-        this.requireAllForUpdate(this._cameraQuery);
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride);
         this.requireAnyForUpdate(this._hudObjectQuery);
     }
 
@@ -44,9 +46,8 @@ export class HudSpriteCellPassSystem extends System {
         if (!dualScreenBuffer) return;
 
         const settings = this._settingsQuery.getSingleton({settings: SpriteCellPassSettings}).settings;
-        const cameraEntity = this._cameraQuery.getSingleton({
-            screenSize: ScreenSize,
-        });
+        const cameraEntity = renderCameraComponents(this.world, this._cameraQuery, CAMERA_SPEC);
+        if (cameraEntity === undefined) return;
         const screenW = cameraEntity.screenSize.x | 0;
         const screenH = cameraEntity.screenSize.y | 0;
 

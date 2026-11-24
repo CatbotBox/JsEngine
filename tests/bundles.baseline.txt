@@ -1,5 +1,5 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 187 modules, 233639 bytes minified
+demo/2d terminal cells main: 196 modules, 241036 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -60,6 +60,7 @@ demo/2d terminal cells main: 187 modules, 233639 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -89,6 +90,7 @@ demo/2d terminal cells main: 187 modules, 233639 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
@@ -119,8 +121,10 @@ demo/2d terminal cells main: 187 modules, 233639 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -133,6 +137,9 @@ demo/2d terminal cells main: 187 modules, 233639 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -156,6 +163,7 @@ demo/2d terminal cells main: 187 modules, 233639 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -164,6 +172,7 @@ demo/2d terminal cells main: 187 modules, 233639 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -218,7 +227,7 @@ demo/2d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 183 modules, 227263 bytes minified
+demo/2d web cells worker: 192 modules, 234703 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/components.ts
   demo/2d/game.ts
@@ -280,6 +289,7 @@ demo/2d web cells worker: 183 modules, 227263 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -306,6 +316,7 @@ demo/2d web cells worker: 183 modules, 227263 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
@@ -336,8 +347,10 @@ demo/2d web cells worker: 183 modules, 227263 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -350,6 +363,9 @@ demo/2d web cells worker: 183 modules, 227263 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -373,6 +389,7 @@ demo/2d web cells worker: 183 modules, 227263 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -381,6 +398,7 @@ demo/2d web cells worker: 183 modules, 227263 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -420,7 +438,7 @@ demo/2d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 183 modules, 225705 bytes minified
+demo/2d web pixels worker: 192 modules, 232725 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -482,6 +500,7 @@ demo/2d web pixels worker: 183 modules, 225705 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -508,6 +527,7 @@ demo/2d web pixels worker: 183 modules, 225705 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
@@ -538,8 +558,10 @@ demo/2d web pixels worker: 183 modules, 225705 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -552,6 +574,9 @@ demo/2d web pixels worker: 183 modules, 225705 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -575,6 +600,7 @@ demo/2d web pixels worker: 183 modules, 225705 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -583,6 +609,7 @@ demo/2d web pixels worker: 183 modules, 225705 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -622,7 +649,7 @@ demo/2d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 201 modules, 247724 bytes minified
+demo/2d web gpu worker: 210 modules, 255046 bytes minified
   demo/2d/components.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
@@ -700,6 +727,7 @@ demo/2d web gpu worker: 201 modules, 247724 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -726,6 +754,7 @@ demo/2d web gpu worker: 201 modules, 247724 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/platform/directoryFileSource.ts
   src/engine/platform/framePacing.ts
@@ -757,8 +786,10 @@ demo/2d web gpu worker: 201 modules, 247724 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -771,6 +802,9 @@ demo/2d web gpu worker: 201 modules, 247724 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -794,6 +828,7 @@ demo/2d web gpu worker: 201 modules, 247724 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -802,6 +837,7 @@ demo/2d web gpu worker: 201 modules, 247724 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -824,7 +860,7 @@ demo/2d web gpu worker: 201 modules, 247724 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 211 modules, 303676 bytes minified
+demo/3d terminal cells main: 220 modules, 311044 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -890,6 +926,7 @@ demo/3d terminal cells main: 211 modules, 303676 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -918,6 +955,7 @@ demo/3d terminal cells main: 211 modules, 303676 bytes minified
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
   src/engine/math/quaternions.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/math/types/vecArray.ts
   src/engine/platform/directoryFileSource.ts
@@ -964,8 +1002,10 @@ demo/3d terminal cells main: 211 modules, 303676 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -980,6 +1020,9 @@ demo/3d terminal cells main: 211 modules, 303676 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/componentCategories.ts
@@ -1003,6 +1046,7 @@ demo/3d terminal cells main: 211 modules, 303676 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -1012,6 +1056,7 @@ demo/3d terminal cells main: 211 modules, 303676 bytes minified
   src/engine/translation/children.ts
   src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -1067,7 +1112,7 @@ demo/3d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 207 modules, 297066 bytes minified
+demo/3d web cells worker: 216 modules, 304486 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1134,6 +1179,7 @@ demo/3d web cells worker: 207 modules, 297066 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1159,6 +1205,7 @@ demo/3d web cells worker: 207 modules, 297066 bytes minified
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
   src/engine/math/quaternions.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/math/types/vecArray.ts
   src/engine/platform/directoryFileSource.ts
@@ -1205,8 +1252,10 @@ demo/3d web cells worker: 207 modules, 297066 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -1221,6 +1270,9 @@ demo/3d web cells worker: 207 modules, 297066 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/componentCategories.ts
@@ -1244,6 +1296,7 @@ demo/3d web cells worker: 207 modules, 297066 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -1253,6 +1306,7 @@ demo/3d web cells worker: 207 modules, 297066 bytes minified
   src/engine/translation/children.ts
   src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -1293,7 +1347,7 @@ demo/3d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 208 modules, 296941 bytes minified
+demo/3d web pixels worker: 217 modules, 303957 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/game.ts
@@ -1361,6 +1415,7 @@ demo/3d web pixels worker: 208 modules, 296941 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1386,6 +1441,7 @@ demo/3d web pixels worker: 208 modules, 296941 bytes minified
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
   src/engine/math/quaternions.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/math/types/vecArray.ts
   src/engine/platform/directoryFileSource.ts
@@ -1432,8 +1488,10 @@ demo/3d web pixels worker: 208 modules, 296941 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -1448,6 +1506,9 @@ demo/3d web pixels worker: 208 modules, 296941 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/componentCategories.ts
@@ -1471,6 +1532,7 @@ demo/3d web pixels worker: 208 modules, 296941 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -1480,6 +1542,7 @@ demo/3d web pixels worker: 208 modules, 296941 bytes minified
   src/engine/translation/children.ts
   src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -1520,7 +1583,7 @@ demo/3d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 223 modules, 314550 bytes minified
+demo/3d web gpu worker: 232 modules, 322461 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
   demo/3d/components.ts
@@ -1607,6 +1670,7 @@ demo/3d web gpu worker: 223 modules, 314550 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1632,6 +1696,7 @@ demo/3d web gpu worker: 223 modules, 314550 bytes minified
   src/engine/input/schemas.ts
   src/engine/math/mat4Layout.ts
   src/engine/math/quaternions.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/math/types/vecArray.ts
   src/engine/platform/directoryFileSource.ts
@@ -1673,8 +1738,10 @@ demo/3d web gpu worker: 223 modules, 314550 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -1689,6 +1756,9 @@ demo/3d web gpu worker: 223 modules, 314550 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/componentCategories.ts
@@ -1712,6 +1782,7 @@ demo/3d web gpu worker: 223 modules, 314550 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -1721,6 +1792,7 @@ demo/3d web gpu worker: 223 modules, 314550 bytes minified
   src/engine/translation/children.ts
   src/engine/translation/eulerAngles.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -1744,7 +1816,7 @@ demo/3d web gpu worker: 223 modules, 314550 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 189 modules, 251203 bytes minified
+demo/swarm terminal cells main: 198 modules, 259040 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -1803,6 +1875,7 @@ demo/swarm terminal cells main: 189 modules, 251203 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -1831,6 +1904,7 @@ demo/swarm terminal cells main: 189 modules, 251203 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/motion/lifetime.ts
   src/engine/motion/lifetimeSystem.ts
@@ -1865,8 +1939,10 @@ demo/swarm terminal cells main: 189 modules, 251203 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -1879,6 +1955,9 @@ demo/swarm terminal cells main: 189 modules, 251203 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -1903,6 +1982,7 @@ demo/swarm terminal cells main: 189 modules, 251203 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -1911,6 +1991,7 @@ demo/swarm terminal cells main: 189 modules, 251203 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -1965,7 +2046,7 @@ demo/swarm web cells page: 19 modules, 25057 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 185 modules, 244840 bytes minified
+demo/swarm web cells worker: 194 modules, 252720 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2025,6 +2106,7 @@ demo/swarm web cells worker: 185 modules, 244840 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -2050,6 +2132,7 @@ demo/swarm web cells worker: 185 modules, 244840 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/motion/lifetime.ts
   src/engine/motion/lifetimeSystem.ts
@@ -2084,8 +2167,10 @@ demo/swarm web cells worker: 185 modules, 244840 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -2098,6 +2183,9 @@ demo/swarm web cells worker: 185 modules, 244840 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -2122,6 +2210,7 @@ demo/swarm web cells worker: 185 modules, 244840 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -2130,6 +2219,7 @@ demo/swarm web cells worker: 185 modules, 244840 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -2169,7 +2259,7 @@ demo/swarm web pixels page: 17 modules, 17208 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 186 modules, 243833 bytes minified
+demo/swarm web pixels worker: 195 modules, 251293 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2230,6 +2320,7 @@ demo/swarm web pixels worker: 186 modules, 243833 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -2255,6 +2346,7 @@ demo/swarm web pixels worker: 186 modules, 243833 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/motion/lifetime.ts
   src/engine/motion/lifetimeSystem.ts
@@ -2289,8 +2381,10 @@ demo/swarm web pixels worker: 186 modules, 243833 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -2303,6 +2397,9 @@ demo/swarm web pixels worker: 186 modules, 243833 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -2327,6 +2424,7 @@ demo/swarm web pixels worker: 186 modules, 243833 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -2335,6 +2433,7 @@ demo/swarm web pixels worker: 186 modules, 243833 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts
@@ -2374,7 +2473,7 @@ demo/swarm web gpu page: 17 modules, 16748 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 205 modules, 266088 bytes minified
+demo/swarm web gpu worker: 214 modules, 273850 bytes minified
   demo/swarm/components.ts
   demo/swarm/enemyGrid.ts
   demo/swarm/game.ts
@@ -2451,6 +2550,7 @@ demo/swarm web gpu worker: 205 modules, 266088 bytes minified
   src/engine/core/presentationBarriers.ts
   src/engine/core/presentationSystemGroup.ts
   src/engine/core/presenterBacklogs.ts
+  src/engine/core/queryOrResourceRequirement.ts
   src/engine/core/quitSystemGroup.ts
   src/engine/core/resource.ts
   src/engine/core/resourceManager.ts
@@ -2476,6 +2576,7 @@ demo/swarm web gpu worker: 205 modules, 266088 bytes minified
   src/engine/math/quaternions.ts
   src/engine/math/random.ts
   src/engine/math/randomSource.ts
+  src/engine/math/trsLayout.ts
   src/engine/math/types/vec.ts
   src/engine/motion/lifetime.ts
   src/engine/motion/lifetimeSystem.ts
@@ -2512,8 +2613,10 @@ demo/swarm web gpu worker: 205 modules, 266088 bytes minified
   src/engine/rendering/renderBackend.ts
   src/engine/rendering/renderBounds.ts
   src/engine/rendering/renderBoundsOffset.ts
+  src/engine/rendering/renderCameraOverride.ts
   src/engine/rendering/renderPasses.ts
   src/engine/rendering/renderingSystemGroup.ts
+  src/engine/rendering/renderingSystemGroupPriority.ts
   src/engine/rendering/schemas.ts
   src/engine/rendering/screenAnchor.ts
   src/engine/rendering/screenSize.ts
@@ -2526,6 +2629,9 @@ demo/swarm web gpu worker: 205 modules, 266088 bytes minified
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
   src/engine/rendering/textSpriteBoundsSystem.ts
+  src/engine/rendering/transformInterpolationBlendSystem.ts
+  src/engine/rendering/transformInterpolationCaptureSystem.ts
+  src/engine/rendering/transformInterpolationRestoreSystem.ts
   src/engine/rendering/worldSpaceRenderBounds.ts
   src/engine/rendering/worldSpaceRenderBoundsComputeSystem.ts
   src/engine/scene/base64.ts
@@ -2550,6 +2656,7 @@ demo/swarm web gpu worker: 205 modules, 266088 bytes minified
   src/engine/scene/sceneDocument.ts
   src/engine/scene/sceneHierarchy.ts
   src/engine/scene/sceneInstance.ts
+  src/engine/scene/sceneLoader.ts
   src/engine/scene/sceneManager.ts
   src/engine/scene/sceneSerialization.ts
   src/engine/scene/schemaChanges.ts
@@ -2558,6 +2665,7 @@ demo/swarm web gpu worker: 205 modules, 266088 bytes minified
   src/engine/scene/unregisteredType.ts
   src/engine/translation/children.ts
   src/engine/translation/hierarchySyncSystem.ts
+  src/engine/translation/interpolatedTransform.ts
   src/engine/translation/localPosition.ts
   src/engine/translation/localRotation.ts
   src/engine/translation/localScale.ts

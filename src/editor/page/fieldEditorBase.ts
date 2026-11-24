@@ -4,6 +4,7 @@ import type {EditorEntitySummary, EditorFieldDescription, EditorFieldValue} from
 import {capturePointer, createElement} from "./dom";
 import {numberOfWire} from "./fieldValueText";
 import type {ParsedFieldText} from "./fieldValueText";
+import type {InlineImageTarget} from "./imageExtraction";
 import {LatestOnly} from "./latestOnly";
 import {fieldValuesEqual} from "./multiSelection";
 import type {ProjectFileKind} from "./projectFiles";
@@ -44,6 +45,8 @@ export interface FieldEditorServices {
     createDataAsset(assetType: string): Promise<string | undefined>;
 
     isReadOnly(): boolean;
+
+    extractInlineImage?(target: InlineImageTarget): void;
 }
 
 export interface FieldEditorContext {

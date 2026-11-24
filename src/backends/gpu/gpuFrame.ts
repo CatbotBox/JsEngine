@@ -4,12 +4,15 @@ import {CHANNEL_MASK, CHANNEL_MAX, GREEN_SHIFT, RED_SHIFT} from "../../engine/re
 import {GPU_TEXTURE_USAGE} from "./gpuTypes";
 import type {GpuCanvasContext, GpuCanvasSurface, GpuDevice} from "./gpuTypes";
 import {GpuOverlayPass} from "./gpuOverlayPass";
-import {SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
+import {effectiveRenderScale, MIN_RENDER_SCALE, renderTargetPx, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
 
 export const DEPTH_FORMAT: GPUTextureFormat = "depth32float";
 const REVERSED_DEPTH_CLEAR = 0;
 const OPAQUE_CLEAR_ALPHA = 1;
 const CLEARED_CANVAS: GPUColor = {r: 0, g: 0, b: 0, a: OPAQUE_CLEAR_ALPHA};
+
+function releaseNothing(): void {
+}
 
 export function clearColorOf(rgb: number): GPUColor {
     return {
@@ -37,6 +40,7 @@ export class GpuFrame {
     private canvasTexture: GPUTexture | undefined;
     private sceneDrawn = false;
     private targets: SceneTargets | undefined;
+    private renderScale = MIN_RENDER_SCALE;
     private _framesInFlight = 0;
     private readonly presentedListeners = new Set<() => void>();
 
@@ -45,6 +49,7 @@ export class GpuFrame {
         private readonly context: GpuCanvasContext,
         private readonly canvas: GpuCanvasSurface,
         private readonly format: GPUTextureFormat,
+        private readonly release: () => void = releaseNothing,
     ) {
         this.overlay = new GpuOverlayPass(device, format);
     }
@@ -65,10 +70,11 @@ export class GpuFrame {
         };
     }
 
-    public beginScene(clearRgb: number, sampleCount: number, widthPx: number, heightPx: number): GPURenderPassEncoder {
-        if (this.sizeCanvas(widthPx, heightPx)) this.abandonFrame();
+    public beginScene(clearRgb: number, sampleCount: number, framebufferWidthPx: number, framebufferHeightPx: number, renderScale: number): GPURenderPassEncoder {
+        this.renderScale = renderScale;
+        if (this.sizeCanvasFor(framebufferWidthPx, framebufferHeightPx)) this.abandonFrame();
         const canvasView = this.currentCanvasTexture().createView();
-        const targets = this.sceneTargets(widthPx, heightPx, sampleCount);
+        const targets = this.sceneTargets(this.canvas.width, this.canvas.height, sampleCount);
         const multisampledView = targets.multisampledView;
         const pass = this.currentEncoder().beginRenderPass({
             label: "scene",
@@ -95,7 +101,7 @@ export class GpuFrame {
             this.abandonFrame();
             return;
         }
-        if (this.sizeCanvas(frame.widthPx, frame.heightPx)) this.abandonFrame();
+        if (this.sizeCanvasFor(frame.widthPx, frame.heightPx)) this.abandonFrame();
         const canvasView = this.currentCanvasTexture().createView();
         const uploadedBytes = this.overlay.upload(frame);
         const encoder = this.currentEncoder();
@@ -120,9 +126,12 @@ export class GpuFrame {
         this.abandonFrame();
         this.destroyTargets();
         this.overlay.dispose();
+        this.release();
     }
 
-    private sizeCanvas(widthPx: number, heightPx: number): boolean {
+    private sizeCanvasFor(framebufferWidthPx: number, framebufferHeightPx: number): boolean {
+        const scale = effectiveRenderScale(this.renderScale, framebufferWidthPx, framebufferHeightPx);
+        const widthPx = renderTargetPx(framebufferWidthPx, scale), heightPx = renderTargetPx(framebufferHeightPx, scale);
         if (this.canvas.width === widthPx && this.canvas.height === heightPx) return false;
         this.canvas.width = widthPx;
         this.canvas.height = heightPx;

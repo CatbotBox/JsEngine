@@ -17,6 +17,7 @@ import {applySceneInPlace, deserializeInto, sceneEntitiesInCreationOrder, serial
 import {SceneInstance, withoutSceneMembership} from "./sceneInstance";
 import {SceneManager} from "./sceneManager";
 import {PrefabSpawner} from "./prefabSpawner";
+import {SceneLoader} from "./sceneLoader";
 import type {LoadedScene, ScenePreload} from "./sceneManager";
 
 const FIRST_PATH = "scenes/first.scene.json";
@@ -404,5 +405,22 @@ describe("SceneManager activation and archetypes", () => {
     test("creating a SceneManager gives the world a PrefabSpawner", () => {
         const {world} = setup();
         expect(world.resources.tryGet(PrefabSpawner)).toBeInstanceOf(PrefabSpawner);
+    });
+
+    test("creating a SceneManager gives the world a SceneLoader that loads scenes through that manager", async () => {
+        const {world, scenes} = setup({[FIRST_PATH]: JSON.stringify(familyOf("first")), [SECOND_PATH]: JSON.stringify(familyOf("second"))});
+        const loader = world.resources.get(SceneLoader);
+        await scenes.load(FIRST_PATH);
+
+        const handle = await loader.load(SECOND_PATH);
+        expect(handle.path).toBe(SECOND_PATH);
+        expect(scenes.active()).toBe(handle);
+        expect(loader.active()).toBe(handle);
+        expect(namesIn(world)).toEqual(["secondRoot", "secondChild", "secondGrandchild"]);
+    });
+
+    test("a SceneLoader cannot be created without a SceneManager", () => {
+        const world = new World({platform: new MemoryPlatform()});
+        expect(() => world.resources.getOrCreate(SceneLoader)).toThrow("cannot be created on its own");
     });
 });

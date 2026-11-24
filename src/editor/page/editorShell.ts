@@ -1,5 +1,5 @@
 import type {Entity} from "../../engine/core";
-import type {EditorView} from "../editorProtocol";
+import type {EditorMode, EditorView} from "../editorProtocol";
 import {showChoicePopup} from "./choicePopup";
 import {showCommandMenu} from "./commandMenus";
 import type {MenuEntry} from "./commandMenus";
@@ -31,13 +31,17 @@ import {MenuBar} from "./menuBar";
 import {
     ALL_PANELS_SHOWN,
     clampPanelSizes,
+    clampSceneViewShare,
     DEFAULT_PANEL_SIZES,
+    DEFAULT_SCENE_VIEW_SHARE,
     LAYOUT_PANELS,
     PANEL_SIZES_STORAGE_KEY,
     panelSizesText,
     parsePanelSizes,
     parsePanelVisibility,
+    parseSceneViewShare,
     resizedPanel,
+    resizedSceneViewShare,
     shownPanelSizes,
     splitterThicknessPx,
     withPanelToggled,
@@ -57,15 +61,25 @@ import {SceneView} from "./sceneView";
 import {SettingsView} from "./settingsView";
 import {showKeyboardShortcuts} from "./shortcutsDialog";
 import {UndoHistoryView} from "./undoHistoryView";
-import {BOTTOM_PANEL_HOOK, BOTTOM_TAB_HOOK, PANEL_HOOK, PREFAB_BREADCRUMB_HOOK, TOOLBAR_HOOK} from "../project/editorUiHooks";
+import {BOTTOM_PANEL_HOOK, BOTTOM_TAB_HOOK, EDITOR_VIEWPORT_HOOK, PANEL_HOOK, PREFAB_BREADCRUMB_HOOK, TOOLBAR_HOOK} from "../project/editorUiHooks";
 
 export const EDITOR_VIEWPORT_ID = "viewport";
 export const BOTTOM_TAB_STORAGE_KEY = "jsengine.editor.bottomTab";
 export const UNSAVED_CHANGES_PROMPT = "A scene, a data asset or the project settings have unsaved changes.";
 
-const VIEW_TAB_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene", game: "Game"};
-const VIEW_TABS: readonly EditorView[] = ["scene", "game"];
+const VIEW_LABELS: Readonly<Record<EditorView, string>> = {scene: "Scene", game: "Game"};
+const SCENE_VIEW: EditorView = "scene";
 const GAME_VIEW: EditorView = "game";
+const SCENE_VIEW_FRACTION_VARIABLE = "--scene-view-fr";
+const GAME_VIEW_FRACTION_VARIABLE = "--game-view-fr";
+const FRACTION_UNIT = "fr";
+const WHOLE_SHARE = 1;
+const VERTICAL_SPLITTER = true;
+const SCENE_VIEW_SHOWN_AT_START = true;
+const PLAY_MODE: EditorMode = "play";
+const EDIT_MODE: EditorMode = "edit";
+const CANVAS_SELECTOR = "canvas";
+const NOT_DISPLAYED = "none";
 const CSS_VARIABLES: Readonly<Record<PanelSizeKey, string>> = {
     hierarchyWidthPx: "--hierarchy-width",
     inspectorWidthPx: "--inspector-width",
@@ -86,8 +100,9 @@ const ACTIVE_CLASS = "active";
 const DRAGGING_CLASS = "resizing";
 const ASPECT_FRAMED_CLASS = "aspect-framed";
 const MAXIMIZED_CLASS = "maximized";
-const SCENE_PLAY_HINT = "The Scene view is not available while the game plays; pause first";
-const GAME_TAB_MENU_HINT = "; right-click it to pick the target the Scene and Game views simulate";
+const GAME_HEADER_TITLE = "The Game view: the game's own camera, input and aspect";
+const GAME_HEADER_MENU_HINT = "; right-click it to pick the target the Scene and Game views simulate";
+const SCENE_HEADER_TITLE = "The Scene view: the editor camera, picking and gizmos";
 const NO_TARGET_LABEL = "";
 const FRAME_STYLE_PROPERTIES: readonly string[] = ["inset", "left", "top", "width", "height"];
 const FRAME_INSET = "auto";
@@ -124,7 +139,11 @@ interface ShellLayout {
     readonly center: HTMLElement;
     readonly sceneTabs: HTMLElement;
     readonly prefabBreadcrumb: HTMLElement;
-    readonly viewTabs: HTMLElement;
+    readonly views: HTMLElement;
+    readonly viewsSplitter: HTMLElement;
+    readonly sceneStage: HTMLElement;
+    readonly sceneViewport: HTMLElement;
+    readonly gameHeader: HTMLElement;
     readonly stage: HTMLElement;
     readonly viewport: HTMLElement;
     readonly overlay: HTMLCanvasElement;
@@ -174,14 +193,30 @@ function buildLayout(body: HTMLElement): ShellLayout {
     prefabBreadcrumb.setAttribute("aria-label", "Prefab breadcrumb");
     prefabBreadcrumb.setAttribute(PREFAB_BREADCRUMB_HOOK, "");
     prefabBreadcrumb.hidden = true;
-    const viewTabs = createElement(document, "div", "editor-tabs view-tabs");
-    viewTabs.setAttribute("role", "tablist");
-    const stage = createElement(document, "div", "editor-stage");
-    const viewport = panel(document, "main", "editor-viewport", "Game viewport");
-    viewport.id = EDITOR_VIEWPORT_ID;
+    const sceneHeader = createElement(document, "div", "view-header", VIEW_LABELS[SCENE_VIEW]);
+    sceneHeader.title = SCENE_HEADER_TITLE;
+    const sceneStage = createElement(document, "div", "editor-stage scene-stage");
+    const sceneViewport = panel(document, "div", "editor-viewport scene-viewport", "Scene viewport");
+    sceneViewport.setAttribute(EDITOR_VIEWPORT_HOOK, SCENE_VIEW);
     const overlay = createElement(document, "canvas", "scene-overlay");
-    stage.append(viewport, overlay);
-    center.append(sceneTabs, prefabBreadcrumb, viewTabs, stage);
+    sceneStage.append(sceneViewport, overlay);
+    const sceneView = panel(document, "section", "editor-view scene-view", "Scene view");
+    sceneView.append(sceneHeader, sceneStage);
+    const viewsSplitter = createElement(document, "div", "splitter splitter-views");
+    viewsSplitter.setAttribute("role", "separator");
+    viewsSplitter.setAttribute("aria-orientation", "vertical");
+    const gameHeader = createElement(document, "div", "view-header", VIEW_LABELS[GAME_VIEW]);
+    gameHeader.title = GAME_HEADER_TITLE;
+    const stage = createElement(document, "div", "editor-stage game-stage");
+    const viewport = panel(document, "main", "editor-viewport game-viewport", "Game viewport");
+    viewport.id = EDITOR_VIEWPORT_ID;
+    viewport.setAttribute(EDITOR_VIEWPORT_HOOK, GAME_VIEW);
+    stage.append(viewport);
+    const gameView = panel(document, "section", "editor-view game-view", "Game view");
+    gameView.append(gameHeader, stage);
+    const views = createElement(document, "div", "editor-views");
+    views.append(sceneView, viewsSplitter, gameView);
+    center.append(sceneTabs, prefabBreadcrumb, views);
     const inspector = panel(document, "aside", "editor-inspector editor-panel", "Inspector");
     inspector.setAttribute(PANEL_HOOK, INSPECTOR_PANEL);
     const bottom = panel(document, "section", "editor-bottom", "Project, Console, History, Settings and Data Assets");
@@ -207,22 +242,29 @@ function buildLayout(body: HTMLElement): ShellLayout {
     for (const element of [hierarchy, inspector, projectPanel, historyPanel, settingsPanel, assetsPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
     body.append(root);
     return {
-        root, menuRow, menuStatus, toolbar, hierarchy, center, sceneTabs, prefabBreadcrumb, viewTabs, stage, viewport, overlay, inspector, bottom, bottomTabs,
-        projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel, splitters,
+        root, menuRow, menuStatus, toolbar, hierarchy, center, sceneTabs, prefabBreadcrumb, views, viewsSplitter, sceneStage, sceneViewport, gameHeader, stage, viewport, overlay,
+        inspector, bottom, bottomTabs, projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel, splitters,
     };
 }
 
 class PanelResizer {
     private sizes: PanelSizes;
     private visibility: PanelVisibility;
+    private sceneViewShare: number;
 
     public constructor(private readonly layout: ShellLayout, private readonly window: Window | null) {
         const stored = readStorage(window, PANEL_SIZES_STORAGE_KEY);
         this.sizes = parsePanelSizes(stored);
         this.visibility = parsePanelVisibility(stored);
+        this.sceneViewShare = parseSceneViewShare(stored);
         this.apply(this.clamped(this.sizes));
+        this.applySceneViewShare(this.sceneViewShare);
         for (const [key, splitter] of layout.splitters) this.installSplitter(key, splitter);
-        window?.addEventListener("resize", () => this.apply(this.clamped(this.sizes)));
+        this.installViewsSplitter(layout.viewsSplitter);
+        window?.addEventListener("resize", () => {
+            this.apply(this.clamped(this.sizes));
+            this.applySceneViewShare(this.sceneViewShare);
+        });
     }
 
     public shown(panel: LayoutPanel): boolean {
@@ -238,11 +280,31 @@ class PanelResizer {
     public reset(): void {
         this.visibility = ALL_PANELS_SHOWN;
         this.apply(this.clamped(DEFAULT_PANEL_SIZES));
+        this.applySceneViewShare(DEFAULT_SCENE_VIEW_SHARE);
         this.store();
     }
 
     private store(): void {
-        writeStorage(this.window, PANEL_SIZES_STORAGE_KEY, panelSizesText(this.sizes, this.visibility));
+        writeStorage(this.window, PANEL_SIZES_STORAGE_KEY, panelSizesText(this.sizes, this.visibility, this.sceneViewShare));
+    }
+
+    private viewsWidthPx(): number {
+        return this.layout.views.getBoundingClientRect().width / visualScaleOf(this.layout.root);
+    }
+
+    private applySceneViewShare(share: number): void {
+        const width = this.viewsWidthPx();
+        this.sceneViewShare = width > 0 ? clampSceneViewShare(share, width) : share;
+        const style = this.layout.root.style;
+        style.setProperty(SCENE_VIEW_FRACTION_VARIABLE, `${this.sceneViewShare}${FRACTION_UNIT}`);
+        style.setProperty(GAME_VIEW_FRACTION_VARIABLE, `${WHOLE_SHARE - this.sceneViewShare}${FRACTION_UNIT}`);
+    }
+
+    private installViewsSplitter(splitter: HTMLElement): void {
+        this.installDrag(splitter, VERTICAL_SPLITTER, () => {
+            const startShare = this.sceneViewShare;
+            return deltaPx => this.applySceneViewShare(resizedSceneViewShare(startShare, deltaPx, this.viewsWidthPx()));
+        });
     }
 
     private area(): AvailableArea {
@@ -269,19 +331,22 @@ class PanelResizer {
     }
 
     private installSplitter(key: PanelSizeKey, splitter: HTMLElement): void {
-        const vertical = key !== "bottomHeightPx";
+        this.installDrag(splitter, key !== "bottomHeightPx", () => {
+            const startSize = this.sizes[key];
+            return deltaPx => this.apply(resizedPanel(this.sizes, key, startSize, deltaPx, this.area(), this.visibility));
+        });
+    }
+
+    private installDrag(splitter: HTMLElement, vertical: boolean, begin: () => (deltaPx: number) => void): void {
         splitter.addEventListener("pointerdown", event => {
             if (event.button !== 0) return;
             event.preventDefault();
             capturePointer(splitter, event.pointerId);
             const start = vertical ? event.clientX : event.clientY;
             const scale = visualScaleOf(this.layout.root);
-            const startSize = this.sizes[key];
+            const moved = begin();
             this.layout.root.classList.add(DRAGGING_CLASS);
-            const onMove = (move: PointerEvent): void => {
-                const delta = ((vertical ? move.clientX : move.clientY) - start) / scale;
-                this.apply(resizedPanel(this.sizes, key, startSize, delta, this.area(), this.visibility));
-            };
+            const onMove = (move: PointerEvent): void => moved(((vertical ? move.clientX : move.clientY) - start) / scale);
             const onUp = (): void => {
                 splitter.removeEventListener("pointermove", onMove);
                 splitter.removeEventListener("pointerup", onUp);
@@ -316,6 +381,10 @@ function onSizeChange(element: HTMLElement, changed: () => void): void {
     }).observe(element);
 }
 
+function shownCanvasIn(container: HTMLElement): HTMLCanvasElement | undefined {
+    return [...container.querySelectorAll(CANVAS_SELECTOR)].find(canvas => canvas.style.display !== NOT_DISPLAYED);
+}
+
 function observeViewportSize(viewport: HTMLElement): void {
     const window = viewport.ownerDocument.defaultView;
     onSizeChange(viewport, () => window?.dispatchEvent(new window.Event("resize")));
@@ -323,6 +392,7 @@ function observeViewportSize(viewport: HTMLElement): void {
 
 class EditorShellImplementation implements EditorShell {
     public readonly viewport: HTMLElement;
+    public readonly sceneViewport: HTMLElement;
     public readonly commands = new CommandRegistry();
     private readonly document: Document;
     private readonly layout: ShellLayout;
@@ -340,16 +410,20 @@ class EditorShellImplementation implements EditorShell {
     private buildWindow: BuildWindow | undefined;
     private preferences: PreferencesDialog | undefined;
     private readonly bottomTabButtons = new Map<BottomTab, HTMLButtonElement>();
-    private readonly viewTabButtons = new Map<EditorView, HTMLButtonElement>();
+    private readonly sceneViewShownListeners = new Set<(shown: boolean) => void>();
+    private sceneViewShown = SCENE_VIEW_SHOWN_AT_START;
+    private shownMode: EditorMode | undefined;
 
     public constructor(body: HTMLElement, private readonly options: EditorShellOptions) {
         this.document = body.ownerDocument;
         const window = this.document.defaultView;
         this.layout = buildLayout(body);
         this.viewport = this.layout.viewport;
+        this.sceneViewport = this.layout.sceneViewport;
         applyPageUiScale(this.document.documentElement, storedPageUiScale(window));
         this.resizer = new PanelResizer(this.layout, window);
         observeViewportSize(this.viewport);
+        observeViewportSize(this.sceneViewport);
         onSizeChange(this.layout.stage, () => this.applyGameViewAspect());
         const stored = readStorage(window, BOTTOM_TAB_STORAGE_KEY);
         this.bottomTab = BOTTOM_TABS.find(tab => tab === stored) ?? DEFAULT_BOTTOM_TAB;
@@ -385,7 +459,7 @@ class EditorShellImplementation implements EditorShell {
         const consoleView = new ConsoleView(this.layout.consolePanel, workspace);
         consoleView.onCountsChanged(() => this.showConsoleBadge(workspace));
         new UndoHistoryView(this.layout.historyPanel, workspace);
-        const scene = new SceneView(this.layout.stage, this.viewport, this.layout.overlay, workspace);
+        const scene = new SceneView(this.layout.sceneStage, this.sceneViewport, this.layout.overlay, workspace);
         this.layout.stage.append(new GameStatsOverlay(this.document, workspace, this.viewport, () => this.targetLabel).element);
         const settings = new SettingsView(this.layout.settingsPanel, workspace, rotations);
         const dataAssets = new DataAssetsView(this.layout.assetsPanel, workspace, rotations);
@@ -411,13 +485,11 @@ class EditorShellImplementation implements EditorShell {
             return;
         }
         const {workspace, scene, project, dataAssets, rotations} = mounted;
-        const view = workspace.view;
         rotations.retainEntities(new Set<Entity>());
         await workspace.replaceSession(session, remap);
         project.rebind();
         dataAssets.rebind();
         scene.resendCamera();
-        if (workspace.mode !== "play") await workspace.setView(view);
         workspace.emit("state");
         workspace.emit("document");
     }
@@ -434,8 +506,16 @@ class EditorShellImplementation implements EditorShell {
 
     public setGameTargetMenu(entries: readonly MenuEntry[]): void {
         this.gameTargetMenu = entries;
-        this.refreshViewTabTitles();
+        this.layout.gameHeader.title = this.gameTargetMenu === undefined ? GAME_HEADER_TITLE : GAME_HEADER_TITLE + GAME_HEADER_MENU_HINT;
         this.commands.changed();
+    }
+
+    public onSceneViewShown(listener: (shown: boolean) => void): () => void {
+        const entry = (shown: boolean): void => listener(shown);
+        this.sceneViewShownListeners.add(entry);
+        return () => {
+            this.sceneViewShownListeners.delete(entry);
+        };
     }
 
     private commandHost(): EditorCommandHost {
@@ -461,33 +541,18 @@ class EditorShellImplementation implements EditorShell {
             buildUnavailableReason: () => this.options.projectBuild === undefined ? BUILD_NEEDS_SERVER_REASON : this.options.projectBuild.unavailableReason,
             openBuildWindow: () => this.openBuildWindow(),
             openPreferences: () => this.openPreferences(),
+            focusView: view => this.focusView(view),
         };
-    }
-
-    private viewTabTitle(view: EditorView): string {
-        const shown = `Show the ${VIEW_TAB_LABELS[view]} view`;
-        return view === GAME_VIEW && this.gameTargetMenu !== undefined ? shown + GAME_TAB_MENU_HINT : shown;
     }
 
     private buildTabs(): void {
         const document = this.document;
-        for (const view of VIEW_TABS) {
-            const button = createButton(document, {className: "editor-tab", text: VIEW_TAB_LABELS[view], title: this.viewTabTitle(view), onClick: () => {
-                const workspace = this.mounted?.workspace;
-                if (workspace !== undefined && workspace.view !== view) void workspace.setView(view);
-            }});
-            button.setAttribute("role", "tab");
-            if (view === GAME_VIEW) {
-                button.addEventListener("contextmenu", event => {
-                    const menu = this.gameTargetMenu;
-                    if (menu === undefined) return;
-                    event.preventDefault();
-                    showCommandMenu(document, event.clientX, event.clientY, menu);
-                });
-            }
-            this.viewTabButtons.set(view, button);
-            this.layout.viewTabs.append(button);
-        }
+        this.layout.gameHeader.addEventListener("contextmenu", event => {
+            const menu = this.gameTargetMenu;
+            if (menu === undefined) return;
+            event.preventDefault();
+            showCommandMenu(document, event.clientX, event.clientY, menu);
+        });
         for (const tab of BOTTOM_TABS) {
             const button = createButton(document, {className: "editor-tab", text: BOTTOM_TAB_LABELS[tab], title: `Show the ${BOTTOM_TAB_LABELS[tab]}`, onClick: () => this.showBottomTab(tab)});
             button.setAttribute("role", "tab");
@@ -522,30 +587,32 @@ class EditorShellImplementation implements EditorShell {
     private stateChanged(workspace: EditorWorkspace): void {
         this.layout.toolbar.dataset.mode = workspace.mode;
         this.layout.root.classList.toggle(MAXIMIZED_CLASS, isLayoutMaximized(workspace.gameViewOptions, workspace.mode));
-        this.showViewTabs(workspace);
+        this.showSceneViewShown(workspace.sceneViewShown);
+        this.moveFocusWithMode(workspace.mode);
+        this.applyGameViewAspect();
         this.commands.changed();
     }
 
-    private refreshViewTabTitles(): void {
-        const workspace = this.mounted?.workspace;
-        if (workspace !== undefined) {
-            this.showViewTabs(workspace);
-            return;
-        }
-        for (const [view, button] of this.viewTabButtons) button.title = this.viewTabTitle(view);
+    private showSceneViewShown(shown: boolean): void {
+        if (shown === this.sceneViewShown) return;
+        this.sceneViewShown = shown;
+        for (const listener of [...this.sceneViewShownListeners]) listener(shown);
     }
 
-    private showViewTabs(workspace: EditorWorkspace): void {
-        for (const [view, button] of this.viewTabButtons) {
-            const active = view === workspace.view;
-            button.classList.toggle(ACTIVE_CLASS, active);
-            button.setAttribute("aria-selected", String(active));
-            const unavailable = view === "scene" && workspace.mode === "play";
-            button.disabled = unavailable || workspace.closed;
-            button.title = unavailable ? SCENE_PLAY_HINT : this.viewTabTitle(view);
+    private moveFocusWithMode(mode: EditorMode): void {
+        const previous = this.shownMode;
+        this.shownMode = mode;
+        if (previous === undefined || previous === mode) return;
+        if (mode === PLAY_MODE) this.focusView(GAME_VIEW);
+        else if (mode === EDIT_MODE && this.viewport.contains(this.document.activeElement)) this.focusView(SCENE_VIEW);
+    }
+
+    private focusView(view: EditorView): void {
+        if (view === SCENE_VIEW) {
+            this.layout.overlay.focus();
+            return;
         }
-        this.layout.stage.dataset.view = workspace.view;
-        this.applyGameViewAspect();
+        shownCanvasIn(this.viewport)?.focus();
     }
 
     private setGameViewAspect(id: string): void {
@@ -559,7 +626,7 @@ class EditorShellImplementation implements EditorShell {
         const widthToHeight = gameViewAspectOf(this.gameViewAspectId).widthToHeight;
         const stage = this.layout.stage;
         const style = this.viewport.style;
-        const framed = stage.dataset.view === GAME_VIEW && widthToHeight !== undefined;
+        const framed = widthToHeight !== undefined;
         stage.classList.toggle(ASPECT_FRAMED_CLASS, framed);
         if (!framed) {
             for (const property of FRAME_STYLE_PROPERTIES) style.removeProperty(property);

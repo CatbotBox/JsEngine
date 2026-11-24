@@ -10,6 +10,10 @@ export class PresentationBarriers {
         return this._openBarriers !== NO_OPEN_BARRIERS;
     }
 
+    public get listeningAtSystemBoundaries(): boolean {
+        return this._boundaryListener !== undefined;
+    }
+
     public enter(): void {
         this._openBarriers++;
     }

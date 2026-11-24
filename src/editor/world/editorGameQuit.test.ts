@@ -5,7 +5,7 @@ import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Sprite} from "../../engine/rendering/2d/sprite";
 import {SpriteImage} from "../../engine/rendering/2d/spriteImage";
-import type {EditorMode, EditorServiceState, EditorView} from "../editorProtocol";
+import type {EditorMode, EditorServiceState} from "../editorProtocol";
 import {SPRITE_PATH, ask, disposeEditorWorlds, editorWorld, failureOf, fieldsOf, waitUntil} from "./editorServiceTestHarness";
 import type {Harnessed} from "./editorServiceTestHarness";
 
@@ -77,8 +77,8 @@ function quitWithinNextFrame(game: QuittingGame): void {
     runOneFrame(game.harnessed);
 }
 
-function serviceState(mode: EditorMode, gameplayTicks: number, view: EditorView): EditorServiceState {
-    return {mode, gameplayTicks, view, worldStoppedError: null};
+function serviceState(mode: EditorMode, gameplayTicks: number): EditorServiceState {
+    return {mode, gameplayTicks, worldStoppedError: null};
 }
 
 function modesReported(harnessed: Harnessed): EditorMode[] {
@@ -99,7 +99,7 @@ describe("a game that requests quit in the editor", () => {
         quitWithinNextFrame(game);
 
         expect(recorder.seenX).toEqual([PLAY_X]);
-        expect([service.mode, service.view, service.gameplayTicks]).toEqual(["edit", "scene", 0]);
+        expect([service.mode, service.gameplayTicks]).toEqual(["edit", 0]);
         expect(await waitUntil(() => modesReported(harnessed).length === 2)).toBe(true);
         expect(modesReported(harnessed)).toEqual(["play", "edit"]);
         expect(await playerPosition(game)).toEqual({xyz: [EDIT_X, 0, 0]});
@@ -111,7 +111,7 @@ describe("a game that requests quit in the editor", () => {
         runOneFrame(harnessed);
         expect([probe.frames, counter.runs]).toEqual([framesBefore + 1, gameplayRunsBefore]);
 
-        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 0, "game"));
+        expect(await ask(harnessed, {op: "setMode", mode: "play"})).toEqual(serviceState("play", 0));
         quitWithinNextFrame(game);
         expect(recorder.seenX).toEqual([PLAY_X, EDIT_X]);
         expect(service.mode).toBe("edit");
@@ -127,16 +127,16 @@ describe("a game that requests quit in the editor", () => {
         await ask(harnessed, {op: "setField", entity: player, typeName: "LocalPosition", key: "xyz", value: [PLAY_X, 0, 0]});
 
         quitter.quitOnNextUpdate = true;
-        expect(await ask(harnessed, {op: "step"})).toEqual(serviceState("edit", 0, "scene"));
+        expect(await ask(harnessed, {op: "step"})).toEqual(serviceState("edit", 0));
         expect(recorder.seenX).toEqual([PLAY_X]);
         expect(await playerPosition(game)).toEqual({xyz: [EDIT_X, 0, 0]});
         expect(modesReported(harnessed)).toEqual(["play", "paused", "edit"]);
 
         quitter.quitOnNextUpdate = true;
-        expect(await ask(harnessed, {op: "step"})).toEqual(serviceState("edit", 0, "scene"));
+        expect(await ask(harnessed, {op: "step"})).toEqual(serviceState("edit", 0));
         expect(recorder.seenX).toEqual([PLAY_X, EDIT_X]);
 
-        expect(await ask(harnessed, {op: "step"})).toEqual(serviceState("paused", 1, "scene"));
+        expect(await ask(harnessed, {op: "step"})).toEqual(serviceState("paused", 1));
         expect(recorder.seenX).toEqual([PLAY_X, EDIT_X]);
         expect(platform.quitCount).toBe(0);
         expect(service.worldStoppedError).toBeUndefined();

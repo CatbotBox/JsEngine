@@ -7,6 +7,7 @@ import type {KeyEventLike, RegisteredCommand} from "./commandRegistry";
 import {
     ALREADY_START_SCENE_REASON,
     CLOSE_PROJECT_UNAVAILABLE_REASON,
+    EXTRACT_ONE_ENTITY_REASON,
     LAST_TAB_REASON,
     NO_RECENT_SCENES_REASON,
     PREFAB_START_SCENE_REASON,
@@ -18,7 +19,7 @@ import {
     WAITING_REASON,
 } from "./editorCommands";
 import type {EditorCommandHost, EditorCommands, EditorCommandViews} from "./editorCommands";
-import {editorMenuBar, hierarchyMenu, projectFolderMenu, projectItemMenu, sceneMenu, sceneTabMenu, snapMenu} from "./editorMenus";
+import {componentMenu, editorMenuBar, hierarchyMenu, projectFolderMenu, projectItemMenu, sceneMenu, sceneTabMenu, snapMenu} from "./editorMenus";
 import {LAST_LOADED_SCENE_REASON, PREFAB_TAB_SCENES_REASON} from "./sceneDocuments";
 import type {EditorSceneTab, TabHistory} from "./sceneDocuments";
 import {SceneTabs} from "./sceneTabs";
@@ -27,7 +28,7 @@ import type {BottomTab} from "./editorPanels";
 import {MENU_SEPARATOR} from "./popupMenu";
 import type {MenuAction, MenuItem, MenuSubmenu} from "./popupMenu";
 import {shortcutRows} from "./shortcutsDialog";
-import {DEFAULT_GAME_VIEW_OPTIONS, withGameViewOption} from "./gameViewOptions";
+import {DEFAULT_GAME_VIEW_OPTIONS, isLayoutMaximized, withGameViewOption} from "./gameViewOptions";
 import type {GameViewOptionChoice, GameViewOptions} from "./gameViewOptions";
 import {DEFAULT_SNAP_STEPS, withSnapStep} from "./snapSteps";
 import {entityTemplateProblem} from "./entityTemplates";
@@ -66,7 +67,6 @@ interface FakeScenes {
 
 interface FakeWorkspace {
     mode: "edit" | "play" | "paused";
-    view: "scene" | "game";
     tool: string;
     closed: boolean;
     selection: readonly Entity[];
@@ -87,7 +87,7 @@ interface FakeWorkspace {
 function fakeEditor(closeProject?: () => void): FakeEditor {
     const calls: string[] = [];
     const workspace: FakeWorkspace = {
-        mode: "edit", view: "scene", tool: "move", closed: false, selection: [], entityClipboard: undefined,
+        mode: "edit", tool: "move", closed: false, selection: [], entityClipboard: undefined,
         worldStoppedError: null, snapSteps: DEFAULT_SNAP_STEPS, snapEnabled: false, selectionRotated: false, openExternally: false, showInFolder: false, undoLabel: undefined, entityKeysFocused: true,
         gameViewOptions: DEFAULT_GAME_VIEW_OPTIONS, projectSelection: [], handleModes: DEFAULT_HANDLE_MODES,
     };
@@ -121,7 +121,7 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
     const views = {
         workspace: {
             get mode() { return workspace.mode; },
-            get view() { return workspace.view; },
+            get sceneViewShown() { return !isLayoutMaximized(workspace.gameViewOptions, workspace.mode); },
             get tool() { return workspace.tool; },
             get closed() { return workspace.closed; },
             get recording() { return workspace.mode === "edit"; },
@@ -159,6 +159,7 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
             setHandleModes: (modes: HandleModes) => workspace.handleModes = modes,
             templateProblem: (template: EntityTemplate) => entityTemplateProblem(template, GAME_TYPE_NAMES),
             createFromTemplate: (template: EntityTemplate) => calls.push(`createFromTemplate ${template}`),
+            extractInlineImage: (entity: Entity, typeName: string, key: string) => calls.push(`extractInlineImage ${entity} ${typeName}.${key}`),
         },
         scene: {capturesKeys: false, get selectionRotated() { return workspace.selectionRotated; }},
         hierarchy: {beginRename: (entity: Entity) => calls.push(`beginRename ${entity}`)},
@@ -197,6 +198,7 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
         openProjectSettings: () => calls.push("openProjectSettings"),
         buildUnavailableReason: () => undefined,
         openBuildWindow: () => calls.push("openBuildWindow"),
+        focusView: view => calls.push(`focusView ${view}`),
     };
     const registry = new CommandRegistry();
     const commands = registerEditorCommands(registry, host);
@@ -265,7 +267,7 @@ describe("editor menu bar", () => {
             "Create Empty", "Create Empty Child", "-", "Camera", "Sprite", "Text", "Mesh", "-", "Directional Light", "Point Light", "Ambient Light",
         ]);
         expect(labels(menuNamed(menus, "Window"))).toEqual([
-            "Scene View", "Game View", "Maximize on Play", "Stats", "-", "Project", "Console", "History", "Settings", "Data Assets", "-", "Hierarchy", "Inspector", "Bottom Panel", "-", "Reset Layout",
+            "Focus Scene View", "Focus Game View", "Maximize on Play", "Stats", "-", "Project", "Console", "History", "Settings", "Data Assets", "-", "Hierarchy", "Inspector", "Bottom Panel", "-", "Reset Layout",
         ]);
         expect(labels(menuNamed(menus, "Help"))).toEqual(["Command Palette…", "Keyboard Shortcuts"]);
     });
@@ -566,6 +568,20 @@ describe("editor context menus", () => {
         action(windowMenu, "Stats").run();
         expect(editor.workspace.gameViewOptions.stats).toBe(true);
     });
+
+    test("the view commands move focus to the Scene or Game view; with the game view maximized the Scene view and Frame Selected are unavailable", () => {
+        const editor = fakeEditor();
+        editor.mount();
+        const {scene, game} = editor.commands.view.views;
+        scene.runAlone();
+        game.runAlone();
+        expect(editor.calls).toEqual(["focusView scene", "focusView game"]);
+        editor.workspace.selection = [FIRST];
+        editor.commands.view.gameViewOptions.maximizeOnPlay.runAlone();
+        expect([scene.stateAlone().enabled, editor.commands.edit.frameSelected.stateAlone().enabled]).toEqual([true, true]);
+        editor.workspace.mode = "play";
+        expect([scene.stateAlone().enabled, game.stateAlone().enabled, editor.commands.edit.frameSelected.stateAlone().enabled]).toEqual([false, true, false]);
+    });
 });
 
 describe("toolbar menus", () => {
@@ -704,5 +720,21 @@ describe("scene management commands", () => {
         expect(labels(items(sceneTabMenu(editor.commands, second, false)))).toEqual(["Close Tab"]);
         action(items(sceneTabMenu(editor.commands, second, false)), "Close Tab").run();
         expect(editor.calls).toEqual(["closeTab level"]);
+    });
+
+    test("a component menu offers Extract to File for each inline image field, on one entity while editing", () => {
+        const editor = fakeEditor();
+        editor.mount();
+        const first = {typeName: "Sprite", inspectable: true, inferred: false, fields: {image: {inline: {width: 2, height: 2}}, tint: "#ffffff"}};
+        const menu = (entities: readonly Entity[]) => items(componentMenu(editor.commands, {entities, typeName: "Sprite", first, resettable: true}));
+        expect(labels(menu([FIRST]))).toEqual(["Reset", "Remove Component", "-", "Copy Component Values", "Paste Component Values", "-", "Extract image to File…"]);
+        expect(labels(items(componentMenu(editor.commands, {entities: [FIRST], typeName: "Sprite", first: {...first, fields: {tint: "#ffffff"}}, resettable: true}))))
+            .toEqual(["Reset", "Remove Component", "-", "Copy Component Values", "Paste Component Values"]);
+        expect(action(menu([FIRST, SECOND]), "Extract image to File…").title).toBe(EXTRACT_ONE_ENTITY_REASON);
+        editor.workspace.mode = "play";
+        expect(action(menu([FIRST]), "Extract image to File…").title).toBe(STOP_GAME_REASON);
+        editor.workspace.mode = "edit";
+        action(menu([FIRST]), "Extract image to File…").run();
+        expect(editor.calls).toEqual([`extractInlineImage ${FIRST} Sprite.image`]);
     });
 });

@@ -4,6 +4,7 @@ import {DebugWorld, World} from "../../engine/core";
 import {RootSystemGroup} from "../../engine/core/rootSystemGroup";
 import {Vec} from "../../engine/math/types/vec";
 import {Camera} from "../../engine/rendering/camera";
+import {RenderCameraOverride} from "../../engine/rendering/renderCameraOverride";
 import {Mesh, MeshBuilder} from "../../engine/rendering/3d/mesh";
 import {Material} from "../../engine/rendering/3d/material";
 import {RenderMesh} from "../../engine/rendering/3d/renderMesh";
@@ -16,7 +17,7 @@ import {LocalPosition, LocalToWorld} from "../../engine/translation";
 import {MemoryPixelPresenter} from "../pixels/memoryPixelPresenter";
 import {MeshPixelPassSettings} from "../pixels/3d/meshPixelPassSettings";
 import {MeshPixelPassSystem} from "../pixels/3d/meshPixelPassSystem";
-import {PixelPresenterResource} from "../pixels/pixelPresenterResource";
+import {PixelPresenterResource, PixelRenderTargets} from "../pixels/pixelPresenterResource";
 import {PixelRenderSettings} from "../pixels/pixelRenderSettings";
 import {GpuDeviceResource} from "./gpuDeviceResource";
 import {GpuFrame} from "./gpuFrame";
@@ -31,11 +32,12 @@ import {GpuShaderLibrary, unknownSurfaceShaderMessage} from "./gpuShaderLibrary"
 import {GpuSurfaceShader, LIT_SURFACE_SHADER, SURFACE_SHADER_PARAMS} from "./gpuSurfaceShader";
 import {MATERIAL_BIND_GROUP, MATERIAL_SAMPLER_BINDING, MATERIAL_TEXTURED_OFFSET, MATERIAL_UNTEXTURED, SURFACE_FUNCTION_SIGNATURE} from "./shaders/basicLitShader";
 import {compilationError, FakeCanvas, FakeCanvasContext, FakeGpuDevice} from "./testing/fakeGpuDevice";
-import type {FakeRenderPass, FakeGpuTextureView} from "./testing/fakeGpuDevice";
+import type {FakeRenderPass, FakeGpuTexture, FakeGpuTextureView} from "./testing/fakeGpuDevice";
 import {ConsoleRecorder} from "./testing/consoleRecorder";
 
 const FORMAT: GPUTextureFormat = "bgra8unorm";
 const SIZE = {widthPx: 64, heightPx: 48};
+const SCENE_VIEW_SIZE = {widthPx: 40, heightPx: 24};
 const QUAD_DISTANCE = 4;
 const QUAD_TRIANGLES = 2;
 const QUADS = 3;
@@ -48,6 +50,10 @@ const TRIANGLE_CORNERS = 3;
 const GRID_HALF_SIZE = 1;
 const OFF_SCREEN_X = 30;
 const UNIT_CUBE_TRIANGLES = 12;
+const DEVICE_RENDER_SCALE = 2;
+const SCALED_SIZE = {widthPx: SIZE.widthPx * DEVICE_RENDER_SCALE, heightPx: SIZE.heightPx * DEVICE_RENDER_SCALE};
+const PAST_THE_QUADS_Z = QUAD_DISTANCE * 2;
+const DISABLED = false;
 
 interface Placement {
     readonly x: number;
@@ -175,9 +181,9 @@ function place(world: World, mesh: Mesh, placements: readonly Placement[]): void
     for (const {x, z} of placements) world.entityManager.createEntity("grid", [new RenderMesh(mesh), new LocalToWorld(), new LocalPosition(x, 0, z)]);
 }
 
-function softwareLodStats(mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings): MeshRenderStats {
+function softwareLodStats(mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings, size = SIZE): MeshRenderStats {
     const world = new World({platform: new MemoryPlatform()});
-    world.resources.insert(new PixelPresenterResource(new MemoryPixelPresenter(SIZE)));
+    world.resources.insert(new PixelPresenterResource(new MemoryPixelPresenter(size)));
     const root = world.getOrCreateSystem(RootSystemGroup);
     world.entityManager.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new FieldOfView()]);
     const settings = Object.assign(new MeshPixelPassSettings(), {framebufferPixelsPerRasterPixel: 1, lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL});
@@ -188,9 +194,11 @@ function softwareLodStats(mesh: Mesh, placements: readonly Placement[], {lod, lo
     return world.resources.get(MeshRenderStats);
 }
 
-async function gpuLodPass(mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings): Promise<{stats: MeshRenderStats, device: FakeGpuDevice}> {
+async function gpuLodPass(
+    mesh: Mesh, placements: readonly Placement[], {lod, lodBias}: LodSettings, renderScale = new GpuMeshPassSettings().renderScale,
+): Promise<{stats: MeshRenderStats, device: FakeGpuDevice}> {
     const rig = gpuWorld();
-    const settings = Object.assign(new GpuMeshPassSettings(), {lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL});
+    const settings = Object.assign(new GpuMeshPassSettings(), {lodTrianglesPerPixel: LOD_TRIANGLES_PER_PIXEL, renderScale});
     rig.world.entityManager.createEntity("gpu settings", [settings, Object.assign(new MeshRenderSettings(), {lod, lodBias})]);
     place(rig.world, mesh, placements);
     rig.world.getOrCreateSystem(GpuMeshPassSystem);
@@ -243,6 +251,11 @@ async function step({world, device}: GpuWorld, times: number = 1): Promise<void>
     }
 }
 
+function canvasTextureOf(pass: FakeRenderPass): FakeGpuTexture {
+    const attachment = [...pass.descriptor.colorAttachments][0]!;
+    return ((attachment.resolveTarget ?? attachment.view) as unknown as FakeGpuTextureView).texture;
+}
+
 function lastScenePass(device: FakeGpuDevice): FakeRenderPass | undefined {
     return device.submittedPasses.filter(pass => pass.descriptor.label === "scene").at(-1);
 }
@@ -290,6 +303,52 @@ describe("GpuMeshPassSystem", () => {
         const instanceWrites = device.queue.bufferWrites.filter(write => write.buffer.descriptor.label === "instances");
         expect(instanceWrites.at(-1)!.data.byteLength).toBe(QUADS * INSTANCE_FLOATS * Float32Array.BYTES_PER_ELEMENT);
         expect(device.buffers.filter(buffer => buffer.descriptor.label?.endsWith("vertices")).length).toBe(1);
+    });
+
+    test("draws from the render camera override while one is set: a disabled camera past the quads sees none of them", async () => {
+        const rig = gpuWorld();
+        const {world, errors} = rig;
+        world.getOrCreateSystem(GpuMeshPassSystem);
+        addQuads(world, quad(), QUADS);
+        const pose = new LocalToWorld();
+        pose.position = Vec.alloc3(0, 0, PAST_THE_QUADS_Z);
+        const camera = world.entityManager.createEntity("override camera", [new Camera(), pose, new FieldOfView()]);
+        world.entityManager.setEnabledState(camera, DISABLED);
+        world.resources.insert(new RenderCameraOverride(camera));
+        await step(rig, SETTLE_STEPS);
+        expect(world.resources.get(MeshRenderStats).trianglesDrawn).toBe(0);
+        world.resources.remove(RenderCameraOverride);
+        await step(rig, SETTLE_STEPS);
+        expect(world.resources.get(MeshRenderStats).trianglesDrawn).toBe(QUADS * QUAD_TRIANGLES);
+        expect(errors).toEqual([]);
+    });
+
+    test("render targets draw each target's scene from its own camera into its own canvas frame on the one device", async () => {
+        const rig = gpuWorld();
+        const {world, device, errors} = rig;
+        const gpu = world.resources.get(GpuDeviceResource);
+        const sceneCanvas = new FakeCanvas();
+        const sceneContext = new FakeCanvasContext(sceneCanvas, FORMAT);
+        const scenePresenter = new GpuCanvasPixelPresenter(new MemoryPixelPresenter(SCENE_VIEW_SIZE), gpu, ignore, new GpuFrame(device, sceneContext, sceneCanvas, FORMAT));
+        world.getOrCreateSystem(GpuMeshPassSystem);
+        addQuads(world, quad(), QUADS);
+        const pose = new LocalToWorld();
+        pose.position = Vec.alloc3(0, 0, PAST_THE_QUADS_Z);
+        const sceneCamera = world.entityManager.createEntity("scene camera", [new Camera(), pose, new FieldOfView()]);
+        world.entityManager.setEnabledState(sceneCamera, DISABLED);
+        const host = PixelPresenterResource.presenterOf(world);
+        world.resources.insert(new PixelRenderTargets([{camera: sceneCamera, presenter: scenePresenter}, {camera: undefined, presenter: host}]));
+        await step(rig, SETTLE_STEPS);
+        expect(errors).toEqual([]);
+        const scenePasses = device.submittedPasses.filter(pass => pass.descriptor.label === "scene");
+        const intoSceneCanvas = scenePasses.filter(pass => sceneContext.currentTextures.includes(canvasTextureOf(pass)));
+        const intoHostCanvas = scenePasses.filter(pass => !intoSceneCanvas.includes(pass));
+        expect([intoSceneCanvas.length, intoHostCanvas.length]).toEqual([SETTLE_STEPS, SETTLE_STEPS]);
+        expect(intoSceneCanvas.every(pass => pass.callsOf("drawIndexed").length === 0)).toBe(true);
+        expect(intoHostCanvas.every(pass => pass.callsOf("drawIndexed").length === 1)).toBe(true);
+        expect([sceneCanvas.width, sceneCanvas.height]).toEqual([SCENE_VIEW_SIZE.widthPx, SCENE_VIEW_SIZE.heightPx]);
+        expect(world.resources.get(MeshRenderStats).trianglesDrawn).toBe(QUADS * QUAD_TRIANGLES);
+        expect(world.presenterBacklogs.count).toBe(2);
     });
 
     test("meshes sharing a mesh but not its face culling are separate batches with contiguous instances", async () => {
@@ -377,6 +436,23 @@ describe("GpuMeshPassSystem", () => {
         expect(Array.from(stats.lodLevelCounts.subarray(0, LOD_GRID_CELLS.length))).toEqual([2, 0, 0, 2]);
         const draws = lastScenePass(device)!.callsOf("drawIndexed").map(call => [call.args[0], call.args[1], call.args[4]]);
         expect(draws).toEqual([[mesh.lods[0].triangleCount * TRIANGLE_CORNERS, 2, 0], [mesh.lods[3].triangleCount * TRIANGLE_CORNERS, 2, 2]]);
+    });
+
+    test("a render scale selects the LOD levels the software pass selects at the scaled framebuffer size, drawn into a scaled scene with the same projection", async () => {
+        const mesh = meshWithLods();
+        const unscaled = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, LOD_ON);
+        const software = softwareLodStats(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, LOD_ON, SCALED_SIZE);
+        const {stats, device} = await gpuLodPass(mesh, ONE_PER_LEVEL_AND_TWO_CULLED, LOD_ON, DEVICE_RENDER_SCALE);
+        expect(Array.from(stats.lodLevelCounts)).not.toEqual(Array.from(unscaled.stats.lodLevelCounts));
+        expect(Array.from(stats.lodLevelCounts)).toEqual(Array.from(software.lodLevelCounts));
+        expect(stats.trianglesDrawn).toBe(software.trianglesDrawn);
+        const sceneColor = [...lastScenePass(device)!.descriptor.colorAttachments][0]!;
+        const sceneSize = (sceneColor.view as unknown as FakeGpuTextureView).texture.descriptor.size;
+        expect(sceneSize).toEqual({width: SCALED_SIZE.widthPx, height: SCALED_SIZE.heightPx});
+        const viewAndProjection = (written: FakeGpuDevice) => Array.from(frameUniformWrites(written).at(-1)!.subarray(0, FRAME_TIME_OFFSET));
+        expect(viewAndProjection(device)).toEqual(viewAndProjection(unscaled.device));
+        const overlayUploads = device.queue.textureWrites.filter(write => write.texture.descriptor.label === "overlay");
+        expect(overlayUploads.at(-1)!.size).toEqual({width: SIZE.widthPx, height: SIZE.heightPx});
     });
 
     test("LOD and filtering defaults match the pixels mesh pass: the same triangle budget, nearest texels", () => {

@@ -10,6 +10,7 @@ import {parseSceneDocument} from "./sceneDocument";
 import type {SceneDocument} from "./sceneDocument";
 import {dataAssetsOf} from "./dataAssets";
 import {prefabSpawnerOf} from "./prefabSpawner";
+import {SceneLoader} from "./sceneLoader";
 import {preloadAssetReferences, sceneAssetPaths} from "./sceneAssets";
 import type {AssetPreload, SceneAssetLoader, SceneAssetReference} from "./sceneAssets";
 import {parentEntityOf, SceneRootOrder, untrackedComponentOf} from "./sceneHierarchy";
@@ -95,6 +96,7 @@ export class SceneManager {
         this.preload = options.preload ?? noPreload;
         prefabSpawnerOf(world, registry, this.assets, {unknownComponentTypes: options.unknownComponentTypes, schemaChanges: options.schemaChanges});
         world.resources.getOrCreate(ActiveScene);
+        world.resources.insert(new SceneLoader(this));
     }
 
     public async load(path: string, request: SceneLoadRequest = {}): Promise<SceneHandle> {

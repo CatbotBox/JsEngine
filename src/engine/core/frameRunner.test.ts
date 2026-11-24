@@ -13,6 +13,7 @@ import {Component} from "./component";
 import {EntityCommandBufferSystem} from "./entityCommandBufferSystem";
 import {FrameLoopSettings, resolveLoopTiming, UNCAPPED_RENDER_RATE} from "./frameLoopSettings";
 import {MAX_FRAME_DELTA_MS} from "./frameLoop";
+import {DISPLAY_CAPPED_PACING, displayPacing, intervalPacing, UNCAPPED_PACING} from "../platform/framePacing";
 import {Input} from "../input/input";
 import {Key} from "../input/key";
 import {NO_MODIFIERS} from "../input/inputEvent";
@@ -43,6 +44,10 @@ const FAST_TICKS_PER_60HZ_FRAME = FAST_TICK_RATE / TICK_RATE;
 const FAST_TICKS_PER_30HZ_FRAME = FAST_TICK_RATE / SLOW_RENDER_RATE;
 const TICK_RATE_BELOW_MAX_FRAME_DELTA = 2;
 const STALL_MS = 10 * MS_PER_SECOND;
+const FAST_RENDER_FRAME_MS = MS_PER_SECOND / FAST_RENDER_RATE;
+const SLOW_RENDER_FRAME_MS = MS_PER_SECOND / SLOW_RENDER_RATE;
+const FAST_TICKS_PER_FAST_RENDER_FRAME = FAST_TICK_RATE / FAST_RENDER_RATE;
+const WORK_BETWEEN_FAST_AND_60HZ_FRAME_MS = 10;
 
 class Recorder extends Resource {
     public readonly entries: string[] = [];
@@ -155,7 +160,16 @@ interface LoopRig {
 }
 
 function loopRig(...systems: readonly SystemCtor<System>[]): LoopRig {
-    const scheduler = new ManualFrameScheduler();
+    return loopRigOn(new ManualFrameScheduler(), systems);
+}
+
+function displayCappedLoopRig(...systems: readonly SystemCtor<System>[]): LoopRig {
+    const rig = loopRigOn(new ManualFrameScheduler(DISPLAY_CAPPED_PACING), systems);
+    rig.world.renderers.add(GPU_RENDERER);
+    return rig;
+}
+
+function loopRigOn(scheduler: ManualFrameScheduler, systems: readonly SystemCtor<System>[]): LoopRig {
     const platform = new MemoryPlatform({frameScheduler: scheduler});
     const world = new World({platform});
     world.ensureSystemExists(FrameProbe);
@@ -454,6 +468,87 @@ describe("World loop CPU render rate limit", () => {
         expect([rig.scheduler.starts, rig.scheduler.pacing]).toEqual([3, {kind: "interval", intervalMs: CPU_LIMIT_MS}]);
         rig.frameAt(3 * TICK_MS);
         expect(rig.scheduler.starts).toBe(3);
+    });
+});
+
+describe("World loop on a scheduler that caps frames on the display", () => {
+    test("a capped render rate asks for display frames capped at that rate; uncapped, matching the display and headless pacing are unchanged", () => {
+        const settings = new FrameLoopSettings();
+        const pacing = (frameRenderer: RendererKind | undefined) => resolveLoopTiming(settings, frameRenderer, DISPLAY_CAPPED_PACING).pacing;
+        expect(pacing(GPU_RENDERER)).toEqual(displayPacing(TICK_MS));
+        expect(resolveLoopTiming(settings, GPU_RENDERER).pacing).toEqual(intervalPacing(TICK_MS));
+        settings.renderRate = SLOW_RENDER_RATE;
+        expect(pacing(GPU_RENDERER)).toEqual(displayPacing(SLOW_RENDER_FRAME_MS));
+        expect(pacing(NO_RENDERER)).toEqual(intervalPacing(TICK_MS));
+        settings.renderRate = UNCAPPED_RENDER_RATE;
+        expect(pacing(GPU_RENDERER)).toEqual(UNCAPPED_PACING);
+        settings.matchDisplay = true;
+        expect(pacing(GPU_RENDERER)).toEqual(displayPacing());
+        settings.renderRate = FAST_RENDER_RATE;
+        expect(pacing(GPU_RENDERER)).toEqual(displayPacing(FAST_RENDER_FRAME_MS));
+    });
+
+    test("the CPU render rate limit still caps display-capped frames", () => {
+        const settings = new FrameLoopSettings();
+        settings.renderRate = FAST_RENDER_RATE;
+        expect(resolveLoopTiming(settings, CPU_RENDERER, DISPLAY_CAPPED_PACING).pacing).toEqual(displayPacing(CPU_LIMIT_MS));
+    });
+
+    test("catch-up counts display-capped frames at the assumed display rate, not at a faster render rate", () => {
+        const settings = new FrameLoopSettings();
+        settings.simulationTickRate = FAST_TICK_RATE;
+        settings.renderRate = FAST_RENDER_RATE;
+        expect(resolveLoopTiming(settings, GPU_RENDERER).maxTicksPerFrame).toBe(FAST_TICKS_PER_FAST_RENDER_FRAME * DEFAULT_MAX_CATCH_UP_TICKS);
+        expect(resolveLoopTiming(settings, GPU_RENDERER, DISPLAY_CAPPED_PACING).maxTicksPerFrame).toBe(FAST_TICKS_PER_60HZ_FRAME * DEFAULT_MAX_CATCH_UP_TICKS);
+    });
+
+    test("a running world asks for display frames, falls back to tick-rate intervals without a renderer, and keeps its pacing when matchDisplay toggles", () => {
+        const rig = displayCappedLoopRig(workSystem({name: "tick", priority: 1}));
+        const settings = new FrameLoopSettings();
+        rig.world.entityManager.createEntity("frameLoop", [settings]);
+        rig.world.startLoop();
+        expect(rig.scheduler.pacing).toEqual(displayPacing(TICK_MS));
+        expect(rig.scheduler.backlog).toBe(rig.world.presenterBacklogs);
+        for (let frame = 1; frame <= 3; frame++) rig.frameAt(frame * TICK_MS);
+        expect([rig.world.time.tickCount, rig.world.time.frameCount]).toEqual([3, 3]);
+        settings.matchDisplay = true;
+        rig.frameAt(4 * TICK_MS);
+        expect([rig.scheduler.starts, rig.scheduler.pacing]).toEqual([1, displayPacing(TICK_MS)]);
+        rig.world.renderers.remove(GPU_RENDERER);
+        rig.frameAt(5 * TICK_MS);
+        expect([rig.scheduler.starts, rig.scheduler.pacing]).toEqual([2, intervalPacing(TICK_MS)]);
+        rig.world.renderers.add(GPU_RENDERER);
+        rig.frameAt(6 * TICK_MS);
+        expect([rig.scheduler.starts, rig.scheduler.pacing]).toEqual([3, displayPacing(TICK_MS)]);
+        expect(rig.world.time.tickCount).toBe(6);
+    });
+
+    test("a stalled display resumes with at most maxCatchUpTicks ticks", () => {
+        const rig = displayCappedLoopRig(workSystem({name: "tick", priority: 1}));
+        rig.world.startLoop();
+        rig.frameAt(TICK_MS);
+        rig.frameAt(TICK_MS + STALL_MS);
+        expect(rig.world.time.tickCount).toBe(1 + DEFAULT_MAX_CATCH_UP_TICKS);
+        expect(rig.world.time.frameDeltaTimeMs).toBe(MAX_FRAME_DELTA_MS);
+    });
+
+    test("a long tick interleaves at the assumed display rate, not at a faster capped render rate", () => {
+        const systems = [
+            workSystem({name: "a", priority: 1, workMs: WORK_BETWEEN_FAST_AND_60HZ_FRAME_MS}),
+            workSystem({name: "b", priority: 2}),
+        ];
+        const fastRenderRate = (rig: LoopRig): LoopRig => {
+            withSettings(rig.world, settings => settings.renderRate = FAST_RENDER_RATE);
+            return rig;
+        };
+        const onIntervals = fastRenderRate(renderedLoopRig(...systems));
+        onIntervals.world.startLoop();
+        onIntervals.frameAt(TICK_MS);
+        expect(onIntervals.record).toEqual(["a", frameEntry(TICK_MS + WORK_BETWEEN_FAST_AND_60HZ_FRAME_MS), "b", frameEntry(NO_WORK_MS)]);
+        const onDisplay = fastRenderRate(displayCappedLoopRig(...systems));
+        onDisplay.world.startLoop();
+        onDisplay.frameAt(TICK_MS);
+        expect(onDisplay.record).toEqual(["a", "b", frameEntry(TICK_MS)]);
     });
 });
 

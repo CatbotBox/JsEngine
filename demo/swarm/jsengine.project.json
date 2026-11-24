@@ -1,6 +1,6 @@
 {
   "name": "Swarm",
-  "startScene": "scenes/main.scene.json",
+  "startScene": "scenes/title.scene.json",
   "resources": [
     {
       "type": "InputMap",

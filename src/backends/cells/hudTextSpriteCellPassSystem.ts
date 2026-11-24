@@ -4,11 +4,13 @@ import {Camera} from "../../engine/rendering/camera";
 import {CellGrid} from "./cellGrid";
 import {HudElement} from "../../engine/rendering/hudElement";
 import {ScreenSize} from "../../engine/rendering/screenSize";
+import {RenderCameraOverride, renderCameraComponents} from "../../engine/rendering/renderCameraOverride";
 import {anchorFractionX, anchorFractionY, ScreenAnchor} from "../../engine/rendering/screenAnchor";
 import {RenderBoundsOffset} from "../../engine/rendering/renderBoundsOffset";
 import {TextSprite} from "../../engine/rendering/textSprite";
 import {CellRenderSystemGroup} from "./cellRenderSystemGroup";
 
+const CAMERA_SPEC = {screenSize: ScreenSize};
 const DEFAULT_ANCHOR = new ScreenAnchor();
 const DEFAULT_OFFSET = new RenderBoundsOffset();
 const PRIORITY_AFTER_CAMERA_SIZING = 100;
@@ -28,14 +30,13 @@ export class HudTextSpriteCellPassSystem extends System {
     }
 
     protected onCreate() {
-        this.requireAllForUpdate(this._cameraQuery)
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride)
         this.requireAnyForUpdate(this._hudObjectQuery)
     }
 
     onUpdate() {
-        const cameraEntity = this._cameraQuery.getSingleton({
-            screenSize: ScreenSize,
-        });
+        const cameraEntity = renderCameraComponents(this.world, this._cameraQuery, CAMERA_SPEC);
+        if (cameraEntity === undefined) return;
 
         const dualScreenBuffer = this.world.resources.tryGet(CellGrid);
         if (!dualScreenBuffer) return;

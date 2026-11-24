@@ -8,6 +8,7 @@ export type {
     WorkerHandle,
     WorkerPort,
     FramePacing,
+    CappedPacingKind,
     FrameCallback,
     FrameScheduler,
     PresentationBacklog,

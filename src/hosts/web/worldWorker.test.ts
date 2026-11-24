@@ -4,7 +4,8 @@ import type {BrowserWorker, BrowserWorkerHost} from "./browserWorkers";
 import {PageConnection} from "./worldWorkerPlatform";
 import type {WorldWorkerScope} from "./worldWorkerPlatform";
 import type {MaybeAnimationFrameHost} from "./animationFrameScheduler";
-import {displayPacing} from "../../engine/platform/framePacing";
+import {DISPLAY_CAPPED_PACING, displayPacing, intervalPacing} from "../../engine/platform/framePacing";
+import type {RendererKind} from "../../engine/core/activeRenderers";
 import {connectWorldWorker, displayBackendOf, STOPPED_STATUS, startingStatus, surfaceMismatchMessage} from "./worldWorkerPage";
 import {pixelCanvasDisplayOptionsFromQuery} from "./pixelCanvasDisplay";
 import type {CellWorldDisplay, GpuWorldDisplay, PageTransferable, PixelWorldDisplay, WorldWorker} from "./worldWorkerPage";
@@ -91,6 +92,10 @@ const LETTER_A = 0x41;
 const PIXELS_PER_SCREEN_UNIT_X = 8;
 const PIXELS_PER_SCREEN_UNIT_Y = 16;
 const FIRST_RED = 7;
+const GPU_RENDERER: RendererKind = "gpu";
+const MS_PER_SECOND = 1000;
+const DEFAULT_RENDER_RATE = 60;
+const DEFAULT_FRAME_INTERVAL_MS = MS_PER_SECOND / DEFAULT_RENDER_RATE;
 
 async function openConnection(scope: FakeScope = new FakeScope(), files = new MemoryFileSource(), init: PageToWorldMessage = INIT): Promise<PageConnection> {
     const opening = PageConnection.open(scope, files);
@@ -1151,6 +1156,31 @@ describe("the gpu backend's plumbing", () => {
         const stopPixelFrames = pixelConnection.platform.frameScheduler!.start(displayPacing(), () => undefined);
         stopPixelFrames();
         expect(requestedFrames).toBe(1);
+    });
+
+    test("a gpu world in a worker with requestAnimationFrame presents a capped render rate on display frames; without it, or on other pages, on timers", async () => {
+        const animationFrames: MaybeAnimationFrameHost = {
+            requestAnimationFrame: () => 1,
+            cancelAnimationFrame: () => undefined,
+        };
+        const openGpuConnection = async (scope: FakeScope): Promise<PageConnection> => {
+            const opening = PageConnection.open(scope, new MemoryFileSource());
+            withOffscreenCanvasGlobal(() => scope.send({...PIXEL_INIT, canvas: offscreenCanvas()} as PageToWorldMessage));
+            return await opening;
+        };
+        const pacingOfGpuWorld = (connection: PageConnection) => {
+            const world = new World({platform: connection.platform});
+            world.renderers.add(GPU_RENDERER);
+            return world.loopTiming.pacing;
+        };
+        const gpuConnection = await openGpuConnection(new FakeScope(animationFrames));
+        expect(gpuConnection.platform.frameScheduler!.cappedPacing).toBe(DISPLAY_CAPPED_PACING);
+        expect(pacingOfGpuWorld(gpuConnection)).toEqual(displayPacing(DEFAULT_FRAME_INTERVAL_MS));
+        const gpuWithoutAnimationFrames = await openGpuConnection(new FakeScope());
+        expect(gpuWithoutAnimationFrames.platform.frameScheduler!.cappedPacing).toBeUndefined();
+        expect(pacingOfGpuWorld(gpuWithoutAnimationFrames)).toEqual(intervalPacing(DEFAULT_FRAME_INTERVAL_MS));
+        const pixelConnection = await openPixelConnection(new FakeScope(animationFrames));
+        expect(pixelConnection.platform.frameScheduler!.cappedPacing).toBeUndefined();
     });
 
     test("the worker posts a screen unit only when it changes", async () => {

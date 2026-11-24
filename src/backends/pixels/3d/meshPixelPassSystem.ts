@@ -2,6 +2,7 @@ import {System} from "../../../engine/core";
 import type {RenderPassKind} from "../../../engine/rendering/renderPasses";
 import {Camera} from "../../../engine/rendering/camera";
 import {LocalToWorld} from "../../../engine/translation";
+import {RenderCameraOverride, renderCameraComponents} from "../../../engine/rendering/renderCameraOverride";
 import {RenderMesh} from "../../../engine/rendering/3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
 import {FieldOfView} from "../../../engine/rendering/3d/fieldOfView";
@@ -17,6 +18,7 @@ import {MeshPixelPassSettings} from "./meshPixelPassSettings";
 import {PixelResolveTarget} from "./pixelResolveTarget";
 
 const SQUARE_PIXEL_HEIGHT_PER_WIDTH = 1;
+const CAMERA_SPEC = {camera: Camera, localToWorld: LocalToWorld, fov: FieldOfView};
 
 export class MeshPixelPassSystem extends System {
     public static readonly renderPass: RenderPassKind = "meshes";
@@ -46,7 +48,7 @@ export class MeshPixelPassSystem extends System {
         }, this.world.platform.workers);
         this.world.resources.getOrCreate(MeshRenderStats);
         this.requireAllForUpdate(this._settingsQuery);
-        this.requireAllForUpdate(this._cameraQuery);
+        this.requireQueryOrResourceForUpdate(this._cameraQuery, RenderCameraOverride);
         this.requireAnyForUpdate(this._alwaysRenderQuery);
         this.requireAnyForUpdate(this._selectiveRenderQuery);
         this.world.ensureSystemExists(RenderMeshBoundsSystem);
@@ -62,11 +64,8 @@ export class MeshPixelPassSystem extends System {
     private draw(): void {
         const settings = this._settingsQuery.getSingleton({settings: MeshPixelPassSettings}).settings;
         const meshSettings = this._meshSettingsQuery.tryGetSingleton({settings: MeshRenderSettings})?.settings ?? this._defaultMeshSettings;
-        const cameraEntity = this._cameraQuery.getSingleton({
-            camera: Camera,
-            localToWorld: LocalToWorld,
-            fov: FieldOfView,
-        });
+        const cameraEntity = renderCameraComponents(this.world, this._cameraQuery, CAMERA_SPEC);
+        if (cameraEntity === undefined) return;
 
         const framebuffer = this.world.resources.tryGet(PixelFramebuffer);
         if (!framebuffer) return;

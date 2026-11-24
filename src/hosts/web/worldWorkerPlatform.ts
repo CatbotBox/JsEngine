@@ -14,6 +14,7 @@ import type {BrowserWorkerHost} from "./browserWorkers";
 import {inflate} from "../../engine/assets/image/inflate";
 import {PixelFrameBufferPool} from "./pixelFrameBufferPool";
 import {timerFrameScheduler} from "../../engine/platform/timerFrameScheduler";
+import {DISPLAY_CAPPED_PACING} from "../../engine/platform/framePacing";
 import {displayFrameScheduler} from "./animationFrameScheduler";
 import type {MaybeAnimationFrameHost} from "./animationFrameScheduler";
 
@@ -68,7 +69,7 @@ export class PageConnection {
             hardwareConcurrency: () => scope.navigator?.hardwareConcurrency ?? 1,
             requestedRasterWorkers: () => requestedRasterWorkers,
             now,
-            frameScheduler: canvasDrivesDisplayFrames ? displayFrameScheduler(scope, now) : timerFrameScheduler(now),
+            frameScheduler: canvasDrivesDisplayFrames ? displayFrameScheduler(scope, now, DISPLAY_CAPPED_PACING) : timerFrameScheduler(now),
             onExit: callback => {
                 const entry = () => callback();
                 this.exitCallbacks.add(entry);

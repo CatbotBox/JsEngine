@@ -139,6 +139,7 @@ export {
     withoutSceneMembership,
 } from "./sceneInstance";
 export {SceneManager} from "./sceneManager";
+export {SceneLoader} from "./sceneLoader";
 export type {
     LoadedScene,
     PersistentEntityPolicy,

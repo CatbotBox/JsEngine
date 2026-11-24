@@ -12,6 +12,7 @@ import {LocalToWorld} from "../translation/localToWorld";
 import {Parent} from "../translation/parent";
 import {Children} from "../translation/children";
 import {EulerAngles} from "../translation/eulerAngles";
+import {InterpolatedTransform} from "../translation/interpolatedTransform";
 import {TranslationSystemGroup} from "../translation/translationSystemGroup";
 import {LocalToWorldSystem} from "../translation/localToWorldSystem";
 import {Camera} from "../rendering/camera";
@@ -58,6 +59,7 @@ const SETTLE_STEPS = 3;
 const MATRIX_DIGITS = 4;
 const IMPLIED_TYPE_NAMES = ["ParentTransform", "Children", "WorldSpaceRenderBounds", "ScreenSize"];
 const UNSUPPORTED_VERSION = SCENE_DOCUMENT_VERSION + 1;
+const INTERPOLATION_OFF = false;
 const MISSING_SCENE_ID = 42;
 const INLINE_RGBA = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0, 9, 8, 7, 255]);
 const INLINE_SIZE = 2;
@@ -138,7 +140,7 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
 
     const renderMesh = new RenderMesh(Mesh.fromFile(MESH_PATH, platform), 0x00FF7F);
     renderMesh.faceCulling = FaceCulling.None;
-    const meshHolder = em.createEntity("meshHolder", [renderMesh, new LocalPosition(0, 0, 5), new LocalToWorld()]);
+    const meshHolder = em.createEntity("meshHolder", [renderMesh, new LocalPosition(0, 0, 5), new LocalToWorld(), new InterpolatedTransform(INTERPOLATION_OFF)]);
     const velocity = new Velocity();
     velocity.xUnitsPerSecond = 1.5;
     velocity.yUnitsPerSecond = -2;

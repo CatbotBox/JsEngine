@@ -10,6 +10,7 @@ import {WorldSource} from "./worldSource";
 import type {OccupancyWatcher} from "./entityArchetype";
 import type {Resource, ResourceCtor} from "./resource";
 import type {ResourceListener} from "./resourceManager";
+import {QueryOrResourceRequirement} from "./queryOrResourceRequirement";
 
 export type SystemCtor<T extends System> = new () => T;
 
@@ -22,9 +23,11 @@ export abstract class System extends WorldSource {
     private _requiredAnyForUpdate: EntityQuery[] | undefined;
     private _requiredAllForUpdate: EntityQuery[] | undefined;
     private _requiredResources: ResourceCtor<Resource>[] | undefined;
+    private _requiredQueryOrResource: QueryOrResourceRequirement[] | undefined;
     private _satisfiedAny = NONE;
     private _satisfiedAll = NONE;
     private _missingResources = NONE;
+    private _unmetQueryOrResource = NONE;
     private _shouldRun = true;
     private readonly _anyWatcher: OccupancyWatcher = {
         onOccupancyChanged: occupied => this.countSatisfiedAny(occupied),
@@ -83,7 +86,8 @@ export abstract class System extends WorldSource {
     public get requirementsMet(): boolean {
         return (this._requiredAnyForUpdate === undefined || this._satisfiedAny > NONE) &&
             this._satisfiedAll === (this._requiredAllForUpdate?.length ?? NONE) &&
-            this._missingResources === NONE;
+            this._missingResources === NONE &&
+            this._unmetQueryOrResource === NONE;
     }
 
     private countSatisfiedAny(occupied: boolean): void {
@@ -104,6 +108,12 @@ export abstract class System extends WorldSource {
         this.refreshShouldRun();
     }
 
+    private countUnmetQueryOrResource(satisfied: boolean): void {
+        if (satisfied) this._unmetQueryOrResource--;
+        else this._unmetQueryOrResource++;
+        this.refreshShouldRun();
+    }
+
     private refreshShouldRun(): void {
         const shouldRun = this._enabled && this.requirementsMet;
         if (shouldRun === this._shouldRun) return;
@@ -115,12 +125,15 @@ export abstract class System extends WorldSource {
 
     private unwatchRequirements(): void {
         const any = this._requiredAnyForUpdate, all = this._requiredAllForUpdate, resources = this._requiredResources;
+        const queryOrResource = this._requiredQueryOrResource;
         if (any !== undefined) for (const query of any) query.removeOccupancyWatcher(this._anyWatcher);
         if (all !== undefined) for (const query of all) query.removeOccupancyWatcher(this._allWatcher);
         if (resources !== undefined) for (const ctor of resources) this.world.resources.removeListener(ctor, this._resourceListener);
+        if (queryOrResource !== undefined) for (const requirement of queryOrResource) requirement.unwatch();
         this._requiredAnyForUpdate = this._requiredAllForUpdate = undefined;
         this._requiredResources = undefined;
-        this._satisfiedAny = this._satisfiedAll = this._missingResources = NONE;
+        this._requiredQueryOrResource = undefined;
+        this._satisfiedAny = this._satisfiedAll = this._missingResources = this._unmetQueryOrResource = NONE;
         this._shouldRun = this._enabled && this.requirementsMet;
     }
 
@@ -180,6 +193,27 @@ export abstract class System extends WorldSource {
         resources.addListener(ctor, this._resourceListener);
         (this._requiredResources ??= []).push(ctor);
         if (resources.tryGet(ctor) === undefined) this._missingResources++;
+        this.refreshShouldRun();
+    }
+
+    protected requireQueryOrResourceForUpdate<
+        IncSpec extends readonly TokenOrCtor[],
+    >(include: IncSpec, ...resources: ResourceCtor<Resource>[]): void
+    protected requireQueryOrResourceForUpdate<
+        IncSpec extends readonly TokenOrCtor[],
+        ExcSpec extends readonly TokenOrCtor[],
+    >(query: EntityQuery<IncSpec, ExcSpec>, ...resources: ResourceCtor<Resource>[]): void
+    protected requireQueryOrResourceForUpdate<IncSpec extends readonly TokenOrCtor[]>(input: IncSpec | EntityQuery, ...resources: ResourceCtor<Resource>[]): void {
+        let query = input as unknown as EntityQuery;
+        if (Array.isArray(input)) {
+            query = new EntityQuery(this, toTokens(input) as TokensOfList<IncSpec>) as unknown as EntityQuery;
+        } else {
+            this.requireOwnQuery(query, "requireQueryOrResourceForUpdate");
+        }
+        const requirement = new QueryOrResourceRequirement(query, resources, this.world.resources, satisfied => this.countUnmetQueryOrResource(satisfied));
+        requirement.watch();
+        (this._requiredQueryOrResource ??= []).push(requirement);
+        if (!requirement.satisfied) this._unmetQueryOrResource++;
         this.refreshShouldRun();
     }
 

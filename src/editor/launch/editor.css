@@ -25,6 +25,8 @@
     --hierarchy-splitter: var(--splitter);
     --inspector-splitter: var(--splitter);
     --bottom-splitter: var(--splitter);
+    --scene-view-fr: 0.5fr;
+    --game-view-fr: 0.5fr;
     --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
     color-scheme: dark;
 }
@@ -297,6 +299,11 @@ button.primary {
 .splitter-bottomHeightPx {
     grid-area: split-bottom;
     cursor: row-resize;
+}
+
+.splitter-views {
+    grid-column: 2;
+    cursor: col-resize;
 }
 
 .editor-panel {
@@ -637,6 +644,51 @@ button.primary {
     color: var(--text);
 }
 
+.editor-views {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: minmax(0, var(--scene-view-fr)) var(--splitter) minmax(0, var(--game-view-fr));
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.editor.maximized .editor-views {
+    grid-template-columns: 0 0 minmax(0, 1fr);
+}
+
+.editor.maximized .scene-view {
+    display: none;
+}
+
+.editor-view {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.scene-view {
+    grid-column: 1;
+}
+
+.game-view {
+    grid-column: 3;
+}
+
+.view-header {
+    flex: none;
+    height: var(--tab-height);
+    padding: 0 0.6rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    line-height: var(--tab-height);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+}
+
 .editor-stage {
     position: relative;
     flex: 1;
@@ -657,11 +709,11 @@ button.primary {
     outline-offset: -1px;
 }
 
-.editor-stage[data-view="game"] .editor-viewport {
+.game-viewport {
     outline-color: var(--border);
 }
 
-body:not(.terminal-unfocused) .editor-viewport {
+.game-viewport:focus-within {
     outline-color: var(--accent);
 }
 

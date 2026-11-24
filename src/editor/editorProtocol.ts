@@ -44,6 +44,13 @@ export interface GetEntityRequest {
     readonly entity: Entity;
 }
 
+export interface GetFieldRequest {
+    readonly op: "getField";
+    readonly entity: Entity;
+    readonly typeName: string;
+    readonly key: string;
+}
+
 export interface SetFieldRequest {
     readonly op: "setField";
     readonly entity: Entity;
@@ -161,11 +168,6 @@ export interface PickEntitiesRequest {
     readonly view: EditorView;
 }
 
-export interface SetViewRequest {
-    readonly op: "setView";
-    readonly view: EditorView;
-}
-
 export interface SetEditorCameraRequest {
     readonly op: "setEditorCamera";
     readonly position: EditorVec3;
@@ -261,6 +263,7 @@ export type EditorRequest =
     | DescribeSchemasRequest
     | ListEntitiesRequest
     | GetEntityRequest
+    | GetFieldRequest
     | SetFieldRequest
     | SetFieldsRequest
     | AddComponentRequest
@@ -278,7 +281,6 @@ export type EditorRequest =
     | ApplyPrefabInstanceRequest
     | UpdatePrefabInstancesRequest
     | PickEntitiesRequest
-    | SetViewRequest
     | SetEditorCameraRequest
     | GetViewInfoRequest
     | SaveSceneRequest
@@ -446,6 +448,10 @@ export interface SetFieldResult {
     readonly value: EditorFieldValue;
 }
 
+export interface GetFieldResult {
+    readonly value: SceneJsonValue;
+}
+
 export interface EditorResourceDetails {
     readonly typeName: string;
     readonly dataAssetPath: string | null;
@@ -517,10 +523,6 @@ export interface PickEntitiesResult {
     readonly entities: readonly Entity[];
 }
 
-export interface EditorViewState {
-    readonly view: EditorView;
-}
-
 export interface EditorCameraPose {
     readonly position: EditorVec3;
     readonly rotation: EditorQuaternion;
@@ -585,7 +587,6 @@ export interface EditorPlayState {
 }
 
 export interface EditorServiceState extends EditorPlayState {
-    readonly view: EditorView;
     readonly worldStoppedError: string | null;
 }
 
@@ -593,6 +594,7 @@ export interface EditorResultByOp {
     readonly describeSchemas: DescribeSchemasResult;
     readonly listEntities: ListEntitiesResult;
     readonly getEntity: EditorEntityDetails;
+    readonly getField: GetFieldResult;
     readonly setField: SetFieldResult;
     readonly setFields: SetFieldsResult;
     readonly addComponent: EditorEntityDetails;
@@ -610,7 +612,6 @@ export interface EditorResultByOp {
     readonly applyPrefabInstance: ApplyPrefabInstanceResult;
     readonly updatePrefabInstances: UpdatePrefabInstancesResult;
     readonly pickEntities: PickEntitiesResult;
-    readonly setView: EditorViewState;
     readonly setEditorCamera: EditorViewInfo;
     readonly getViewInfo: EditorViewInfo;
     readonly saveScene: SaveSceneResult;
@@ -652,7 +653,6 @@ export interface EditorModeChangedEvent {
     readonly kind: "modeChanged";
     readonly mode: EditorMode;
     readonly gameplayTicks: number;
-    readonly view: EditorView;
 }
 
 export type EditorEvent = EditorConsoleEvent | EditorWorldStoppedEvent | EditorModeChangedEvent;
@@ -789,6 +789,8 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
         case "getPrefabOverrides":
         case "applyPrefabInstance":
             return isEntityHandle(value.entity);
+        case "getField":
+            return targetsComponent(value) && isString(value.key);
         case "setField":
             return isFieldEdit(value);
         case "setFields":
@@ -820,8 +822,6 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
             return isString(value.sourcePath) && isString(value.documentText);
         case "pickEntities":
             return isFiniteNumber(value.x) && isFiniteNumber(value.y) && isEditorView(value.view);
-        case "setView":
-            return isEditorView(value.view);
         case "setEditorCamera":
             return isFiniteTuple(value.position, VEC3_LENGTH)
                 && isFiniteTuple(value.rotation, QUATERNION_LENGTH)
@@ -864,7 +864,7 @@ export function isEditorEvent(value: unknown): value is EditorEvent {
         case "worldStopped":
             return isString(value.error) && isAbsentOr(value.stack, isString);
         case "modeChanged":
-            return isEditorMode(value.mode) && isWholeNumber(value.gameplayTicks) && isEditorView(value.view);
+            return isEditorMode(value.mode) && isWholeNumber(value.gameplayTicks);
         default:
             return false;
     }

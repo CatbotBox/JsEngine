@@ -3,15 +3,20 @@ import {
     ALL_PANELS_SHOWN,
     clampPanelSize,
     clampPanelSizes,
+    clampSceneViewShare,
     DEFAULT_PANEL_SIZES,
+    DEFAULT_SCENE_VIEW_SHARE,
     MIN_BOTTOM_PANEL_HEIGHT_PX,
     MIN_CENTER_HEIGHT_PX,
     MIN_CENTER_WIDTH_PX,
     MIN_SIDE_PANEL_WIDTH_PX,
+    MIN_VIEW_WIDTH_PX,
     panelSizesText,
     parsePanelSizes,
     parsePanelVisibility,
+    parseSceneViewShare,
     resizedPanel,
+    resizedSceneViewShare,
     shownPanelSizes,
     SPLITTER_THICKNESS_PX,
     splitterThicknessPx,
@@ -87,5 +92,27 @@ describe("panel visibility", () => {
         expect(parsePanelVisibility(`{"hidden": "inspector"}`)).toEqual(ALL_PANELS_SHOWN);
         expect(parsePanelVisibility(`{"hidden": ["inspector", "toolbar"]}`)).toEqual({...ALL_PANELS_SHOWN, inspector: false});
         expect(parsePanelVisibility("[1]")).toEqual(ALL_PANELS_SHOWN);
+    });
+});
+
+describe("scene and game view split", () => {
+    test("the scene view's share round-trips with the sizes; missing, broken or out-of-range storage splits evenly", () => {
+        const text = panelSizesText(DEFAULT_PANEL_SIZES, ALL_PANELS_SHOWN, 0.3);
+        expect(parseSceneViewShare(text)).toBe(0.3);
+        expect(parsePanelSizes(text)).toEqual(DEFAULT_PANEL_SIZES);
+        expect(parseSceneViewShare(null)).toBe(DEFAULT_SCENE_VIEW_SHARE);
+        expect(parseSceneViewShare(`{"sceneViewShare": 1}`)).toBe(DEFAULT_SCENE_VIEW_SHARE);
+        expect(parseSceneViewShare(`{"sceneViewShare": "half"}`)).toBe(DEFAULT_SCENE_VIEW_SHARE);
+        expect(parseSceneViewShare("{not json")).toBe(DEFAULT_SCENE_VIEW_SHARE);
+    });
+
+    test("dragging the views splitter moves the share with the pointer, keeping each view its minimum width", () => {
+        const width = 1000 + SPLITTER_THICKNESS_PX;
+        expect(resizedSceneViewShare(0.5, 100, width)).toBeCloseTo(0.6, 9);
+        expect(resizedSceneViewShare(0.5, -1000, width)).toBeCloseTo(MIN_VIEW_WIDTH_PX / 1000, 9);
+        expect(resizedSceneViewShare(0.5, 1000, width)).toBeCloseTo(1 - MIN_VIEW_WIDTH_PX / 1000, 9);
+        expect(clampSceneViewShare(0.05, width)).toBeCloseTo(MIN_VIEW_WIDTH_PX / 1000, 9);
+        expect(clampSceneViewShare(0.05, MIN_VIEW_WIDTH_PX)).toBe(0.05);
+        expect(clampSceneViewShare(Number.NaN, width)).toBe(DEFAULT_SCENE_VIEW_SHARE);
     });
 });

@@ -1,5 +1,5 @@
-import type {FrameCallback, FramePacing, FrameScheduler, PresentationBacklog} from "../../engine/platform/platform";
-import {ASSUMED_DISPLAY_INTERVAL_MS} from "../../engine/platform/framePacing";
+import type {CappedPacingKind, FrameCallback, FramePacing, FrameScheduler, PresentationBacklog} from "../../engine/platform/platform";
+import {ASSUMED_DISPLAY_INTERVAL_MS, INTERVAL_CAPPED_PACING} from "../../engine/platform/framePacing";
 import {timerFrameScheduler} from "../../engine/platform/timerFrameScheduler";
 
 const NEAREST_FRAME_TOLERANCE_DIVISOR = 2;
@@ -24,14 +24,23 @@ export function animationFrameHostOf(host: MaybeAnimationFrameHost): AnimationFr
     };
 }
 
-export function displayFrameScheduler(host: MaybeAnimationFrameHost, now: () => number): FrameScheduler {
+export function displayFrameScheduler(
+    host: MaybeAnimationFrameHost,
+    now: () => number,
+    cappedPacing: CappedPacingKind = INTERVAL_CAPPED_PACING,
+): FrameScheduler {
     const timers = timerFrameScheduler(now);
     const animationFrames = animationFrameHostOf(host);
-    return animationFrames === undefined ? timers : animationFrameScheduler(animationFrames, timers);
+    return animationFrames === undefined ? timers : animationFrameScheduler(animationFrames, timers, cappedPacing);
 }
 
-export function animationFrameScheduler(host: AnimationFrameHost, fallback: FrameScheduler): FrameScheduler {
+export function animationFrameScheduler(
+    host: AnimationFrameHost,
+    fallback: FrameScheduler,
+    cappedPacing: CappedPacingKind = INTERVAL_CAPPED_PACING,
+): FrameScheduler {
     return {
+        cappedPacing,
         start(pacing: FramePacing, onFrame: FrameCallback, backlog?: PresentationBacklog): () => void {
             if (pacing.kind !== "display") return fallback.start(pacing, onFrame, backlog);
             return startDisplayFrames(host, pacing.capIntervalMs, onFrame);

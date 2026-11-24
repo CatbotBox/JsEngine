@@ -17,6 +17,7 @@ import {SwarmTuning} from "../demo/swarm/tuning";
 import {PrefabSpawner} from "../src/engine/scene";
 import {SpritePattern} from "../src/engine/rendering/2d";
 import {seededSwarmFiles} from "./support/demoFrameHashLaunch";
+import {pendingWorkSettled} from "./support/demoFrameHashScripts";
 
 const SEED = 20261113;
 const FRAME_MS = 1000 / 60;
@@ -24,7 +25,6 @@ const FRAMES_PER_SECOND = 60;
 const TERMINAL_SIZE = {columns: 120, rows: 40};
 const PIXEL_SIZE: PixelPresenterSize = {widthPx: 640, heightPx: 384};
 const SETTLE_FRAMES = 3;
-const START_FRAMES = 2;
 const RESTART_FRAMES = 2;
 const MAX_WAIT_FRAMES = 90 * FRAMES_PER_SECOND;
 const SAFE_LIVES = 99;
@@ -234,7 +234,9 @@ async function runOnCells(): Promise<void> {
     expect(screen.text().includes("press ENTER to start"), "the title screen is drawn as HUD text");
 
     driver.tap(Key.Enter);
-    driver.step(START_FRAMES);
+    driver.step();
+    await pendingWorkSettled();
+    driver.step();
     expect(state.phase === SwarmPhase.Playing, `Enter starts a game (${state.phase})`);
     expect(state.score === 0 && state.wave === 1 && state.lives === startLives && state.bombs === startBombs,
         `a new game starts at score 0, wave 1, ${startLives} lives, ${startBombs} bombs`);
@@ -347,6 +349,8 @@ async function runOnPixels(): Promise<void> {
     expect(pixelsMatching(title, 0, title.heightPx, isPainted) > 0, "the title screen paints pixels");
 
     driver.tap(Key.Enter);
+    driver.step();
+    await pendingWorkSettled();
     const swarmersVisible = driver.runUntil(() => pixelsMatching(presenter.lastFrame!, 0, PIXEL_SIZE.heightPx, isSwarmer) > 0, () => driver.hold(NO_KEYS));
     const playing = presenter.lastFrame!;
     expect(swarmersVisible, `swarmers are drawn in their colour (${pixelsMatching(playing, 0, playing.heightPx, isSwarmer)} px)`);
