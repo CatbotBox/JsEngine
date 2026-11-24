@@ -3,7 +3,7 @@ import {TextColor} from "@jsengine/engine/rendering";
 import type {Int, PrefabAsset, Rgb, TextLines} from "@jsengine/engine/scene";
 
 export const MS_PER_SECOND = 1000;
-export const SWARM_TUNING_FILE = "assets/swarm.tuning.asset.json";
+export const SWARM_CONFIG_FILE = "assets/swarm.config.asset.json";
 
 const UNCAPPED = Number.POSITIVE_INFINITY;
 
@@ -18,7 +18,7 @@ export class WaveCurve {
     }
 }
 
-export class ShipTuning {
+export class ShipConfig {
     public startLives: Int = 0;
     public startInvulnerabilityMs = 0;
     public speedUnitsPerSecond = 0;
@@ -27,13 +27,13 @@ export class ShipTuning {
     public blinkIntervalMs = 0;
 }
 
-export class WeaponTuning {
+export class WeaponConfig {
     public bullet: PrefabAsset | undefined = undefined;
     public fireRateShotsPerSecond = 0;
     public bulletSpeedUnitsPerSecond = 0;
 }
 
-export class BombTuning {
+export class BombConfig {
     public startBombs: Int = 0;
     public radiusUnits = 0;
     public sparkCount: Int = 0;
@@ -41,7 +41,7 @@ export class BombTuning {
     public maxBombs: Int = 0;
 }
 
-export class SparkTuning {
+export class SparkConfig {
     public prefab: PrefabAsset | undefined = undefined;
     public minLifetimeMs = 0;
     public maxLifetimeMs = 0;
@@ -59,7 +59,7 @@ export class EnemySpawn {
     public spawnShare = new WaveCurve();
 }
 
-export class WaveTuning {
+export class WaveConfig {
     public firstWave: Int = 0;
     public intermissionMs = 0;
     public maxSpawnsPerFrame: Int = 0;
@@ -73,7 +73,7 @@ export class WaveTuning {
     public enemies: EnemySpawn[] = [];
 }
 
-export class ArenaTuning {
+export class ArenaConfig {
     public fallbackWidthUnits = 0;
     public fallbackHeightUnits = 0;
     public broadphaseMarginUnits = 0;
@@ -104,7 +104,7 @@ export class GameOverBanner {
     public color: TextColor = TextColor.DEFAULT;
 }
 
-export class HudTuning {
+export class SwarmHudConfig {
     public statusFormat = "";
     public statsFormat = "";
     public statsRefreshMs = 0;
@@ -115,14 +115,14 @@ export class HudTuning {
     public gameOver = new GameOverBanner();
 }
 
-export class SwarmTuning extends Resource {
+export class SwarmConfig extends Resource {
     public randomSeed: Int | undefined = undefined;
     public maxSimulationStepMs = 0;
-    public arena = new ArenaTuning();
-    public ship = new ShipTuning();
-    public weapon = new WeaponTuning();
-    public bomb = new BombTuning();
-    public sparks = new SparkTuning();
-    public waves = new WaveTuning();
-    public hud = new HudTuning();
+    public arena = new ArenaConfig();
+    public ship = new ShipConfig();
+    public weapon = new WeaponConfig();
+    public bomb = new BombConfig();
+    public sparks = new SparkConfig();
+    public waves = new WaveConfig();
+    public hud = new SwarmHudConfig();
 }

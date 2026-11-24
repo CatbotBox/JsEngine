@@ -89,22 +89,22 @@ const AXES = 3;
 const BOUNDS_SETTLE_FRAMES = 3;
 
 const SWARM_STATE_RESOURCE = "SwarmState";
-const SWARM_TUNING_RESOURCE = "SwarmTuning";
-const SWARM_TUNING_PATH = "assets/swarm.tuning.asset.json";
+const SWARM_CONFIG_RESOURCE = "SwarmConfig";
+const SWARM_CONFIG_PATH = "assets/swarm.config.asset.json";
 const SWARM_GAMEPLAY_SCENE = "scenes/main.scene.json";
 const SHIP_NAME = "ship";
 const SWARM_TITLE_PHASE = "Title";
 const SWARM_PLAYING_PHASE = "Playing";
 const EDITED_PATTERN_ROWS = ["#"];
 const EDITED_PATTERN_PALETTE = [{char: "#", rgb: "#ff8000"}];
-const DEMO_2D_TUNING_RESOURCE = "Demo2dTuning";
-const DEMO_2D_TUNING_PATH = "assets/demo2d.asset.json";
-const DEMO_2D_EDITED_TUNING_KEY = "pixelsPerSpawn";
-const DEMO_2D_EDITED_TUNING_VALUE = 10;
-const DEMO_3D_TUNING_RESOURCE = "Demo3dTuning";
-const DEMO_3D_TUNING_PATH = "assets/demo3d.asset.json";
-const DEMO_3D_EDITED_TUNING_KEY = "sunRotateStepRad";
-const DEMO_3D_EDITED_TUNING_VALUE = 0.25;
+const DEMO_2D_CONFIG_RESOURCE = "Demo2dConfig";
+const DEMO_2D_CONFIG_PATH = "assets/demo2d.asset.json";
+const DEMO_2D_EDITED_CONFIG_KEY = "pixelsPerSpawn";
+const DEMO_2D_EDITED_CONFIG_VALUE = 10;
+const DEMO_3D_CONFIG_RESOURCE = "Demo3dConfig";
+const DEMO_3D_CONFIG_PATH = "assets/demo3d.asset.json";
+const DEMO_3D_EDITED_CONFIG_KEY = "sunRotateStepRad";
+const DEMO_3D_EDITED_CONFIG_VALUE = 0.25;
 const WEB_PIXELS: GameTarget = {target: "web", backend: "pixels"};
 const TERMINAL: GameTarget = {target: "terminal", backend: "cells"};
 const TERMINAL_COLUMNS = 80;
@@ -596,7 +596,7 @@ async function verify2d(project: BuiltProject): Promise<void> {
     const page = new EditorPage(project, "the 2D editor");
     try {
         await verifyStartsInEditMode(page, label);
-        await verifySchemas(page, label, ["Sprite", "TextSprite", "PixelRenderSettings", "SpritePixelPassSettings", "CellRenderSettings", "FadeToColor", "OriginalColor", "PlayerTag"]);
+        await verifySchemas(page, label, ["Sprite", "TextSprite", "PixelRenderSettings", "SpritePixelPassSettings", "CellRenderSettings", "FadeToColor", "OriginalColor", "Player"]);
 
         const camera = await page.entityNamed(CAMERA_NAME);
         const player = await page.entityNamed(PLAYER_NAME);
@@ -644,7 +644,7 @@ async function verify2d(project: BuiltProject): Promise<void> {
         await verifySaveLoad(page, label, PLAYER_NAME);
         await verifyAdditiveScenes(page, label);
         await verifyPrefabTab(page, project, label);
-        await verifyTuningEdit(page, label, DEMO_2D_TUNING_RESOURCE, DEMO_2D_TUNING_PATH, DEMO_2D_EDITED_TUNING_KEY, DEMO_2D_EDITED_TUNING_VALUE);
+        await verifyConfigEdit(page, label, DEMO_2D_CONFIG_RESOURCE, DEMO_2D_CONFIG_PATH, DEMO_2D_EDITED_CONFIG_KEY, DEMO_2D_EDITED_CONFIG_VALUE);
         const cross = await page.entityNamed(PLAYER_NAME);
         if (cross !== undefined) await verifySpritePatternEdit(page, label, cross.entity, PLAYER_NAME);
         await verifyDomainReload(project, page, label, PLAYER_NAME);
@@ -689,7 +689,7 @@ async function verify3d(project: BuiltProject): Promise<void> {
         const meshPath = reloadedMeshes.length === 0 ? undefined : await page.fieldOf(reloadedMeshes[0].entity, "RenderMesh", "mesh");
         expect(reloadedMeshes.length === meshes.length && typeof (meshPath as {path?: unknown} | undefined)?.path === "string",
             `${label}: the loaded scene has its meshes back by path (${JSON.stringify(meshPath)})`);
-        await verifyTuningEdit(page, label, DEMO_3D_TUNING_RESOURCE, DEMO_3D_TUNING_PATH, DEMO_3D_EDITED_TUNING_KEY, DEMO_3D_EDITED_TUNING_VALUE);
+        await verifyConfigEdit(page, label, DEMO_3D_CONFIG_RESOURCE, DEMO_3D_CONFIG_PATH, DEMO_3D_EDITED_CONFIG_KEY, DEMO_3D_EDITED_CONFIG_VALUE);
         await verifyDomainReload(project, page, label, CAMERA_NAME);
         page.expectNoErrors(label);
     } catch (error) {
@@ -718,7 +718,7 @@ async function verifySpritePatternEdit(page: EditorPage, label: string, entity: 
     expect(sameJson(savedImage ?? null, edited), `${label}: the edited pattern is the saved form of the sprite image (${JSON.stringify(savedImage)})`);
 }
 
-async function verifyTuningEdit(page: EditorPage, label: string, typeName: string, path: string, key: string, value: SceneJsonValue): Promise<void> {
+async function verifyConfigEdit(page: EditorPage, label: string, typeName: string, path: string, key: string, value: SceneJsonValue): Promise<void> {
     const loaded = await page.ask({op: "getResource", typeName});
     expect(loaded.dataAssetPath === path, `${label}: ${typeName} is loaded from ${path} (${loaded.dataAssetPath})`);
     await page.ask({op: "setMode", mode: "paused"});
@@ -769,11 +769,11 @@ async function verifySwarm(project: BuiltProject): Promise<void> {
         await verifyStartsInEditMode(page, label);
         await verifySchemas(page, label, ["Ship", "Enemy", "Bullet", "Velocity", "Lifetime", "Spark", "SwarmHud", "Sprite", "SpritePixelPassSettings"]);
         const {resources} = await page.ask({op: "describeSchemas"});
-        for (const typeName of [SWARM_STATE_RESOURCE, SWARM_TUNING_RESOURCE]) {
+        for (const typeName of [SWARM_STATE_RESOURCE, SWARM_CONFIG_RESOURCE]) {
             expect(resources.some(resource => resource.typeName === typeName), `${label}: describeSchemas lists the ${typeName} resource`);
         }
-        const tuning = await page.ask({op: "getResource", typeName: SWARM_TUNING_RESOURCE});
-        expect(tuning.dataAssetPath === SWARM_TUNING_PATH, `${label}: ${SWARM_TUNING_RESOURCE} is loaded from ${SWARM_TUNING_PATH} (${tuning.dataAssetPath})`);
+        const config = await page.ask({op: "getResource", typeName: SWARM_CONFIG_RESOURCE});
+        expect(config.dataAssetPath === SWARM_CONFIG_PATH, `${label}: ${SWARM_CONFIG_RESOURCE} is loaded from ${SWARM_CONFIG_PATH} (${config.dataAssetPath})`);
         await openStartScene(page, project, label, SWARM_GAMEPLAY_SCENE);
         const ship = await page.entityNamed(SHIP_NAME);
         expect(ship !== undefined && ship.componentTypeNames.includes("Ship") && ship.componentTypeNames.includes("Sprite"),

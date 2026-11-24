@@ -1,8 +1,8 @@
 import type {World} from "@jsengine/engine/core";
 import {Input, resolveInputAction} from "@jsengine/engine/input";
 import type {InputAction} from "@jsengine/engine/input";
-import {Demo3dTuning} from "./tuning";
-import type {SupersamplePreset} from "./tuning";
+import {Demo3dConfig} from "./config";
+import type {SupersamplePreset} from "./config";
 
 export class SupersamplePresetKeys {
     private readonly _actions = new Map<string, InputAction>();
@@ -21,7 +21,7 @@ export class SupersamplePresetKeys {
     }
 
     private presets(): readonly SupersamplePreset[] {
-        return this.world.resources.get(Demo3dTuning).supersample;
+        return this.world.resources.get(Demo3dConfig).supersample;
     }
 
     private actionOf(name: string): InputAction {

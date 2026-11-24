@@ -10,13 +10,13 @@ import {
     SINGLE_SAMPLE_COUNT,
 } from "@jsengine/backends/gpu";
 import type {GpuSampleCount, GpuTextureFiltering} from "@jsengine/backends/gpu";
-import {Demo3dTuning} from "../../tuning";
-import type {SupersamplePreset} from "../../tuning";
+import {Demo3dConfig} from "../../config";
+import type {SupersamplePreset} from "../../config";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";
 import {DemoSurfaceShaderSystem} from "./gpuSurfaceShaders";
+import {INCLUDING_DISABLED} from "../../worldAccess";
 
 const GPU_CONTROLS_PRIORITY = -20;
-const INCLUDING_DISABLED = {includeDisabled: true} as const;
 const SINGLE_SAMPLE_PER_PIXEL = 1;
 
 const Demo3dGpuAction = {
@@ -43,7 +43,7 @@ export class Demo3dGpuControlsSystem extends System {
 
     protected onCreate(): void {
         this.requireResourceForUpdate(GpuRenderBackend);
-        this.requireResourceForUpdate(Demo3dTuning);
+        this.requireResourceForUpdate(Demo3dConfig);
         this._actions = resolveInputActions(this.world, Demo3dGpuAction);
         this._supersamplePresets = new SupersamplePresetKeys(this.world);
     }

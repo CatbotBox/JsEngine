@@ -3,13 +3,14 @@ import {formatHudLines, formatHudText, HudLabel} from "@jsengine/engine/renderin
 import type {HudValues} from "@jsengine/engine/rendering/text";
 import {AverageStat} from "@jsengine/engine/datatypes";
 import {Enemy, SwarmHud} from "./components";
+import {HUD_PRIORITY} from "./frameOrder";
 import {SwarmPhase, SwarmState} from "./resources";
-import {MS_PER_SECOND, SwarmTuning} from "./tuning";
-import type {ControlHint, HudTuning, TitleBanner, WaveBanner} from "./tuning";
+import {MS_PER_SECOND, SwarmConfig} from "./config";
+import type {ControlHint, SwarmHudConfig, TitleBanner, WaveBanner} from "./config";
 
-const HUD_PRIORITY = -10;
 const HALF = 0.5;
 const UNSHOWN = -1;
+const NO_FPS_SAMPLES = 0;
 const REFRESH_ON_FIRST_FRAME_MS = Number.POSITIVE_INFINITY;
 const NO_TEXT: string[] = [];
 const BLANK_LINE = "";
@@ -56,8 +57,7 @@ export class SwarmHudSystem extends System {
     private _status = new HudLabel();
     private _stats = new HudLabel();
     private _banner = new HudLabel();
-    private _fps: AverageStat | undefined;
-    private _fpsAverageFrames = UNSHOWN;
+    private readonly _fps = new AverageStat(NO_FPS_SAMPLES);
     private _sinceStatsRefreshMs = REFRESH_ON_FIRST_FRAME_MS;
     private _shownPhase: SwarmPhase | undefined;
     private _shownScore = UNSHOWN;
@@ -73,7 +73,7 @@ export class SwarmHudSystem extends System {
 
     protected onCreate(): void {
         this.requireResourceForUpdate(SwarmState);
-        this.requireResourceForUpdate(SwarmTuning);
+        this.requireResourceForUpdate(SwarmConfig);
     }
 
     onUpdate(): void {
@@ -82,13 +82,13 @@ export class SwarmHudSystem extends System {
         this._stats.bindTo(this.world, hud?.stats ?? NULL_ENTITY);
         this._banner.bindTo(this.world, hud?.banner ?? NULL_ENTITY);
         const state = this.world.resources.get(SwarmState);
-        const tuning = this.world.resources.get(SwarmTuning).hud;
-        this.refreshStatus(state, tuning);
-        this.refreshStats(tuning);
-        this.refreshBanner(state, tuning);
+        const config = this.world.resources.get(SwarmConfig).hud;
+        this.refreshStatus(state, config);
+        this.refreshStats(config);
+        this.refreshBanner(state, config);
     }
 
-    private refreshStatus(state: SwarmState, tuning: HudTuning): void {
+    private refreshStatus(state: SwarmState, config: SwarmHudConfig): void {
         if (state.phase === this._shownPhase && state.score === this._shownScore && state.wave === this._shownWave
             && state.lives === this._shownLives && state.bombs === this._shownBombs) return;
         this._shownPhase = state.phase;
@@ -96,28 +96,20 @@ export class SwarmHudSystem extends System {
         this._shownWave = state.wave;
         this._shownLives = state.lives;
         this._shownBombs = state.bombs;
-        this._status.show(state.phase === SwarmPhase.Title ? NO_TEXT : [formatHudText(tuning.statusFormat, stateValues(state))]);
+        this._status.show(state.phase === SwarmPhase.Title ? NO_TEXT : [formatHudText(config.statusFormat, stateValues(state))]);
     }
 
-    private refreshStats(tuning: HudTuning): void {
-        const fps = this.fpsAveragedOver(tuning.fpsAverageFrames);
+    private refreshStats(config: SwarmHudConfig): void {
+        this._fps.resetIfWindowSizeChanged(config.fpsAverageFrames);
         const time = this.world.time;
-        if (time.frameDeltaTimeMs > 0) fps.add(MS_PER_SECOND / time.frameDeltaTimeMs);
+        if (time.frameDeltaTimeMs > 0) this._fps.add(MS_PER_SECOND / time.frameDeltaTimeMs);
         this._sinceStatsRefreshMs += time.deltaTimeMs;
-        if (this._sinceStatsRefreshMs < tuning.statsRefreshMs) return;
+        if (this._sinceStatsRefreshMs < config.statsRefreshMs) return;
         this._sinceStatsRefreshMs = 0;
-        this._stats.show([formatHudText(tuning.statsFormat, {enemies: this._enemies.enabledEntityCount(), fps: Math.round(fps.getAvg())})]);
+        this._stats.show([formatHudText(config.statsFormat, {enemies: this._enemies.enabledEntityCount(), fps: Math.round(this._fps.getAvg())})]);
     }
 
-    private fpsAveragedOver(frames: number): AverageStat {
-        if (this._fps === undefined || this._fpsAverageFrames !== frames) {
-            this._fps = new AverageStat(frames);
-            this._fpsAverageFrames = frames;
-        }
-        return this._fps;
-    }
-
-    private refreshBanner(state: SwarmState, tuning: HudTuning): void {
+    private refreshBanner(state: SwarmState, config: SwarmHudConfig): void {
         const banner = this.bannerOf(state);
         if (banner === this._shownBanner && state.wave === this._shownBannerWave) return;
         this._shownBanner = banner;
@@ -125,16 +117,16 @@ export class SwarmHudSystem extends System {
         const values = stateValues(state);
         switch (banner) {
             case "title":
-                this._banner.paint(tuning.title.color);
-                this._banner.show(centeredPanel(titleLines(tuning.title, values), tuning.panelPaddingColumns));
+                this._banner.paint(config.title.color);
+                this._banner.show(centeredPanel(titleLines(config.title, values), config.panelPaddingColumns));
                 break;
             case "wave":
-                this._banner.paint(tuning.wave.color);
-                this._banner.show(centeredPanel(waveLines(tuning.wave, state, values), tuning.panelPaddingColumns));
+                this._banner.paint(config.wave.color);
+                this._banner.show(centeredPanel(waveLines(config.wave, state, values), config.panelPaddingColumns));
                 break;
             case "gameOver":
-                this._banner.paint(tuning.gameOver.color);
-                this._banner.show(centeredPanel(formatHudLines(tuning.gameOver.lines, values), tuning.panelPaddingColumns));
+                this._banner.paint(config.gameOver.color);
+                this._banner.show(centeredPanel(formatHudLines(config.gameOver.lines, values), config.panelPaddingColumns));
                 break;
             case "none":
                 this._banner.show(NO_TEXT);

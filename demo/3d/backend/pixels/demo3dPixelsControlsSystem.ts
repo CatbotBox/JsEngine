@@ -2,10 +2,10 @@ import {System} from "@jsengine/engine/core";
 import {PixelsRenderBackend} from "@jsengine/engine/rendering";
 import {MeshPixelPassSettings} from "@jsengine/backends/pixels/3d";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";
-import {Demo3dTuning} from "../../tuning";
+import {Demo3dConfig} from "../../config";
+import {INCLUDING_DISABLED} from "../../worldAccess";
 
 const PIXELS_CONTROLS_PRIORITY = -20;
-const INCLUDING_DISABLED = {includeDisabled: true} as const;
 
 export class Demo3dPixelsControlsSystem extends System {
     private _settings = this.createEntityQuery([MeshPixelPassSettings]);
@@ -17,7 +17,7 @@ export class Demo3dPixelsControlsSystem extends System {
 
     protected onCreate(): void {
         this.requireResourceForUpdate(PixelsRenderBackend);
-        this.requireResourceForUpdate(Demo3dTuning);
+        this.requireResourceForUpdate(Demo3dConfig);
         this._supersamplePresets = new SupersamplePresetKeys(this.world);
     }
 

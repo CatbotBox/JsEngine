@@ -13,7 +13,7 @@ import {TerminalScreen} from "./support/terminalScreen";
 import {startCellsDemo, startPixelsDemo, SWARM_PROJECT} from "./support/demoProjects";
 import {Bullet, Enemy, Spark} from "../demo/swarm/components";
 import {SwarmPhase, SwarmState} from "../demo/swarm/resources";
-import {SwarmTuning} from "../demo/swarm/tuning";
+import {SwarmConfig} from "../demo/swarm/config";
 import {PrefabSpawner} from "../src/engine/scene";
 import {Sprite} from "../src/engine/rendering/2d";
 import {seededSwarmFiles} from "./support/demoFrameHashLaunch";
@@ -169,7 +169,7 @@ class SwarmDriver {
     }
 
     public enemiesTouchingShip(): number {
-        const shipRadius = this.world.resources.get(SwarmTuning).ship.radiusUnits;
+        const shipRadius = this.world.resources.get(SwarmConfig).ship.radiusUnits;
         return this.enemyOffsets().filter(offset => offset.distance <= shipRadius + offset.radius).length;
     }
 
@@ -196,8 +196,8 @@ class SwarmDriver {
 
 function swarmerColorOf(world: DebugWorld): number {
     const spawner = world.resources.get(PrefabSpawner);
-    const swarmer = world.resources.get(SwarmTuning).waves.enemies.find(enemy => enemy.prefab?.sourcePath.endsWith(SWARMER_PREFAB_SUFFIX))?.prefab;
-    if (swarmer === undefined) throw new Error(`SwarmTuning lists no ${SWARMER_PREFAB_SUFFIX}`);
+    const swarmer = world.resources.get(SwarmConfig).waves.enemies.find(enemy => enemy.prefab?.sourcePath.endsWith(SWARMER_PREFAB_SUFFIX))?.prefab;
+    if (swarmer === undefined) throw new Error(`SwarmConfig lists no ${SWARMER_PREFAB_SUFFIX}`);
     const palette = spawner.templateOf(swarmer).rootComponentDefaults(Sprite)?.image?.pattern?.palette;
     if (palette === undefined || palette.length === 0) throw new Error(`${SWARMER_PREFAB_SUFFIX} has no sprite pattern colour`);
     return palette[0].rgb;
@@ -225,9 +225,9 @@ async function runOnCells(): Promise<void> {
         terminal.clear();
     });
     const state = driver.state;
-    const tuning = world.resources.get(SwarmTuning);
-    const startLives = tuning.ship.startLives, startBombs = tuning.bomb.startBombs, bombRadiusUnits = tuning.bomb.radiusUnits;
-    const perfWaveEnemies = tuning.waves.enemyCount.valueAt(PERF_WAVE - tuning.waves.firstWave);
+    const config = world.resources.get(SwarmConfig);
+    const startLives = config.ship.startLives, startBombs = config.bomb.startBombs, bombRadiusUnits = config.bomb.radiusUnits;
+    const perfWaveEnemies = config.waves.enemyCount.valueAt(PERF_WAVE - config.waves.firstWave);
 
     driver.step(SETTLE_FRAMES);
     expect(state.phase === SwarmPhase.Title, "the game opens on the title screen");

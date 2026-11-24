@@ -8,7 +8,7 @@ import {MemoryPixelPresenter, PixelPresenterResource} from "@jsengine/backends/p
 import {GpuCanvasPixelPresenter, GpuDeviceResource, GpuFrame, GpuMeshPassSystem, SURFACE_FUNCTION_SIGNATURE} from "@jsengine/backends/gpu";
 import {FakeCanvas, FakeCanvasContext, FakeGpuDevice} from "@jsengine/backends/gpu/testing";
 import type {FakeRenderPass} from "@jsengine/backends/gpu/testing";
-import {Demo3dTuning, SurfaceShaderChoice} from "../../tuning";
+import {Demo3dConfig, SurfaceShaderChoice} from "../../config";
 import {DemoSurfaceShaderSystem} from "./gpuSurfaceShaders";
 
 const FORMAT: GPUTextureFormat = "bgra8unorm";
@@ -34,9 +34,9 @@ function quad(): Mesh {
     return new Mesh(builder);
 }
 
-function toonTuning(): Demo3dTuning {
+function toonConfig(): Demo3dConfig {
     const choice = Object.assign(new SurfaceShaderChoice(), {name: TOON, shader: new ShaderSource(undefined, TOON_SOURCE)});
-    return Object.assign(new Demo3dTuning(), {surfaceShaders: [choice]});
+    return Object.assign(new Demo3dConfig(), {surfaceShaders: [choice]});
 }
 
 function shadedWorld(): {world: World, device: FakeGpuDevice} {
@@ -47,7 +47,7 @@ function shadedWorld(): {world: World, device: FakeGpuDevice} {
     world.resources.insert(gpu);
     world.resources.insert(new PixelPresenterResource(new GpuCanvasPixelPresenter(new MemoryPixelPresenter(SIZE), gpu, ignore)));
     world.resources.insert(new GpuRenderBackend());
-    world.resources.insert(toonTuning());
+    world.resources.insert(toonConfig());
     world.entityManager.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new FieldOfView()]);
     world.getOrCreateSystem(DemoSurfaceShaderSystem);
     world.getOrCreateSystem(GpuMeshPassSystem);

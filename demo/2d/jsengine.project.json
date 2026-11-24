@@ -7,7 +7,7 @@
       "path": "assets/input.asset.json"
     },
     {
-      "type": "Demo2dTuning",
+      "type": "Demo2dConfig",
       "path": "assets/demo2d.asset.json"
     }
   ]

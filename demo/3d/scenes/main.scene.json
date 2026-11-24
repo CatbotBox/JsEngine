@@ -189,7 +189,7 @@
             1,
             1
           ],
-          "selectedModel": 0
+          "selectedModelIndex": 0
         }
       }
     },
@@ -280,7 +280,7 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "GridModel": {
+        "ModelGridSlot": {
           "slot": 0
         }
       }

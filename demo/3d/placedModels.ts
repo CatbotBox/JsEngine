@@ -6,17 +6,17 @@ import {RenderMesh} from "@jsengine/engine/rendering/3d";
 import {untrackedComponentOf} from "@jsengine/engine/scene";
 import type {PrefabTemplate} from "@jsengine/engine/scene";
 import {LocalPosition, LocalRotation, LocalScale} from "@jsengine/engine/translation";
-import {GridModel} from "./components";
+import {ModelGridSlot} from "./components";
 import type {ModelGrid} from "./components";
+import {ENTITIES_INCLUDING_DISABLED} from "./worldAccess";
 
 const PENDING_SPAWN_GRACE_TICKS = 1;
 const HALF = 0.5;
 const FIRST_SLOT = 0;
 const NEXT_SLOT_STEP = 1;
-const PLACED_MODEL_ROWS = {includeEntity: true, includeDisabled: true} as const;
-const PLACED_MODEL_COMPONENTS = [GridModel, LocalPosition, LocalRotation, LocalScale, RenderMesh] as const;
+const PLACED_MODEL_COMPONENTS = [ModelGridSlot, LocalPosition, LocalRotation, LocalScale, RenderMesh] as const;
 
-interface GridEntry {
+interface PlacedModel {
     readonly entity: Entity;
     readonly slot: number;
     readonly position: LocalPosition;
@@ -26,7 +26,7 @@ interface GridEntry {
     pendingSinceTick: number | undefined;
 }
 
-function bySlotThenCreationOrder(a: GridEntry, b: GridEntry): number {
+function bySlotThenCreationOrder(a: PlacedModel, b: PlacedModel): number {
     return a.slot - b.slot || getEntityCreationOrder(a.entity)! - getEntityCreationOrder(b.entity)!;
 }
 
@@ -34,8 +34,8 @@ function centeredCell(index: number, cells: number, spacing: number): number {
     return (index - (cells - 1) * HALF) * spacing;
 }
 
-export class GridModels {
-    private entries: GridEntry[] = [];
+export class PlacedModels {
+    private entries: PlacedModel[] = [];
     private readonly despawning = new Set<Entity>();
     private readonly placed: EntityQuery<typeof PLACED_MODEL_COMPONENTS>;
 
@@ -68,8 +68,8 @@ export class GridModels {
         const spawned = template.spawn(buffer);
         const entity = spawned.root;
         const slot = this.nextSlot();
-        spawned.rootComponent(GridModel).slot = slot;
-        const entry: GridEntry = {
+        spawned.rootComponent(ModelGridSlot).slot = slot;
+        const entry: PlacedModel = {
             entity,
             slot,
             position: persistentTrackComponent(entity, spawned.rootComponent(LocalPosition)),
@@ -122,14 +122,14 @@ export class GridModels {
         return slot;
     }
 
-    private isPending(entry: GridEntry): boolean {
+    private isPending(entry: PlacedModel): boolean {
         return entry.pendingSinceTick !== undefined && this.world.time.tickCount - entry.pendingSinceTick <= PENDING_SPAWN_GRACE_TICKS;
     }
 
     private hasUnlistedModel(): boolean {
         const listed = new Set(this.entries.map(entry => entry.entity));
         let unlisted = false;
-        this.placed.stream({read: {model: GridModel}}, PLACED_MODEL_ROWS).consume(({entity}) => {
+        this.placed.stream({}, ENTITIES_INCLUDING_DISABLED).consume(({entity}) => {
             if (!listed.has(entity) && !this.despawning.has(entity)) unlisted = true;
         });
         return unlisted;
@@ -138,10 +138,10 @@ export class GridModels {
     private rebuild(): void {
         const pending = this.entries.filter(entry => !this.world.entityManager.exists(entry.entity) && this.isPending(entry));
         const slots = new Map<Entity, number>();
-        this.placed.stream({read: {model: GridModel}}, PLACED_MODEL_ROWS).consume(({entity, model}) => {
+        this.placed.stream({read: {model: ModelGridSlot}}, ENTITIES_INCLUDING_DISABLED).consume(({entity, model}) => {
             if (!this.despawning.has(entity)) slots.set(entity, model.slot);
         });
-        const placed = [...slots].map(([entity, slot]): GridEntry => ({
+        const placed = [...slots].map(([entity, slot]): PlacedModel => ({
             entity,
             slot,
             position: persistentTrackComponent(entity, this.componentOf<LocalPosition>(entity, LocalPosition)),

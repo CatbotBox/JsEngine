@@ -3,8 +3,8 @@ import type {CellPresenter} from "../../src/backends/cells";
 import type {PixelPresenter} from "../../src/backends/pixels";
 import {joinPath, normalizePath} from "../../src/engine/platform";
 import type {FileSource, FileStat} from "../../src/engine/platform";
-import {SWARM_TUNING_FILE} from "../../demo/swarm/tuning";
-import {DEMO_3D_TUNING_FILE} from "../../demo/3d/modelCatalog";
+import {SWARM_CONFIG_FILE} from "../../demo/swarm/config";
+import {DEMO_3D_CONFIG_FILE} from "../../demo/3d/modelCatalog";
 import {DEMO_2D_PROJECT, DEMO_3D_PROJECT, startCellsDemo, startPixelsDemo, SWARM_PROJECT} from "./demoProjects";
 import type {DemoProject} from "./demoProjects";
 
@@ -28,33 +28,33 @@ interface ModelEntryJson {
     readonly prefab?: {readonly path?: unknown} | null;
 }
 
-interface Demo3dTuningDocumentJson {
+interface Demo3dConfigDocumentJson {
     readonly fields: {models: ModelEntryJson[]};
 }
 
-interface SwarmTuningDocumentJson {
+interface SwarmConfigDocumentJson {
     readonly fields: {randomSeed: number | null};
 }
 
 type TextOverlay = (text: string) => string;
 
-const DEMO_3D_TUNING_SITE_PATH = normalizePath(joinPath(DEMO_3D_PROJECT.directory, DEMO_3D_TUNING_FILE));
-const SWARM_TUNING_SITE_PATH = normalizePath(joinPath(SWARM_PROJECT.directory, SWARM_TUNING_FILE));
+const DEMO_3D_CONFIG_SITE_PATH = normalizePath(joinPath(DEMO_3D_PROJECT.directory, DEMO_3D_CONFIG_FILE));
+const SWARM_CONFIG_SITE_PATH = normalizePath(joinPath(SWARM_PROJECT.directory, SWARM_CONFIG_FILE));
 const HASHED_PROJECTS: Readonly<Record<HashedDemo, DemoProject>> = {swarm: SWARM_PROJECT, "2d": DEMO_2D_PROJECT, "3d": DEMO_3D_PROJECT};
 
-function frameHashDemo3dTuningText(text: string): string {
-    const document = JSON.parse(text) as Demo3dTuningDocumentJson;
+function frameHashDemo3dConfigText(text: string): string {
+    const document = JSON.parse(text) as Demo3dConfigDocumentJson;
     const models = document.fields.models;
     document.fields.models = DEMO_3D_FRAME_HASH_MODEL_PREFABS.map(path => {
         const entry = models.find(model => model.prefab?.path === path);
-        if (entry === undefined) throw new Error(`${DEMO_3D_TUNING_SITE_PATH} lists no ${path}, which the 3D frame hash script spawns`);
+        if (entry === undefined) throw new Error(`${DEMO_3D_CONFIG_SITE_PATH} lists no ${path}, which the 3D frame hash script spawns`);
         return entry;
     });
     return JSON.stringify(document);
 }
 
-function seededSwarmTuningText(text: string, seed: number): string {
-    const document = JSON.parse(text) as SwarmTuningDocumentJson;
+function seededSwarmConfigText(text: string, seed: number): string {
+    const document = JSON.parse(text) as SwarmConfigDocumentJson;
     document.fields.randomSeed = seed;
     return JSON.stringify(document);
 }
@@ -87,7 +87,7 @@ class OverlaidFileSource implements FileSource {
 }
 
 export function seededSwarmFiles(files: FileSource, seed: number): FileSource {
-    return new OverlaidFileSource(files, new Map([[SWARM_TUNING_SITE_PATH, text => seededSwarmTuningText(text, seed)]]));
+    return new OverlaidFileSource(files, new Map([[SWARM_CONFIG_SITE_PATH, text => seededSwarmConfigText(text, seed)]]));
 }
 
 export function demoFrameHashFiles(demo: HashedDemo, files: FileSource): FileSource {
@@ -97,7 +97,7 @@ export function demoFrameHashFiles(demo: HashedDemo, files: FileSource): FileSou
         case "2d":
             return files;
         case "3d":
-            return new OverlaidFileSource(files, new Map([[DEMO_3D_TUNING_SITE_PATH, frameHashDemo3dTuningText]]));
+            return new OverlaidFileSource(files, new Map([[DEMO_3D_CONFIG_SITE_PATH, frameHashDemo3dConfigText]]));
     }
 }
 

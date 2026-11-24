@@ -8,7 +8,7 @@ import type {ProjectHost, ProjectResourceBinding, StartedGame} from "@jsengine/e
 
 export const projectResources: readonly ProjectResourceBinding[] = [
     {type: "InputMap", path: "assets/input.asset.json"},
-    {type: "SwarmTuning", path: "assets/swarm.tuning.asset.json"},
+    {type: "SwarmConfig", path: "assets/swarm.config.asset.json"},
     {type: "SwarmState", path: "assets/swarm.state.asset.json"},
 ];
 

@@ -19,7 +19,7 @@ function grownCapacity(current: number, required: number): number {
 export class EnemyGrid extends Resource {
     public count = 0;
     public maxRadiusUnits = 0;
-    public x =new Float32Array(INITIAL_ENEMY_CAPACITY);
+    public x = new Float32Array(INITIAL_ENEMY_CAPACITY);
     public y = new Float32Array(INITIAL_ENEMY_CAPACITY);
     public entities = new Uint32Array(INITIAL_ENEMY_CAPACITY);
     public readonly enemies: Enemy[] = [];
@@ -73,7 +73,20 @@ export class EnemyGrid extends Resource {
         for (let i = 0; i < this.count; i++) this.enemiesByCell[cellCursor[cellOfEnemy[i]]++] = i;
     }
 
-    public gatherNear(x: number, y: number, radius: number): number {
+    public gatherTouching(x: number, y: number, radius: number, maxEnemyRadius: number): number {
+        const found = this.gatherNear(x, y, radius + maxEnemyRadius);
+        const candidates = this.candidates, enemies = this.enemies;
+        let touching = 0;
+        for (let k = 0; k < found; k++) {
+            const index = candidates[k];
+            const enemy = enemies[index];
+            if (enemy.hitPoints <= 0 || !this.withinReach(index, x, y, radius + enemy.radiusUnits)) continue;
+            candidates[touching++] = index;
+        }
+        return touching;
+    }
+
+    private gatherNear(x: number, y: number, radius: number): number {
         const firstColumn = this.columnOf(x - radius), lastColumn = this.columnOf(x + radius);
         const firstRow = this.rowOf(y - radius), lastRow = this.rowOf(y + radius);
         const cellStart = this.cellStart, enemiesByCell = this.enemiesByCell, candidates = this.candidates;
@@ -87,6 +100,11 @@ export class EnemyGrid extends Resource {
             }
         }
         return found;
+    }
+
+    private withinReach(index: number, x: number, y: number, reach: number): boolean {
+        const dx = this.x[index] - x, dy = this.y[index] - y;
+        return dx * dx + dy * dy <= reach * reach;
     }
 
     // Out-of-grid positions clamp to border cells; gatherNear clamps its range the same way, so overlapping pairs still share a cell.

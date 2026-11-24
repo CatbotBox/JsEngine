@@ -38,7 +38,7 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "GridModel": {
+        "ModelGridSlot": {
           "slot": 0
         }
       }

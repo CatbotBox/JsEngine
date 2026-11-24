@@ -1,7 +1,9 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 195 modules, 246310 bytes minified
+demo/2d terminal cells main: 199 modules, 246635 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
+  demo/2d/color.ts
   demo/2d/components.ts
+  demo/2d/config.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
   demo/2d/generated/main.terminal.ts
@@ -9,7 +11,8 @@ demo/2d terminal cells main: 195 modules, 246310 bytes minified
   demo/2d/generated/schemas.ts
   demo/2d/generated/systems.cells.ts
   demo/2d/generated/systems.ts
-  demo/2d/tuning.ts
+  demo/2d/hud.ts
+  demo/2d/worldAccess.ts
   src/backends/cells/2d/cellsHudSpritePasses.ts
   src/backends/cells/2d/cellsSpritePasses.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
@@ -74,6 +77,7 @@ demo/2d terminal cells main: 195 modules, 246310 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/consoleOverride.ts
   src/engine/debugging/originalConsole.ts
   src/engine/debugging/requireDebugWorld.ts
@@ -226,9 +230,11 @@ demo/2d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 191 modules, 239977 bytes minified
+demo/2d web cells worker: 195 modules, 240302 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
+  demo/2d/color.ts
   demo/2d/components.ts
+  demo/2d/config.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
   demo/2d/generated/main.web-cells.worker.ts
@@ -236,7 +242,8 @@ demo/2d web cells worker: 191 modules, 239977 bytes minified
   demo/2d/generated/schemas.ts
   demo/2d/generated/systems.cells.ts
   demo/2d/generated/systems.ts
-  demo/2d/tuning.ts
+  demo/2d/hud.ts
+  demo/2d/worldAccess.ts
   src/backends/cells/2d/cellsHudSpritePasses.ts
   src/backends/cells/2d/cellsSpritePasses.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
@@ -302,6 +309,7 @@ demo/2d web cells worker: 191 modules, 239977 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -436,8 +444,10 @@ demo/2d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 192 modules, 239467 bytes minified
+demo/2d web pixels worker: 196 modules, 239816 bytes minified
+  demo/2d/color.ts
   demo/2d/components.ts
+  demo/2d/config.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
   demo/2d/generated/main.web-pixels.worker.ts
@@ -445,7 +455,8 @@ demo/2d web pixels worker: 192 modules, 239467 bytes minified
   demo/2d/generated/schemas.ts
   demo/2d/generated/systems.pixels.ts
   demo/2d/generated/systems.ts
-  demo/2d/tuning.ts
+  demo/2d/hud.ts
+  demo/2d/worldAccess.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/2d/pixelsHudSpritePasses.ts
@@ -513,6 +524,7 @@ demo/2d web pixels worker: 192 modules, 239467 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -647,8 +659,10 @@ demo/2d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 210 modules, 262243 bytes minified
+demo/2d web gpu worker: 214 modules, 262592 bytes minified
+  demo/2d/color.ts
   demo/2d/components.ts
+  demo/2d/config.ts
   demo/2d/game.ts
   demo/2d/generated/game.ts
   demo/2d/generated/main.web-gpu.worker.ts
@@ -656,7 +670,8 @@ demo/2d web gpu worker: 210 modules, 262243 bytes minified
   demo/2d/generated/schemas.ts
   demo/2d/generated/systems.gpu.ts
   demo/2d/generated/systems.ts
-  demo/2d/tuning.ts
+  demo/2d/hud.ts
+  demo/2d/worldAccess.ts
   src/backends/cells/cellFrame.ts
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts
@@ -740,6 +755,7 @@ demo/2d web gpu worker: 210 modules, 262243 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -858,9 +874,10 @@ demo/2d web gpu worker: 210 modules, 262243 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 220 modules, 315797 bytes minified
+demo/3d terminal cells main: 224 modules, 316101 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
+  demo/3d/config.ts
   demo/3d/game.ts
   demo/3d/generated/game.ts
   demo/3d/generated/main.terminal.ts
@@ -868,10 +885,12 @@ demo/3d terminal cells main: 220 modules, 315797 bytes minified
   demo/3d/generated/schemas.ts
   demo/3d/generated/systems.cells.ts
   demo/3d/generated/systems.ts
+  demo/3d/hud.ts
   demo/3d/modelCatalog.ts
-  demo/3d/modelGrid.ts
+  demo/3d/placedModels.ts
+  demo/3d/session.ts
   demo/3d/supersamplePresetKeys.ts
-  demo/3d/tuning.ts
+  demo/3d/worldAccess.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
   src/backends/cells/2d/hudSpriteCellPassSystem.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
@@ -940,6 +959,7 @@ demo/3d terminal cells main: 220 modules, 315797 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/consoleOverride.ts
   src/engine/debugging/originalConsole.ts
   src/engine/debugging/requireDebugWorld.ts
@@ -1110,9 +1130,10 @@ demo/3d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 216 modules, 309241 bytes minified
+demo/3d web cells worker: 220 modules, 309545 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
+  demo/3d/config.ts
   demo/3d/game.ts
   demo/3d/generated/game.ts
   demo/3d/generated/main.web-cells.worker.ts
@@ -1120,10 +1141,12 @@ demo/3d web cells worker: 216 modules, 309241 bytes minified
   demo/3d/generated/schemas.ts
   demo/3d/generated/systems.cells.ts
   demo/3d/generated/systems.ts
+  demo/3d/hud.ts
   demo/3d/modelCatalog.ts
-  demo/3d/modelGrid.ts
+  demo/3d/placedModels.ts
+  demo/3d/session.ts
   demo/3d/supersamplePresetKeys.ts
-  demo/3d/tuning.ts
+  demo/3d/worldAccess.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
   src/backends/cells/2d/hudSpriteCellPassSystem.ts
   src/backends/cells/2d/textSpriteCellPassSystem.ts
@@ -1193,6 +1216,7 @@ demo/3d web cells worker: 216 modules, 309241 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -1345,9 +1369,10 @@ demo/3d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 217 modules, 309941 bytes minified
+demo/3d web pixels worker: 221 modules, 310245 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
+  demo/3d/config.ts
   demo/3d/game.ts
   demo/3d/generated/game.ts
   demo/3d/generated/main.web-pixels.worker.ts
@@ -1355,10 +1380,12 @@ demo/3d web pixels worker: 217 modules, 309941 bytes minified
   demo/3d/generated/schemas.ts
   demo/3d/generated/systems.pixels.ts
   demo/3d/generated/systems.ts
+  demo/3d/hud.ts
   demo/3d/modelCatalog.ts
-  demo/3d/modelGrid.ts
+  demo/3d/placedModels.ts
+  demo/3d/session.ts
   demo/3d/supersamplePresetKeys.ts
-  demo/3d/tuning.ts
+  demo/3d/worldAccess.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/3d/meshPixelPassSettings.ts
@@ -1429,6 +1456,7 @@ demo/3d web pixels worker: 217 modules, 309941 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -1581,10 +1609,11 @@ demo/3d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 232 modules, 329074 bytes minified
+demo/3d web gpu worker: 236 modules, 329378 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
   demo/3d/components.ts
+  demo/3d/config.ts
   demo/3d/game.ts
   demo/3d/generated/game.ts
   demo/3d/generated/main.web-gpu.worker.ts
@@ -1592,10 +1621,12 @@ demo/3d web gpu worker: 232 modules, 329074 bytes minified
   demo/3d/generated/schemas.ts
   demo/3d/generated/systems.gpu.ts
   demo/3d/generated/systems.ts
+  demo/3d/hud.ts
   demo/3d/modelCatalog.ts
-  demo/3d/modelGrid.ts
+  demo/3d/placedModels.ts
+  demo/3d/session.ts
   demo/3d/supersamplePresetKeys.ts
-  demo/3d/tuning.ts
+  demo/3d/worldAccess.ts
   src/backends/cells/cellFrame.ts
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts
@@ -1684,6 +1715,7 @@ demo/3d web gpu worker: 232 modules, 329074 bytes minified
   src/engine/datatypes/aabb.ts
   src/engine/datatypes/averageStat.ts
   src/engine/datatypes/ringQueue.ts
+  src/engine/datatypes/windowedRate.ts
   src/engine/debugging/requireDebugWorld.ts
   src/engine/input/input.ts
   src/engine/input/inputEvent.ts
@@ -1814,9 +1846,13 @@ demo/3d web gpu worker: 232 modules, 329074 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 197 modules, 264338 bytes minified
+demo/swarm terminal cells main: 203 modules, 264637 bytes minified
+  demo/swarm/actions.ts
+  demo/swarm/combat.ts
   demo/swarm/components.ts
+  demo/swarm/config.ts
   demo/swarm/enemyGrid.ts
+  demo/swarm/frameOrder.ts
   demo/swarm/game.ts
   demo/swarm/generated/game.ts
   demo/swarm/generated/main.terminal.ts
@@ -1826,7 +1862,9 @@ demo/swarm terminal cells main: 197 modules, 264338 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
-  demo/swarm/tuning.ts
+  demo/swarm/ship.ts
+  demo/swarm/simulation.ts
+  demo/swarm/waves.ts
   src/backends/cells/2d/cellsHudSpritePasses.ts
   src/backends/cells/2d/cellsSpritePasses.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
@@ -2043,9 +2081,13 @@ demo/swarm web cells page: 19 modules, 25057 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 193 modules, 258018 bytes minified
+demo/swarm web cells worker: 199 modules, 258317 bytes minified
+  demo/swarm/actions.ts
+  demo/swarm/combat.ts
   demo/swarm/components.ts
+  demo/swarm/config.ts
   demo/swarm/enemyGrid.ts
+  demo/swarm/frameOrder.ts
   demo/swarm/game.ts
   demo/swarm/generated/game.ts
   demo/swarm/generated/main.web-cells.worker.ts
@@ -2055,7 +2097,9 @@ demo/swarm web cells worker: 193 modules, 258018 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
-  demo/swarm/tuning.ts
+  demo/swarm/ship.ts
+  demo/swarm/simulation.ts
+  demo/swarm/waves.ts
   src/backends/cells/2d/cellsHudSpritePasses.ts
   src/backends/cells/2d/cellsSpritePasses.ts
   src/backends/cells/2d/cellsWorldTextPasses.ts
@@ -2255,9 +2299,13 @@ demo/swarm web pixels page: 17 modules, 17208 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 195 modules, 258059 bytes minified
+demo/swarm web pixels worker: 201 modules, 258358 bytes minified
+  demo/swarm/actions.ts
+  demo/swarm/combat.ts
   demo/swarm/components.ts
+  demo/swarm/config.ts
   demo/swarm/enemyGrid.ts
+  demo/swarm/frameOrder.ts
   demo/swarm/game.ts
   demo/swarm/generated/game.ts
   demo/swarm/generated/main.web-pixels.worker.ts
@@ -2267,7 +2315,9 @@ demo/swarm web pixels worker: 195 modules, 258059 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
-  demo/swarm/tuning.ts
+  demo/swarm/ship.ts
+  demo/swarm/simulation.ts
+  demo/swarm/waves.ts
   src/backends/cells/cellFrame.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
   src/backends/pixels/2d/pixelsHudSpritePasses.ts
@@ -2469,9 +2519,13 @@ demo/swarm web gpu page: 17 modules, 16748 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 214 modules, 281071 bytes minified
+demo/swarm web gpu worker: 220 modules, 281370 bytes minified
+  demo/swarm/actions.ts
+  demo/swarm/combat.ts
   demo/swarm/components.ts
+  demo/swarm/config.ts
   demo/swarm/enemyGrid.ts
+  demo/swarm/frameOrder.ts
   demo/swarm/game.ts
   demo/swarm/generated/game.ts
   demo/swarm/generated/main.web-gpu.worker.ts
@@ -2481,7 +2535,9 @@ demo/swarm web gpu worker: 214 modules, 281071 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
-  demo/swarm/tuning.ts
+  demo/swarm/ship.ts
+  demo/swarm/simulation.ts
+  demo/swarm/waves.ts
   src/backends/cells/cellFrame.ts
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts

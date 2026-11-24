@@ -36,7 +36,7 @@
           "hitPoints": 1,
           "radiusUnits": 1.3,
           "speedUnitsPerSecond": 12,
-          "score": 10,
+          "points": 10,
           "woundedTint": "#ff7070",
           "steerCos": 1,
           "steerSin": 0

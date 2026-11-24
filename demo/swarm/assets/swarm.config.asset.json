@@ -1,7 +1,7 @@
 {
   "format": "jsengine-asset",
   "version": 1,
-  "type": "SwarmTuning",
+  "type": "SwarmConfig",
   "fields": {
     "randomSeed": null,
     "maxSimulationStepMs": 100,
