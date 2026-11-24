@@ -15,6 +15,7 @@ import type {
     EditorEntityDetails,
     EditorEntitySummary,
     EditorEvent,
+    EditorGameCameraChangedEvent,
     EditorRequest,
     EditorResultOf,
     EditorView,
@@ -119,6 +120,10 @@ const CAMERA_LESS_PROJECT_NAME = "Camera-less fixture";
 const CAMERA_COMPONENT = "Camera";
 const MARKER_NAME = "marker";
 const MARKER_XYZ = [1, 2, 3];
+const ADDED_CAMERA_NAME = "addedCamera";
+const MISSING_ONLY: readonly boolean[] = [false];
+const MISSING_THEN_ADDED: readonly boolean[] = [false, true];
+const MISSING_ADDED_REMOVED: readonly boolean[] = [false, true, false];
 const VISIBLE_SESSION: SessionVisibility = {visible: true};
 const HIDDEN_SESSION: SessionVisibility = {visible: false};
 const NO_QUERY = "";
@@ -351,6 +356,10 @@ class EditorPage {
     }
 }
 
+function gameCameraReports(events: readonly EditorEvent[]): boolean[] {
+    return events.filter((event): event is EditorGameCameraChangedEvent => event.kind === "gameCameraChanged").map(event => event.present);
+}
+
 function drawsBoth(frames: ViewFrames): boolean {
     return frames.game > 0 && frames.scene > 0;
 }
@@ -366,6 +375,8 @@ async function verifyStartsInEditMode(page: EditorPage, label: string): Promise<
     expect(state.mode === "edit" && state.gameplayTicks === 0, `${label}: the world starts in edit mode with no gameplay ticks (${JSON.stringify(state)})`);
     const arrived = await page.bothViewsKeepDrawing();
     expect(drawsBoth(arrived), `${label}: edit mode keeps presenting both views (${framesText(arrived)})`);
+    const cameraReports = gameCameraReports(page.events);
+    expect(cameraReports.length === 0, `${label}: no missing game camera is reported while the start scene's camera loads (${JSON.stringify(cameraReports)})`);
     expect(page.readyReports === 1, `${label}: ready is reported once while frames keep arriving (${page.readyReports})`);
     const [scene, game] = await Promise.all([page.ask({op: "getViewInfo", view: "scene"}), page.ask({op: "getViewInfo", view: "game"})]);
     const sceneSize = page.sceneDisplay.surfaceSize(), gameSize = page.display.surfaceSize();
@@ -741,6 +752,8 @@ async function verifySwarmGate(page: EditorPage, label: string): Promise<void> {
     const sceneInfo = await page.ask({op: "getViewInfo", view: "scene"});
     expect(drawsBoth(arrived) && phaseWhileDrawing === SWARM_PLAYING_PHASE && sceneInfo.screenWidth > 0,
         `${label}: the Scene and Game views both draw while the game plays and the game keeps playing (${framesText(arrived)}, phase ${JSON.stringify(phaseWhileDrawing)}, scene view ${sceneInfo.screenWidth} wide)`);
+    const cameraReports = gameCameraReports(page.events);
+    expect(cameraReports.length === 0, `${label}: opening scenes and switching to ${SWARM_GAMEPLAY_SCENE} in play never report a missing game camera (${JSON.stringify(cameraReports)})`);
     await page.ask({op: "setMode", mode: "edit"});
     const stopped = await page.ask({op: "listEntities"});
     const namesOf = (listing: ListEntitiesResult) => listing.entities.map(entity => entity.name);
@@ -863,6 +876,14 @@ async function verifyCameraLessWorker(project: BuiltProject, label: string): Pro
         expect(page.display.frames === 0 && page.sceneDisplay.frames === 0,
             `${label}: no frame is drawn in either view without a camera (${page.display.frames} game and ${page.sceneDisplay.frames} scene frames in all, ${framesText(arrived)})`);
         expect(page.readyReports === 1, `${label}: ready is reported once (${page.readyReports})`);
+        expect(await waitUntil(() => sameJson(gameCameraReports(page.events), MISSING_ONLY)),
+            `${label}: the world reports the missing game camera once (${JSON.stringify(gameCameraReports(page.events))})`);
+        const added = await page.ask({op: "createEntity", name: ADDED_CAMERA_NAME, components: {Camera: {}, LocalPosition: {xyz: [0, 0, 0]}}});
+        expect(await waitUntil(() => sameJson(gameCameraReports(page.events), MISSING_THEN_ADDED)),
+            `${label}: adding a camera reports it present (${JSON.stringify(gameCameraReports(page.events))})`);
+        await page.ask({op: "destroyEntity", entity: added.entity});
+        expect(await waitUntil(() => sameJson(gameCameraReports(page.events), MISSING_ADDED_REMOVED)),
+            `${label}: removing it reports the camera missing again (${JSON.stringify(gameCameraReports(page.events))})`);
         page.expectNoErrors(label);
     } finally {
         page.dispose();
@@ -882,6 +903,8 @@ async function verifyCameraLessHotReload(project: BuiltProject, label: string): 
         const reloaded = await sessionWithin(startEditorSession(project, viewports, HIDDEN_SESSION, `${label} (reloaded)`), TIMEOUT_MS);
         expect(reloaded !== undefined, `${label}: a hot reload's hidden worker session opens within ${TIMEOUT_MS} ms`);
         if (reloaded === undefined) return;
+        const reloadedEvents: EditorEvent[] = [];
+        const stopListening = reloaded.events.onEvent(event => reloadedEvents.push(event));
         try {
             const imported = await reloaded.client.request(importSnapshotRequest(exported));
             const remap = entityRemapOf(exported.entities, imported.entities);
@@ -892,7 +915,10 @@ async function verifyCameraLessHotReload(project: BuiltProject, label: string): 
             const errors = [...display.errors, ...sceneDisplay.errors];
             expect(display.frames === 0 && sceneDisplay.frames === 0 && errors.length === 0,
                 `${label}: both sessions opened with no frame in either view and no error (${display.frames} game and ${sceneDisplay.frames} scene frames${errors.length > 0 ? ": " + errors.join(" | ") : ""})`);
+            expect(await waitUntil(() => sameJson(gameCameraReports(reloadedEvents), MISSING_ONLY)),
+                `${label}: the hot-reloaded session reports the missing game camera on its own (${JSON.stringify(gameCameraReports(reloadedEvents))})`);
         } finally {
+            stopListening();
             reloaded.dispose();
         }
     } finally {

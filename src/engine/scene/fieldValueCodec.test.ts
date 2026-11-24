@@ -237,6 +237,12 @@ describe("field value codec", () => {
             loadPrefab: path => {
                 throw new Error(`no prefab ${path}`);
             },
+            isPrefabLoaded: path => {
+                throw new Error(`no prefab ${path}`);
+            },
+            reloadPrefab: path => {
+                throw new Error(`no prefab ${path}`);
+            },
             loadText: path => {
                 throw new Error(`no text ${path}`);
             },

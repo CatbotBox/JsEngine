@@ -13,6 +13,9 @@ import {
     encodeDataAssetFields,
     NO_SCENE_ID,
     parseSceneDocument,
+    PREFAB_ASSET_TYPE_NAME,
+    PrefabAsset,
+    PrefabSpawner,
     sceneAssetPaths,
     SceneManager,
     serializeEntities,
@@ -53,6 +56,7 @@ import type {
     LoadSceneRequest,
     LoadSceneResult,
     ReloadDataAssetResult,
+    ReloadPrefabResult,
     SaveSceneResult,
     SetActiveSceneResult,
     SetFieldResult,
@@ -119,6 +123,7 @@ const OPENED_SCENE_PERSISTENT_ENTITIES = "destroy";
 const NO_GAMEPLAY_SYSTEMS: readonly SystemCtor<System>[] = [];
 const QUIT_HANDLED_BY_EDITOR: RequestedQuitHandling = "handled";
 const QUIT_LEFT_TO_APP: RequestedQuitHandling = "proceed";
+const GAME_CAMERA_ASSUMED_PRESENT = true;
 
 export function editorSceneManager(world: World, registry: ComponentSchemaRegistry, preload?: ScenePreload): SceneManager {
     return new SceneManager(world, registry, {preload, unknownComponentTypes: SKIPPED_UNKNOWN_TYPES, schemaChanges: REPORTED_SCHEMA_CHANGES});
@@ -158,6 +163,7 @@ export class EditorWorldService {
     private quitStops = 0;
     private stoppedError: string | undefined;
     private firstFrameListener: (() => void) | undefined;
+    private reportedGameCamera = GAME_CAMERA_ASSUMED_PRESENT;
     private readonly gate: GameplaySystemGate;
     private readonly tickCounter: GameplayTickCounterSystem;
     private readonly scenes: SceneManager;
@@ -443,6 +449,8 @@ export class EditorWorldService {
                 return this.setResourceField(request);
             case "reloadDataAsset":
                 return this.reloadDataAsset(request.path);
+            case "reloadPrefab":
+                return this.reloadPrefab(request.path);
             case "defaultResourceFields":
                 return {fields: defaultResourceFields(registry, request.typeName)};
         }
@@ -463,6 +471,19 @@ export class EditorWorldService {
         if (asset === undefined) return {reloaded: false};
         this.keepReloadedResourceInSnapshot(asset);
         return {reloaded: true};
+    }
+
+    private async reloadPrefab(path: string): Promise<ReloadPrefabResult> {
+        if (!this.assets.isPrefabLoaded(path)) return {reloaded: false};
+        await this.options.refetchFiles?.([path]);
+        await this.preload([{kind: PREFAB_ASSET_TYPE_NAME, path}]);
+        this.requireSpawnablePrefab(path);
+        return {reloaded: this.assets.reloadPrefab(path)};
+    }
+
+    private requireSpawnablePrefab(path: string): void {
+        const document = parseSceneDocument(this.assets.loadText(path), path);
+        this.world.resources.tryGet(PrefabSpawner)?.templateOf(new PrefabAsset(path, document));
     }
 
     private keepReloadedResourceInSnapshot(asset: Resource): void {
@@ -686,6 +707,7 @@ export class EditorWorldService {
 
     private stop(): void {
         if (this._mode === "edit") return;
+        this.scenes.cancelPendingLoads();
         this.gate.suspend();
         this.discardPendingCommands();
         this._mode = "edit";
@@ -794,8 +816,16 @@ export class EditorWorldService {
         if (this._mode === "play") this.gate.resume();
         else this.gate.suspend();
         this.world.stepSimulation(tickDeltaMs);
+        this.reportGameCameraChange();
         this.tickCount++;
         this.tickMsTotal += performance.now() - startedMs;
+    }
+
+    private reportGameCameraChange(): void {
+        const present = this.views.hasGameCamera();
+        if (present === this.reportedGameCamera) return;
+        this.reportedGameCamera = present;
+        this.postEvent({kind: "gameCameraChanged", present});
     }
 }
 

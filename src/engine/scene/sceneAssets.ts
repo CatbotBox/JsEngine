@@ -1,5 +1,6 @@
 import type {Resource} from "../core";
 import type {ResourceCtor} from "../core/resource";
+import {normalizePath} from "../platform/paths";
 import type {FileSource} from "../platform/platform";
 import type {MeshLoadOptions} from "../rendering/3d/mesh";
 import type {ComponentSchemaRegistry} from "./componentSchemaRegistry";
@@ -32,6 +33,10 @@ export interface SceneAssetLoader {
 
     loadPrefab(path: string): PrefabAsset;
 
+    isPrefabLoaded(path: string): boolean;
+
+    reloadPrefab(path: string): boolean;
+
     loadText(path: string): string;
 
     loadDataAsset<R extends Resource>(path: string, type: ResourceCtor<R>): R;
@@ -48,6 +53,10 @@ function cacheKey(kind: SceneAssetKind, path: string): string {
 export function platformSceneAssetLoader(options: MeshLoadOptions, dataAssets?: DataAssetSource): SceneAssetLoader {
     const loaded = new Map<string, unknown>();
     const prefabs = new Map<string, PrefabAsset>();
+    const loadedPrefabsAt = (path: string): PrefabAsset[] => {
+        const key = normalizePath(path);
+        return [...prefabs].filter(([loadedPath]) => normalizePath(loadedPath) === key).map(([, prefab]) => prefab);
+    };
     return {
         loadOptions: options,
         loadCached<A>(kind: SceneAssetKind, path: string, load: () => A): A {
@@ -64,6 +73,16 @@ export function platformSceneAssetLoader(options: MeshLoadOptions, dataAssets?: 
                 prefabs.set(path, prefab);
             }
             return prefab;
+        },
+        isPrefabLoaded(path: string): boolean {
+            return loadedPrefabsAt(path).length > 0;
+        },
+        reloadPrefab(path: string): boolean {
+            const reloaded = loadedPrefabsAt(path);
+            if (reloaded.length === 0) return false;
+            const document = parseSceneDocument(options.files.readText(path), path);
+            for (const prefab of reloaded) prefab.replaceDocument(document);
+            return true;
         },
         loadText(path: string): string {
             return options.files.readText(path);

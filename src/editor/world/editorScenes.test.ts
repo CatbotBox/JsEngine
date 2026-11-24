@@ -3,7 +3,16 @@ import type {Entity, World} from "../../engine/core";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Parent} from "../../engine/translation/parent";
-import {EditorOnly, NO_SCENE_ID, parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION, SceneManager} from "../../engine/scene";
+import {
+    EditorOnly,
+    NO_SCENE_ID,
+    parseSceneDocument,
+    SCENE_DOCUMENT_FORMAT,
+    SCENE_DOCUMENT_VERSION,
+    SceneLoadCancelledError,
+    SceneLoader,
+    SceneManager,
+} from "../../engine/scene";
 import {ask, byName, childrenOf, disposeEditorWorlds, editorWorld, failureOf} from "./editorServiceTestHarness";
 import type {Harnessed} from "./editorServiceTestHarness";
 import {linkChild} from "./hierarchyEditing";
@@ -131,6 +140,8 @@ describe("editor scenes", () => {
 const THIRD_PATH = "scenes/third.scene.json";
 const STOP_FIRST_TEXT = "stop it first";
 const RENAMED_PATH = "scenes/renamed.scene.json";
+const LOAD_APPLIED = "applied";
+const LOAD_CANCELLED = "cancelled";
 const EMPTY_TEXT = JSON.stringify({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities: []});
 
 function listing(harnessed: Harnessed) {
@@ -291,6 +302,22 @@ describe("editor multi-scene editing", () => {
         expect((await failureOf(ask(harnessed, {op: "unloadScene", sceneId: other}))).includes(STOP_FIRST_TEXT)).toBe(true);
         expect((await failureOf(ask(harnessed, {op: "setActiveScene", scene: {id: other, path: OTHER_PATH}}))).includes(STOP_FIRST_TEXT)).toBe(true);
         expect((await failureOf(ask(harnessed, {op: "loadScene", sceneText: OTHER_TEXT, path: THIRD_PATH, additive: true}))).includes(STOP_FIRST_TEXT)).toBe(true);
+    });
+
+    test("a scene load the game started in play that finishes after Stop is cancelled and leaves the restored edit scene alone", async () => {
+        let finishPreloads: () => void = () => undefined;
+        const preloadsFinishWhen = new Promise<void>(finish => finishPreloads = finish);
+        const harnessed = editorWorld(undefined, {files: {[OTHER_PATH]: OTHER_TEXT}, preloadsFinishWhen});
+        const level = (await ask(harnessed, {op: "loadScene", sceneText: LEVEL_TEXT, path: LEVEL_PATH})).sceneId;
+        await ask(harnessed, {op: "setMode", mode: "play"});
+        const gameplayLoad = harnessed.world.resources.get(SceneLoader).load(OTHER_PATH);
+        await ask(harnessed, {op: "setMode", mode: "edit"});
+        finishPreloads();
+        expect(await gameplayLoad.then(() => LOAD_APPLIED, error => error instanceof SceneLoadCancelledError ? LOAD_CANCELLED : String(error))).toBe(LOAD_CANCELLED);
+        const listed = await listing(harnessed);
+        expect(listed.entities.map(entity => entity.name)).toEqual(["Level", "Door"]);
+        expect(listed.scenes).toEqual([{id: level, path: LEVEL_PATH}]);
+        expect(listed.activeSceneId).toBe(level);
     });
 
     test("importing a snapshot keeps scene membership and the active scene, and clears edit marks", async () => {

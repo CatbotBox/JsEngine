@@ -33,6 +33,11 @@ interface EntitySpawnPlan {
     readonly referringComponents: readonly ComponentSpawnPlan[];
 }
 
+interface CompiledPrefab {
+    readonly document: SceneDocument;
+    readonly template: PrefabTemplate;
+}
+
 const NO_SETTINGS: PrefabSpawnerSettings = {};
 const DEFAULT_UNKNOWN_COMPONENT_TYPE_POLICY: UnknownComponentTypePolicy = "throw";
 const DISABLED = false;
@@ -202,7 +207,7 @@ class PrefabCompiler implements PrefabFieldScope {
 }
 
 export class PrefabSpawner extends Resource {
-    private readonly templates = new WeakMap<PrefabAsset, PrefabTemplate>();
+    private readonly templates = new WeakMap<PrefabAsset, CompiledPrefab>();
 
     public constructor(
         private readonly registry: ComponentSchemaRegistry,
@@ -215,11 +220,11 @@ export class PrefabSpawner extends Resource {
     }
 
     public templateOf(prefab: PrefabAsset): PrefabTemplate {
-        let template = this.templates.get(prefab);
-        if (template === undefined) {
-            template = new PrefabCompiler(this.registry, this.assets, prefab, this.settings).compile();
-            this.templates.set(prefab, template);
-        }
+        const document = prefab.document;
+        const compiled = this.templates.get(prefab);
+        if (compiled !== undefined && compiled.document === document) return compiled.template;
+        const template = new PrefabCompiler(this.registry, this.assets, prefab, this.settings).compile();
+        this.templates.set(prefab, {document, template});
         return template;
     }
 

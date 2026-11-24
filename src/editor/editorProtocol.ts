@@ -254,6 +254,11 @@ export interface ReloadDataAssetRequest {
     readonly path: string;
 }
 
+export interface ReloadPrefabRequest {
+    readonly op: "reloadPrefab";
+    readonly path: string;
+}
+
 export interface DefaultResourceFieldsRequest {
     readonly op: "defaultResourceFields";
     readonly typeName: string;
@@ -297,6 +302,7 @@ export type EditorRequest =
     | SetResourceFieldRequest
     | ListSettingsRequest
     | ReloadDataAssetRequest
+    | ReloadPrefabRequest
     | DefaultResourceFieldsRequest;
 
 export type EditorOp = EditorRequest["op"];
@@ -474,6 +480,10 @@ export interface ReloadDataAssetResult {
     readonly reloaded: boolean;
 }
 
+export interface ReloadPrefabResult {
+    readonly reloaded: boolean;
+}
+
 export interface DefaultResourceFieldsResult {
     readonly fields: SceneJsonObject;
 }
@@ -628,6 +638,7 @@ export interface EditorResultByOp {
     readonly setResourceField: SetFieldResult;
     readonly listSettings: ListSettingsResult;
     readonly reloadDataAsset: ReloadDataAssetResult;
+    readonly reloadPrefab: ReloadPrefabResult;
     readonly defaultResourceFields: DefaultResourceFieldsResult;
 }
 
@@ -655,7 +666,12 @@ export interface EditorModeChangedEvent {
     readonly gameplayTicks: number;
 }
 
-export type EditorEvent = EditorConsoleEvent | EditorWorldStoppedEvent | EditorModeChangedEvent;
+export interface EditorGameCameraChangedEvent {
+    readonly kind: "gameCameraChanged";
+    readonly present: boolean;
+}
+
+export type EditorEvent = EditorConsoleEvent | EditorWorldStoppedEvent | EditorModeChangedEvent | EditorGameCameraChangedEvent;
 
 export interface EditorRequestMessage {
     readonly type: typeof EDITOR_MESSAGE_TYPE;
@@ -848,6 +864,7 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
         case "defaultResourceFields":
             return isString(value.typeName);
         case "reloadDataAsset":
+        case "reloadPrefab":
             return isString(value.path);
         case "setResourceField":
             return isString(value.typeName) && isString(value.key) && value.value !== undefined;
@@ -865,6 +882,8 @@ export function isEditorEvent(value: unknown): value is EditorEvent {
             return isString(value.error) && isAbsentOr(value.stack, isString);
         case "modeChanged":
             return isEditorMode(value.mode) && isWholeNumber(value.gameplayTicks);
+        case "gameCameraChanged":
+            return isBoolean(value.present);
         default:
             return false;
     }

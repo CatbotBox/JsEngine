@@ -4,6 +4,7 @@ import {World} from "../../engine/core/world";
 import {RootSystemGroup} from "../../engine/core/rootSystemGroup";
 import {System} from "../../engine/core/system";
 import {EntityQuery} from "../../engine/core/entityQuery";
+import {getOwner} from "../../engine/core/ownership";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Camera} from "../../engine/rendering/camera";
 import {ScreenSize} from "../../engine/rendering/screenSize";
@@ -243,7 +244,7 @@ describe("CellRenderSystemGroup frames", () => {
 });
 
 describe("CellRenderSystemGroup render camera override", () => {
-    test("a disabled override camera renders without a game camera, gets one CellAspectRatio and the presenter's size", () => {
+    test("a disabled override camera renders without a game camera, gets no CellAspectRatio and gets the presenter's size", () => {
         const presenter = new RecordingPresenter({columns: 60, rows: 20});
         const world = worldPresentingOn(presenter);
         const em = world.entityManager;
@@ -260,7 +261,7 @@ describe("CellRenderSystemGroup render camera override", () => {
             root.update();
             expect([presenter.frames.length, probe.frames]).toEqual([2, 2]);
             expect(em.isEnabled(camera)).toBe(false);
-            expect(em.getComponent<CellAspectRatio>(camera, CellAspectRatio)!.value).toBe(2);
+            expect(em.getComponent(camera, CellAspectRatio)).toBeUndefined();
             const size = em.getComponent<ScreenSize>(camera, ScreenSize)!;
             expect([size.x, size.y]).toEqual([60, 20]);
         } finally {
@@ -325,7 +326,7 @@ describe("CellRenderSystemGroup render targets", () => {
             expect(scene.frames.map(({frame, repaint}) => [frame.width, frame.height, repaint])).toEqual([[30, 6, "full"], [30, 6, "changes"]]);
             expect(host.frames.map(({frame, repaint}) => [frame.width, frame.height, repaint])).toEqual([[40, 10, "full"], [40, 10, "changes"]]);
             expect([screenSizeOf(world, sceneCamera), screenSizeOf(world, gameCamera)]).toEqual([[30, 6], [40, 10]]);
-            expect(em.getComponent<CellAspectRatio>(sceneCamera, CellAspectRatio)).toBeDefined();
+            expect(em.getComponent(sceneCamera, CellAspectRatio)).toBeUndefined();
             expect(group.walkCount).toBe(4);
 
             world.resources.insert(new CellRenderTargets([{camera: sceneCamera, presenter: scene}]));
@@ -445,19 +446,33 @@ describe("CellCameraSizingSystem", () => {
         expect(em.getComponent(camera, CellAspectRatio)).toBeUndefined();
     });
 
-    test("adds exactly one CellAspectRatio, before the render passes of the same frame", () => {
-        const world = worldPresentingOn(new RecordingPresenter());
-        world.getOrCreateSystem(CellCameraSizingSystem);
-        const probe = world.getOrCreateSystem(CellRatioProbeSystem);
-        const root = world.getOrCreateSystem(RootSystemGroup);
+    test("rendering game, override and target cameras without a CellAspectRatio makes no structural change", () => {
+        const host = new RecordingPresenter({columns: 40, rows: 10});
+        const scene = new RecordingPresenter({columns: 30, rows: 6});
+        const world = worldPresentingOn(host);
         const em = world.entityManager;
-        const camera = em.createEntity("camera");
-        em.addComponent(camera, new Camera());
-        root.update();
-        expect(probe.sawCellRatio).toBe(true);
-        expect(em.getComponent<CellAspectRatio>(camera, CellAspectRatio)!.value).toBe(2);
-        root.update();
-        expect(new EntityQuery(world, [CellAspectRatio]).enabledEntityCount()).toBe(1);
+        const root = world.getOrCreateSystem(RootSystemGroup);
+        const group = world.getOrCreateSystem(CellRenderSystemGroup);
+        const gameCamera = em.createEntity("game camera", [new Camera()]);
+        const sceneCamera = em.createEntity("scene camera", [new Camera(), new LocalToWorld()]);
+        const overrideCamera = em.createEntity("override camera", [new Camera(), new LocalToWorld()]);
+        em.setEnabledState(sceneCamera, DISABLED);
+        em.setEnabledState(overrideCamera, DISABLED);
+        const cameras = [gameCamera, sceneCamera, overrideCamera];
+        const archetypesBefore = cameras.map(camera => getOwner(world, camera));
+        try {
+            root.update();
+            world.resources.insert(new RenderCameraOverride(overrideCamera));
+            root.update();
+            world.resources.remove(RenderCameraOverride);
+            world.resources.insert(new CellRenderTargets([{camera: sceneCamera, presenter: scene}, {camera: undefined, presenter: host}]));
+            root.update();
+            expect([host.frames.length, scene.frames.length]).toEqual([3, 1]);
+            expect(cameras.map((camera, i) => getOwner(world, camera) === archetypesBefore[i])).toEqual([true, true, true]);
+            expect(new EntityQuery(world, [CellAspectRatio]).enabledEntityCount()).toBe(0);
+        } finally {
+            group.enabled = false;
+        }
     });
 
     test("keeps a camera's existing CellAspectRatio", () => {
@@ -475,23 +490,6 @@ describe("CellCameraSizingSystem", () => {
         expect(new EntityQuery(world, [CellAspectRatio]).enabledEntityCount()).toBe(1);
     });
 });
-
-class CellRatioProbeSystem extends System {
-    private _cameraQuery = this.createEntityQuery([Camera, CellAspectRatio]);
-    public sawCellRatio = false;
-
-    override systemGroup() {
-        return RenderingSystemGroup;
-    }
-
-    override priority(): number {
-        return 100;
-    }
-
-    onUpdate() {
-        this.sawCellRatio = this._cameraQuery.hasEntity();
-    }
-}
 
 describe("MeshCellPassSettings worker count", () => {
     const resolve = (platform: MemoryPlatform, workerCount: number | "auto" = "auto") => {

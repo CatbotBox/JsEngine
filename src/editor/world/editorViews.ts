@@ -119,6 +119,16 @@ export class EditorViews {
         return cameras.sort((a, b) => getEntityCreationOrder(a)! - getEntityCreationOrder(b)!);
     }
 
+    public hasGameCamera(): boolean {
+        const cameraType = ComponentType.of(Camera);
+        const editorOnlyType = ComponentType.of(EditorOnly);
+        for (const archetype of this.world.archetypes.values()) {
+            if (archetype.getColumn(cameraType) === undefined || archetype.getColumn(editorOnlyType) !== undefined) continue;
+            if (archetype.entityCountIncludingDisabled > 0) return true;
+        }
+        return false;
+    }
+
     public primaryGameCamera(): Entity | undefined {
         const cameras = this.gameCameras();
         return cameras.find(camera => this.world.entityManager.isEnabled(camera)) ?? cameras[0];

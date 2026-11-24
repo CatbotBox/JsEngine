@@ -115,6 +115,12 @@ function recordingLoader(requested: string[]): SceneAssetLoader {
             requested.push(path);
             return prefab;
         },
+        isPrefabLoaded: path => {
+            throw new Error(`no prefab check ${path}`);
+        },
+        reloadPrefab: path => {
+            throw new Error(`no prefab reload ${path}`);
+        },
         loadText: path => {
             requested.push(path);
             return SHADER_CODE;

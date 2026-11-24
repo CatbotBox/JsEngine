@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, test} from "../../engine/testing/harness";
-import {System} from "../../engine/core";
+import {EntityCommandBufferSystem, System} from "../../engine/core";
 import type {Entity, World} from "../../engine/core";
 import {LocalPosition} from "../../engine/translation/localPosition";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
@@ -14,7 +14,8 @@ import {EditorOnly, parseSceneDocument} from "../../engine/scene";
 import {MemoryPixelPresenter} from "../../backends/pixels/memoryPixelPresenter";
 import {PixelPresenterResource, PixelRenderTargets} from "../../backends/pixels/pixelPresenterResource";
 import {PixelRenderSystemGroup} from "../../backends/pixels/pixelRenderSystemGroup";
-import {ask, disposeEditorWorlds, editorWorld, failureOf, fieldsOf, framesPass} from "./editorServiceTestHarness";
+import type {EditorGameCameraChangedEvent} from "../editorProtocol";
+import {ask, disposeEditorWorlds, editorWorld, failureOf, fieldsOf, framesPass, sleep, waitUntil} from "./editorServiceTestHarness";
 import type {Harnessed} from "./editorServiceTestHarness";
 import {projectToScreen, rayBoxDistance, screenRay} from "./viewMath";
 import type {Mat4} from "./viewMath";
@@ -32,6 +33,8 @@ const RESIZED_HEIGHT_PX = 400;
 const PIXELS_PER_SCREEN_UNIT_X = 8;
 const PIXELS_PER_SCREEN_UNIT_Y = 16;
 const RECENT_WALKS = 2;
+const ENABLED = true;
+const EVENT_DELIVERY_MS = 10;
 
 class CameraProbeSystem extends System {
     public enabledCameras: Entity[][] = [];
@@ -388,6 +391,62 @@ describe("editor views before the screen is sized", () => {
         expect(await framesPass(harnessed)).toBe(true);
         expect((await ask(harnessed, {op: "pickEntities", x: 0, y: 0, view: "game"})).entities).toEqual([]);
         expect((await ask(harnessed, {op: "getViewInfo", view: "game"})).screenWidth).toBe(0);
+    });
+});
+
+function gameCameraReports(harnessed: Harnessed): boolean[] {
+    return harnessed.events
+        .filter((event): event is EditorGameCameraChangedEvent => event.kind === "gameCameraChanged")
+        .map(event => event.present);
+}
+
+function runOneTick(harnessed: Harnessed): void {
+    harnessed.frameAfter(harnessed.world.loopTiming.tickDeltaMs);
+}
+
+describe("editor game camera reports", () => {
+    test("a scene camera still waiting for command buffer playback counts, so a starting game never reports a missing camera", async () => {
+        const harnessed = editorWorld(world => {
+            const camera = world.entityManager.createEntity("startCamera", [new Camera(), new LocalPosition(0, 0, 0), new LocalToWorld(), sizedScreen()]);
+            world.entityManager.setEnabledState(camera, DISABLED);
+            world.getOrCreateSystem(EntityCommandBufferSystem).getEntityCommandBuffer().setEnabledState(camera, ENABLED);
+        }, {drivenFrames: false});
+        runOneTick(harnessed);
+        runOneTick(harnessed);
+        await sleep(EVENT_DELIVERY_MS);
+        expect(gameCameraReports(harnessed)).toEqual([]);
+        expect((await ask(harnessed, {op: "setMode", mode: "play"})).mode).toBe("play");
+        runOneTick(harnessed);
+        await sleep(EVENT_DELIVERY_MS);
+        expect(gameCameraReports(harnessed)).toEqual([]);
+    });
+
+    test("a world without a game camera reports it only after a completed tick, then once per change; the editor camera never counts", async () => {
+        const harnessed = editorWorld(() => undefined, {drivenFrames: false});
+        await sleep(EVENT_DELIVERY_MS);
+        expect(gameCameraReports(harnessed)).toEqual([]);
+        runOneTick(harnessed);
+        expect(await waitUntil(() => gameCameraReports(harnessed).length === 1)).toBe(true);
+        expect(gameCameraReports(harnessed)).toEqual([false]);
+
+        await ask(harnessed, {op: "setEditorCamera", position: [0, 0, 0], rotation: [0, 0, 0, 1]});
+        runOneTick(harnessed);
+        runOneTick(harnessed);
+        await sleep(EVENT_DELIVERY_MS);
+        expect(harnessed.service.sceneCamera).toBeDefined();
+        expect(gameCameraReports(harnessed)).toEqual([false]);
+
+        const camera = (await ask(harnessed, {op: "createEntity", name: "camera", components: {Camera: {}}})).entity;
+        runOneTick(harnessed);
+        expect(await waitUntil(() => gameCameraReports(harnessed).length === 2)).toBe(true);
+        await ask(harnessed, {op: "setEnabled", entity: camera, enabled: DISABLED});
+        runOneTick(harnessed);
+        await ask(harnessed, {op: "destroyEntity", entity: camera});
+        runOneTick(harnessed);
+        runOneTick(harnessed);
+        expect(await waitUntil(() => gameCameraReports(harnessed).length === 3)).toBe(true);
+        await sleep(EVENT_DELIVERY_MS);
+        expect(gameCameraReports(harnessed)).toEqual([false, true, false]);
     });
 });
 

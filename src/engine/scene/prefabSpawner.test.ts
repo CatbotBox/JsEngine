@@ -1,5 +1,6 @@
 import {describe, expect, test} from "../testing/harness";
 import {MemoryPlatform} from "../testing/memoryPlatform";
+import type {MemoryFileSource} from "../testing/memoryPlatform";
 import {EntityCommandBufferSystem, World} from "../core";
 import type {Entity} from "../core";
 import {asFloat32Array} from "../math/types/vec";
@@ -12,6 +13,7 @@ import {registerEngineComponentSchemas} from "./engineComponentSchemas";
 import {PrefabAsset} from "./prefabAsset";
 import {PrefabSpawner, prefabSpawnerOf} from "./prefabSpawner";
 import {platformSceneAssetLoader} from "./sceneAssets";
+import type {SceneAssetLoader} from "./sceneAssets";
 import {FIRST_SCENE_ENTITY_ID, parseSceneDocument, SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION} from "./sceneDocument";
 import type {SceneEntityRecord, SceneFieldValues} from "./sceneDocument";
 
@@ -153,5 +155,57 @@ describe("PrefabSpawner", () => {
         const {world} = setup();
         expect(() => world.resources.getOrCreate(PrefabSpawner)).not.toThrow();
         expect(() => new World({platform: new MemoryPlatform()}).resources.getOrCreate(PrefabSpawner)).toThrow("PrefabSpawner needs a schema registry and an asset loader");
+    });
+});
+
+interface FileSetup extends Setup {
+    readonly files: MemoryFileSource;
+    readonly loader: SceneAssetLoader;
+}
+
+function prefabFileText(...entities: readonly SceneEntityRecord[]): string {
+    return JSON.stringify({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION, entities});
+}
+
+function rootAt(xyz: readonly number[]): SceneEntityRecord {
+    return record(FIRST_SCENE_ENTITY_ID, "thing", {LocalPosition: {xyz: [...xyz]}});
+}
+
+function fileSetup(): FileSetup {
+    const platform = new MemoryPlatform({files: {[PREFAB_PATH]: prefabFileText(rootAt(ROOT_XYZ))}});
+    const world = new World({platform});
+    const registry = new ComponentSchemaRegistry();
+    registerEngineComponentSchemas(registry);
+    const loader = platformSceneAssetLoader({files: platform.files, inflate: platform.inflate});
+    return {world, spawner: prefabSpawnerOf(world, registry, loader), files: platform.files as MemoryFileSource, loader};
+}
+
+describe("prefab reloads", () => {
+    test("reloadPrefab rewrites the loaded PrefabAsset in place under any spelling of its path, so holders spawn the file's new content", () => {
+        const {world, spawner, files, loader} = fileSetup();
+        const prefab = loader.loadPrefab(PREFAB_PATH);
+        const before = spawner.templateOf(prefab);
+        expect(positionOf(world, spawner.spawn(world.entityManager, prefab).root)).toEqual(ROOT_XYZ);
+
+        files.set(PREFAB_PATH, prefabFileText(rootAt(CHILD_XYZ)));
+        expect(loader.reloadPrefab(`./${PREFAB_PATH}`)).toBe(true);
+        expect(loader.loadPrefab(PREFAB_PATH)).toBe(prefab);
+        expect(spawner.templateOf(prefab)).not.toBe(before);
+        expect(positionOf(world, spawner.spawn(world.entityManager, prefab).root)).toEqual(CHILD_XYZ);
+        expect(spawner.templateOf(prefab)).toBe(spawner.templateOf(prefab));
+    });
+
+    test("reloadPrefab leaves a path no prefab was loaded from unloaded, and keeps the loaded document when the file no longer parses", () => {
+        const {files, loader} = fileSetup();
+        expect(loader.isPrefabLoaded(PREFAB_PATH)).toBe(false);
+        expect(loader.reloadPrefab(PREFAB_PATH)).toBe(false);
+        expect(loader.isPrefabLoaded(PREFAB_PATH)).toBe(false);
+
+        const prefab = loader.loadPrefab(PREFAB_PATH);
+        const document = prefab.document;
+        expect(loader.isPrefabLoaded(`./${PREFAB_PATH}`)).toBe(true);
+        files.set(PREFAB_PATH, JSON.stringify({format: SCENE_DOCUMENT_FORMAT, version: SCENE_DOCUMENT_VERSION}));
+        expect(() => loader.reloadPrefab(PREFAB_PATH)).toThrow(`Scene document "${PREFAB_PATH}": entities must be an array`);
+        expect(prefab.document).toBe(document);
     });
 });

@@ -85,7 +85,7 @@ import {
 } from "./undoStack";
 import type {EditorRequester, EntityValueShape, FieldChange, RecordedSubtree, StoredValues, UndoCommand, UndoContext} from "./undoStack";
 
-export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile" | "entityPick" | "openDataAsset" | "files" | "handles";
+export type WorkspaceTopic = "entities" | "selection" | "details" | "state" | "schemas" | "status" | "document" | "sceneLoaded" | "reveal" | "inspectedFile" | "entityPick" | "openDataAsset" | "files" | "handles" | "gameCamera";
 
 export type DragPayload =
     | {readonly kind: "entities", readonly entities: readonly Entity[]}
@@ -130,6 +130,10 @@ interface EntityPick {
 
 type ServiceStateUpdate = Pick<EditorServiceState, "mode" | "gameplayTicks"> & {readonly worldStoppedError?: string | null};
 
+function changedPathsOfKind(paths: readonly string[], kind: ProjectFileKind): string[] {
+    return [...new Set(paths.map(normalizeProjectPath))].filter(path => projectFileKind(path) === kind);
+}
+
 function samePosition(a: SceneJsonValue, b: Vector3): boolean {
     return Array.isArray(a) && a.length === b.length && a.every((value, index) => value === b[index]);
 }
@@ -156,6 +160,7 @@ export class EditorWorkspace implements UndoContext {
     public handleModes: HandleModes;
     public gameViewOptions: GameViewOptions;
     public worldStoppedError: string | null = null;
+    public gameCameraMissing = false;
     public schemas = new Map<string, EditorComponentDescription>();
     public resourceSchemas = new Map<string, EditorResourceDescription>();
     public assetTypes = new Map<string, EditorAssetTypeDescription>();
@@ -327,6 +332,7 @@ export class EditorWorkspace implements UndoContext {
         this.unsubscribeEvents();
         this.currentSession = session;
         this.closed = false;
+        this.gameCameraMissing = false;
         this.subscribeEvents();
         this.refs.remap(remap);
         this.selection = this.selection.map(entity => remap.get(entity)).filter((entity): entity is Entity => entity !== undefined);
@@ -334,6 +340,7 @@ export class EditorWorkspace implements UndoContext {
         this.worldStoppedError = null;
         this.emit("selection");
         this.emit("state");
+        this.emit("gameCamera");
         await this.loadSchemas();
         this.refresh.setMode(this.mode);
         this.refresh.start();
@@ -512,11 +519,19 @@ export class EditorWorkspace implements UndoContext {
     }
 
     public async reloadDataAssets(paths: readonly string[]): Promise<void> {
-        const dataAssetPaths = [...new Set(paths.map(normalizeProjectPath))].filter(path => projectFileKind(path) === "dataAsset");
-        for (const path of dataAssetPaths) {
+        for (const path of changedPathsOfKind(paths, "dataAsset")) {
             await this.run(async () => {
                 const {reloaded} = await this.request({op: "reloadDataAsset", path});
                 if (reloaded) this.log("info", `Reloaded the data asset ${path}`);
+            });
+        }
+    }
+
+    public async reloadPrefabs(paths: readonly string[]): Promise<void> {
+        for (const path of changedPathsOfKind(paths, "prefab")) {
+            await this.run(async () => {
+                const {reloaded} = await this.request({op: "reloadPrefab", path});
+                if (reloaded) this.log("info", `Reloaded the prefab ${path}`);
             });
         }
     }
@@ -998,6 +1013,10 @@ export class EditorWorkspace implements UndoContext {
                 return;
             case "modeChanged":
                 this.applyServiceState(event);
+                return;
+            case "gameCameraChanged":
+                this.gameCameraMissing = !event.present;
+                this.emit("gameCamera");
                 return;
         }
     }

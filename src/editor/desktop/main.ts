@@ -1,4 +1,5 @@
 import {app, BrowserWindow, dialog, Menu, protocol, screen, shell} from "electron";
+import type {Details} from "electron";
 import {existsSync, mkdtempSync, readFileSync, rmSync} from "fs";
 import {access, mkdtemp, readFile, rm, writeFile} from "fs/promises";
 import {tmpdir} from "os";
@@ -56,6 +57,13 @@ const NO_DURATION_MS = 0;
 const RECURSIVE_REMOVAL = {recursive: true, force: true, maxRetries: SMOKE_REMOVE_RETRIES};
 const SMOKE_PASSED_EXIT_CODE = 0;
 const SMOKE_FAILED_EXIT_CODE = 1;
+const SMOKE_FAILURE_REPORT_DELAY_MS = 1000;
+
+interface SmokeFailure {
+    readonly rendererGone?: string;
+    readonly exitCode?: number;
+    readonly error?: string;
+}
 
 interface ViewportReport extends CapturedRect {
     readonly id: string;
@@ -103,7 +111,9 @@ const repoRoot = flagValue("repo");
 const requestedFlows = flagValue("flows");
 const smokeFolderAnswers: string[] = [];
 const smokeTempFolders: string[] = [];
+const goneChildProcesses: Details[] = [];
 let mainWindow: BrowserWindow | undefined;
+let pendingSmokeFailure: SmokeFailure | undefined;
 
 function isolatedSmokeProfile(): string {
     const fixed = join(tmpdir(), SMOKE_PROFILE_FOLDER);
@@ -115,7 +125,10 @@ function isolatedSmokeProfile(): string {
     }
 }
 
-if (smoke) app.setPath("userData", isolatedSmokeProfile());
+if (smoke) {
+    app.setPath("userData", isolatedSmokeProfile());
+    app.on("child-process-gone", (_event, details) => goneChildProcesses.push(details));
+}
 
 const projectServer = createProjectServer({
     repoRoot,
@@ -269,16 +282,24 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     const loadErrors = [...pageErrors];
     const flows = pagePassed && editorState !== undefined ? await runEditorFlows(window, pageErrors) : [];
     const passed = pagePassed && smokeFlowsPassed(flows);
+    if (pendingSmokeFailure !== undefined) return;
     const {crossOriginIsolated, canvas, renderBackend} = report;
-    console.log(JSON.stringify({page, crossOriginIsolated, canvas, renderBackend, requestedBackend, editorState, drawnPixels, viewportDrawnPixels, pageErrors: loadErrors, flows, passed}));
+    console.log(JSON.stringify({page, crossOriginIsolated, canvas, renderBackend, requestedBackend, editorState, drawnPixels, viewportDrawnPixels, pageErrors: loadErrors, flows, childProcessesGone: goneChildProcesses, passed}));
     app.exit(passed ? SMOKE_PASSED_EXIT_CODE : SMOKE_FAILED_EXIT_CODE);
 }
 
-function failWhenTheRendererDies(window: BrowserWindow): void {
-    window.webContents.on("render-process-gone", (_event, details) => {
-        console.log(JSON.stringify({page, rendererGone: details.reason, exitCode: details.exitCode, passed: false}));
+function failSmoke(failure: SmokeFailure): void {
+    const reportScheduled = pendingSmokeFailure !== undefined;
+    pendingSmokeFailure = {...pendingSmokeFailure, ...failure};
+    if (reportScheduled) return;
+    setTimeout(() => {
+        console.log(JSON.stringify({page, ...pendingSmokeFailure, childProcessesGone: goneChildProcesses, passed: false}));
         app.exit(SMOKE_FAILED_EXIT_CODE);
-    });
+    }, SMOKE_FAILURE_REPORT_DELAY_MS);
+}
+
+function failWhenTheRendererDies(window: BrowserWindow): void {
+    window.webContents.on("render-process-gone", (_event, details) => failSmoke({rendererGone: details.reason, exitCode: details.exitCode}));
 }
 
 async function renderBackendScriptPending(window: BrowserWindow): Promise<boolean> {
@@ -382,4 +403,7 @@ async function openWindow(): Promise<void> {
 
 app.on("window-all-closed", () => app.quit());
 app.on("will-quit", () => projectServer.close());
-void app.whenReady().then(openWindow);
+void app.whenReady().then(openWindow).catch((error: unknown) => {
+    if (!smoke) throw error;
+    failSmoke({error: error instanceof Error ? error.message : String(error)});
+});

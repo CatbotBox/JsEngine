@@ -19,6 +19,7 @@ import {buildToolbar, EditorStatusView} from "./editorToolbar";
 import {EditorWorkspace} from "./editorWorkspace";
 import {fittedAspectRect, GAME_VIEW_ASPECT_STORAGE_KEY, gameViewAspectOf} from "./gameViewAspect";
 import {isLayoutMaximized} from "./gameViewOptions";
+import {GameCameraNotice} from "./gameCameraNotice";
 import {GameStatsOverlay} from "./gameStatsOverlay";
 import {DEFAULT_HANDLE_MODES} from "./handleModes";
 import {HierarchyView} from "./hierarchyView";
@@ -460,6 +461,7 @@ class EditorShellImplementation implements EditorShell {
         consoleView.onCountsChanged(() => this.showConsoleBadge(workspace));
         new UndoHistoryView(this.layout.historyPanel, workspace);
         const scene = new SceneView(this.layout.sceneStage, this.sceneViewport, this.layout.overlay, workspace);
+        this.layout.stage.append(new GameCameraNotice(this.document, workspace).element);
         this.layout.stage.append(new GameStatsOverlay(this.document, workspace, this.viewport, () => this.targetLabel).element);
         const settings = new SettingsView(this.layout.settingsPanel, workspace, rotations);
         const dataAssets = new DataAssetsView(this.layout.assetsPanel, workspace, rotations);

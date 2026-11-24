@@ -76,6 +76,7 @@ describe("editor protocol guards", () => {
             {op: "setResourceField", typeName: "SwarmTuning", key: "waves", value: [{count: 3}]},
             {op: "setResourceField", typeName: "SwarmTuning", key: "limit", value: null},
             {op: "reloadDataAsset", path: "data/swarm.tuning.asset.json"},
+            {op: "reloadPrefab", path: "prefabs/enemy.prefab.json"},
             {op: "defaultResourceFields", typeName: "SwarmTuning"},
             {op: "getField", entity: ENTITY, typeName: "Sprite", key: "image"},
         ];
@@ -146,6 +147,8 @@ describe("editor protocol guards", () => {
             {op: "setResourceField", key: "speed", value: 2},
             {op: "reloadDataAsset"},
             {op: "reloadDataAsset", path: 1},
+            {op: "reloadPrefab"},
+            {op: "reloadPrefab", path: 1},
             {op: "defaultResourceFields"},
             {op: "getField", entity: ENTITY, typeName: "Sprite"},
             {op: "getField", entity: ENTITY, key: "image"},
@@ -183,6 +186,8 @@ describe("editor protocol guards", () => {
             {kind: "worldStopped", error: "boom"},
             {kind: "worldStopped", error: "boom", stack: "    at tick (game.js:3:4)"},
             {kind: "modeChanged", mode: "play", gameplayTicks: 3},
+            {kind: "gameCameraChanged", present: false},
+            {kind: "gameCameraChanged", present: true},
         ];
         for (const event of events) {
             const eventMessage = {type: EDITOR_MESSAGE_TYPE, event};
@@ -199,6 +204,9 @@ describe("editor protocol guards", () => {
             {kind: "worldStopped"},
             {kind: "worldStopped", error: "boom", stack: 3},
             {kind: "modeChanged", mode: "play", gameplayTicks: -1},
+            {kind: "gameCameraChanged"},
+            {kind: "gameCameraChanged", present: 0},
+            {kind: "gameCameraChanged", present: "false"},
             {kind: "explode"},
         ];
         expect(malformed.filter(event => isEditorEventMessage({type: EDITOR_MESSAGE_TYPE, event}))).toEqual([]);

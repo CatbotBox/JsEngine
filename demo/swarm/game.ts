@@ -12,7 +12,7 @@ import {
 } from "@jsengine/engine/rendering";
 import {Sprite} from "@jsengine/engine/rendering/2d";
 import {LocalPosition} from "@jsengine/engine/translation";
-import {DataAssets, dataAssetPathOf, PrefabSpawner, SceneLoader} from "@jsengine/engine/scene";
+import {DataAssets, dataAssetPathOf, PrefabSpawner, SceneLoadCancelledError, SceneLoader} from "@jsengine/engine/scene";
 import type {PrefabAsset} from "@jsengine/engine/scene";
 import {Random} from "@jsengine/engine/math";
 import {Lifetime, LifetimeSystem, MotionSystem, Velocity} from "@jsengine/engine/motion";
@@ -248,7 +248,9 @@ export class SwarmControlSystem extends System {
     private loadGameplayScene(): void {
         this._gameplaySceneLoading = true;
         void this.world.resources.get(SceneLoader).load(GAMEPLAY_SCENE_FILE)
-            .catch(error => console.error(`Swarm could not load the gameplay scene ${GAMEPLAY_SCENE_FILE}`, error))
+            .catch(error => {
+                if (!(error instanceof SceneLoadCancelledError)) console.error(`Swarm could not load the gameplay scene ${GAMEPLAY_SCENE_FILE}`, error);
+            })
             .finally(() => {
                 this._gameplaySceneLoading = false;
             });

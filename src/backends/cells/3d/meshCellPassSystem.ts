@@ -4,14 +4,14 @@ import {Camera} from "../../../engine/rendering/camera";
 import {CellGrid} from "../cellGrid";
 import {LocalToWorld} from "../../../engine/translation";
 import {ScreenSize} from "../../../engine/rendering/screenSize";
-import {RenderCameraOverride, renderCameraComponents} from "../../../engine/rendering/renderCameraOverride";
+import {cameraComponentsOf, RenderCameraOverride, renderCameraComponents, renderCameraEntity} from "../../../engine/rendering/renderCameraOverride";
 import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {RenderMesh} from "../../../engine/rendering/3d/renderMesh";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
 import {FieldOfView} from "../../../engine/rendering/3d/fieldOfView";
 import {MeshRenderSettings} from "../../../engine/rendering/3d/meshRenderSettings";
 import {MeshRenderStats} from "../../../engine/rendering/3d/meshRenderStats";
-import {CellAspectRatio} from "../cellAspectRatio";
+import {CellAspectRatio, DEFAULT_CELL_HEIGHT_PER_WIDTH} from "../cellAspectRatio";
 import {MeshSceneDrawer} from "../../../engine/rendering/3d/software/meshSceneDrawer";
 import {CellResolveTarget} from "./cellResolveTarget";
 import {MeshCellPassSettings} from "./meshCellPassSettings";
@@ -22,17 +22,17 @@ import {SceneLightsGatherSystem} from "../../../engine/rendering/3d/lighting/sce
 const CAMERA_SPEC = {
     camera: Camera,
     screenSize: ScreenSize,
-    cellAspectRatio: CellAspectRatio,
     localToWorld: LocalToWorld,
     fov: FieldOfView,
 };
+const CELL_RATIO_SPEC = {cellAspectRatio: CellAspectRatio};
 
 export class MeshCellPassSystem extends System {
     public static readonly renderPass: RenderPassKind = "meshes";
 
     private _settingsQuery = this.createEntityQuery([MeshCellPassSettings]);
     private _meshSettingsQuery = this.createEntityQuery([MeshRenderSettings]);
-    private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld, FieldOfView, CellAspectRatio]);
+    private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld, FieldOfView]);
     private _alwaysRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld], [WorldSpaceRenderBounds]);
     private _selectiveRenderQuery = this.createEntityQuery([RenderMesh, LocalToWorld, WorldSpaceRenderBounds]);
 
@@ -82,7 +82,7 @@ export class MeshCellPassSystem extends System {
             target: this._resolveTarget,
             width: cameraEntity.screenSize.x | 0,
             height: cameraEntity.screenSize.y | 0,
-            rasterPixelHeightPerWidth: cameraEntity.cellAspectRatio.value,
+            rasterPixelHeightPerWidth: this.cellHeightPerWidth(),
             cameraMatrix: cameraEntity.localToWorld.matrix,
             fieldOfViewRadians: cameraEntity.fov.radians,
             rasterizerConfig: settings.toRasterizerConfig(this.world.platform, meshSettings),
@@ -91,6 +91,12 @@ export class MeshCellPassSystem extends System {
             lodBias: meshSettings.lodBias,
             sceneLights: this.world.resources.tryGet(SceneLights),
         });
+    }
+
+    private cellHeightPerWidth(): number {
+        const camera = renderCameraEntity(this.world, this._cameraQuery);
+        if (camera === undefined) return DEFAULT_CELL_HEIGHT_PER_WIDTH;
+        return cameraComponentsOf(this.world, camera, CELL_RATIO_SPEC)?.cellAspectRatio.value ?? DEFAULT_CELL_HEIGHT_PER_WIDTH;
     }
 
     override onDestroy(): void {
