@@ -2,3 +2,4 @@
 export * from './ringQueue';
 export * from './aabb';
 export * from './spatial';
+export * from './windowedRate';

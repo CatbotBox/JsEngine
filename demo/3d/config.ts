@@ -9,7 +9,7 @@ export class ModelEntry {
     public loadOnDemand = false;
 }
 
-export class ModelControlTuning {
+export class ModelControlConfig {
     public rotateStepRad = 0;
     public scaleStep = UNSCALED;
 }
@@ -34,7 +34,7 @@ export class SurfaceShaderChoice {
     public instancePhaseStepSeconds = 0;
 }
 
-export class Demo3dHudTuning {
+export class Demo3dHudConfig {
     public rateWindowMs = 0;
     public rateDecimals: Int = 0;
     public fpsLines: TextLines = [];
@@ -54,13 +54,13 @@ export class Demo3dHudTuning {
     public megabyteDecimals: Int = 0;
 }
 
-export class Demo3dTuning extends Resource {
+export class Demo3dConfig extends Resource {
     public models: ModelEntry[] = [];
-    public modelControls = new ModelControlTuning();
+    public modelControls = new ModelControlConfig();
     public sunRotateStepRad = 0;
     public lodBiasStepLevels: Int = 0;
     public renderPacing: RenderPacingPreset[] = [];
     public supersample: SupersamplePreset[] = [];
     public surfaceShaders: SurfaceShaderChoice[] = [];
-    public hud = new Demo3dHudTuning();
+    public hud = new Demo3dHudConfig();
 }

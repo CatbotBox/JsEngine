@@ -12,10 +12,10 @@ export class ModelGrid extends Component {
     public spacingUnits = 0;
     public rotationRad: Vec3 = Vec3.alloc();
     public scale: Vec3 = Vec3.alloc(UNIT_SCALE, UNIT_SCALE, UNIT_SCALE);
-    public selectedModel: Int = 0;
+    public selectedModelIndex: Int = 0;
 }
 
-export class GridModel extends Component {
+export class ModelGridSlot extends Component {
     public static readonly category = DEMO_3D_CATEGORY;
 
     public slot: Int = 0;

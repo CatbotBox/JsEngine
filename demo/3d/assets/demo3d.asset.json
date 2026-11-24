@@ -1,7 +1,7 @@
 {
   "format": "jsengine-asset",
   "version": 1,
-  "type": "Demo3dTuning",
+  "type": "Demo3dConfig",
   "fields": {
     "models": [
       {

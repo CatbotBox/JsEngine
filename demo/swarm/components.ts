@@ -17,7 +17,7 @@ export class Enemy extends Component {
     public hitPoints: Int = 0;
     public radiusUnits = 0;
     public speedUnitsPerSecond = 0;
-    public score: Int = 0;
+    public points: Int = 0;
     public woundedTint: Rgb = WHITE_RGB;
     public steerCos = NO_STEER_COS;
     public steerSin = NO_STEER_SIN;

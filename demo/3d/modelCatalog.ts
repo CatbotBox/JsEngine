@@ -2,9 +2,9 @@ import type {World} from "@jsengine/engine/core";
 import {AssetFiles} from "@jsengine/engine/project";
 import {PARENT_COMPONENT_NAME} from "@jsengine/engine/scene";
 import type {PrefabAsset, PrefabSpawner, PrefabTemplate} from "@jsengine/engine/scene";
-import type {ModelEntry} from "./tuning";
+import type {ModelEntry} from "./config";
 
-export const DEMO_3D_TUNING_FILE = "assets/demo3d.asset.json";
+export const DEMO_3D_CONFIG_FILE = "assets/demo3d.asset.json";
 
 export type ModelLoadProgressListener = (loadedBytes: number, totalBytes: number) => void;
 
@@ -35,13 +35,13 @@ export function assetModelFiles(world: World, spawner: PrefabSpawner): Demo3dMod
     };
 }
 
-export function prefabRootName(prefab: PrefabAsset): string {
+function prefabRootName(prefab: PrefabAsset): string {
     const root = prefab.document.entities.find(record => record.components[PARENT_COMPONENT_NAME] === undefined);
     return root?.name ?? prefab.sourcePath;
 }
 
-export function requireModelPrefab(entry: ModelEntry, index: number): PrefabAsset {
-    if (entry.prefab === undefined) throw new Error(`Demo3dTuning.models[${index}].prefab names no prefab: set it in ${DEMO_3D_TUNING_FILE}`);
+function requireModelPrefab(entry: ModelEntry, index: number): PrefabAsset {
+    if (entry.prefab === undefined) throw new Error(`Demo3dConfig.models[${index}].prefab names no prefab: set it in ${DEMO_3D_CONFIG_FILE}`);
     return entry.prefab;
 }
 

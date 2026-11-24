@@ -1,0 +1,14 @@
+export const ARENA_PRIORITY = -140;
+export const CONTROL_PRIORITY = -130;
+export const SHIP_PRIORITY = -120;
+export const WEAPON_PRIORITY = -110;
+export const WAVE_PRIORITY = -100;
+export const SEEK_PRIORITY = -90;
+export const MOTION_PRIORITY = -80;
+export const LIFETIME_PRIORITY = -70;
+export const SPARK_FADE_PRIORITY = -60;
+export const BROADPHASE_PRIORITY = -50;
+export const BULLET_HIT_PRIORITY = -40;
+export const BOMB_PRIORITY = -30;
+export const SHIP_CONTACT_PRIORITY = -20;
+export const HUD_PRIORITY = -10;

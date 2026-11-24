@@ -33,6 +33,22 @@ describe("AverageStat", () => {
         stat.add(3);
         expect(stat.getAvg(REQUIRE_FILLED_BUFFER)).toBe(2);
     });
+
+    test("resetIfWindowSizeChanged keeps the samples for the same size and drops them for a new one", () => {
+        const stat = new AverageStat(3);
+        stat.add(1);
+        stat.add(2);
+
+        stat.resetIfWindowSizeChanged(3);
+        expect(stat.sampleSize).toBe(2);
+
+        stat.resetIfWindowSizeChanged(2);
+        expect(stat.windowSize).toBe(2);
+        expect(stat.sampleSize).toBe(0);
+        expect(stat.getAvg()).toBe(0);
+        for (const v of [4, 6, 8]) stat.add(v);
+        expect(stat.getAvg()).toBe(7);
+    });
 });
 
 describe("RingQueue", () => {

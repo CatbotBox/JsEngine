@@ -76,8 +76,8 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "PlayerTag": {},
-        "RandomTint": {}
+        "Player": {},
+        "RandomizeTint": {}
       }
     },
     {
@@ -114,7 +114,7 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "RandomTint": {}
+        "RandomizeTint": {}
       }
     },
     {
@@ -151,7 +151,7 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "RandomTint": {}
+        "RandomizeTint": {}
       }
     },
     {
@@ -188,7 +188,7 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "RandomTint": {}
+        "RandomizeTint": {}
       }
     },
     {
@@ -225,7 +225,7 @@
         },
         "LocalToWorld": {},
         "RenderBounds": {},
-        "RandomTint": {}
+        "RandomizeTint": {}
       }
     },
     {

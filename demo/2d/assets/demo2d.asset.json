@@ -1,7 +1,7 @@
 {
   "format": "jsengine-asset",
   "version": 1,
-  "type": "Demo2dTuning",
+  "type": "Demo2dConfig",
   "fields": {
     "randomSeed": null,
     "pixelPrefab": {

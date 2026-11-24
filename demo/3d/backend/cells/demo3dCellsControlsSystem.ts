@@ -4,10 +4,10 @@ import type {ResolvedInputActions} from "@jsengine/engine/input";
 import {CellsRenderBackend} from "@jsengine/engine/rendering";
 import {MeshCellPassSettings} from "@jsengine/backends/cells/3d";
 import {SupersamplePresetKeys} from "../../supersamplePresetKeys";
-import {Demo3dTuning} from "../../tuning";
+import {Demo3dConfig} from "../../config";
+import {INCLUDING_DISABLED} from "../../worldAccess";
 
 const CELLS_CONTROLS_PRIORITY = -20;
-const INCLUDING_DISABLED = {includeDisabled: true} as const;
 
 const Demo3dCellsAction = {
     ToggleHalfBlock: "toggleHalfBlock",
@@ -24,7 +24,7 @@ export class Demo3dCellsControlsSystem extends System {
 
     protected onCreate(): void {
         this.requireResourceForUpdate(CellsRenderBackend);
-        this.requireResourceForUpdate(Demo3dTuning);
+        this.requireResourceForUpdate(Demo3dConfig);
         this._actions = resolveInputActions(this.world, Demo3dCellsAction);
         this._supersamplePresets = new SupersamplePresetKeys(this.world);
     }

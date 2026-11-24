@@ -7,8 +7,13 @@
       "path": "assets/input.asset.json"
     },
     {
-      "type": "Demo3dTuning",
+      "type": "Demo3dConfig",
       "path": "assets/demo3d.asset.json"
     }
-  ]
+  ],
+  "schemas": {
+    "exclude": [
+      "Demo3dSession"
+    ]
+  }
 }

@@ -3,8 +3,8 @@ import {GpuRenderBackend} from "@jsengine/engine/rendering";
 import type {ShaderSource} from "@jsengine/engine/rendering";
 import {RenderMesh} from "@jsengine/engine/rendering/3d";
 import {GpuShaderLibrary, GpuSurfaceShader} from "@jsengine/backends/gpu";
-import {Demo3dTuning} from "../../tuning";
-import type {SurfaceShaderChoice} from "../../tuning";
+import {Demo3dConfig} from "../../config";
+import type {SurfaceShaderChoice} from "../../config";
 
 const FIRST_CHOICE = 0;
 const NEXT_CHOICE_STEP = 1;
@@ -37,7 +37,7 @@ export class DemoSurfaceShaderSystem extends System {
 
     protected onCreate(): void {
         this.requireResourceForUpdate(GpuRenderBackend);
-        this.requireResourceForUpdate(Demo3dTuning);
+        this.requireResourceForUpdate(Demo3dConfig);
         this.requireAnyForUpdate(this._unassigned);
         this.requireAnyForUpdate(this._assigned);
     }
@@ -67,7 +67,7 @@ export class DemoSurfaceShaderSystem extends System {
     }
 
     private choices(): readonly SurfaceShaderChoice[] {
-        return this.world.resources.get(Demo3dTuning).surfaceShaders;
+        return this.world.resources.get(Demo3dConfig).surfaceShaders;
     }
 
     private registerShaders(choices: readonly SurfaceShaderChoice[]): void {

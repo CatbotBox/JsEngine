@@ -8,9 +8,9 @@ const DEMO_2D_CATEGORY = "Demo 2D";
 export class FadeToColor extends Component {
     public static readonly category = DEMO_2D_CATEGORY;
 
-    public rgb: Rgb = WHITE_RGB;
-    public fadeTime = 0;
-    public currentFadeTime = 0;
+    public targetRgb: Rgb = WHITE_RGB;
+    public durationMs = 0;
+    public elapsedMs = 0;
 }
 
 export class OriginalColor extends Component {
@@ -19,11 +19,11 @@ export class OriginalColor extends Component {
     public rgb: Rgb = WHITE_RGB;
 }
 
-export class PlayerTag extends Component {
+export class Player extends Component {
     public static readonly category = DEMO_2D_CATEGORY;
 }
 
-export class RandomTint extends Component {
+export class RandomizeTint extends Component {
     public static readonly category = DEMO_2D_CATEGORY;
 }
 

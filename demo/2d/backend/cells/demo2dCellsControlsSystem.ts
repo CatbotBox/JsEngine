@@ -3,9 +3,9 @@ import {Input, resolveInputActions} from "@jsengine/engine/input";
 import type {ResolvedInputActions} from "@jsengine/engine/input";
 import {CellsRenderBackend} from "@jsengine/engine/rendering";
 import {SpriteCellPassSettings} from "@jsengine/backends/cells/2d";
+import {INCLUDING_DISABLED} from "../../worldAccess";
 
 const CELLS_CONTROLS_PRIORITY = -20;
-const INCLUDING_DISABLED = {includeDisabled: true} as const;
 
 const Demo2dCellsAction = {
     ToggleHalfBlockCells: "toggleHalfBlockCells",

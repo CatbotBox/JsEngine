@@ -7,12 +7,17 @@
       "path": "assets/input.asset.json"
     },
     {
-      "type": "SwarmTuning",
-      "path": "assets/swarm.tuning.asset.json"
+      "type": "SwarmConfig",
+      "path": "assets/swarm.config.asset.json"
     },
     {
       "type": "SwarmState",
       "path": "assets/swarm.state.asset.json"
     }
-  ]
+  ],
+  "schemas": {
+    "exclude": [
+      "SwarmArena"
+    ]
+  }
 }

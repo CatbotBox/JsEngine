@@ -16,7 +16,7 @@ import {projectAssetManifestPath} from "../src/hosts/web/webProjectAssets";
 import type {AssetManifestFile, ProjectAssetManifest} from "../src/hosts/web/webProjectAssets";
 import {buildProjectAssetManifest, projectAssetRegistry} from "../src/toolchain/build/projectAssets";
 import {projectSlug, WEB_PROJECT_DIRECTORY, webBundleFile, webWorkerBundle, webWorkerMainFile} from "../src/toolchain/projectLayout";
-import {DEMO_3D_TUNING_FILE} from "../demo/3d/modelCatalog";
+import {DEMO_3D_CONFIG_FILE} from "../demo/3d/modelCatalog";
 
 const ROOT = resolve(__dirname, "..");
 const SHIM = join(ROOT, "tests", "worldWorkerShim.ts");
@@ -68,12 +68,12 @@ interface ManifestFiles {
     readonly resources?: readonly {readonly path: string}[];
 }
 
-interface TuningModelJson {
+interface ConfigModelJson {
     readonly prefab?: {readonly path?: string} | null;
 }
 
-interface Demo3dTuningJson {
-    readonly fields: {readonly models: readonly TuningModelJson[]};
+interface Demo3dConfigJson {
+    readonly fields: {readonly models: readonly ConfigModelJson[]};
 }
 
 function workerEntry(directory: string, backend: RenderBackendKind): string {
@@ -92,8 +92,8 @@ async function demo3dManifest(): Promise<ProjectAssetManifest> {
     return JSON.parse(readFileSync(join(DIST, projectSlug(DEMO_3D_DIRECTORY), projectAssetManifestPath(WEB_PROJECT_DIRECTORY)), "utf8")) as ProjectAssetManifest;
 }
 
-function demo3dTuningModels(): readonly TuningModelJson[] {
-    return (projectFileJson(DEMO_3D_DIRECTORY, DEMO_3D_TUNING_FILE) as Demo3dTuningJson).fields.models;
+function demo3dConfigModels(): readonly ConfigModelJson[] {
+    return (projectFileJson(DEMO_3D_DIRECTORY, DEMO_3D_CONFIG_FILE) as Demo3dConfigJson).fields.models;
 }
 
 function log(message: string) {
@@ -353,7 +353,7 @@ function expectProjectFilesFetched(page: Page, label: string, directory: string)
 
 function expectShadersFetched(page: Page, label: string, directory: string): void {
     const shaderUrls = projectFileUrls(directory).filter(url => url.endsWith(SHADER_FILE_SUFFIX));
-    expect(shaderUrls.length > 0 && shaderUrls.every(url => page.fetched.includes(url)), `${label}: the worker fetched the surface shaders its tuning asset names (${shaderUrls.join(", ")})`);
+    expect(shaderUrls.length > 0 && shaderUrls.every(url => page.fetched.includes(url)), `${label}: the worker fetched the surface shaders its config asset names (${shaderUrls.join(", ")})`);
 }
 
 async function verifyResize(page: Page, label: string, resize: () => void): Promise<void> {
@@ -403,8 +403,8 @@ async function verifyLazyModel(page: Page, label: string, manifest: ProjectAsset
     const model = manifest.prefabs.find(prefab => prefab.files.some(path => byPath.get(path)?.lazy === true));
     expect(model !== undefined, `${label}: the asset manifest leaves a model out of the first load`);
     if (model === undefined) return;
-    const index = demo3dTuningModels().findIndex(entry => entry.prefab?.path === model.path);
-    expect(index >= 0, `${label}: the tuning asset lists ${model.path}`);
+    const index = demo3dConfigModels().findIndex(entry => entry.prefab?.path === model.path);
+    expect(index >= 0, `${label}: the config asset lists ${model.path}`);
     if (index < 0) return;
     const lazyFiles: AssetManifestFile[] = model.files.map(path => byPath.get(path)!).filter(file => file.lazy === true);
     const lazyBytes = lazyFiles.reduce((sum, file) => sum + (file.gzipParts?.reduce((total, part) => total + part, 0) ?? file.size), 0);

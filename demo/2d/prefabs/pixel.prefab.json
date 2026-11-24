@@ -32,9 +32,9 @@
         "LocalToWorld": {},
         "RenderBounds": {},
         "FadeToColor": {
-          "rgb": "#ffb7ce",
-          "fadeTime": 0,
-          "currentFadeTime": 0
+          "targetRgb": "#ffb7ce",
+          "durationMs": 0,
+          "elapsedMs": 0
         },
         "OriginalColor": {
           "rgb": "#ffffff"
