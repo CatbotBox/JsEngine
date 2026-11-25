@@ -163,6 +163,9 @@ export function dockTabMenu(commands: EditorCommands, panel: DockPanelId, closed
         commandEntryFor(window.closePanel, panel),
         commandEntryFor(window.maximizePanel, panel),
         MENU_SEPARATOR,
+        commandEntryFor(window.floatPanel, panel),
+        commandEntryFor(window.dockPanel, panel),
+        MENU_SEPARATOR,
         submenuEntry(ADD_TAB_SUBMENU, ADD_TAB_LABEL, closedPanels.map(closed => commandEntryFor(window.addPanel, {panel: closed, beside: panel}))),
     ];
 }

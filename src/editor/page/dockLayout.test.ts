@@ -2,15 +2,26 @@ import {describe, expect, test} from "../../engine/testing/harness";
 import {
     activatePanel,
     closedDockPanels,
+    closeFloatingWindow,
     closePanel,
     DOCK_LAYOUT_VERSION,
     dockLayoutOf,
     dockLayoutText,
+    dockPanelHome,
     dockSplit,
     dockStack,
     dockStacks,
+    dockWindowIds,
+    dockWindowOfPanel,
+    dockWindowPanels,
     findDockSplit,
+    findFloatingWindow,
+    floatPanel,
+    hasOwnFloatingWindow,
     isDockPanelOpen,
+    isFloatingPanel,
+    MAIN_DOCK_WINDOW,
+    moveFloatingWindow,
     movePanel,
     normalizeDockLayout,
     openDockPanels,
@@ -20,7 +31,7 @@ import {
     ROOT_EDGE_SHARE,
     stackOfPanel,
 } from "./dockLayout";
-import type {DockLayout, DockNode, DockSplit} from "./dockLayout";
+import type {DockBounds, DockLayout, DockNode, DockSplit} from "./dockLayout";
 
 const SAMPLE_SHAPE = "row(column(row([*hierarchy] [*scene] [*game]) [*project,console,history]) [*inspector])";
 
@@ -282,6 +293,7 @@ describe("normalizing", () => {
                 dockStack("stack-8", []),
             ], [0.5, 0.5, 0.2]),
             closed: [],
+            floating: [],
         });
         expect(shape(messy.root)).toBe("row([*hierarchy] [*scene] [*game])");
         expect(rounded(rootSplit(messy).sizes)).toEqual([0.125, 0.375, 0.5]);
@@ -292,6 +304,7 @@ describe("normalizing", () => {
             version: DOCK_LAYOUT_VERSION,
             root: dockSplit("split-1", "row", [dockStack("stack-2", ["scene", "game"], "console"), dockStack("stack-3", ["game", "console"])], [Number.NaN, 1]),
             closed: [{panel: "console", stack: "stack-3", index: 1}, {panel: "assets", stack: "stack-2", index: 0}],
+            floating: [],
         });
         expect(shape(fixed.root)).toBe("row([*scene,game] [*console])");
         expect(rounded(rootSplit(fixed).sizes)).toEqual([0.5, 0.5]);
@@ -371,5 +384,188 @@ describe("stored layouts", () => {
             ],
         });
         expect(parseDockLayout(text)?.closed).toEqual([{panel: "console", stack: "stack-1", index: 0}]);
+    });
+});
+
+const FLOAT_BOUNDS: DockBounds = {x: 100, y: 120, width: 480, height: 320};
+const MOVED_BOUNDS: DockBounds = {x: 1700, y: 40, width: 400, height: 600};
+
+function floatingShape(layout: DockLayout, id: string): string {
+    return shape(findFloatingWindow(layout, id)?.root);
+}
+
+describe("floating windows", () => {
+    test("floating a panel moves it into a new window at the given bounds, with fresh ids", () => {
+        const floated = floatPanel(sample(), "console", FLOAT_BOUNDS);
+        expect(shape(floated.root)).toBe("row(column(row([*hierarchy] [*scene] [*game]) [*project,history]) [*inspector])");
+        expect(floated.floating.map(window => [window.id, window.bounds])).toEqual([["float-9", FLOAT_BOUNDS]]);
+        expect(floatingShape(floated, "float-9")).toBe("[*console]");
+        expect(stackOfPanel(floated, "console")?.id).toBe("stack-10");
+        expect(dockWindowIds(floated)).toEqual([MAIN_DOCK_WINDOW, "float-9"]);
+        expect([dockWindowOfPanel(floated, "console"), dockWindowOfPanel(floated, "project"), dockWindowOfPanel(floated, "assets")]).toEqual(["float-9", MAIN_DOCK_WINDOW, undefined]);
+        expect([isFloatingPanel(floated, "console"), isFloatingPanel(floated, "project"), hasOwnFloatingWindow(floated, "console")]).toEqual([true, false, true]);
+        expect(openDockPanels(floated)).toEqual(["hierarchy", "scene", "game", "project", "history", "inspector", "console"]);
+        expect(closedDockPanels(floated)).toEqual(["settings", "assets"]);
+    });
+
+    test("floating the only panel of a floating window moves that window instead of opening another", () => {
+        const floated = floatPanel(sample(), "console", FLOAT_BOUNDS);
+        const moved = floatPanel(floated, "console", MOVED_BOUNDS);
+        expect(moved.floating.map(window => [window.id, window.bounds])).toEqual([["float-9", MOVED_BOUNDS]]);
+        expect(floatPanel(floated, "console", FLOAT_BOUNDS)).toBe(floated);
+    });
+
+    test("a closed panel floats too and forgets its remembered place", () => {
+        const floated = floatPanel(closePanel(sample(), "console"), "console", FLOAT_BOUNDS);
+        expect(floated.closed).toEqual([]);
+        expect(floatingShape(floated, "float-9")).toBe("[*console]");
+        expect(closedDockPanels(floatPanel(sample(), "settings", FLOAT_BOUNDS))).toEqual(["assets"]);
+    });
+
+    test("bounds that are not finite or have no size change nothing", () => {
+        const layout = sample();
+        expect(floatPanel(layout, "console", {...FLOAT_BOUNDS, width: Number.NaN})).toBe(layout);
+        expect(floatPanel(layout, "console", {...FLOAT_BOUNDS, height: 0})).toBe(layout);
+    });
+
+    test("panels move into a floating window's tabs, stack edges and root edges", () => {
+        const floated = floatPanel(sample(), "console", FLOAT_BOUNDS);
+        const tabbed = movePanel(floated, "history", {stack: "stack-10", index: 0});
+        expect(floatingShape(tabbed, "float-9")).toBe("[*history,console]");
+        expect(stackOfPanel(tabbed, "project")?.panels).toEqual(["project"]);
+        const edged = movePanel(tabbed, "project", {stack: "stack-10", edge: "right"});
+        expect(shape(edged.root)).toBe("row([*hierarchy] [*scene] [*game] [*inspector])");
+        expect(floatingShape(edged, "float-9")).toBe("row([*history,console] [*project])");
+        const rooted = movePanel(edged, "inspector", {rootEdge: "bottom", window: "float-9"});
+        expect(shape(rooted.root)).toBe("row([*hierarchy] [*scene] [*game])");
+        expect(floatingShape(rooted, "float-9")).toBe("column(row([*history,console] [*project]) [*inspector])");
+        expect(dockWindowPanels(rooted, "float-9")).toEqual(["history", "console", "project", "inspector"]);
+        const floatingRoot = findFloatingWindow(rooted, "float-9")?.root;
+        expect(floatingRoot?.kind === "split" ? rounded(floatingRoot.sizes) : []).toEqual([0.75, 0.25]);
+    });
+
+    test("moving a floating window's last panel into another window closes the floating one", () => {
+        const floated = floatPanel(sample(), "console", FLOAT_BOUNDS);
+        const tabbed = movePanel(floated, "console", {stack: "stack-7", index: 1});
+        expect(tabbed.floating).toEqual([]);
+        expect(stackOfPanel(tabbed, "console")?.panels).toEqual(["project", "console", "history"]);
+        const edged = movePanel(floated, "console", {stack: "stack-8", edge: "left"});
+        expect(edged.floating).toEqual([]);
+        expect(shape(edged.root)).toBe("row(column(row([*hierarchy] [*scene] [*game]) [*project,history]) [*console] [*inspector])");
+        const second = floatPanel(floated, "project", MOVED_BOUNDS);
+        const projectWindow = dockWindowOfPanel(second, "project")!;
+        const joined = movePanel(second, "console", {stack: stackOfPanel(second, "project")!.id, index: 0});
+        expect(joined.floating.map(window => window.id)).toEqual([projectWindow]);
+        expect(dockWindowPanels(joined, projectWindow)).toEqual(["console", "project"]);
+    });
+
+    test("an unknown window, or a floating window's only panel dropped on itself, changes nothing", () => {
+        const floated = floatPanel(sample(), "console", FLOAT_BOUNDS);
+        expect(movePanel(floated, "history", {rootEdge: "left", window: "float-99"})).toBe(floated);
+        expect(movePanel(floated, "console", {rootEdge: "left", window: "float-9"})).toBe(floated);
+        expect(movePanel(floated, "console", {stack: "stack-10", edge: "left"})).toBe(floated);
+        expect(movePanel(floated, "console", {stack: "stack-10", index: 0})).toBe(floated);
+    });
+
+    test("closing a floating window closes its panels, which then reopen at their homes", () => {
+        const floated = movePanel(floatPanel(sample(), "console", FLOAT_BOUNDS), "history", {stack: "stack-10", index: 1});
+        const closed = closeFloatingWindow(floated, "float-9");
+        expect(closed.floating).toEqual([]);
+        expect(closed.closed).toEqual([{panel: "console", stack: "stack-10", index: 0}, {panel: "history", stack: "stack-10", index: 1}]);
+        expect(closedDockPanels(closed)).toEqual(["console", "history", "settings", "assets"]);
+        expect(closeFloatingWindow(closed, "float-9")).toBe(closed);
+        expect(stackOfPanel(openPanel(closed, "console", [{withPanel: "project"}]), "console")?.panels).toEqual(["project", "console"]);
+    });
+
+    test("a tab closed inside a floating window reopens there while the window is open", () => {
+        const floated = movePanel(floatPanel(sample(), "console", FLOAT_BOUNDS), "history", {stack: "stack-10", index: 1});
+        const closedTab = closePanel(floated, "history");
+        expect(floatingShape(closedTab, "float-9")).toBe("[*console]");
+        const reopened = openPanel(closedTab, "history");
+        expect(floatingShape(reopened, "float-9")).toBe("[console,*history]");
+    });
+
+    test("homes only count anchors in the main window", () => {
+        const layout = closePanel(closePanel(floatPanel(sample(), "project", FLOAT_BOUNDS), "console"), "history");
+        expect(shape(layout.root)).toBe("row([*hierarchy] [*scene] [*game] [*inspector])");
+        const reopened = openPanel(layout, "console", [{withPanel: "project"}, {nextTo: "game", edge: "bottom"}]);
+        expect(dockWindowOfPanel(reopened, "console")).toBe(MAIN_DOCK_WINDOW);
+        expect(shape(reopened.root)).toBe("row([*hierarchy] [*scene] column([*game] [*console]) [*inspector])");
+        expect(stackOfPanel(openPanel(layout, "console", [{withPanel: "project"}]), "console")?.id).toBe("stack-4");
+    });
+
+    test("docking a floating panel puts it at its first home and leaves the rest of its window", () => {
+        const floated = movePanel(floatPanel(sample(), "console", FLOAT_BOUNDS), "history", {stack: "stack-10", index: 1});
+        const docked = dockPanelHome(floated, "console", [{withPanel: "project"}]);
+        expect(stackOfPanel(docked, "console")?.panels).toEqual(["project", "console"]);
+        expect(stackOfPanel(docked, "console")?.active).toBe("console");
+        expect(floatingShape(docked, "float-9")).toBe("[*history]");
+        const all = dockPanelHome(docked, "history", [{withPanel: "project"}]);
+        expect(all.floating).toEqual([]);
+        expect(stackOfPanel(all, "history")?.panels).toEqual(["project", "console", "history"]);
+        const layout = sample();
+        expect(dockPanelHome(layout, "console", [{withPanel: "inspector"}])).toEqual(activatePanel(layout, "console"));
+    });
+
+    test("moving a floating window replaces its bounds; unknown windows and unusable or equal bounds change nothing", () => {
+        const floated = floatPanel(sample(), "console", FLOAT_BOUNDS);
+        expect(moveFloatingWindow(floated, "float-9", MOVED_BOUNDS).floating[0].bounds).toEqual(MOVED_BOUNDS);
+        expect(moveFloatingWindow(floated, "float-9", {...FLOAT_BOUNDS})).toBe(floated);
+        expect(moveFloatingWindow(floated, "float-1", MOVED_BOUNDS)).toBe(floated);
+        expect(moveFloatingWindow(floated, "float-9", {...MOVED_BOUNDS, width: -1})).toBe(floated);
+    });
+
+    test("splits inside a floating window resize like the main window's", () => {
+        const split = movePanel(floatPanel(sample(), "console", FLOAT_BOUNDS), "history", {stack: "stack-10", edge: "bottom"});
+        expect(floatingShape(split, "float-9")).toBe("column([*console] [*history])");
+        expect(splitSizes(resizeSplit(split, "split-12", [3, 1]), "split-12")).toEqual([0.75, 0.25]);
+    });
+
+    test("normalizing drops empty and repeated floating windows, and a panel open in the main window stays there", () => {
+        const normalized = normalizeDockLayout({
+            version: DOCK_LAYOUT_VERSION,
+            root: dockStack("stack-1", ["console"]),
+            closed: [{panel: "history", stack: "stack-4", index: 0}],
+            floating: [
+                {id: "float-2", bounds: FLOAT_BOUNDS, root: dockStack("stack-3", ["console", "project"])},
+                {id: "float-2", bounds: MOVED_BOUNDS, root: dockStack("stack-4", ["history"])},
+                {id: "float-5", bounds: FLOAT_BOUNDS, root: dockStack("stack-6", ["console"])},
+            ],
+        });
+        expect(normalized.floating).toEqual([{id: "float-2", bounds: FLOAT_BOUNDS, root: dockStack("stack-3", ["project"])}]);
+        expect(normalized.closed).toEqual([{panel: "history", stack: "stack-4", index: 0}]);
+    });
+});
+
+describe("stored layouts with floating windows", () => {
+    test("floating windows survive a round trip through the layout's text", () => {
+        const layout = movePanel(floatPanel(sample(), "console", FLOAT_BOUNDS), "history", {stack: "stack-10", edge: "right"});
+        expect(parseDockLayout(dockLayoutText(layout))).toEqual(layout);
+        expect(JSON.parse(dockLayoutText(layout)).version).toBe(DOCK_LAYOUT_VERSION);
+    });
+
+    test("a version 1 layout still reads, with no floating windows", () => {
+        expect(parseDockLayout(JSON.stringify({version: 1, root: sample().root, closed: []}))).toEqual(sample());
+    });
+
+    test("malformed floating windows are dropped and the rest of the layout stays", () => {
+        const stack = (id: string, panels: readonly string[]): unknown => ({kind: "stack", id, panels, active: panels[0]});
+        const text = JSON.stringify({
+            version: DOCK_LAYOUT_VERSION,
+            root: stack("stack-1", ["scene"]),
+            closed: [],
+            floating: [
+                {id: "float-2", bounds: {...FLOAT_BOUNDS, width: 0}, root: stack("stack-3", ["console"])},
+                {id: "stack-1", bounds: FLOAT_BOUNDS, root: stack("stack-4", ["console"])},
+                {id: MAIN_DOCK_WINDOW, bounds: FLOAT_BOUNDS, root: stack("stack-5", ["console"])},
+                {id: "float-6", bounds: FLOAT_BOUNDS, root: stack("stack-7", ["timeline"])},
+                {id: "float-8", bounds: FLOAT_BOUNDS, root: {kind: "pane", id: "stack-9"}},
+                {id: "float-10", bounds: {...MOVED_BOUNDS, extra: true}, root: stack("stack-11", ["console", "scene"])},
+                "float-12",
+            ],
+        });
+        const parsed = parseDockLayout(text);
+        expect(shape(parsed?.root)).toBe("[*scene]");
+        expect(parsed?.floating).toEqual([{id: "float-10", bounds: MOVED_BOUNDS, root: dockStack("stack-11", ["console"])}]);
     });
 });

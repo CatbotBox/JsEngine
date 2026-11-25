@@ -59,6 +59,11 @@ export function storedPageUiScale(window: Window | null): number {
     return stored === null ? DEFAULT_ZOOM_FACTOR : storedZoomFactor(stored);
 }
 
+export function appliedPageUiScale(root: HTMLElement): number {
+    const factor = Number(root.style.getPropertyValue(PAGE_ZOOM_VARIABLE));
+    return Number.isFinite(factor) && factor > 0 ? factor : DEFAULT_ZOOM_FACTOR;
+}
+
 export function applyPageUiScale(root: HTMLElement, factor: number): void {
     for (const property of [PAGE_ZOOM_PROPERTY, PAGE_ZOOM_VARIABLE]) {
         if (factor === DEFAULT_ZOOM_FACTOR) root.style.removeProperty(property);

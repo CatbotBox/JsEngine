@@ -66,11 +66,11 @@ export function dropdownButton(document: Document, registry: CommandRegistry, op
     };
     button.addEventListener("click", () => {
         if (open) {
-            closePopupMenu(document);
+            closePopupMenu(button.ownerDocument);
             return;
         }
         const bounds = button.getBoundingClientRect();
-        showCommandMenu(document, bounds.left, bounds.bottom, options.entries(), {anchor: button, onClose: closed});
+        showCommandMenu(button.ownerDocument, bounds.left, bounds.bottom, options.entries(), {anchor: button, onClose: closed});
         open = true;
         button.classList.add(OPEN_CLASS);
     });

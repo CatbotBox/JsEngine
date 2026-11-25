@@ -35,6 +35,7 @@ interface ClickProblem {
 export class SmokeFailure extends Error {
 }
 
+const OUTSIDE_WINDOW_PX = 60;
 const LEFT_BUTTON: SmokeMouseButton = "left";
 const RIGHT_BUTTON: SmokeMouseButton = "right";
 const MIDDLE_BUTTON: SmokeMouseButton = "middle";
@@ -85,6 +86,10 @@ function isProblem(point: ClickPoint | ClickProblem): point is ClickProblem {
 
 export class SmokeUi {
     public constructor(private readonly page: SmokePage, private readonly clock: SmokeClock, private readonly options: SmokeUiOptions) {
+    }
+
+    public onPage(page: SmokePage): SmokeUi {
+        return new SmokeUi(page, this.clock, this.options);
     }
 
     public async read<T>(script: string): Promise<T> {
@@ -189,6 +194,12 @@ export class SmokeUi {
         const to = await this.clickablePoint(toSelector, `the end of ${description}`);
         const zoom = this.page.zoomFactor();
         for (const event of mouseEventsOfDrag(from.x * zoom, from.y * zoom, to.x * zoom, to.y * zoom)) this.page.sendInput(event);
+    }
+
+    public async dragOutside(fromSelector: string, description: string): Promise<void> {
+        const from = await this.clickablePoint(fromSelector, `the start of ${description}`);
+        const zoom = this.page.zoomFactor();
+        for (const event of mouseEventsOfDrag(from.x * zoom, from.y * zoom, -OUTSIDE_WINDOW_PX, from.y * zoom)) this.page.sendInput(event);
     }
 
     public async press(chord: string): Promise<void> {

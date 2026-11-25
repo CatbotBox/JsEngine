@@ -1,5 +1,5 @@
 import {CHOICE_HOOK, COMMAND_HOOK, POPUP_MENU_HOOK, SUBMENU_HOOK} from "../project/editorUiHooks";
-import {createElement, visualScaleOf} from "./dom";
+import {createElement, isDomNode, visualScaleOf} from "./dom";
 
 interface MenuEntry {
     readonly label: string;
@@ -60,7 +60,7 @@ export function showPopupMenu(document: Document, clientX: number, clientY: numb
         options.onClose?.();
     };
     const onOutside = (event: Event): void => {
-        if (event.target instanceof Node && (menu.contains(event.target) || options.anchor?.contains(event.target) === true)) return;
+        if (isDomNode(event.target) && (menu.contains(event.target) || options.anchor?.contains(event.target) === true)) return;
         close();
     };
     const onKey = (event: KeyboardEvent): void => {

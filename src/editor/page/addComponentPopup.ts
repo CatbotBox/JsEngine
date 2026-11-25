@@ -1,6 +1,6 @@
 import type {EditorComponentDescription, EditorFieldDescription} from "../editorProtocol";
 import {isHiddenComponent} from "./componentVisibility";
-import {createElement} from "./dom";
+import {createElement, isDomNode} from "./dom";
 
 export interface AddableComponent {
     readonly typeName: string;
@@ -74,7 +74,7 @@ export class AddComponentPopup {
         this.search.addEventListener("input", () => this.render());
         this.search.addEventListener("keydown", event => this.onKey(event));
         this.element.addEventListener("focusout", event => {
-            if (event.relatedTarget instanceof Node && this.element.contains(event.relatedTarget)) return;
+            if (isDomNode(event.relatedTarget) && this.element.contains(event.relatedTarget)) return;
             this.close();
         });
         this.render();

@@ -382,7 +382,7 @@ export abstract class FieldEditorBase implements FieldEditor {
     }
 
     protected hasFocus(): boolean {
-        const active = this.document.activeElement;
+        const active = this.element.ownerDocument.activeElement;
         return active !== null && this.element.contains(active);
     }
 

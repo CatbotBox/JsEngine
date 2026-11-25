@@ -4,7 +4,7 @@ import {dockLayoutOf, dockSplit, dockStack, MAX_SHARE, MIN_SHARE} from "./dockLa
 import type {DockLayout, DockPanelId} from "./dockLayout";
 import type {DockViewHome} from "./dockView";
 
-export const DOCK_LAYOUT_STORAGE_KEY = "jsengine.editor.dockLayout";
+export {DOCK_LAYOUT_STORAGE_KEY} from "../project/dockWindows";
 export const DOCK_PANEL_TITLES: Readonly<Record<DockPanelId, string>> = {
     hierarchy: "Hierarchy",
     inspector: "Inspector",
@@ -26,6 +26,8 @@ export const MIN_PANEL_HEIGHT_PX = 90;
 export const MIN_VIEW_WIDTH_PX = 120;
 export const MIN_VIEW_HEIGHT_PX = 120;
 export const REFERENCE_DOCK_AREA: DockSize = {widthPx: 1600, heightPx: 860};
+export const MAIN_WINDOW_PANELS: ReadonlySet<DockPanelId> = new Set<DockPanelId>(["scene", "game"]);
+export const MAIN_WINDOW_PANEL_REASON = "Floating the Scene and Game views is planned; their canvases stay in the main window for now";
 
 const SIDE_PANEL_MINIMUM: DockSize = {widthPx: MIN_SIDE_PANEL_WIDTH_PX, heightPx: MIN_PANEL_HEIGHT_PX};
 const VIEW_MINIMUM: DockSize = {widthPx: MIN_VIEW_WIDTH_PX, heightPx: MIN_VIEW_HEIGHT_PX};
@@ -65,6 +67,10 @@ export const DOCK_PANEL_HOMES: Readonly<Record<DockPanelId, readonly DockViewHom
     settings: bottomHomes("settings"),
     assets: bottomHomes("assets"),
 };
+
+export function canFloatPanel(panel: DockPanelId): boolean {
+    return !MAIN_WINDOW_PANELS.has(panel);
+}
 
 function shareOf(sizePx: number, availablePx: number): number {
     if (!(availablePx > 0)) return MIN_SHARE;

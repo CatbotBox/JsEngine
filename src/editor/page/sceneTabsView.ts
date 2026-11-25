@@ -75,7 +75,7 @@ export class SceneTabsView {
         });
         element.addEventListener("contextmenu", event => {
             event.preventDefault();
-            showCommandMenu(document, event.clientX, event.clientY, sceneTabMenu(this.commands, tab, active));
+            showCommandMenu(element.ownerDocument, event.clientX, event.clientY, sceneTabMenu(this.commands, tab, active));
         });
         return element;
     }

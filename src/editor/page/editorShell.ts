@@ -7,7 +7,7 @@ import {CommandRegistry, keyChordOf} from "./commandRegistry";
 import type {RegisteredCommand} from "./commandRegistry";
 import {ConsoleView} from "./consoleView";
 import {DataAssetsView, DIRTY_MARKER} from "./dataAssetsView";
-import {createElement, isTextEntryElement, readStorage, visualScaleOf, writeStorage} from "./dom";
+import {createElement, isHtmlElement, isTextEntryElement, isValueInputElement, readStorage, visualScaleOf, writeStorage} from "./dom";
 import {dockLayoutText, parseDockLayout} from "./dockLayout";
 import type {DockPanelId} from "./dockLayout";
 import {DockView} from "./dockView";
@@ -16,7 +16,8 @@ import type {DockSize} from "./dockGeometry";
 import {registerEditorCommands} from "./editorCommands";
 import type {EditorCommandHost, EditorCommands} from "./editorCommands";
 import {dockTabMenu, editorMenuBar, FILE_MENU_LABEL} from "./editorMenus";
-import {DOCK_LAYOUT_STORAGE_KEY, DOCK_PANEL_HOMES, DOCK_PANEL_MINIMUMS, DOCK_PANEL_TITLES, defaultDockLayout} from "./editorPanels";
+import {canFloatPanel, DOCK_LAYOUT_STORAGE_KEY, DOCK_PANEL_HOMES, DOCK_PANEL_MINIMUMS, DOCK_PANEL_TITLES, defaultDockLayout} from "./editorPanels";
+import {BrowserFloatingWindowHost} from "./floatingWindows";
 import type {EditorNoticeLevel, EditorSession, EditorShell, EntityRemap} from "./editorSession";
 import {buildToolbar, EditorStatusView} from "./editorToolbar";
 import {EditorWorkspace} from "./editorWorkspace";
@@ -73,6 +74,14 @@ const CONSOLE_PANEL: DockPanelId = "console";
 const OPEN_SCENE_LABEL = "Open scene";
 const OPEN_SCENE_PLACEHOLDER = "Search scenes and prefabs";
 const NO_SCENES_TEXT = "No scenes or prefabs in the project";
+const DEFAULT_SCREEN_SCALE = 1;
+const SCREEN_SCALE_REFRESH_MS = 300;
+const PANEL_LIST_SEPARATOR = ", ";
+
+function floatingRefusedText(panels: readonly DockPanelId[]): string {
+    const titles = panels.map(panel => DOCK_PANEL_TITLES[panel]).join(PANEL_LIST_SEPARATOR);
+    return `A floating window could not open (the browser blocked the pop-up), so ${titles} went back to the main window. Allow pop-ups for this page to keep floating windows.`;
+}
 
 export interface ProjectBuildServices {
     readonly targetReport: (target: ProjectTarget) => Promise<TargetReportResult>;
@@ -230,6 +239,9 @@ class EditorShellImplementation implements EditorShell {
     private sceneViewShown = SCENE_VIEW_SHOWN_AT_START;
     private sceneViewDocked = SCENE_VIEW_SHOWN_AT_START;
     private shownMode: EditorMode | undefined;
+    private screenScale = DEFAULT_SCREEN_SCALE;
+    private screenScaleTimer: number | undefined;
+    private keyDocument: Document | undefined;
 
     public constructor(body: HTMLElement, private readonly options: EditorShellOptions) {
         this.document = body.ownerDocument;
@@ -238,6 +250,7 @@ class EditorShellImplementation implements EditorShell {
         this.viewport = this.layout.viewport;
         this.sceneViewport = this.layout.sceneViewport;
         applyPageUiScale(this.document.documentElement, storedPageUiScale(window));
+        this.followScreenScale(window);
         this.dock = this.createDock(window);
         observeViewportSize(this.viewport);
         observeViewportSize(this.sceneViewport);
@@ -253,7 +266,7 @@ class EditorShellImplementation implements EditorShell {
             gameTargetMenu: () => this.gameTargetMenu,
             handleModes: () => this.mounted?.workspace.handleModes ?? DEFAULT_HANDLE_MODES,
         });
-        this.installKeyboard();
+        this.installKeyboard(this.document);
         this.installUnloadGuard();
     }
 
@@ -263,6 +276,7 @@ class EditorShellImplementation implements EditorShell {
             return;
         }
         const workspace = new EditorWorkspace(session, this.document);
+        workspace.setDialogDocument(() => this.activeDocument());
         const rotations = new RotationEulerCache();
         new EditorStatusView(this.layout.menuStatus, workspace);
         new SceneTabsView(this.layout.sceneTabs, this.layout.prefabBreadcrumb, workspace, this.editorCommands);
@@ -346,13 +360,17 @@ class EditorShellImplementation implements EditorShell {
                 this.commands.changed();
             },
             addPanelBeside: (panel, besidePanel) => this.dock.addPanelBeside(panel, besidePanel),
+            panelFloating: panel => this.dock.isFloating(panel),
+            panelHasOwnWindow: panel => this.dock.hasOwnWindow(panel),
+            floatPanel: panel => this.dock.floatPanel(panel),
+            dockPanel: panel => this.dock.dockPanel(panel),
             resetLayout: () => this.resetLayout(),
             gameViewAspect: () => this.gameViewAspectId,
             setGameViewAspect: id => this.setGameViewAspect(id),
-            textSelected: () => this.document.getSelection()?.isCollapsed === false,
+            textSelected: () => this.activeDocument().getSelection()?.isCollapsed === false,
             entityKeysFocused: () => this.entityKeysFocused(),
             toggleCommandPalette: () => this.toggleCommandPalette(),
-            showKeyboardShortcuts: () => showKeyboardShortcuts(this.document, this.commands.all()),
+            showKeyboardShortcuts: () => showKeyboardShortcuts(this.activeDocument(), this.commands.all()),
             openSceneChooser: () => this.openSceneChooser(),
             openProjectSettings: () => this.openProjectSettings(),
             buildUnavailableReason: () => this.options.projectBuild === undefined ? BUILD_NEEDS_SERVER_REASON : this.options.projectBuild.unavailableReason,
@@ -362,7 +380,7 @@ class EditorShellImplementation implements EditorShell {
         };
     }
 
-    private createDock(window: Window | null): DockView {
+    private createDock(window: (Window & typeof globalThis) | null): DockView {
         const panels = new Map<DockPanelId, DockPanel>(DOCK_PANEL_IDS.map(id => [id, {
             id,
             title: DOCK_PANEL_TITLES[id],
@@ -378,6 +396,12 @@ class EditorShellImplementation implements EditorShell {
             },
             closeRequested: panel => void this.editorCommands.window.closePanel.runWith(panel),
             tabMenu: panel => dockTabMenu(this.editorCommands, panel, this.dock.closedPanels(), panel === GAME_VIEW ? this.gameTargetMenu ?? [] : []),
+            homes: panel => DOCK_PANEL_HOMES[panel],
+            ...(window === null ? {} : {floatingHost: new BrowserFloatingWindowHost(window)}),
+            canFloat: canFloatPanel,
+            screenScale: () => this.screenScale,
+            windowOpened: document => this.installKeyboard(document),
+            floatingRefused: panels => this.notice("warn", floatingRefusedText(panels)),
         });
         dock.setTabTooltip(SCENE_VIEW, SCENE_HEADER_TITLE);
         dock.setTabTooltip(GAME_VIEW, GAME_HEADER_TITLE);
@@ -480,8 +504,36 @@ class EditorShellImplementation implements EditorShell {
     }
 
     private toggleCommandPalette(): void {
-        if (isCommandPaletteOpen(this.document)) closeCommandPalette(this.document);
-        else showCommandPalette(this.document, this.commands);
+        const document = this.activeDocument();
+        if (isCommandPaletteOpen(document)) closeCommandPalette(document);
+        else showCommandPalette(document, this.commands);
+    }
+
+    private activeDocument(): Document {
+        return this.keyDocument ?? this.dock.documents().find(document => document.hasFocus()) ?? this.document;
+    }
+
+    private focusMainWindow(): void {
+        this.document.defaultView?.focus();
+    }
+
+    private followScreenScale(window: (Window & typeof globalThis) | null): void {
+        if (window === null) return;
+        const refresh = async (): Promise<boolean> => {
+            const scale = await windowUiScale((path, init) => window.fetch(path, init));
+            this.screenScale = scale?.factor ?? DEFAULT_SCREEN_SCALE;
+            return scale !== undefined;
+        };
+        void refresh().then(scalesWindow => {
+            if (!scalesWindow) return;
+            window.addEventListener("resize", () => {
+                if (this.screenScaleTimer !== undefined) window.clearTimeout(this.screenScaleTimer);
+                this.screenScaleTimer = window.setTimeout(() => {
+                    this.screenScaleTimer = undefined;
+                    void refresh();
+                }, SCREEN_SCALE_REFRESH_MS);
+            });
+        });
     }
 
     private openSceneChooser(): void {
@@ -500,6 +552,7 @@ class EditorShellImplementation implements EditorShell {
     private openProjectSettings(): void {
         const workspace = this.mounted?.workspace;
         if (workspace === undefined) return;
+        this.focusMainWindow();
         if (this.projectSettings !== undefined) {
             this.projectSettings.focus();
             return;
@@ -525,6 +578,7 @@ class EditorShellImplementation implements EditorShell {
         const workspace = this.mounted?.workspace;
         const projectBuild = this.options.projectBuild;
         if (workspace === undefined || projectBuild === undefined) return;
+        this.focusMainWindow();
         if (this.buildWindow !== undefined) {
             this.buildWindow.focus();
             return;
@@ -544,6 +598,7 @@ class EditorShellImplementation implements EditorShell {
     }
 
     private openPreferences(): void {
+        this.focusMainWindow();
         if (this.preferences !== undefined) {
             this.preferences.focus();
             return;
@@ -589,38 +644,43 @@ class EditorShellImplementation implements EditorShell {
         });
     }
 
-    private installKeyboard(): void {
-        const document = this.document;
+    private installKeyboard(document: Document): void {
         document.addEventListener("focusin", event => {
             const target = event.target;
-            if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) this.focusValues.set(target, target.value);
+            if (isValueInputElement(target)) this.focusValues.set(target, target.value);
         });
-        document.addEventListener("keydown", event => this.onKeyDown(event));
+        document.addEventListener("keydown", event => this.onKeyDown(event, document));
     }
 
     private entityKeysFocused(): boolean {
-        const active = this.document.activeElement;
-        return active === null || active === this.document.body || active === this.layout.overlay || this.layout.hierarchy.contains(active);
+        const document = this.activeDocument();
+        const active = document.activeElement;
+        return active === null || active === document.body || active === this.layout.overlay || this.layout.hierarchy.contains(active);
     }
 
     private hasTextEdits(element: Element): boolean {
-        if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return false;
+        if (!isValueInputElement(element)) return false;
         return this.focusValues.get(element) !== element.value;
     }
 
-    private onKeyDown(event: KeyboardEvent): void {
+    private onKeyDown(event: KeyboardEvent, document: Document): void {
         if (event.defaultPrevented) return;
-        const active = this.document.activeElement;
+        const active = document.activeElement;
         if (active !== null && this.viewport.contains(active)) return;
-        const resolution = this.commands.resolveKey(keyChordOf(event), {
-            inTextEntry: isTextEntryElement(active),
-            textEdited: active !== null && this.hasTextEdits(active),
-        });
-        if (resolution.kind !== "bound") return;
-        event.preventDefault();
-        if (resolution.leavesTextEntry && active instanceof HTMLElement) active.blur();
-        if (resolution.command.runAlone() || event.repeat || !resolution.command.explainsWhenDisabled()) return;
-        this.explainUnavailable(resolution.command);
+        this.keyDocument = document;
+        try {
+            const resolution = this.commands.resolveKey(keyChordOf(event), {
+                inTextEntry: isTextEntryElement(active),
+                textEdited: active !== null && this.hasTextEdits(active),
+            });
+            if (resolution.kind !== "bound") return;
+            event.preventDefault();
+            if (resolution.leavesTextEntry && isHtmlElement(active)) active.blur();
+            if (resolution.command.runAlone() || event.repeat || !resolution.command.explainsWhenDisabled()) return;
+            this.explainUnavailable(resolution.command);
+        } finally {
+            this.keyDocument = undefined;
+        }
     }
 
     private explainUnavailable(command: RegisteredCommand): void {

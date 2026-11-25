@@ -4,6 +4,7 @@ import {closedDockPanels, dockStacks, openDockPanels, parseDockLayout, dockLayou
 import {
     BOTTOM_HEIGHT_PX,
     BOTTOM_PANELS,
+    canFloatPanel,
     DEFAULT_BOTTOM_PANEL,
     defaultDockLayout,
     DOCK_PANEL_HOMES,
@@ -44,5 +45,9 @@ describe("the default dock layout", () => {
 
     test("every panel has a home to reopen in", () => {
         for (const panel of DOCK_PANEL_IDS) expect(DOCK_PANEL_HOMES[panel].length).toBeGreaterThan(0);
+    });
+
+    test("every panel but the Scene and Game views can float in its own window", () => {
+        expect(DOCK_PANEL_IDS.filter(panel => !canFloatPanel(panel))).toEqual(["scene", "game"]);
     });
 });

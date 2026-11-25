@@ -129,7 +129,7 @@ class ComponentView {
     private openMenu(event: MouseEvent): void {
         const resettable = this.schema !== undefined && requiredEntityFields(this.schema).length === 0;
         const target = {entities: this.entities, typeName: this.typeName, first: this.shared?.perEntity[0], resettable};
-        showCommandMenu(this.inspector.document, event.clientX, event.clientY, componentMenu(this.inspector.commands, target));
+        showCommandMenu(this.element.ownerDocument, event.clientX, event.clientY, componentMenu(this.inspector.commands, target));
     }
 }
 
@@ -283,12 +283,12 @@ export class InspectorView {
 
     private showHeader(details: readonly EditorEntityDetails[], prefabPath: string | undefined): void {
         const enabled = sharedBoolean(details.map(entry => entry.enabled));
-        if (this.document.activeElement !== this.enabled) {
+        if (this.enabled.ownerDocument.activeElement !== this.enabled) {
             this.enabled.indeterminate = enabled === undefined;
             this.enabled.checked = enabled === true;
         }
         this.root.classList.toggle("disabled", enabled === false);
-        if (this.document.activeElement !== this.nameInput) {
+        if (this.nameInput.ownerDocument.activeElement !== this.nameInput) {
             const names = new Set(details.map(entry => entry.name));
             const single = details.length === 1 ? details[0] : undefined;
             this.nameInput.value = names.size === 1 ? [...names][0] ?? "" : "";
@@ -366,7 +366,7 @@ export class InspectorView {
             return;
         }
         if (performance.now() - this.popupClosedAtMs < POPUP_REOPEN_GUARD_MS) return;
-        const popup = new AddComponentPopup(this.document, () => this.workspace.schemas.values(), this.presentInAll(), {
+        const popup = new AddComponentPopup(this.addHost.ownerDocument, () => this.workspace.schemas.values(), this.presentInAll(), {
             choose: typeName => this.chooseComponent(typeName),
             closed: () => {
                 if (this.popup !== popup) return;

@@ -24,6 +24,7 @@ import {
     DOCK_STACK_HOOK,
     DOCK_TAB_CLOSE_HOOK,
     DOCK_TAB_HOOK,
+    DOCK_WINDOW_HOOK,
     DROPDOWN_HOOK,
     EDITOR_MENU_IDS,
     EDITOR_TITLE_HOOK,
@@ -44,11 +45,14 @@ import {
     START_ACTION_HOOK,
     START_MESSAGE_ACTION_HOOK,
     SUBMENU_HOOK,
+    MAIN_DOCK_WINDOW,
     TOOLBAR_HOOK,
 } from "../project/editorUiHooks";
 import type {DockPanelId, EditorMenuId, ModalKind} from "../project/editorUiHooks";
+import {DOCK_LAYOUT_STORAGE_KEY} from "../project/dockWindows";
+import type {ScreenBounds} from "../project/dockWindows";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
-import type {SmokeFlow} from "./smokeFlows";
+import type {SmokeFlow, SmokeHost, SmokeWindowPage} from "./smokeFlows";
 import {SmokeFailure} from "./smokeUi";
 import type {SmokeUi} from "./smokeUi";
 
@@ -128,6 +132,9 @@ const COMMANDS = {
     keyboardShortcuts: "help.keyboardShortcuts",
     showInspector: "window.inspector",
     resetLayout: "window.resetLayout",
+    floatTab: "window.floatTab",
+    dockTab: "window.dockTab",
+    showConsole: "window.console",
     showDataAssets: "window.assets",
     pivotCenter: "tools.togglePivotCenter",
     localGlobal: "tools.toggleLocalGlobal",
@@ -169,6 +176,29 @@ const CREATED_SCRIPT_NAME = "SmokeSpin";
 const RECOVERY_ESCAPES = 3;
 const SCRIPT_EXTENSION = ".ts";
 const ENABLED_NUMBER_FIELD = `${hookSelector(FIELD_INPUT_HOOK, "number")}:not(:disabled)`;
+const MAIN_DOCK = hookSelector(DOCK_WINDOW_HOOK, MAIN_DOCK_WINDOW);
+const FLOATING_DOCK = `${hookSelector(DOCK_WINDOW_HOOK)}:not(${MAIN_DOCK})`;
+const MOVED_FLOATING_BOUNDS: ScreenBounds = {x: 40, y: 40, width: 460, height: 340};
+const CONSOLE_WARNINGS = `${hookSelector(DOCK_PANEL_HOOK, "console")} ${hookSelector(CONSOLE_ENTRY_HOOK, "warn")}`;
+const POPUP_BLOCKED_TEXT = "could not open";
+const BLOCKED_OPEN_PROPERTY = "__smokeUnblockedOpen";
+const BLOCK_POPUPS_SCRIPT = `(() => {
+    window.${BLOCKED_OPEN_PROPERTY} = window.open;
+    window.open = () => null;
+    return true;
+})()`;
+const UNBLOCK_POPUPS_SCRIPT = `(() => {
+    if (window.${BLOCKED_OPEN_PROPERTY} !== undefined) window.open = window.${BLOCKED_OPEN_PROPERTY};
+    delete window.${BLOCKED_OPEN_PROPERTY};
+    return true;
+})()`;
+const SAVED_FLOATING_BOUNDS_SCRIPT = `(() => {
+    try {
+        return JSON.parse(localStorage.getItem(${JSON.stringify(DOCK_LAYOUT_STORAGE_KEY)}) ?? "null")?.floating?.[0]?.bounds ?? null;
+    } catch {
+        return null;
+    }
+})()`;
 const INSPECTOR_TEXT_LINES_FIELD = `${hookSelector(DOCK_PANEL_HOOK, "inspector")} ${hookSelector(FIELD_INPUT_HOOK, "textLines")}`;
 
 function menuButton(menu: EditorMenuId): string {
@@ -352,6 +382,115 @@ const dockingFlow: SmokeFlow = {
         await ui.waitFor("Reset Layout to put the Console tab back beside the Project tab", () => inSameStack(ui, "console", "project"));
         ui.expect(!await inSameStack(ui, "console", "hierarchy"), "the Console tab stayed in the Hierarchy's stack after Reset Layout");
         for (const panel of DEFAULT_SHOWN_PANELS) await ui.waitForVisible(dockPanel(panel), `the ${panel} panel after Reset Layout`);
+    },
+};
+
+function sameBounds(a: ScreenBounds | null, b: ScreenBounds): boolean {
+    return a !== null && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+function boundsText(bounds: ScreenBounds | null): string {
+    return bounds === null ? "none" : `${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`;
+}
+
+async function onlyFloatingWindow(ui: SmokeUi, host: SmokeHost, description: string, replacing?: SmokeWindowPage): Promise<SmokeWindowPage> {
+    const fresh = (): SmokeWindowPage[] => host.floatingWindows().filter(window => window.id !== replacing?.id);
+    await ui.waitFor(`${description} to be the only floating window`, async () => host.floatingWindows().length === 1 && fresh().length === 1);
+    return fresh()[0];
+}
+
+async function noFloatingWindows(ui: SmokeUi, host: SmokeHost, description: string): Promise<void> {
+    await ui.waitFor(description, async () => host.floatingWindows().length === 0);
+}
+
+async function floatFromTabMenu(ui: SmokeUi, panel: DockPanelId): Promise<void> {
+    await ui.rightClick(dockTab(panel), `the ${panel} tab`);
+    await ui.click(popupCommand(COMMANDS.floatTab), `Float Tab in the ${panel} tab's menu`);
+    await ui.waitForNone(POPUP, "the tab menu");
+}
+
+async function withPopupsBlocked(ui: SmokeUi, blocked: () => Promise<void>): Promise<void> {
+    await ui.read<boolean>(BLOCK_POPUPS_SCRIPT);
+    try {
+        await blocked();
+    } finally {
+        await ui.read<boolean>(UNBLOCK_POPUPS_SCRIPT);
+    }
+}
+
+async function floatingWindowFlowSteps(ui: SmokeUi, host: SmokeHost, note: (text: string) => void): Promise<void> {
+    ui.expect(host.floatingWindows().length === 0, "a floating window was already open");
+    const floatingConsole = `${FLOATING_DOCK} ${dockPanel("console")}`;
+    const search = `${dockPanel("console")} ${hookSelector(CONSOLE_SEARCH_HOOK)}`;
+    const entries = `${dockPanel("console")} ${hookSelector(CONSOLE_ENTRY_HOOK)}`;
+    await showDockTab(ui, "console");
+    await floatFromTabMenu(ui, "console");
+    const floating = await onlyFloatingWindow(ui, host, "the Console's window");
+    const floatingUi = ui.onPage(floating);
+    await floatingUi.waitForVisible(floatingConsole, "the console in its floating window");
+    await ui.waitForNone(dockTab("console"), "the Console tab in the main window");
+    ui.expect(await ui.read<boolean>("crossOriginIsolated"), "the main window lost cross-origin isolation once a floating window opened");
+    await floatingUi.click(search, "the floating console's search");
+    await floatingUi.waitForFocus(search, "the floating console's search");
+    await floatingUi.type(NO_MATCH_SEARCH);
+    await floatingUi.waitForCount(entries, 0, "floating console entries matching nonsense");
+    await floatingUi.press(SELECT_ALL_CHORD);
+    await floatingUi.press(BACKSPACE_CHORD);
+    await floatingUi.press(PALETTE_CHORD);
+    await floatingUi.waitForVisible(PALETTE, "the command palette opened from the floating window");
+    await floatingUi.press(ESCAPE_CHORD);
+    await floatingUi.waitForNone(PALETTE, "the floating window's command palette after Escape");
+    floating.setBounds(MOVED_FLOATING_BOUNDS);
+    const moved = floating.bounds();
+    let saved: ScreenBounds | null = null;
+    await ui.waitFor(`the layout to save the moved window at ${boundsText(moved)}`, async () => sameBounds(saved = await ui.read<ScreenBounds | null>(SAVED_FLOATING_BOUNDS_SCRIPT), moved))
+        .catch(error => ui.fail(`${error instanceof Error ? error.message : String(error)}; saved ${boundsText(saved)}`));
+    await host.reloadPage();
+    await waitForPageState(ui, READY_STATE, PROJECT_OPEN_TIMEOUT_MS);
+    const restored = await onlyFloatingWindow(ui, host, "the Console's window reopened after a reload", floating);
+    ui.expect(sameBounds(restored.bounds(), moved), `the reopened window is at ${boundsText(restored.bounds())}, not ${boundsText(moved)}`);
+    note(`window ${floating.id} moved to ${boundsText(moved)}; window ${restored.id} reopened at ${boundsText(restored.bounds())} after a reload`);
+    const restoredUi = ui.onPage(restored);
+    await restoredUi.waitForVisible(floatingConsole, "the console in the reopened floating window");
+    await restoredUi.rightClick(dockTab("console"), "the floating Console tab");
+    await restoredUi.click(popupCommand(COMMANDS.dockTab), "Dock Tab in the floating Console tab's menu");
+    await noFloatingWindows(ui, host, "the floating window to close once its last tab docked");
+    await ui.waitFor("the docked Console tab to join the Project tab", () => inSameStack(ui, "console", "project"));
+    await ui.dragOutside(dockTab("console"), "dragging the Console tab out of the main window");
+    const dragged = await onlyFloatingWindow(ui, host, "the window the dragged Console tab opened");
+    await ui.onPage(dragged).waitForVisible(floatingConsole, "the dragged console in its floating window");
+    dragged.close();
+    await noFloatingWindows(ui, host, "the floating window to close from its frame");
+    await ui.waitForNone(dockTab("console"), "the Console tab once its window closed");
+    await runFromMenu(ui, "window", COMMANDS.showConsole);
+    await ui.waitFor("Window > Console to reopen the Console beside the Project tab", () => inSameStack(ui, "console", "project"));
+    await floatFromTabMenu(ui, "console");
+    await onlyFloatingWindow(ui, host, "the Console's window, floated again");
+    await runFromMenu(ui, "window", COMMANDS.resetLayout);
+    await noFloatingWindows(ui, host, "Reset Layout to close the floating window");
+    await ui.waitFor("Reset Layout to put the Console tab back beside the Project tab", () => inSameStack(ui, "console", "project"));
+    await withPopupsBlocked(ui, async () => {
+        await floatFromTabMenu(ui, "console");
+        await ui.waitFor("a warning that the blocked window sent the Console back", async () => (await ui.texts(CONSOLE_WARNINGS)).some(text => text.includes(POPUP_BLOCKED_TEXT)));
+    });
+    ui.expect(host.floatingWindows().length === 0, "a floating window opened while pop-ups were blocked");
+    await ui.waitFor("the blocked Console to stay beside the Project tab", () => inSameStack(ui, "console", "project"));
+    await ui.dragOutside(dockTab("scene"), "dragging the Scene tab out of the main window");
+    await openMenu(ui, "window");
+    await closeMenus(ui);
+    ui.expect(host.floatingWindows().length === 0, "the Scene view floated, though its canvas cannot leave the main window");
+    await ui.waitForVisible(`${MAIN_DOCK} ${dockTab("scene")}`, "the Scene tab still in the main window");
+}
+
+const floatingWindowFlow: SmokeFlow = {
+    name: "floatingWindow",
+    budgetMs: PROJECT_BUDGET_MS,
+    async run({ui, host, note}) {
+        try {
+            await floatingWindowFlowSteps(ui, host, note);
+        } finally {
+            if (host.floatingWindows().length > 0) await runFromMenu(ui, "window", COMMANDS.resetLayout).catch(() => undefined);
+        }
     },
 };
 
@@ -790,6 +929,7 @@ export function editorSmokeFlows(): SmokeFlow[] {
         menusFlow,
         commandPaletteFlow,
         dockingFlow,
+        floatingWindowFlow,
         pivotCenterFlow,
         snapFlow,
         entityTemplatesFlow,

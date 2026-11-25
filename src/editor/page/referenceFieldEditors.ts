@@ -105,7 +105,7 @@ export class EntityFieldEditor extends FieldEditorBase {
     }
 
     protected override hasFocus(): boolean {
-        return this.document.activeElement === this.select;
+        return this.select.ownerDocument.activeElement === this.select;
     }
 
     private draggedEntity(): Entity | undefined {
@@ -247,7 +247,7 @@ export class AssetFieldEditor extends FieldEditorBase {
     }
 
     protected override hasFocus(): boolean {
-        return this.document.activeElement === this.input;
+        return this.input.ownerDocument.activeElement === this.input;
     }
 
     private droppablePath(): string | undefined {
@@ -257,7 +257,7 @@ export class AssetFieldEditor extends FieldEditorBase {
     }
 
     private openPicker(): void {
-        showChoicePopup<SceneJsonValue>(this.document, this.element, {
+        showChoicePopup<SceneJsonValue>(this.element.ownerDocument, this.element, {
             ariaLabel: `Choose ${this.fieldLabel}`,
             searchPlaceholder: "Search files",
             emptyText: `No ${this.assetType} files in the project`,

@@ -1,5 +1,5 @@
 import {app, BrowserWindow, crashReporter, dialog, Menu, protocol, screen, shell} from "electron";
-import type {Details, GPUFeatureStatus} from "electron";
+import type {Details, GPUFeatureStatus, WebContents} from "electron";
 import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync} from "fs";
 import {access, mkdtemp, readFile, rm, writeFile} from "fs/promises";
 import {tmpdir} from "os";
@@ -9,10 +9,12 @@ import {createProjectServer, locateBun} from "./projectServer";
 import {renderBackendMatches, requestedRenderBackend} from "./smokeBackend";
 import {editorSmokeFlows, recoverEditor} from "./editorSmokeFlows";
 import {runSmokeFlows, selectFlows, smokeFlowsPassed} from "./smokeFlows";
-import type {SmokeFlow, SmokeFlowResult, SmokeHost} from "./smokeFlows";
+import type {SmokeFlow, SmokeFlowResult, SmokeHost, SmokeWindowPage} from "./smokeFlows";
 import type {SmokeInputEvent} from "./smokeInput";
 import type {SmokeClock, SmokePage} from "./smokeUi";
 import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../project/windowZoom";
+import {boundsOfDockWindowFeatures, clampedScreenBounds, DOCK_WINDOW_BACKGROUND, DOCK_WINDOW_URL, isDockWindowName} from "../project/dockWindows";
+import type {ScreenBounds} from "../project/dockWindows";
 import {EDITOR_VIEWPORT_HOOK, hookSelector} from "../project/editorUiHooks";
 import {BITMAP_BYTES_PER_PIXEL, bitmapWidthPx, drawnPixelsIn, scaledRect} from "./capturedViews";
 import type {CapturedRect} from "./capturedViews";
@@ -124,9 +126,11 @@ const smokeTempFolders: string[] = [];
 const goneChildProcesses: Details[] = [];
 const rendererConsole: string[] = [];
 const smokeCrashDumps = join(tmpdir(), SMOKE_CRASH_DUMPS_FOLDER);
+const dockWindows = new Set<BrowserWindow>();
 let crashDumpsBeforeSmoke: ReadonlySet<string> = new Set();
 let mainWindow: BrowserWindow | undefined;
 let pendingSmokeFailure: SmokeFailure | undefined;
+let lastSmokeInput: WebContents | undefined;
 
 function isolatedSmokeProfile(): string {
     const fixed = join(tmpdir(), SMOKE_PROFILE_FOLDER);
@@ -229,14 +233,39 @@ function withTimeout<T>(work: Promise<T>, timeoutMs: number, what: string): Prom
     });
 }
 
+function focusForSmokeInput(contents: WebContents): void {
+    if (lastSmokeInput === contents) return;
+    lastSmokeInput = contents;
+    contents.focus();
+}
+
 function smokePageOf(window: BrowserWindow): SmokePage {
     const contents = window.webContents;
     return {
         evaluate: <T>(script: string) => withTimeout(contents.executeJavaScript(script) as Promise<T>, SMOKE_EVALUATE_TIMEOUT_MS, "the page script"),
-        sendInput: (event: SmokeInputEvent) => contents.sendInputEvent(event),
-        insertText: text => contents.insertText(text),
+        sendInput: (event: SmokeInputEvent) => {
+            focusForSmokeInput(contents);
+            contents.sendInputEvent(event);
+        },
+        insertText: text => {
+            focusForSmokeInput(contents);
+            return contents.insertText(text);
+        },
         zoomFactor: () => contents.getZoomFactor(),
     };
+}
+
+function smokeWindowPageOf(window: BrowserWindow): SmokeWindowPage {
+    return {...smokePageOf(window), id: window.id, bounds: () => window.getBounds(), setBounds: bounds => window.setBounds(bounds), close: () => window.close()};
+}
+
+function reloadMainWindow(): Promise<void> {
+    const contents = mainWindow?.webContents;
+    if (contents === undefined) return Promise.resolve();
+    return new Promise(resolve => {
+        contents.once("did-finish-load", () => resolve());
+        contents.reload();
+    });
 }
 
 const smokeClock: SmokeClock = {now: () => Date.now(), sleep};
@@ -252,6 +281,8 @@ const smokeHost: SmokeHost = {
     },
     fileExists: path => access(path).then(() => true, () => false),
     writeFile: (path, text) => writeFile(path, text),
+    floatingWindows: () => [...dockWindows].filter(window => !window.isDestroyed()).map(smokeWindowPageOf),
+    reloadPage: reloadMainWindow,
 };
 
 function flowNames(): readonly string[] | undefined {
@@ -368,8 +399,12 @@ function loadZoomFactor(): number {
     return storedZoomFactor(existsSync(path) ? readFileSync(path, "utf8") : undefined);
 }
 
-function applyZoomFactor(window: BrowserWindow, zoomFactor: number): void {
-    window.webContents.setZoomFactor(zoomFactor);
+function editorWindows(): BrowserWindow[] {
+    return [...(mainWindow === undefined ? [] : [mainWindow]), ...dockWindows].filter(window => !window.isDestroyed());
+}
+
+function applyZoomFactor(zoomFactor: number): void {
+    for (const window of editorWindows()) window.webContents.setZoomFactor(zoomFactor);
     void writeFile(windowSettingsPath(), zoomSettingsText(zoomFactor));
 }
 
@@ -378,7 +413,39 @@ function handleZoomShortcuts(window: BrowserWindow): void {
         const command = zoomCommandOf(input);
         if (command === undefined) return;
         event.preventDefault();
-        applyZoomFactor(window, nextZoomFactor(window.webContents.getZoomFactor(), command));
+        applyZoomFactor(nextZoomFactor(window.webContents.getZoomFactor(), command));
+    });
+}
+
+function visibleDockWindowBounds(features: string): Partial<ScreenBounds> {
+    const requested = boundsOfDockWindowFeatures(features);
+    return requested === undefined ? {} : clampedScreenBounds(requested, screen.getDisplayMatching(requested).workArea);
+}
+
+function allowDockWindows(window: BrowserWindow, pageErrors: string[]): void {
+    window.webContents.setWindowOpenHandler(details => {
+        if (details.url !== DOCK_WINDOW_URL || !isDockWindowName(details.frameName)) return {action: "deny"};
+        return {
+            action: "allow",
+            overrideBrowserWindowOptions: {
+                ...visibleDockWindowBounds(details.features),
+                parent: window,
+                show: false,
+                backgroundColor: DOCK_WINDOW_BACKGROUND,
+                autoHideMenuBar: true,
+                webPreferences: {zoomFactor: window.webContents.getZoomFactor()},
+            },
+        };
+    });
+    window.webContents.on("did-create-window", child => {
+        dockWindows.add(child);
+        child.on("closed", () => dockWindows.delete(child));
+        handleZoomShortcuts(child);
+        child.webContents.on("console-message", event => {
+            if (event.level === "error") pageErrors.push(event.message);
+            if (smoke) keepRendererConsoleLine(`floating window ${event.level}: ${event.message}`);
+        });
+        if (!smoke) child.show();
     });
 }
 
@@ -388,7 +455,7 @@ async function respondToWindowZoom(request: Request): Promise<Response> {
     if (request.method === HTTP_PUT) {
         const zoomFactor = zoomFactorOfText(await request.text());
         if (zoomFactor === undefined) return new Response(`Send {"zoomFactor": n} with n from ${ZOOM_FACTORS[0]} to ${ZOOM_FACTORS[ZOOM_FACTORS.length - 1]}`, {status: HTTP_BAD_REQUEST, headers: ISOLATION_HEADERS});
-        applyZoomFactor(window, zoomFactor);
+        applyZoomFactor(zoomFactor);
     }
     return new Response(zoomSettingsText(window.webContents.getZoomFactor()), {headers: {...ISOLATION_HEADERS, "Content-Type": JSON_CONTENT_TYPE}});
 }
@@ -432,6 +499,7 @@ async function openWindow(): Promise<void> {
         if (event.level === "error") pageErrors.push(event.message);
         if (smoke) keepRendererConsoleLine(`${event.level}: ${event.message}`);
     });
+    allowDockWindows(window, pageErrors);
     if (smoke) failWhenTheRendererDies(window);
     await window.loadURL(`${SCHEME}://${HOST}/${page}`);
     await pressPlay(window);

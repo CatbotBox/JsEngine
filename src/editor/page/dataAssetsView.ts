@@ -127,7 +127,7 @@ export class DataAssetsView {
     }
 
     public hasFocus(): boolean {
-        const active = this.document.activeElement;
+        const active = this.container.ownerDocument.activeElement;
         return active !== null && this.container.contains(active);
     }
 

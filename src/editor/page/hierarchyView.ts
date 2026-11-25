@@ -1,6 +1,6 @@
 import type {Entity} from "../../engine/core";
 import type {EditorEntitySummary} from "../editorProtocol";
-import {createElement, hasCommandModifier} from "./dom";
+import {createElement, hasCommandModifier, isDomElement, isDomNode} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
 import {buildEntityTree, ENTITY_TREE_ROW_LIMIT, entitySummaryLabel} from "./entityTree";
 import type {EntityTreeNode, EntityTreeRow} from "./entityTree";
@@ -111,7 +111,7 @@ export class HierarchyView {
         this.list.addEventListener("dragend", () => this.endDrag());
         this.list.addEventListener("dragover", event => this.onDragOver(event));
         this.list.addEventListener("dragleave", event => {
-            if (!(event.relatedTarget instanceof Node) || !this.list.contains(event.relatedTarget)) this.clearDropIndicator();
+            if (!isDomNode(event.relatedTarget) || !this.list.contains(event.relatedTarget)) this.clearDropIndicator();
         });
         this.list.addEventListener("drop", event => this.onDrop(event));
 
@@ -251,12 +251,12 @@ export class HierarchyView {
     }
 
     private rowOf(target: EventTarget | null): HTMLElement | undefined {
-        if (!(target instanceof Element)) return undefined;
+        if (!isDomElement(target)) return undefined;
         return target.closest<HTMLElement>(ENTITY_ROW_SELECTOR) ?? undefined;
     }
 
     private sceneGroupAt(target: EventTarget | null): SceneGroup | undefined {
-        if (!(target instanceof Element)) return undefined;
+        if (!isDomElement(target)) return undefined;
         const key = target.closest<HTMLElement>(SCENE_ROW_SELECTOR)?.dataset.scene;
         return key === undefined ? undefined : this.groups.find(group => group.key === key);
     }
@@ -268,7 +268,7 @@ export class HierarchyView {
 
     private onClick(event: MouseEvent): void {
         const target = event.target;
-        const sceneToggle = target instanceof Element ? target.closest<HTMLElement>("[data-scene-toggle]") : null;
+        const sceneToggle = isDomElement(target) ? target.closest<HTMLElement>("[data-scene-toggle]") : null;
         if (sceneToggle !== null) {
             const key = sceneToggle.dataset.sceneToggle ?? "";
             if (this.collapsedScenes.has(key)) this.collapsedScenes.delete(key);
@@ -276,7 +276,7 @@ export class HierarchyView {
             this.render();
             return;
         }
-        if (target instanceof Element && target.closest("[data-toggle]") !== null) {
+        if (isDomElement(target) && target.closest("[data-toggle]") !== null) {
             const entity = Number((target.closest("[data-toggle]") as HTMLElement).dataset.toggle) as Entity;
             if (this.collapsed.has(entity)) this.collapsed.delete(entity);
             else this.collapsed.add(entity);
@@ -351,7 +351,7 @@ export class HierarchyView {
     private targetFor(event: DragEvent): FoundTarget | undefined {
         const group = this.sceneGroupAt(event.target);
         if (group !== undefined) {
-            const indicator = event.target instanceof Element ? event.target.closest<HTMLElement>(SCENE_ROW_SELECTOR) : null;
+            const indicator = isDomElement(event.target) ? event.target.closest<HTMLElement>(SCENE_ROW_SELECTOR) : null;
             if (!group.loaded || group.sceneId === null || indicator === null) return undefined;
             return {target: UNPARENT_TARGET, sceneId: group.sceneId, indicator, className: SCENE_DROP_CLASS};
         }

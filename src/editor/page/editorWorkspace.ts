@@ -192,6 +192,7 @@ export class EditorWorkspace implements UndoContext {
     private lastError: {readonly text: string, readonly timeMs: number} | undefined;
     private schemasRequested = false;
     private entityPick: EntityPick | undefined;
+    private dialogDocumentOf: () => Document = () => this.document;
 
     public constructor(private currentSession: EditorSession, public readonly document: Document) {
         this.snapSteps = parseSnapSteps(readStorage(document.defaultView, SNAP_STEPS_STORAGE_KEY));
@@ -443,6 +444,14 @@ export class EditorWorkspace implements UndoContext {
         this.emit("state");
     }
 
+    public setDialogDocument(documentOf: () => Document): void {
+        this.dialogDocumentOf = documentOf;
+    }
+
+    public dialogDocument(): Document {
+        return this.dialogDocumentOf();
+    }
+
     public pickEntity(): Promise<Entity | undefined> {
         this.cancelEntityPick();
         return new Promise(resolve => {
@@ -515,7 +524,7 @@ export class EditorWorkspace implements UndoContext {
 
     public async askAndCreateDataAsset(typeName: string, folder: string = DATA_ASSETS_FOLDER): Promise<string | undefined> {
         const existing = allProjectPaths(await this.currentSession.files.list());
-        const path = await askForText(this.document, {
+        const path = await askForText(this.dialogDocument(), {
             title: `New ${typeName} data asset`,
             label: "File path in the project",
             initialValue: uniqueChildPath(existing, folder, typeName, DATA_ASSET_FILE_SUFFIX),
@@ -860,7 +869,7 @@ export class EditorWorkspace implements UndoContext {
         }
         const summary = this.summaries.get(entity);
         const existing = allProjectPaths(await this.files.list());
-        const chosen = await askForText(this.document, {
+        const chosen = await askForText(this.dialogDocument(), {
             title: `Extract ${typeName}.${key} to a ${format.title} file`,
             label: "File path in the project",
             initialValue: extractedImagePath(existing, safeFileStem(summary === undefined ? DEFAULT_ENTITY_NAME : entitySummaryLabel(summary)), format),

@@ -79,6 +79,10 @@ button.primary {
     background: var(--background);
 }
 
+.dock-root.floating-dock-root {
+    height: 100%;
+}
+
 .dock-root.resizing,
 .dock-root.dock-dragging {
     user-select: none;

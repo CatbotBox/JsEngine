@@ -3,7 +3,7 @@ import type {EditorComponentDetails, EditorView} from "../editorProtocol";
 import type {Command, CommandRegistry, CommandSpec, VoidCommandSpec} from "./commandRegistry";
 import type {DataAssetsView} from "./dataAssetsView";
 import type {DockPanelId} from "./dockLayout";
-import {DOCK_PANEL_TITLES} from "./editorPanels";
+import {canFloatPanel, DOCK_PANEL_TITLES, MAIN_WINDOW_PANEL_REASON} from "./editorPanels";
 import {EDITOR_TOOLS} from "./editorTools";
 import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
@@ -52,6 +52,14 @@ export interface EditorCommandHost {
     toggleMaximized(panel: DockPanelId): void;
 
     addPanelBeside(panel: DockPanelId, besidePanel: DockPanelId): void;
+
+    panelFloating(panel: DockPanelId): boolean;
+
+    panelHasOwnWindow(panel: DockPanelId): boolean;
+
+    floatPanel(panel: DockPanelId): void;
+
+    dockPanel(panel: DockPanelId): void;
 
     resetLayout(): void;
 
@@ -194,6 +202,8 @@ export interface WindowCommands {
     readonly closePanel: Command<DockPanelId>;
     readonly maximizePanel: Command<DockPanelId>;
     readonly addPanel: Command<DockPanelAddition>;
+    readonly floatPanel: Command<DockPanelId>;
+    readonly dockPanel: Command<DockPanelId>;
     readonly resetLayout: Command<void>;
 }
 
@@ -255,6 +265,8 @@ export const EXTRACT_ONE_ENTITY_REASON = "Select one entity; each inline image i
 export const INLINE_ONE_ENTITY_REASON = "Select one entity; a pattern file is inlined into one entity at a time";
 export const PANEL_CLOSED_REASON = "The panel is closed";
 export const PANEL_ALREADY_OPEN_REASON = "The panel is already open";
+export const PANEL_HAS_OWN_WINDOW_REASON = "The tab already has a window of its own";
+export const PANEL_DOCKED_REASON = "The tab is already in the main window";
 
 const SAVE_WHILE_PLAYING_REASON = "The scene can only be saved while editing; stop the game first";
 const UNDO_WHILE_PLAYING_REASON = "Undo is not available while the game runs; stop it first";
@@ -721,6 +733,19 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             labelFor: addition => DOCK_PANEL_TITLES[addition.panel],
             disabledReason: addition => host.panelOpen(addition.panel) ? PANEL_ALREADY_OPEN_REASON : openPanelProblem(addition.beside),
             run: addition => host.addPanelBeside(addition.panel, addition.beside),
+        }),
+        floatPanel: registry.addTargeted<DockPanelId>({
+            id: "window.floatTab", category: WINDOW_CATEGORY, label: "Float Tab",
+            disabledReason: panel => {
+                if (!canFloatPanel(panel)) return MAIN_WINDOW_PANEL_REASON;
+                return openPanelProblem(panel) ?? (host.panelHasOwnWindow(panel) ? PANEL_HAS_OWN_WINDOW_REASON : undefined);
+            },
+            run: panel => host.floatPanel(panel),
+        }),
+        dockPanel: registry.addTargeted<DockPanelId>({
+            id: "window.dockTab", category: WINDOW_CATEGORY, label: "Dock Tab",
+            disabledReason: panel => openPanelProblem(panel) ?? (host.panelFloating(panel) ? undefined : PANEL_DOCKED_REASON),
+            run: panel => host.dockPanel(panel),
         }),
         resetLayout: registry.add({id: "window.resetLayout", category: WINDOW_CATEGORY, label: "Reset Layout", run: () => host.resetLayout()}),
     };

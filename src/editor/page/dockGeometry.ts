@@ -1,5 +1,5 @@
 import {EDGE_AXES, isLeadingEdge, ROOT_EDGE_SHARE, STACK_EDGE_SHARE} from "./dockLayout";
-import type {DockAxis, DockEdge, DockNode, DockPanelId, DockTarget} from "./dockLayout";
+import type {DockAxis, DockBounds, DockEdge, DockNode, DockPanelId, DockTarget} from "./dockLayout";
 
 export interface DockRect {
     readonly left: number;
@@ -51,13 +51,49 @@ export interface DockDrop {
     readonly preview: DockRect;
 }
 
+export interface DockPoint {
+    readonly x: number;
+    readonly y: number;
+}
+
+export interface DockWindowMetrics {
+    readonly screenX: number;
+    readonly screenY: number;
+    readonly outerWidth: number;
+    readonly outerHeight: number;
+    readonly innerWidth: number;
+    readonly innerHeight: number;
+}
+
+export interface DockPointerSample {
+    readonly screenX: number;
+    readonly screenY: number;
+    readonly clientX: number;
+    readonly clientY: number;
+}
+
+export interface DockChrome {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+}
+
+export interface DockScreenWindow {
+    readonly id: string;
+    readonly rect: DockBounds;
+}
+
 export const SPLITTER_THICKNESS_PX = 5;
 export const ROOT_EDGE_BAND_PX = 16;
 export const EDGE_ZONE_SHARE = 0.3;
+export const MIN_FLOATING_WIDTH_PX = 240;
+export const MIN_FLOATING_HEIGHT_PX = 160;
 export const EMPTY_PLACEMENT: DockPlacement = {stacks: new Map(), splits: new Map(), splitters: []};
 
 const NO_SIZE: DockSize = {widthPx: 0, heightPx: 0};
 const HALF = 2;
+const CHROME_TOLERANCE_PX = 2;
 const WHOLE = 1;
 const NOT_FOUND = -1;
 const EDGES: readonly DockEdge[] = ["left", "right", "top", "bottom"];
@@ -207,4 +243,52 @@ export function dockDropAt(x: number, y: number, area: DockDropArea, excludedSta
     const extent = EDGE_AXES[edge] === "row" ? content.width : content.height;
     if (distances[edge] / extent >= EDGE_ZONE_SHARE) return centre;
     return {target: {stack: hit.stack, edge}, preview: edgeRect(hit.rect, edge, STACK_EDGE_SHARE)};
+}
+
+export function dockAreaContains(area: DockDropArea, x: number, y: number): boolean {
+    return contains(area.root, x, y);
+}
+
+export function estimatedChrome(metrics: DockWindowMetrics, scale: number): DockChrome {
+    const width = Math.max(0, metrics.outerWidth - metrics.innerWidth * scale);
+    const height = Math.max(0, metrics.outerHeight - metrics.innerHeight * scale);
+    const left = width / HALF;
+    return {left, top: Math.max(0, height - left), width, height};
+}
+
+export function measuredChrome(metrics: DockWindowMetrics, sample: DockPointerSample, scale: number): DockChrome {
+    const estimated = estimatedChrome(metrics, scale);
+    const left = sample.screenX - sample.clientX * scale - metrics.screenX;
+    const top = sample.screenY - sample.clientY * scale - metrics.screenY;
+    const plausible = left >= -CHROME_TOLERANCE_PX && left <= estimated.width + CHROME_TOLERANCE_PX && top >= -CHROME_TOLERANCE_PX && top <= estimated.height + CHROME_TOLERANCE_PX;
+    return plausible ? {left, top, width: estimated.width, height: estimated.height} : estimated;
+}
+
+export function contentOrigin(metrics: DockWindowMetrics, chrome: DockChrome): DockPoint {
+    return {x: metrics.screenX + chrome.left, y: metrics.screenY + chrome.top};
+}
+
+export function clientPointAt(screen: DockPoint, origin: DockPoint, scale: number): DockPoint {
+    return {x: (screen.x - origin.x) / scale, y: (screen.y - origin.y) / scale};
+}
+
+export function screenPointAt(client: DockPoint, origin: DockPoint, scale: number): DockPoint {
+    return {x: origin.x + client.x * scale, y: origin.y + client.y * scale};
+}
+
+export function outerRectOf(metrics: DockWindowMetrics): DockBounds {
+    return {x: metrics.screenX, y: metrics.screenY, width: metrics.outerWidth, height: metrics.outerHeight};
+}
+
+export function windowAtScreenPoint(point: DockPoint, windows: readonly DockScreenWindow[]): string | undefined {
+    return windows.find(window => point.x >= window.rect.x && point.x < window.rect.x + window.rect.width && point.y >= window.rect.y && point.y < window.rect.y + window.rect.height)?.id;
+}
+
+export function floatingWindowBounds(contentTopLeft: DockPoint, content: DockSize, scale: number, chrome: DockChrome): DockBounds {
+    return {
+        x: Math.round(contentTopLeft.x - chrome.left),
+        y: Math.round(contentTopLeft.y - chrome.top),
+        width: Math.round(Math.max(MIN_FLOATING_WIDTH_PX, content.widthPx) * scale + chrome.width),
+        height: Math.round(Math.max(MIN_FLOATING_HEIGHT_PX, content.heightPx) * scale + chrome.height),
+    };
 }

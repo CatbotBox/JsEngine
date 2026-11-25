@@ -6,6 +6,25 @@ export interface ButtonOptions {
 }
 
 const NON_TEXT_INPUT_TYPES: ReadonlySet<string> = new Set(["checkbox", "radio", "color", "range", "button", "submit", "reset", "file", "image"]);
+const VALUE_INPUT_TAGS: ReadonlySet<string> = new Set(["INPUT", "TEXTAREA"]);
+const ELEMENT_NODE = 1;
+const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+export function isDomNode(value: unknown): value is Node {
+    return typeof value === "object" && value !== null && typeof (value as {readonly nodeType?: unknown}).nodeType === "number";
+}
+
+export function isDomElement(value: unknown): value is Element {
+    return isDomNode(value) && value.nodeType === ELEMENT_NODE;
+}
+
+export function isHtmlElement(value: unknown): value is HTMLElement {
+    return isDomElement(value) && value.namespaceURI === XHTML_NAMESPACE;
+}
+
+export function isValueInputElement(value: unknown): value is HTMLInputElement | HTMLTextAreaElement {
+    return isHtmlElement(value) && VALUE_INPUT_TAGS.has(value.tagName.toUpperCase());
+}
 
 export function createElement<K extends keyof HTMLElementTagNameMap>(document: Document, tag: K, className = "", text?: string): HTMLElementTagNameMap[K] {
     const created = document.createElement(tag);

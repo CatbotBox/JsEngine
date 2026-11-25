@@ -1,4 +1,4 @@
-import {createButton, createElement} from "./dom";
+import {createButton, createElement, isHtmlElement} from "./dom";
 import {MODAL_ACTION_HOOK, MODAL_HOOK, MODAL_INPUT_HOOK} from "../project/editorUiHooks";
 import type {ModalAction, ModalKind} from "../project/editorUiHooks";
 
@@ -66,7 +66,7 @@ export function openModal(document: Document, title: string, kind: ModalKind, on
         buttons,
         close: () => {
             backdrop.remove();
-            if (previousFocus instanceof HTMLElement) previousFocus.focus();
+            if (isHtmlElement(previousFocus)) previousFocus.focus();
         },
     };
 }

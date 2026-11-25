@@ -1,16 +1,27 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {
+    clientPointAt,
+    contentOrigin,
     distributedLengths,
+    dockAreaContains,
     dockDropAt,
     EDGE_ZONE_SHARE,
+    estimatedChrome,
+    floatingWindowBounds,
+    measuredChrome,
+    MIN_FLOATING_HEIGHT_PX,
+    MIN_FLOATING_WIDTH_PX,
     minimumSizeOf,
+    outerRectOf,
     placeDock,
     resizedLengths,
     ROOT_EDGE_BAND_PX,
+    screenPointAt,
     sharesOf,
     SPLITTER_THICKNESS_PX,
+    windowAtScreenPoint,
 } from "./dockGeometry";
-import type {DockDropArea, DockMinimums, DockRect, DockSize} from "./dockGeometry";
+import type {DockDropArea, DockMinimums, DockRect, DockSize, DockWindowMetrics} from "./dockGeometry";
 import {dockLayoutOf, dockSplit, dockStack, ROOT_EDGE_SHARE, STACK_EDGE_SHARE} from "./dockLayout";
 import type {DockNode} from "./dockLayout";
 
@@ -166,5 +177,59 @@ describe("drop targets", () => {
     test("a stack whose strip fills it takes every drop as a new tab", () => {
         const squashed: DockDropArea = {root: area.root, stacks: [{stack: "only", rect: {left: 100, top: 100, width: 200, height: 20}, strip: {left: 100, top: 100, width: 200, height: 25}, tabs: []}]};
         expect(dockDropAt(150, 110, squashed)?.target).toEqual({stack: "only", index: 0});
+    });
+
+    test("the dock area holds every point of its root, target or not", () => {
+        expect(dockAreaContains(area, 402, 300)).toBe(true);
+        expect(dockAreaContains(area, 0, 0)).toBe(true);
+        expect(dockAreaContains(area, 1000, 300)).toBe(false);
+        expect(dockAreaContains(area, -1, 300)).toBe(false);
+    });
+});
+
+describe("screen coordinates across windows", () => {
+    const ZOOM = 1.25;
+    const framed: DockWindowMetrics = {screenX: 300, screenY: 250, outerWidth: 600, outerHeight: 400, innerWidth: 586 / ZOOM, innerHeight: 363 / ZOOM};
+
+    test("a window's chrome is estimated from its outer and inner sizes, with the borders split evenly", () => {
+        expect(estimatedChrome(framed, ZOOM)).toEqual({left: 7, top: 30, width: 14, height: 37});
+        expect(estimatedChrome({...framed, outerWidth: 100, innerWidth: 200, outerHeight: 50, innerHeight: 80}, 1)).toEqual({left: 0, top: 0, width: 0, height: 0});
+    });
+
+    test("a pointer event measures where the content starts exactly", () => {
+        const chrome = measuredChrome(framed, {screenX: 357, screenY: 320, clientX: 40, clientY: 32}, ZOOM);
+        expect([chrome.left, chrome.top]).toEqual([7, 30]);
+        expect(contentOrigin(framed, chrome)).toEqual({x: 307, y: 280});
+        expect(measuredChrome({...framed, outerWidth: 590}, {screenX: 352, screenY: 300, clientX: 40, clientY: 16}, ZOOM)).toEqual({left: 2, top: 30, width: 4, height: 37});
+    });
+
+    test("a pointer sample that cannot come from inside the window falls back to the estimate", () => {
+        expect(measuredChrome(framed, {screenX: 0, screenY: 0, clientX: 40, clientY: 32}, ZOOM)).toEqual(estimatedChrome(framed, ZOOM));
+        expect(measuredChrome(framed, {screenX: 900, screenY: 320, clientX: 40, clientY: 32}, ZOOM)).toEqual(estimatedChrome(framed, ZOOM));
+    });
+
+    test("screen points convert into a window's client space and back", () => {
+        const origin = {x: 307, y: 280};
+        expect(clientPointAt({x: 357, y: 320}, origin, ZOOM)).toEqual({x: 40, y: 32});
+        expect(screenPointAt({x: 40, y: 32}, origin, ZOOM)).toEqual({x: 357, y: 320});
+        expect(clientPointAt({x: 200, y: 100}, origin, ZOOM).x).toBeLessThan(0);
+    });
+
+    test("the first window in front-to-back order that holds the point wins", () => {
+        const windows = [
+            {id: "float-2", rect: outerRectOf(framed)},
+            {id: "main", rect: {x: 0, y: 0, width: 1600, height: 900}},
+        ];
+        expect(windowAtScreenPoint({x: 310, y: 260}, windows)).toBe("float-2");
+        expect(windowAtScreenPoint({x: 100, y: 100}, windows)).toBe("main");
+        expect(windowAtScreenPoint({x: 900, y: 650}, windows)).toBe("main");
+        expect(windowAtScreenPoint({x: 2000, y: 100}, windows)).toBeUndefined();
+        expect(windowAtScreenPoint({x: 1600, y: 100}, windows)).toBeUndefined();
+    });
+
+    test("a floating window is placed so its content starts at the given point, with the chrome around it", () => {
+        const chrome = {left: 7, top: 30, width: 14, height: 37};
+        expect(floatingWindowBounds({x: 500, y: 400}, {widthPx: 400, heightPx: 300}, ZOOM, chrome)).toEqual({x: 493, y: 370, width: 514, height: 412});
+        expect(floatingWindowBounds({x: 0, y: 0}, {widthPx: 10, heightPx: 10}, 1, chrome)).toEqual({x: -7, y: -30, width: MIN_FLOATING_WIDTH_PX + 14, height: MIN_FLOATING_HEIGHT_PX + 37});
     });
 });

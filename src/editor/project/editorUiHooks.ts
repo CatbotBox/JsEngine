@@ -12,6 +12,7 @@ export const DOCK_PANEL_HOOK = "data-dock-panel";
 export const DOCK_TAB_HOOK = "data-dock-tab";
 export const DOCK_TAB_CLOSE_HOOK = "data-dock-tab-close";
 export const DOCK_STACK_HOOK = "data-dock-stack";
+export const DOCK_WINDOW_HOOK = "data-dock-window";
 export const TOOLBAR_HOOK = "data-toolbar";
 export const SCENE_TAB_HOOK = "data-scene-tab";
 export const SCENE_TAB_CLOSE_HOOK = "data-scene-tab-close";
@@ -59,6 +60,7 @@ export type StartMessageAction = "createProject" | "retry" | "back";
 export type EditorViewportId = "scene" | "game";
 export type DockPanelId = "hierarchy" | "inspector" | "scene" | "game" | "project" | "console" | "history" | "settings" | "assets";
 
+export const MAIN_DOCK_WINDOW = "main";
 export const EDITOR_MENU_IDS: readonly EditorMenuId[] = ["file", "edit", "assets", "entity", "window", "help"];
 export const DOCK_PANEL_IDS: readonly DockPanelId[] = ["hierarchy", "inspector", "scene", "game", "project", "console", "history", "settings", "assets"];
 

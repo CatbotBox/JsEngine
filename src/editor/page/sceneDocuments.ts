@@ -478,7 +478,7 @@ export class SceneDocuments {
         const existing = allProjectPaths(listed);
         const folder = entry.path === null ? (prefab ? PREFABS_FOLDER : SCENES_FOLDER) : parentFolderOf(entry.path);
         const pathOf = (chosenFolder: string, name: string) => joinProjectPath(chosenFolder, `${name.trim()}${extension}`);
-        const chosen = await askForSavePath(this.workspace.document, {
+        const chosen = await askForSavePath(this.workspace.dialogDocument(), {
             title: prefab ? "Save prefab as" : "Save scene as",
             folders: projectFolderPaths(listed, [folder]),
             folder,
@@ -491,7 +491,7 @@ export class SceneDocuments {
         if (chosen === undefined) return undefined;
         const path = pathOf(chosen.folder, chosen.name);
         if (existing.has(path) && path !== entry.path) {
-            const replace = await askForChoice(this.workspace.document, {
+            const replace = await askForChoice(this.workspace.dialogDocument(), {
                 title: "Replace file",
                 message: `${path} already exists. Replace it?`,
                 choices: [{label: "Replace", value: true, primary: true}],
@@ -526,7 +526,7 @@ export class SceneDocuments {
     }
 
     private askToSave(message: string): Promise<SaveChoice | undefined> {
-        return askForChoice<SaveChoice>(this.workspace.document, {title: "Unsaved changes", message, choices: SAVE_CHOICES});
+        return askForChoice<SaveChoice>(this.workspace.dialogDocument(), {title: "Unsaved changes", message, choices: SAVE_CHOICES});
     }
 
     private requireEditing(action: string): boolean {
