@@ -29,7 +29,7 @@ experimental WebGPU (web and window only). The default is pixels on web and wind
 ## Features
 
 - **3D**: `.obj` meshes with `.mtl` materials, directional/point/ambient lighting, mip-mapped textures,
-  anti-aliasing, and a multithreaded rasterizer. Parsed meshes are cached beside the obj (`.obj.meshcache`).
+  anti-aliasing, and a multithreaded rasterizer. Parsed meshes are cached in a hidden `.meshcache/` folder beside the obj.
 - **Textures**: PNG, baseline JPEG and PPM, decoded in-engine with no dependencies.
 - **2D**: text and pixel sprites plus HUD elements, drawn alongside 3D.
 - **GPU**: custom WGSL surface shaders per entity (`GpuShaderLibrary`, `GpuSurfaceShader`).

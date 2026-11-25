@@ -3,8 +3,10 @@ import type {FileSource} from "../platform";
 
 export const MESH_CACHE_FORMAT_VERSION = 4;
 export const MESH_CACHE_EXTENSION = ".meshcache";
+export const MESH_CACHE_FOLDER = ".meshcache";
 
 const MAGIC = "JSENGINE_MESHCACHE";
+const PATH_SEPARATORS = /[\\/]/;
 const HEADER_LENGTH_OFFSET = MAGIC.length;
 const UINT32_BYTES = 4;
 const HEADER_OFFSET = HEADER_LENGTH_OFFSET + UINT32_BYTES;
@@ -40,7 +42,12 @@ interface CacheHeader extends GeometryHeader {
 }
 
 export function meshCachePathFor(objPath: string): string {
-    return objPath + MESH_CACHE_EXTENSION;
+    const nameStart = Math.max(objPath.lastIndexOf("/"), objPath.lastIndexOf("\\")) + 1;
+    return `${objPath.slice(0, nameStart)}${MESH_CACHE_FOLDER}/${objPath.slice(nameStart)}${MESH_CACHE_EXTENSION}`;
+}
+
+export function isInMeshCacheFolder(path: string): boolean {
+    return path.split(PATH_SEPARATORS).includes(MESH_CACHE_FOLDER);
 }
 
 export function readMeshCache(objPath: string, files: FileSource): CachedMesh | undefined {

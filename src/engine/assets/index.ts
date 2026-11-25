@@ -7,7 +7,7 @@ export type {JpegEncodeOptions} from "./image/jpeg";
 export {decodePpm, encodePpm, PPM_IMAGE_DECODER} from "./image/ppm";
 export {deflate, deflateStored} from "./image/deflate";
 export {inflate, inflateRaw} from "./image/inflate";
-export {MESH_CACHE_EXTENSION, MESH_CACHE_FORMAT_VERSION, meshCachePathFor, readMeshCache, writeMeshCache} from "./meshCache";
+export {isInMeshCacheFolder, MESH_CACHE_EXTENSION, MESH_CACHE_FOLDER, MESH_CACHE_FORMAT_VERSION, meshCachePathFor, readMeshCache, writeMeshCache} from "./meshCache";
 export type {CachedGeometry, CachedMesh} from "./meshCache";
 export {parseMtl} from "./mtlParser";
 export type {MaterialLibrary} from "./mtlParser";

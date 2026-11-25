@@ -6,6 +6,11 @@ export interface SyncFileSystem {
     existsSync(path: string): boolean;
     statSync(path: string): FileStat;
     writeFileSync(path: string, bytes: Uint8Array): void;
+    mkdirSync(path: string, options: {recursive: true}): unknown;
+}
+
+function parentFolderOf(path: string): string {
+    return path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")));
 }
 
 export function fsFileSource(fs: SyncFileSystem): FileSource {
@@ -25,6 +30,8 @@ export function fsFileSource(fs: SyncFileSystem): FileSource {
             return {size: stats.size, mtimeMs: stats.mtimeMs};
         },
         write(path: string, bytes: Uint8Array): void {
+            const folder = parentFolderOf(path);
+            if (folder.length > 0) fs.mkdirSync(folder, {recursive: true});
             fs.writeFileSync(path, bytes);
         },
     };

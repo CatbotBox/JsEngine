@@ -93,7 +93,7 @@ describe("buildProjectAssetManifest", () => {
                 ["small", prefabPathOf(SMALL), [`${PROJECT_DIRECTORY}/small.obj`]],
             ]);
             const [big, small] = manifest.prefabs;
-            expect(big.files).toEqual([`${PROJECT_DIRECTORY}/big.obj`, `${PROJECT_DIRECTORY}/big.obj.meshcache`, `${PROJECT_DIRECTORY}/shared.mtl`]);
+            expect(big.files).toEqual([`${PROJECT_DIRECTORY}/.meshcache/big.obj.meshcache`, `${PROJECT_DIRECTORY}/big.obj`, `${PROJECT_DIRECTORY}/shared.mtl`]);
             expect(fetchedBytes(manifest, big)).toBeGreaterThan(fetchedBytes(manifest, small));
             expect(Object.values(flagsOf(manifest)).includes("lazy")).toBe(false);
         });
@@ -103,10 +103,10 @@ describe("buildProjectAssetManifest", () => {
         withModels(root => {
             expect(flagsOf(buildProjectAssetManifest(root, PROJECT_DIRECTORY, disk, engineRegistry(), ON_DEMAND_BYTES))).toEqual({
                 [`${PROJECT_DIRECTORY}/big.obj`]: "stat-only",
-                [`${PROJECT_DIRECTORY}/big.obj.meshcache`]: "lazy",
+                [`${PROJECT_DIRECTORY}/.meshcache/big.obj.meshcache`]: "lazy",
                 [`${PROJECT_DIRECTORY}/shared.mtl`]: "up front",
                 [`${PROJECT_DIRECTORY}/small.obj`]: "stat-only",
-                [`${PROJECT_DIRECTORY}/small.obj.meshcache`]: "up front",
+                [`${PROJECT_DIRECTORY}/.meshcache/small.obj.meshcache`]: "up front",
             });
         });
     });
@@ -114,7 +114,7 @@ describe("buildProjectAssetManifest", () => {
     test("a mesh a scene names directly is fetched up front even when it is large", () => {
         withModels(root => {
             writeProjectFile(root, "scenes/main.scene.json", JSON.stringify(modelPrefab(BIG)));
-            expect(flagsOf(buildProjectAssetManifest(root, PROJECT_DIRECTORY, disk, engineRegistry(), ON_DEMAND_BYTES))[`${PROJECT_DIRECTORY}/big.obj.meshcache`]).toBe("up front");
+            expect(flagsOf(buildProjectAssetManifest(root, PROJECT_DIRECTORY, disk, engineRegistry(), ON_DEMAND_BYTES))[`${PROJECT_DIRECTORY}/.meshcache/big.obj.meshcache`]).toBe("up front");
         });
     });
 

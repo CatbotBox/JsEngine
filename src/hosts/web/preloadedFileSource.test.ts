@@ -127,7 +127,7 @@ describe("PreloadedFileSource", () => {
     });
 
     test("loaders read through it, and a mesh cache is not trusted without an mtime", async () => {
-        const files = new PreloadedFileSource({fetch: stubFetch({"models/tri.obj": TRIANGLE_OBJ, "models/tri.obj.meshcache": "junk"})});
+        const files = new PreloadedFileSource({fetch: stubFetch({"models/tri.obj": TRIANGLE_OBJ, "models/.meshcache/tri.obj.meshcache": "junk"})});
         await files.preload(["models/tri.obj", meshCachePathFor("models/tri.obj")]);
         expect(readMeshCache("models/tri.obj", files)).toBeUndefined();
         const mesh = Mesh.fromFile("./models/tri.obj", {files, inflate});

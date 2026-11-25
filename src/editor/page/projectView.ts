@@ -1,5 +1,6 @@
 import type {Entity} from "../../engine/core";
 import type {DecodedImage} from "../../engine/assets/image/decodedImage";
+import {isInMeshCacheFolder} from "../../engine/assets/meshCache";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {DATA_ASSET_FILE_SUFFIX} from "../../engine/scene/dataAssetDocument";
 import {SCENE_DOCUMENT_FORMAT, SCENE_DOCUMENT_VERSION, sceneDocumentText} from "../../engine/scene/sceneDocument";
@@ -234,7 +235,7 @@ export class ProjectView {
         }
         this.loading = true;
         try {
-            this.entries = await this.workspace.session.files.list();
+            this.entries = (await this.workspace.session.files.list()).filter(entry => !isInMeshCacheFolder(entry.path));
             this.root = buildProjectTree(this.entries);
             if (findFolder(this.root, this.shownFolder) === undefined) this.shownFolder = ROOT_FOLDER_PATH;
             const present = allProjectPaths(this.entries);

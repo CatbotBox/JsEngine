@@ -94,6 +94,7 @@ function createNodeFiles(): FileSource {
             return {size: stats.size, mtimeMs: stats.mtimeMs};
         },
         write(path: string, bytes: Uint8Array): void {
+            fs().mkdirSync((require("path") as NodePath).dirname(path), {recursive: true});
             fs().writeFileSync(path, bytes);
         },
     };
