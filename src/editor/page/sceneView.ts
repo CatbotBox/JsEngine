@@ -22,11 +22,13 @@ import {
 } from "./editorCameraMath";
 import type {CameraPose, Quaternion, Vector3} from "./editorCameraMath";
 import type {EditorTool} from "./editorTools";
+import {MAX_SELECTION_BOUNDS} from "./editorWorkspace";
 import type {EditorWorkspace} from "./editorWorkspace";
 import {numberOfWire} from "./fieldValueText";
 import {parentLookupOf, topmostEntities, UNPARENT_TARGET} from "./hierarchyDrop";
 import {LatestOnly} from "./latestOnly";
 import {isAssetKind} from "./projectFiles";
+import {SceneOverlayInfo} from "./sceneOverlayInfo";
 import {
     chainLinear,
     chainRotation,
@@ -49,7 +51,8 @@ import type {LocalTransform, Matrix3} from "./transformMath";
 import {snapsThisDrag} from "./snapSteps";
 import {SCENE_VIEW_CAMERAS_STORAGE_KEY, sceneViewCameraPose, sceneViewCameraText, storedSceneViewCamera, withoutSceneViewCamera, withSceneViewCamera} from "./sceneViewCameras";
 import type {SceneViewCamera} from "./sceneViewCameras";
-import {SCENE_CAMERA_HOOK, SCENE_FRAMES_HOOK, SCENE_VIEWS_HOOK, SCENE_VIEWS_SEPARATOR} from "../project/editorUiHooks";
+import {SCENE_BOUNDS_HOOK, SCENE_CAMERA_HOOK, SCENE_FRAMES_HOOK, SCENE_INFO_SOURCE_HOOK, SCENE_VIEWS_HOOK, SCENE_VIEWS_SEPARATOR} from "../project/editorUiHooks";
+import type {SceneInfoSource} from "../project/editorUiHooks";
 import type {SceneViewId} from "../project/dockPanelIds";
 import {HOLDS_NO_ENTITIES} from "./undoStack";
 import type {FieldChange} from "./undoStack";
@@ -82,7 +85,6 @@ export const HANDLE_HIT_PX = 7;
 export const HANDLE_END_SIZE_PX = 8;
 export const ROTATE_RING_RADIUS_PX = 64;
 export const MIN_SCALE_FACTOR = 0.01;
-export const VIEW_INFO_RETRY_MS = 1000;
 export const WHEEL_PIXELS_PER_NOTCH = 100;
 export const WHEEL_LINES_PER_NOTCH = 3;
 export const POINT_MARKER_RADIUS_PX = 5;
@@ -108,13 +110,14 @@ const LINE_WIDTH_PX = 2;
 const OUTLINE_WIDTH_PX = 1.5;
 const INTERACTIVE_CLASS = "interactive";
 const PICKING_CLASS = "picking-entity";
+const FRAME_INFO: SceneInfoSource = "frame";
+const REQUESTED_INFO: SceneInfoSource = "request";
 const LOCAL_POSITION = "LocalPosition";
 const LOCAL_ROTATION = "LocalRotation";
 const LOCAL_SCALE = "LocalScale";
 const VEC3_KEY = "xyz";
 const QUATERNION_KEY = "xyzw";
 const FLY_KEYS: ReadonlySet<string> = new Set(["w", "a", "s", "d", "q", "e"]);
-const MAX_PICK_ENTITIES = 64;
 
 export interface SceneViewOptions {
     readonly view: SceneViewId;
@@ -226,10 +229,8 @@ function wheelNotches(event: WheelEvent): number {
 let nextGestureId = 1;
 
 export class SceneView {
-    private info: EditorViewInfo | undefined;
-    private infoInFlight = false;
-    private infoFailedAtMs = Number.NEGATIVE_INFINITY;
-    private infoProblem: string | undefined;
+    private readonly overlayInfo = new SceneOverlayInfo();
+    private readonly stopSceneFrames: () => void;
     private camera: SceneViewCamera | undefined;
     private rememberedCamera: SceneViewCamera | undefined;
     private cameraStoreTimer: number | undefined;
@@ -272,12 +273,13 @@ export class SceneView {
         stage.addEventListener("drop", event => this.onDrop(event));
         workspace.on("sceneLoaded", () => {
             this.camera = undefined;
-            this.info = undefined;
+            this.overlayInfo.forget();
             this.pickCycle = undefined;
         });
         workspace.on("state", () => this.stateChanged());
         workspace.on("selection", () => this.showSelectionRotation());
         workspace.on("entityPick", () => this.overlay.classList.toggle(PICKING_CLASS, workspace.pickingEntity));
+        this.stopSceneFrames = workspace.onSceneFrame(options.view, info => this.frameShown(info));
     }
 
     public get selectionRotated(): boolean {
@@ -290,6 +292,7 @@ export class SceneView {
 
     public dispose(): void {
         this.disposed = true;
+        this.stopSceneFrames();
         this.cancelFrame();
         this.storageWindow()?.clearTimeout(this.cameraStoreTimer);
         this.cameraStoreTimer = undefined;
@@ -316,7 +319,7 @@ export class SceneView {
     }
 
     public resendCamera(): void {
-        this.info = undefined;
+        this.overlayInfo.forget();
         if (this.camera !== undefined) this.sendCamera();
     }
 
@@ -324,8 +327,8 @@ export class SceneView {
         const selection = this.workspace.selection;
         if (selection.length === 0 || !this.isActive()) return;
         try {
-            const info = await this.workspace.request({op: "getViewInfo", view: this.options.view, entities: selection.slice(0, MAX_PICK_ENTITIES)});
-            this.adoptInfo(info);
+            const info = await this.workspace.request({op: "getViewInfo", view: this.options.view, entities: selection.slice(0, MAX_SELECTION_BOUNDS)});
+            this.adoptView(info);
             const union = unionOfBounds(info.bounds);
             const camera = this.camera;
             if (union === undefined || camera === undefined) return;
@@ -335,6 +338,10 @@ export class SceneView {
         } catch (error) {
             this.workspace.reportError(error);
         }
+    }
+
+    private get info(): EditorViewInfo | undefined {
+        return this.overlayInfo.info;
     }
 
     private window(): (Window & typeof globalThis) | null {
@@ -383,28 +390,31 @@ export class SceneView {
         const active = this.isActive();
         this.overlay.classList.toggle(INTERACTIVE_CLASS, active);
         if (active) {
-            this.requestInfo(timeMs);
+            this.requestInfoWithoutFrames();
             this.fly(elapsedSeconds);
         }
         this.draw(active);
     };
 
-    private requestInfo(timeMs: number): void {
-        if (this.infoInFlight || timeMs - this.infoFailedAtMs < VIEW_INFO_RETRY_MS) return;
-        this.infoInFlight = true;
-        const selection = this.workspace.selection.slice(0, MAX_PICK_ENTITIES);
-        this.workspace.request({op: "getViewInfo", view: this.options.view, entities: selection}).then(info => {
-            if (this.disposed) return;
-            this.infoProblem = undefined;
-            this.adoptInfo(info);
-        }, error => {
-            this.infoFailedAtMs = performance.now();
-            this.infoProblem = errorText(error);
-        }).finally(() => this.infoInFlight = false);
+    private frameShown(info: EditorViewInfo): void {
+        if (this.disposed) return;
+        this.overlayInfo.frameShown(info, performance.now());
+        this.showInfoSource(FRAME_INFO, info);
+        this.adoptView(info);
     }
 
-    private adoptInfo(info: EditorViewInfo): void {
-        this.info = info;
+    private requestInfoWithoutFrames(): void {
+        const request = this.overlayInfo.startRequest(performance.now());
+        if (request === undefined) return;
+        const selection = this.workspace.selection.slice(0, MAX_SELECTION_BOUNDS);
+        this.workspace.request({op: "getViewInfo", view: this.options.view, entities: selection}).then(info => {
+            if (!this.overlayInfo.requestAnswered(request, info) || this.disposed) return;
+            this.showInfoSource(REQUESTED_INFO, info);
+            this.adoptView(info);
+        }, error => this.overlayInfo.requestFailed(request, errorText(error), performance.now()));
+    }
+
+    private adoptView(info: EditorViewInfo): void {
         this.showViewHooks(info);
         this.showSelectionRotation();
         const camera = this.camera;
@@ -420,6 +430,11 @@ export class SceneView {
             ? {kind: "2d", position: pose.position, rotation: pose.rotation}
             : {kind: "3d", orbit: orbitCameraFromPose(pose), fieldOfViewDegrees: info.camera.fieldOfViewDegrees ?? DEFAULT_FIELD_OF_VIEW_DEGREES};
         this.overlay.setAttribute(SCENE_CAMERA_HOOK, sceneViewCameraText(this.camera));
+    }
+
+    private showInfoSource(source: SceneInfoSource, info: EditorViewInfo): void {
+        this.overlay.setAttribute(SCENE_INFO_SOURCE_HOOK, source);
+        this.overlay.setAttribute(SCENE_BOUNDS_HOOK, String(info.bounds.length));
     }
 
     private showViewHooks(info: EditorViewInfo): void {
@@ -688,8 +703,8 @@ export class SceneView {
 
     private async currentInfo(): Promise<EditorViewInfo | undefined> {
         try {
-            const info = await this.workspace.request({op: "getViewInfo", view: this.options.view, entities: this.workspace.selection.slice(0, MAX_PICK_ENTITIES)});
-            if (!this.disposed) this.adoptInfo(info);
+            const info = await this.workspace.request({op: "getViewInfo", view: this.options.view, entities: this.workspace.selection.slice(0, MAX_SELECTION_BOUNDS)});
+            if (!this.disposed) this.adoptView(info);
             return info;
         } catch {
             return this.info;
@@ -934,7 +949,8 @@ export class SceneView {
         const info = this.info;
         const scale = info === undefined ? undefined : this.overlayScale(info);
         if (info === undefined || scale === undefined) {
-            if (this.infoProblem !== undefined) this.drawMessage(context, this.infoProblem);
+            const problem = this.overlayInfo.problem;
+            if (problem !== undefined) this.drawMessage(context, problem);
             this.handles = [];
             return;
         }

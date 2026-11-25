@@ -184,6 +184,11 @@ export interface GetViewInfoRequest {
     readonly entities?: readonly Entity[];
 }
 
+export interface SetSelectionRequest {
+    readonly op: "setSelection";
+    readonly entities: readonly Entity[];
+}
+
 export interface SaveSceneRequest {
     readonly op: "saveScene";
     readonly scene?: EditorSceneRef;
@@ -291,6 +296,7 @@ export type EditorRequest =
     | PickEntitiesRequest
     | SetEditorCameraRequest
     | GetViewInfoRequest
+    | SetSelectionRequest
     | SaveSceneRequest
     | LoadSceneRequest
     | UnloadSceneRequest
@@ -563,6 +569,10 @@ export interface EditorViewInfo {
     readonly presentedFrames?: number;
 }
 
+export interface SetSelectionResult {
+    readonly entities: readonly Entity[];
+}
+
 export interface SaveSceneResult {
     readonly sceneText: string;
     readonly report: SceneSaveReport;
@@ -630,6 +640,7 @@ export interface EditorResultByOp {
     readonly pickEntities: PickEntitiesResult;
     readonly setEditorCamera: EditorViewInfo;
     readonly getViewInfo: EditorViewInfo;
+    readonly setSelection: SetSelectionResult;
     readonly saveScene: SaveSceneResult;
     readonly loadScene: LoadSceneResult;
     readonly unloadScene: UnloadSceneResult;
@@ -831,6 +842,7 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
             return isEntityHandle(value.entity) && isNullableEntityHandle(value.parent) && isAbsentOr(value.siblingIndex, isWholeNumber);
         case "duplicateEntities":
         case "serializeEntities":
+        case "setSelection":
             return isEntityList(value.entities);
         case "instantiateEntities":
             return isString(value.documentText)

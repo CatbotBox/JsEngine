@@ -2,8 +2,11 @@ import {isCellFrame} from "../../backends/cells/cellFrame";
 import type {CellFrame} from "../../backends/cells/cellFrame";
 import {isPixelFrame} from "../../backends/pixels/pixelFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
+import {isBitmapFrame} from "../../hosts/web/bitmapFrame";
+import type {BitmapFrame} from "../../hosts/web/bitmapFrame";
 import {isSurfaceSize} from "../../hosts/web/worldWorkerProtocol";
 import type {SurfaceSize} from "../../hosts/web/worldWorkerProtocol";
+import type {EditorViewInfo} from "../editorProtocol";
 import {isSceneViewId} from "../project/dockPanelIds";
 import type {SceneViewId} from "../project/dockPanelIds";
 
@@ -19,7 +22,6 @@ interface SceneViewMessage {
 export interface SceneViewOpenMessage extends SceneViewMessage {
     readonly kind: "open";
     readonly surface: SurfaceSize;
-    readonly canvas?: OffscreenCanvas;
 }
 
 export interface SceneViewResizeMessage extends SceneViewMessage {
@@ -41,17 +43,19 @@ export type SceneViewPageMessage = SceneViewOpenMessage | SceneViewResizeMessage
 export interface SceneViewCellFrameMessage extends SceneViewMessage {
     readonly kind: "frame";
     readonly frame: CellFrame;
+    readonly info?: EditorViewInfo;
 }
 
 export interface SceneViewPixelFrameMessage extends SceneViewMessage {
     readonly kind: "pixelFrame";
     readonly frame: PixelFrame;
+    readonly info?: EditorViewInfo;
 }
 
-export interface SceneViewScreenUnitMessage extends SceneViewMessage {
-    readonly kind: "screenUnit";
-    readonly pixelsPerScreenUnitX: number;
-    readonly pixelsPerScreenUnitY: number;
+export interface SceneViewBitmapFrameMessage extends SceneViewMessage {
+    readonly kind: "bitmapFrame";
+    readonly frame: BitmapFrame;
+    readonly info?: EditorViewInfo;
 }
 
 export interface SceneViewErrorMessage extends SceneViewMessage {
@@ -59,7 +63,7 @@ export interface SceneViewErrorMessage extends SceneViewMessage {
     readonly message: string;
 }
 
-export type SceneViewWorkerMessage = SceneViewCellFrameMessage | SceneViewPixelFrameMessage | SceneViewScreenUnitMessage | SceneViewErrorMessage;
+export type SceneViewWorkerMessage = SceneViewCellFrameMessage | SceneViewPixelFrameMessage | SceneViewBitmapFrameMessage | SceneViewErrorMessage;
 
 function sceneViewFields(value: unknown): Record<string, unknown> | undefined {
     if (typeof value !== "object" || value === null) return undefined;
@@ -67,12 +71,12 @@ function sceneViewFields(value: unknown): Record<string, unknown> | undefined {
     return fields.type === SCENE_VIEW_MESSAGE_TYPE && isSceneViewId(fields.view) ? fields : undefined;
 }
 
-function isOffscreenCanvas(value: unknown): value is OffscreenCanvas {
-    return typeof OffscreenCanvas !== "undefined" && value instanceof OffscreenCanvas;
+function isViewInfoOf(view: unknown, value: unknown): value is EditorViewInfo {
+    return typeof value === "object" && value !== null && (value as {readonly view?: unknown}).view === view;
 }
 
-function isPositiveScale(value: unknown): value is number {
-    return typeof value === "number" && Number.isFinite(value) && value > 0;
+function isAbsentOrViewInfoOf(view: unknown, value: unknown): boolean {
+    return value === undefined || isViewInfoOf(view, value);
 }
 
 export function isSceneViewPageMessage(value: unknown): value is SceneViewPageMessage {
@@ -80,7 +84,6 @@ export function isSceneViewPageMessage(value: unknown): value is SceneViewPageMe
     if (fields === undefined) return false;
     switch (fields.kind) {
         case "open":
-            return isSurfaceSize(fields.surface) && (fields.canvas === undefined || isOffscreenCanvas(fields.canvas));
         case "resize":
             return isSurfaceSize(fields.surface);
         case "presented":
@@ -97,11 +100,11 @@ export function isSceneViewWorkerMessage(value: unknown): value is SceneViewWork
     if (fields === undefined) return false;
     switch (fields.kind) {
         case "frame":
-            return isCellFrame(fields.frame);
+            return isCellFrame(fields.frame) && isAbsentOrViewInfoOf(fields.view, fields.info);
         case "pixelFrame":
-            return isPixelFrame(fields.frame);
-        case "screenUnit":
-            return isPositiveScale(fields.pixelsPerScreenUnitX) && isPositiveScale(fields.pixelsPerScreenUnitY);
+            return isPixelFrame(fields.frame) && isAbsentOrViewInfoOf(fields.view, fields.info);
+        case "bitmapFrame":
+            return isBitmapFrame(fields.frame) && isAbsentOrViewInfoOf(fields.view, fields.info);
         case "error":
             return typeof fields.message === "string";
         default:

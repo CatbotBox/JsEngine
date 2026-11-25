@@ -13,7 +13,7 @@ import {BundleStackMapper} from "../page/stackMapper";
 import {gameTargetLabelText} from "./gameTargets";
 import {ProjectWorkerSession} from "./projectWorkerSession";
 import type {EditorViewports, SessionVisibility} from "./projectWorkerSession";
-import type {EditorViewport} from "./editorViewport";
+import type {EditorViewport, SceneViewport} from "./editorViewport";
 
 export const RELOAD_WORKER_START_TIMEOUT_MS = 120_000;
 
@@ -28,12 +28,14 @@ export interface WorkerBuild {
 }
 
 export type EditorViewportFactory = (gameTarget: GameTarget, container: HTMLElement, visible: boolean) => EditorViewport;
+export type SceneViewportFactory = (gameTarget: GameTarget, container: HTMLElement, visible: boolean) => SceneViewport;
 
 export interface ProjectRunnerOptions {
     readonly shell: EditorShell;
     readonly gameTarget: GameTarget;
     readonly gameContainer: HTMLElement;
     readonly viewportFor: EditorViewportFactory;
+    readonly sceneViewportFor: SceneViewportFactory;
     readonly onTargetChanged: (gameTarget: GameTarget) => void;
     readonly files: ProjectFileSystem;
     readonly project: EditorProject;
@@ -166,7 +168,7 @@ export class ProjectRunner {
     private sceneViewOpened(slot: SceneViewSlot, shown: boolean): void {
         if (this.sceneSlots.has(slot.view)) return;
         this.sceneSlots.set(slot.view, {slot, shown});
-        const viewport = this.options.viewportFor(this.gameTarget, slot.viewport, VISIBLE_VIEWPORT);
+        const viewport = this.options.sceneViewportFor(this.gameTarget, slot.viewport, VISIBLE_VIEWPORT);
         this.viewports.scenes.set(slot.view, viewport);
         this.current?.openSceneView(slot.view, viewport, shown);
     }
@@ -190,10 +192,10 @@ export class ProjectRunner {
     }
 
     private hiddenViewports(gameTarget: GameTarget): EditorViewports {
-        const viewportFor = this.options.viewportFor;
+        const {viewportFor, sceneViewportFor} = this.options;
         return {
             game: viewportFor(gameTarget, this.options.gameContainer, HIDDEN_VIEWPORT),
-            scenes: new Map([...this.sceneSlots].map(([view, state]) => [view, viewportFor(gameTarget, state.slot.viewport, HIDDEN_VIEWPORT)])),
+            scenes: new Map([...this.sceneSlots].map(([view, state]) => [view, sceneViewportFor(gameTarget, state.slot.viewport, HIDDEN_VIEWPORT)])),
         };
     }
 
@@ -207,7 +209,7 @@ export class ProjectRunner {
         for (const [view, state] of this.sceneSlots) {
             let viewport = viewports.scenes.get(view);
             if (viewport === undefined) {
-                viewport = this.options.viewportFor(viewports.game.gameTarget, state.slot.viewport, VISIBLE_VIEWPORT);
+                viewport = this.options.sceneViewportFor(viewports.game.gameTarget, state.slot.viewport, VISIBLE_VIEWPORT);
                 viewports.scenes.set(view, viewport);
             }
             session.openSceneView(view, viewport, state.shown);
@@ -234,7 +236,7 @@ export class ProjectRunner {
     }
 
     private editorSession(session: ProjectWorkerSession): EditorSession {
-        return {client: session.client, events: session.events, files: this.options.files, project: this.options.project, stackMapper: this.stackMapper};
+        return {client: session.client, events: session.events, files: this.options.files, project: this.options.project, stackMapper: this.stackMapper, sceneFrames: session.sceneFrames};
     }
 
     private notice(level: EditorNoticeLevel, text: string, stack?: string): void {

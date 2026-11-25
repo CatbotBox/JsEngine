@@ -24,7 +24,7 @@ import {readPrebuiltProjectCode} from "../project/prebuiltProjectCode";
 import type {BuildProjectResult, GenerateProjectReport, OpenProjectResult} from "../project/projectServerApi";
 import {SAMPLE_PROJECTS} from "../project/sampleProjects";
 import type {ServerEventStream} from "../project/serverEvents";
-import {editorViewportFor} from "./editorViewport";
+import {editorViewportFor, sceneViewportFor} from "./editorViewport";
 import {EditorExtensionLoader} from "./editorExtensionLoader";
 import {browseForFolder} from "./folderBrowser";
 import {addressKeepingBackendOverride, chooseGameTarget, gameTargetLabelText, gpuFallbackNotice, projectGameTarget, registerGameTargetCommand, webGpuAvailability} from "./gameTargets";
@@ -329,6 +329,7 @@ class EditorStart {
             gameTarget: initialTarget,
             gameContainer: shell.viewport,
             viewportFor: (gameTarget, container, visible) => editorViewportFor(gameTarget, container, location.search, visible, pixelScaleOf(gameTarget)),
+            sceneViewportFor: (gameTarget, container, visible) => sceneViewportFor(gameTarget, container, location.search, visible, pixelScaleOf(gameTarget)),
             onTargetChanged: gameTarget => {
                 shell.showTargetLabel(gameTargetLabelText(gameTarget));
                 showGameTarget(gameTarget);

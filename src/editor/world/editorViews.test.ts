@@ -183,6 +183,32 @@ describe("editor views", () => {
         ]);
     });
 
+    test("a scene view's frame info reports the editor's selection through the view's own camera, and never makes a camera or answers for a view it does not have", async () => {
+        const scene = {} as Scene2d;
+        const harnessed = editorWorld(world => scene2d(world, scene));
+        const {service} = harnessed;
+        expect(await framesPass(harnessed)).toBe(true);
+        expect((await ask(harnessed, {op: "setSelection", entities: [scene.small, scene.small, scene.large]})).entities).toEqual([scene.small, scene.large]);
+        await ask(harnessed, {op: "setEditorCamera", view: "scene", position: [3, 3, 0], rotation: [0, 0, 0, 1]});
+        const info = service.sceneFrameInfo("scene")!;
+        expect([info.view, info.camera.position, info.bounds.map(bounds => bounds.entity)]).toEqual(["scene", [3, 3, 0], [scene.small, scene.large]]);
+        await ask(harnessed, {op: "destroyEntity", entity: scene.small});
+        expect(service.sceneFrameInfo("scene")?.bounds.map(bounds => bounds.entity)).toEqual([scene.large]);
+        expect(service.sceneFrameInfo("scene:2")).toBeUndefined();
+
+        const drawnCamera = service.sceneCamera;
+        harnessed.world.entityManager.addComponent(scene.camera, new FieldOfView());
+        expect([service.sceneFrameInfo("scene")?.projection, service.sceneCamera]).toEqual(["orthographic", drawnCamera]);
+        expect((await ask(harnessed, {op: "getViewInfo", view: "scene"})).projection).toBe("perspective");
+        expect(service.sceneCamera === drawnCamera).toBe(false);
+        service.detach();
+        expect(service.sceneFrameInfo("scene")).toBeUndefined();
+
+        const empty = editorWorld();
+        expect(await framesPass(empty)).toBe(true);
+        expect([empty.service.sceneFrameInfo("scene"), empty.service.sceneCamera]).toEqual([undefined, undefined]);
+    });
+
     test("view info reports each entity's world pivot and world rotation through its parents", async () => {
         const scene = {} as Scene2d;
         const harnessed = editorWorld(world => scene2d(world, scene));

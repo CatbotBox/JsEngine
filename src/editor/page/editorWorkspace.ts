@@ -18,6 +18,7 @@ import type {
     EditorResourceDescription,
     EditorResultOf,
     EditorServiceState,
+    EditorViewInfo,
     InstantiateEntitiesRequest,
     ListEntitiesResult,
     SetFieldResult,
@@ -39,6 +40,7 @@ import {ENTITY_TEMPLATE_NAMES, entityTemplateProblem, entityTemplateRequest, has
 import type {EntityTemplate} from "./entityTemplates";
 import {entitySummaryLabel} from "./entityTree";
 import {isInlineAssetSummary} from "./fieldValueText";
+import {LatestOnly} from "./latestOnly";
 import {
     extractedImagePath,
     extractedImagePathProblem,
@@ -67,6 +69,7 @@ import {
 } from "./projectFiles";
 import type {ProjectFileKind} from "./projectFiles";
 import type {ProjectEntry} from "../project/projectFileSystem";
+import type {SceneViewId} from "../project/dockPanelIds";
 import {FileExistenceCommand, newFileSnapshot, ObservedProjectFiles} from "./fileUndo";
 import {GAME_VIEW_OPTIONS_STORAGE_KEY, gameViewOptionsText, isLayoutMaximized, parseGameViewOptions, withGameViewOption} from "./gameViewOptions";
 import type {GameViewOptionChoice, GameViewOptions} from "./gameViewOptions";
@@ -117,6 +120,7 @@ export interface WorkspaceStatus {
 
 export const DEFAULT_ENTITY_NAME = "Entity";
 export const ERROR_REPEAT_SUPPRESSION_MS = 5000;
+export const MAX_SELECTION_BOUNDS = 64;
 
 const NOTICE_CONSOLE_LEVELS: Readonly<Record<EditorNoticeLevel, EditorConsoleLevel>> = {info: "info", warn: "warn", error: "error"};
 const LOCAL_POSITION_TYPE_NAME = "LocalPosition";
@@ -134,6 +138,11 @@ const DATA_ASSETS_FOLDER = "assets";
 
 interface EntityPick {
     finish(entity: Entity | undefined): void;
+}
+
+interface SceneFrameListener {
+    readonly view: SceneViewId;
+    readonly listener: (info: EditorViewInfo) => void;
 }
 
 type ServiceStateUpdate = Pick<EditorServiceState, "mode" | "gameplayTicks"> & {readonly worldStoppedError?: string | null};
@@ -187,6 +196,8 @@ export class EditorWorkspace implements UndoContext {
     private queue: Promise<void> = Promise.resolve();
     private readonly listeners = new Map<WorkspaceTopic, Set<() => void>>();
     private readonly consoleListeners = new Set<(append: ConsoleAppend) => void>();
+    private readonly sceneFrameListeners = new Set<SceneFrameListener>();
+    private readonly selectionSender = new LatestOnly();
     private unsubscribeEvents: () => void = () => undefined;
     private lastError: {readonly text: string, readonly timeMs: number} | undefined;
     private schemasRequested = false;
@@ -281,6 +292,12 @@ export class EditorWorkspace implements UndoContext {
         return () => this.consoleListeners.delete(listener);
     }
 
+    public onSceneFrame(view: SceneViewId, listener: (info: EditorViewInfo) => void): () => void {
+        const entry: SceneFrameListener = {view, listener};
+        this.sceneFrameListeners.add(entry);
+        return () => this.sceneFrameListeners.delete(entry);
+    }
+
     public emit(topic: WorkspaceTopic): void {
         for (const listener of this.listeners.get(topic) ?? []) listener();
     }
@@ -345,6 +362,7 @@ export class EditorWorkspace implements UndoContext {
         this.subscribeEvents();
         this.refs.remap(remap);
         this.selection = this.selection.map(entity => remap.get(entity)).filter((entity): entity is Entity => entity !== undefined);
+        this.sendSelection();
         this.selectionDetails = {details: [], overrides: undefined, overridesRoot: undefined};
         this.worldStoppedError = null;
         this.emit("selection");
@@ -372,6 +390,7 @@ export class EditorWorkspace implements UndoContext {
         const unique = [...new Set(entities)];
         if (unique.length === this.selection.length && unique.every((entity, index) => entity === this.selection[index])) return;
         this.selection = unique;
+        this.sendSelection();
         if (unique.length > 0) this.inspectFile(undefined);
         this.emit("selection");
         this.refresh.selectionChanged();
@@ -1030,7 +1049,28 @@ export class EditorWorkspace implements UndoContext {
     }
 
     private subscribeEvents(): void {
-        this.unsubscribeEvents = this.currentSession.events.onEvent(event => this.receive(event));
+        const session = this.currentSession;
+        const stopEvents = session.events.onEvent(event => this.receive(event));
+        const stopSceneFrames = session.sceneFrames?.onFrameInfo(info => this.receiveSceneFrame(info));
+        this.unsubscribeEvents = () => {
+            stopEvents();
+            stopSceneFrames?.();
+        };
+    }
+
+    private receiveSceneFrame(info: EditorViewInfo): void {
+        for (const entry of [...this.sceneFrameListeners]) if (entry.view === info.view) entry.listener(info);
+    }
+
+    private sendSelection(): void {
+        const entities = this.selection.slice(0, MAX_SELECTION_BOUNDS);
+        this.selectionSender.run(async () => {
+            try {
+                await this.request({op: "setSelection", entities});
+            } catch (error) {
+                this.reportError(error);
+            }
+        });
     }
 
     private receive(event: EditorEvent): void {

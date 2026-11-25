@@ -1,5 +1,5 @@
 import type {Entity} from "../../engine/core";
-import type {EditorEvent} from "../editorProtocol";
+import type {EditorEvent, EditorViewInfo} from "../editorProtocol";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import type {SceneViewId} from "../project/dockPanelIds";
 import type {MenuEntry} from "./commandMenus";
@@ -16,12 +16,17 @@ export interface EditorEventSource {
     onEvent(listener: (event: EditorEvent) => void): () => void;
 }
 
+export interface SceneFrameSource {
+    onFrameInfo(listener: (info: EditorViewInfo) => void): () => void;
+}
+
 export interface EditorSession {
     readonly client: EditorClient;
     readonly events: EditorEventSource;
     readonly files: ProjectFileSystem;
     readonly project: EditorProject;
     readonly stackMapper?: StackMapper;
+    readonly sceneFrames?: SceneFrameSource;
 }
 
 export type EntityRemap = ReadonlyMap<Entity, Entity>;

@@ -41,8 +41,10 @@ import {
     PREFAB_BREADCRUMB_HOOK,
     PROJECT_ITEM_HOOK,
     RECENT_PROJECT_HOOK,
+    SCENE_BOUNDS_HOOK,
     SCENE_CAMERA_HOOK,
     SCENE_FRAMES_HOOK,
+    SCENE_INFO_SOURCE_HOOK,
     SCENE_OVERLAY_HOOK,
     SCENE_VIEWS_HOOK,
     SCENE_TAB_CLOSE_HOOK,
@@ -53,7 +55,7 @@ import {
     MAIN_DOCK_WINDOW,
     TOOLBAR_HOOK,
 } from "../project/editorUiHooks";
-import type {EditorMenuId, ModalKind} from "../project/editorUiHooks";
+import type {EditorMenuId, ModalKind, SceneInfoSource} from "../project/editorUiHooks";
 import {FIRST_SCENE_VIEW} from "../project/dockPanelIds";
 import type {DockPanelId, SceneViewId} from "../project/dockPanelIds";
 import {DOCK_LAYOUT_STORAGE_KEY} from "../project/dockWindows";
@@ -737,10 +739,14 @@ async function pageClockMs(ui: SmokeUi): Promise<number> {
     return await ui.read<number>(PAGE_CLOCK_SCRIPT);
 }
 
-async function checkMinimizedSceneView(ui: SmokeUi, floatingUi: SmokeUi, floating: SmokeWindowPage): Promise<string> {
+async function showOffscreen(page: SmokeUi, floating: SmokeWindowPage, description: string): Promise<void> {
     floating.setBounds(OFFSCREEN_FLOATING_BOUNDS);
     floating.showInactive();
-    await waitForVisibility(floatingUi, VISIBLE_DOCUMENT, "the floating window shown off-screen to have a visible document");
+    await waitForVisibility(page, VISIBLE_DOCUMENT, `${description} shown off-screen to have a visible document`);
+}
+
+async function checkMinimizedSceneView(ui: SmokeUi, floatingUi: SmokeUi, floating: SmokeWindowPage): Promise<string> {
+    await showOffscreen(floatingUi, floating, "the floating window");
     const first = await waitForSceneFrames(floatingUi, NO_FRAMES, "the floating Scene view to report presented frames");
     const firstAt = await pageClockMs(ui);
     await ui.read<boolean>(pauseScript(FRAME_RATE_SAMPLE_MS));
@@ -794,6 +800,7 @@ async function floatingViewportsFlowSteps(ui: SmokeUi, host: SmokeHost, note: (t
     await floatingUi.drag(dockTab("scene"), `${FLOATING_DOCK} ${DOCK_STACK}`, "dragging the Scene tab to the right edge of its stack", SPLIT_DROP_POINT);
     await floatingUi.waitFor("the Scene and Game views to split the floating window", async () => !await inSameStack(floatingUi, "scene", "game"));
     await floatingUi.waitForVisible(`${FLOATING_DOCK} ${dockPanel("game")}`, "the Game view beside the Scene view");
+    await showOffscreen(floatingUi, floating, "the floating Scene and Game window");
     const created = await createPickedEntity(ui, host, {page: floatingUi, overlay: FLOATING_SCENE_OVERLAY, view: SCENE_VIEW_ID});
     const scene = sceneDraws ? await waitForViewportDrawing(floatingUi, host, SCENE_VIEW_ID, true, "the Scene view to draw in the floating window") : undefined;
     const game = gameDraws ? await waitForViewportDrawing(floatingUi, host, GAME_VIEW_ID, true, "the Game view to draw beside the Scene view") : undefined;
@@ -955,6 +962,80 @@ const multipleSceneViewsFlow: SmokeFlow = {
         try {
             await multipleSceneViewsFlowSteps(ui, host, note);
         } finally {
+            await runFromMenu(ui, "window", COMMANDS.resetLayout).catch(() => undefined);
+        }
+    },
+};
+
+const OVERLAY_TEMPLATES: readonly TemplateCommand[] = [SPRITE_TEMPLATE, ROTATED_TEMPLATE];
+const FRAME_INFO_SOURCE: SceneInfoSource = "frame";
+const ONE_SELECTED_BOUNDS = "1";
+const PLAYING_OVERLAY_FRAMES = 10;
+const FLOATING_SCENE_OVERLAY_SCRIPT = `(() => {
+    const overlay = document.querySelector(${JSON.stringify(FLOATING_SCENE_OVERLAY)});
+    if (overlay === null) return null;
+    const frames = overlay.getAttribute(${JSON.stringify(SCENE_FRAMES_HOOK)});
+    return {source: overlay.getAttribute(${JSON.stringify(SCENE_INFO_SOURCE_HOOK)}), bounds: overlay.getAttribute(${JSON.stringify(SCENE_BOUNDS_HOOK)}), frames: frames === null ? null : Number(frames)};
+})()`;
+
+interface SceneOverlayReport {
+    readonly source: string | null;
+    readonly bounds: string | null;
+    readonly frames: number | null;
+}
+
+function overlayReportText(report: SceneOverlayReport | null): string {
+    return report === null ? "no Scene overlay" : `info from a ${String(report.source)} with ${String(report.bounds)} bounds, frame ${String(report.frames)}`;
+}
+
+async function waitForFrameCarriedSelection(page: SmokeUi, after: number, description: string): Promise<SceneOverlayReport> {
+    const seen: {report: SceneOverlayReport | null} = {report: null};
+    await page.waitFor(description, async () => {
+        const report = seen.report = await page.read<SceneOverlayReport | null>(FLOATING_SCENE_OVERLAY_SCRIPT);
+        return report !== null && report.source === FRAME_INFO_SOURCE && report.bounds === ONE_SELECTED_BOUNDS && report.frames !== null && report.frames > after;
+    }).catch(error => page.fail(`${error instanceof Error ? error.message : String(error)}; saw ${overlayReportText(seen.report)}`));
+    return seen.report!;
+}
+
+async function createSelectedEntity(ui: SmokeUi): Promise<CreatedEntity> {
+    for (const template of OVERLAY_TEMPLATES) {
+        const rowsBefore = await ui.visibleCount(ENTITY_ROWS);
+        if (!await menuCommandEnabled(ui, "entity", template.command)) {
+            await closeMenus(ui);
+            continue;
+        }
+        await createFromTemplate(ui, template, rowsBefore);
+        return {template, rowsBefore};
+    }
+    return ui.fail("this game offers no entity template to select for the Scene overlay");
+}
+
+async function sceneOverlayFramesFlowSteps(ui: SmokeUi, host: SmokeHost, note: (text: string) => void): Promise<void> {
+    await noFloatingWindows(ui, host, "every floating window to have closed before the Scene view floats");
+    await floatFromTabMenu(ui, FIRST_SCENE_VIEW);
+    const floating = await onlyFloatingWindow(ui, host, "the Scene view's window");
+    const floatingUi = ui.onPage(floating);
+    await showOffscreen(floatingUi, floating, "the floating Scene view's window");
+    const created = await createSelectedEntity(ui);
+    try {
+        const editing = await waitForFrameCarriedSelection(floatingUi, NO_FRAMES, `the Scene overlay to take the selected ${created.template.name}'s bounds from the frames the Scene view presents`);
+        await setPlaying(ui, true);
+        const playing = await waitForFrameCarriedSelection(floatingUi, (editing.frames ?? NO_FRAMES) + PLAYING_OVERLAY_FRAMES, "the Scene overlay to keep taking the selection's bounds from each presented frame while the game plays");
+        note(`editing, the overlay showed ${overlayReportText(editing)}; playing, ${overlayReportText(playing)}`);
+    } finally {
+        await setPlaying(ui, false);
+        await undoCreationFromMenu(ui, created.rowsBefore);
+    }
+}
+
+const sceneOverlayFramesFlow: SmokeFlow = {
+    name: "sceneOverlayFrames",
+    budgetMs: PROJECT_BUDGET_MS,
+    async run({ui, host, note}) {
+        try {
+            await sceneOverlayFramesFlowSteps(ui, host, note);
+        } finally {
+            await setPlaying(ui, false).catch(() => undefined);
             await runFromMenu(ui, "window", COMMANDS.resetLayout).catch(() => undefined);
         }
     },
@@ -1398,6 +1479,7 @@ export function editorSmokeFlows(): SmokeFlow[] {
         floatingWindowFlow,
         floatingViewportsFlow,
         multipleSceneViewsFlow,
+        sceneOverlayFramesFlow,
         pivotCenterFlow,
         snapFlow,
         entityTemplatesFlow,

@@ -46,6 +46,7 @@ import type {
     EditorResult,
     EditorSceneRef,
     EditorServiceState,
+    EditorViewInfo,
     EditorWorldMessage,
     ExportSnapshotResult,
     ImportSnapshotRequest,
@@ -212,6 +213,10 @@ export class EditorWorldService {
 
     public sceneCameraOf(view: SceneViewId): Entity | undefined {
         return this.views.editorCameraOf(view);
+    }
+
+    public sceneFrameInfo(view: SceneViewId): EditorViewInfo | undefined {
+        return this.attached ? this.views.frameInfo(view) : undefined;
     }
 
     public get sceneCamera(): Entity | undefined {
@@ -430,6 +435,8 @@ export class EditorWorldService {
                 return this.views.viewInfo(request.view, NO_ENTITIES);
             case "getViewInfo":
                 return this.views.viewInfo(request.view, request.entities ?? NO_ENTITIES);
+            case "setSelection":
+                return {entities: this.views.setSelection(request.entities)};
             case "saveScene":
                 return this.saveScene(request.scene);
             case "loadScene":

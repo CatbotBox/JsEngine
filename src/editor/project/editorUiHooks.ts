@@ -49,6 +49,8 @@ export const SCENE_FRAMES_HOOK = "data-scene-frames";
 export const SCENE_CAMERA_HOOK = "data-scene-camera";
 export const SCENE_VIEWS_HOOK = "data-scene-views";
 export const SCENE_VIEWS_SEPARATOR = " ";
+export const SCENE_INFO_SOURCE_HOOK = "data-scene-info-source";
+export const SCENE_BOUNDS_HOOK = "data-scene-bounds";
 
 export type EditorMenuId = "file" | "edit" | "assets" | "entity" | "window" | "help";
 export type DropdownId = "snapSteps" | "gameTarget" | "gameViewAspect";
@@ -58,6 +60,7 @@ export type ConsoleAction = "clear" | "collapse";
 export type BuildWindowAction = "build" | "package" | "buildAll" | "close";
 export type BuildTargetState = "idle" | "running" | "ok" | "failing";
 export type HistoryStepState = "done" | "current" | "undone";
+export type SceneInfoSource = "frame" | "request";
 export type DataAssetsAction = "save" | "revert" | "refresh";
 export type FieldInputKind = "number" | "textLines";
 export type StartAction = "open" | "sample";

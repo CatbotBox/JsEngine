@@ -9,7 +9,7 @@ import {PixelPresenterResource, PixelRenderTargets} from "../../backends/pixels/
 import type {PixelRenderTarget} from "../../backends/pixels/pixelPresenterResource";
 import {getEntityCreationOrder} from "../../engine/core/ownership";
 import {Vec, Vec4} from "../../engine/math/types/vec";
-import type {ReadonlyVec3} from "../../engine/math/types/vec";
+import type {ReadonlyVec16, ReadonlyVec3} from "../../engine/math/types/vec";
 import {MAT4_TRANSLATION_Z} from "../../engine/math/mat4Layout";
 import {LocalToWorld} from "../../engine/translation/localToWorld";
 import {Camera} from "../../engine/rendering/camera";
@@ -45,6 +45,15 @@ interface PickCandidate {
 interface ScreenExtent {
     readonly width: number;
     readonly height: number;
+}
+
+type MatrixSource = (world: World, entity: Entity) => ReadonlyVec16;
+
+const NOTHING_SELECTED: readonly Entity[] = [];
+
+function drawnMatrixOf(world: World, entity: Entity): ReadonlyVec16 {
+    const localToWorld = world.entityManager.isEnabled(entity) ? untrackedComponentOf<LocalToWorld>(world, entity, ComponentType.of(LocalToWorld)) : undefined;
+    return localToWorld === undefined ? worldMatrixOf(world, entity) : localToWorld.matrix;
 }
 
 export interface SceneViewFrames {
@@ -87,6 +96,7 @@ function noSuchSceneView(view: SceneViewId): Error {
 export class EditorViews {
     private readonly slots = new Map<SceneViewId, SceneViewSlot>([[FIRST_SCENE_VIEW, emptySlot()]]);
     private sceneTargets: CellRenderTargets | PixelRenderTargets | undefined;
+    private selection: readonly Entity[] = NOTHING_SELECTED;
 
     public constructor(private readonly world: World) {
     }
@@ -136,6 +146,12 @@ export class EditorViews {
         for (const slot of this.slots.values()) this.destroyCamera(slot);
         this.slots.clear();
         this.slots.set(FIRST_SCENE_VIEW, emptySlot());
+        this.selection = NOTHING_SELECTED;
+    }
+
+    public setSelection(entities: readonly Entity[]): readonly Entity[] {
+        this.selection = [...new Set(entities)];
+        return this.selection;
     }
 
     public setEditorCamera(view: SceneViewId, position: EditorVec3, rotation: EditorQuaternion, fieldOfViewDegrees: number | undefined): void {
@@ -190,8 +206,17 @@ export class EditorViews {
     }
 
     public viewInfo(view: EditorView, entities: readonly Entity[]): EditorViewInfo {
-        const camera = this.cameraFor(view);
-        const cameraMatrix = mat4FromVec16(worldMatrixOf(this.world, camera));
+        return this.viewInfoThrough(view, this.cameraFor(view), entities, worldMatrixOf);
+    }
+
+    public frameInfo(view: SceneViewId): EditorViewInfo | undefined {
+        const slot = this.slots.get(view);
+        const camera = slot === undefined ? undefined : this.liveCamera(slot);
+        return camera === undefined ? undefined : this.viewInfoThrough(view, camera, this.selection, drawnMatrixOf);
+    }
+
+    private viewInfoThrough(view: EditorView, camera: Entity, entities: readonly Entity[], matrixOf: MatrixSource): EditorViewInfo {
+        const cameraMatrix = mat4FromVec16(matrixOf(this.world, camera));
         const screen = this.screenExtent(camera);
         const fieldOfView = untrackedComponentOf<FieldOfView>(this.world, camera, ComponentType.of(FieldOfView));
         const pose: EditorCameraPose = fieldOfView === undefined
@@ -207,7 +232,7 @@ export class EditorViews {
             screenWidth: screen.width,
             screenHeight: screen.height,
             camera: pose,
-            bounds: this.boundsOf(entities),
+            bounds: this.boundsOf(entities, matrixOf),
             sceneViews: this.sceneViews,
             ...(presenter === undefined ? {} : {presentedFrames: presenter.presentedFrames()}),
         };
@@ -259,14 +284,14 @@ export class EditorViews {
         }
     }
 
-    private boundsOf(entities: readonly Entity[]): EditorEntityBounds[] {
+    private boundsOf(entities: readonly Entity[], matrixOf: MatrixSource): EditorEntityBounds[] {
         const boundsType = ComponentType.of(WorldSpaceRenderBounds);
         const result: EditorEntityBounds[] = [];
         const seen = new Set<Entity>();
         for (const entity of entities) {
             if (seen.has(entity) || !isSceneEntityHandle(this.world, entity)) continue;
             seen.add(entity);
-            const worldMatrix = mat4FromVec16(worldMatrixOf(this.world, entity));
+            const worldMatrix = mat4FromVec16(matrixOf(this.world, entity));
             const pivot = translationOf(worldMatrix);
             const rotation = quaternionOf(worldMatrix);
             const bounds = untrackedComponentOf<WorldSpaceRenderBounds>(this.world, entity, boundsType);
