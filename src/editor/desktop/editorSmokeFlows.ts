@@ -28,6 +28,7 @@ import {
     DROPDOWN_HOOK,
     EDITOR_MENU_IDS,
     EDITOR_TITLE_HOOK,
+    EDITOR_VIEWPORT_HOOK,
     FIELD_INPUT_HOOK,
     HIERARCHY_ENTITY_HOOK,
     HISTORY_STATE_HOOK,
@@ -40,6 +41,10 @@ import {
     PREFAB_BREADCRUMB_HOOK,
     PROJECT_ITEM_HOOK,
     RECENT_PROJECT_HOOK,
+    SCENE_CAMERA_HOOK,
+    SCENE_FRAMES_HOOK,
+    SCENE_OVERLAY_HOOK,
+    SCENE_VIEWS_HOOK,
     SCENE_TAB_CLOSE_HOOK,
     SCENE_TAB_HOOK,
     START_ACTION_HOOK,
@@ -48,13 +53,16 @@ import {
     MAIN_DOCK_WINDOW,
     TOOLBAR_HOOK,
 } from "../project/editorUiHooks";
-import type {DockPanelId, EditorMenuId, ModalKind} from "../project/editorUiHooks";
+import type {EditorMenuId, ModalKind} from "../project/editorUiHooks";
+import {FIRST_SCENE_VIEW} from "../project/dockPanelIds";
+import type {DockPanelId, SceneViewId} from "../project/dockPanelIds";
 import {DOCK_LAYOUT_STORAGE_KEY} from "../project/dockWindows";
 import type {ScreenBounds} from "../project/dockWindows";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
-import type {SmokeFlow, SmokeHost, SmokeWindowPage} from "./smokeFlows";
+import type {SmokeFlow, SmokeHost, SmokeViewport, SmokeWindowPage} from "./smokeFlows";
+import type {SmokeModifier} from "./smokeInput";
 import {SmokeFailure} from "./smokeUi";
-import type {SmokeUi} from "./smokeUi";
+import type {SmokeElementPoint, SmokeUi} from "./smokeUi";
 
 interface TemplateCommand {
     readonly command: string;
@@ -64,6 +72,30 @@ interface TemplateCommand {
 interface SmokeProject {
     readonly folder: string;
     readonly name: string;
+}
+
+interface CreatedEntity {
+    readonly template: TemplateCommand;
+    readonly rowsBefore: number;
+}
+
+interface ScenePickView {
+    readonly page: SmokeUi;
+    readonly overlay: string;
+    readonly view: SceneViewId;
+}
+
+interface ViewportFit {
+    readonly viewportWidth: number;
+    readonly viewportHeight: number;
+    readonly canvasWidth: number;
+    readonly canvasHeight: number;
+}
+
+interface GameInputProbe {
+    readonly keyboard: boolean;
+    readonly pointer: boolean;
+    readonly commandChords: number;
 }
 
 const POPUP = hookSelector(POPUP_MENU_HOOK);
@@ -139,6 +171,10 @@ const COMMANDS = {
     pivotCenter: "tools.togglePivotCenter",
     localGlobal: "tools.toggleLocalGlobal",
     moveTool: "tools.move",
+    rotateTool: "tools.rotate",
+    frameSelected: "edit.frameSelected",
+    handTool: "tools.hand",
+    addTab: "window.addTab",
     snap: "tools.toggleSnap",
     snapStep: "tools.snapStep",
     play: "play.play",
@@ -200,6 +236,73 @@ const SAVED_FLOATING_BOUNDS_SCRIPT = `(() => {
     }
 })()`;
 const INSPECTOR_TEXT_LINES_FIELD = `${hookSelector(DOCK_PANEL_HOOK, "inspector")} ${hookSelector(FIELD_INPUT_HOOK, "textLines")}`;
+const GAME_VIEWPORT = hookSelector(EDITOR_VIEWPORT_HOOK, "game");
+const FLOATING_GAME_VIEWPORT = `${FLOATING_DOCK} ${GAME_VIEWPORT}`;
+const FLOATING_GAME_CANVAS = `${FLOATING_GAME_VIEWPORT} canvas`;
+const FLOATING_SCENE_OVERLAY = `${FLOATING_DOCK} ${hookSelector(SCENE_OVERLAY_HOOK)}`;
+const SCENE_VIEW_ID = "scene";
+const GAME_VIEW_ID = "game";
+const ADD_TAB_SUBMENU = "addTab";
+const SPLIT_DROP_POINT: SmokeElementPoint = {x: 0.9, y: 0.6};
+const MIN_VIEWPORT_DRAWN_PIXELS = 1;
+const VIEWPORT_DRAW_TIMEOUT_MS = 20_000;
+const BASELINE_DRAW_TIMEOUT_MS = 5_000;
+const PICK_TIMEOUT_MS = 3_000;
+const SCENE_CAMERA_SETTLE_MS = 500;
+const GAME_KEY_CHORD = "ArrowRight";
+const TOGGLE_MODIFIERS: readonly SmokeModifier[] = ["control"];
+const INPUT_PROBE_PROPERTY = "__smokeGameInput";
+const INSTALL_INPUT_PROBE_SCRIPT = `(() => {
+    const probe = window.${INPUT_PROBE_PROPERTY} = [];
+    for (const type of ["keydown", "pointerdown"]) window.addEventListener(type, event => probe.push(event), {capture: true});
+    return true;
+})()`;
+const INPUT_PROBE_SCRIPT = `(() => {
+    const probe = window.${INPUT_PROBE_PROPERTY} ?? [];
+    const viewport = document.querySelector(${JSON.stringify(GAME_VIEWPORT)});
+    const reached = type => probe.some(event => event.type === type && event.defaultPrevented && viewport !== null && viewport.contains(event.target));
+    return {keyboard: reached("keydown"), pointer: reached("pointerdown"), commandChords: probe.filter(event => event.type === "keydown" && event.ctrlKey).length};
+})()`;
+function viewportFitScript(id: string): string {
+    return `(() => {
+    const viewport = document.querySelector(${JSON.stringify(hookSelector(EDITOR_VIEWPORT_HOOK, id))});
+    const canvas = viewport === null ? undefined : [...viewport.querySelectorAll("canvas")].find(canvas => canvas.style.display !== "none");
+    if (canvas === undefined) return null;
+    const outer = viewport.getBoundingClientRect();
+    const inner = canvas.getBoundingClientRect();
+    return {viewportWidth: outer.width, viewportHeight: outer.height, canvasWidth: inner.width, canvasHeight: inner.height};
+})()`;
+}
+
+const LANDSCAPE_FLOATING_BOUNDS: ScreenBounds = {x: 40, y: 40, width: 1280, height: 720};
+const MIN_CANVAS_FILL = 0.9;
+const CANVAS_FIT_TOLERANCE_PX = 1;
+const PICKABLE_TEMPLATES: readonly TemplateCommand[] = [SPRITE_TEMPLATE, {command: "entity.createMesh", name: "Mesh"}];
+const ORTHOGRAPHIC_PICKABLE_TEMPLATES: readonly TemplateCommand[] = [SPRITE_TEMPLATE];
+const ORTHOGRAPHIC_CAMERA_PREFIX = "2d ";
+const SETTLE_SCRIPT = pauseScript(SCENE_CAMERA_SETTLE_MS);
+const OFFSCREEN_FLOATING_BOUNDS: ScreenBounds = {x: -20_000, y: -20_000, width: 640, height: 400};
+const FLOATING_SCENE_FRAMES_SCRIPT = `(() => {
+    const frames = document.querySelector(${JSON.stringify(FLOATING_SCENE_OVERLAY)})?.getAttribute(${JSON.stringify(SCENE_FRAMES_HOOK)});
+    return frames === null || frames === undefined ? null : Number(frames);
+})()`;
+const VISIBILITY_STATE_SCRIPT = "document.visibilityState";
+const PAGE_CLOCK_SCRIPT = "performance.now()";
+const HIDDEN_DOCUMENT: DocumentVisibilityState = "hidden";
+const VISIBLE_DOCUMENT: DocumentVisibilityState = "visible";
+const NO_FRAMES = 0;
+const FRAME_RATE_SAMPLE_MS = 1000;
+const MINIMIZED_HOLD_MS = 2000;
+const MAX_FRAME_SHARE_WHILE_MINIMIZED = 0.5;
+const MIN_FRAMES_TO_JUDGE = 20;
+const RESUMED_FRAMES = 3;
+const SECOND_SCENE_VIEW: SceneViewId = "scene:2";
+const PAN_DRAG_END: SmokeElementPoint = {x: 0.7, y: 0.65};
+const CAMERA_STORE_SETTLE_MS = 600;
+
+function pauseScript(ms: number): string {
+    return `new Promise(resolve => setTimeout(() => resolve(true), ${ms}))`;
+}
 
 function menuButton(menu: EditorMenuId): string {
     return hookSelector(MENU_HOOK, menu);
@@ -313,6 +416,11 @@ async function createFromTemplate(ui: SmokeUi, template: TemplateCommand, rowsBe
 async function undoCreation(ui: SmokeUi, rowsBefore: number): Promise<void> {
     await ui.press(UNDO_CHORD);
     await ui.waitForCount(ENTITY_ROWS, rowsBefore, "hierarchy entity rows after undo");
+}
+
+async function undoCreationFromMenu(ui: SmokeUi, rowsBefore: number): Promise<void> {
+    await runFromMenu(ui, "edit", COMMANDS.undo);
+    await ui.waitForCount(ENTITY_ROWS, rowsBefore, "hierarchy entity rows after Edit > Undo");
 }
 
 const menusFlow: SmokeFlow = {
@@ -475,11 +583,6 @@ async function floatingWindowFlowSteps(ui: SmokeUi, host: SmokeHost, note: (text
     });
     ui.expect(host.floatingWindows().length === 0, "a floating window opened while pop-ups were blocked");
     await ui.waitFor("the blocked Console to stay beside the Project tab", () => inSameStack(ui, "console", "project"));
-    await ui.dragOutside(dockTab("scene"), "dragging the Scene tab out of the main window");
-    await openMenu(ui, "window");
-    await closeMenus(ui);
-    ui.expect(host.floatingWindows().length === 0, "the Scene view floated, though its canvas cannot leave the main window");
-    await ui.waitForVisible(`${MAIN_DOCK} ${dockTab("scene")}`, "the Scene tab still in the main window");
 }
 
 const floatingWindowFlow: SmokeFlow = {
@@ -490,6 +593,369 @@ const floatingWindowFlow: SmokeFlow = {
             await floatingWindowFlowSteps(ui, host, note);
         } finally {
             if (host.floatingWindows().length > 0) await runFromMenu(ui, "window", COMMANDS.resetLayout).catch(() => undefined);
+        }
+    },
+};
+
+function viewportText(viewport: SmokeViewport | undefined): string {
+    if (viewport === undefined) return "no such view";
+    return `${viewport.drawnPixels} drawn pixels in ${viewport.floating ? "a floating" : "the main"} window`;
+}
+
+function fillsView(fit: ViewportFit | null): fit is ViewportFit {
+    return fit !== null && fit.viewportWidth > 0 && fit.viewportHeight > 0
+        && fit.canvasWidth >= fit.viewportWidth * MIN_CANVAS_FILL && fit.canvasHeight >= fit.viewportHeight * MIN_CANVAS_FILL
+        && fit.canvasWidth <= fit.viewportWidth + CANVAS_FIT_TOLERANCE_PX && fit.canvasHeight <= fit.viewportHeight + CANVAS_FIT_TOLERANCE_PX;
+}
+
+async function waitForRenderedCanvasFit(page: SmokeUi, host: SmokeHost, id: string, description: string): Promise<void> {
+    let fit: ViewportFit | null = null;
+    await page.waitFor(description, async () => {
+        await host.viewports();
+        fit = await page.read<ViewportFit | null>(viewportFitScript(id));
+        return fillsView(fit);
+    }).catch(error => page.fail(`${error instanceof Error ? error.message : String(error)}; saw ${fitText(fit)}`));
+}
+
+async function waitForCanvasFill(page: SmokeUi, id: string, description: string, grewFrom?: ViewportFit | null): Promise<ViewportFit> {
+    let fit: ViewportFit | null = null;
+    const grown = (seen: ViewportFit): boolean => grewFrom === undefined || grewFrom === null || seen.viewportWidth > grewFrom.viewportWidth;
+    await page.waitFor(description, async () => {
+        fit = await page.read<ViewportFit | null>(viewportFitScript(id));
+        return fillsView(fit) && grown(fit);
+    }).catch(error => page.fail(`${error instanceof Error ? error.message : String(error)}; saw ${fitText(fit)}${grewFrom === undefined ? "" : `, before ${fitText(grewFrom)}`}`));
+    return fit!;
+}
+
+async function waitForViewportDrawing(page: SmokeUi, host: SmokeHost, id: string, floating: boolean, description: string, timeoutMs: number = VIEWPORT_DRAW_TIMEOUT_MS): Promise<SmokeViewport> {
+    await waitForCanvasFill(page, id, `the ${id} canvas to fill its view before checking that ${description}`);
+    let seen: SmokeViewport | undefined;
+    await page.waitFor(description, async () => {
+        seen = (await host.viewports()).find(viewport => viewport.id === id);
+        return seen !== undefined && seen.floating === floating && seen.drawnPixels >= MIN_VIEWPORT_DRAWN_PIXELS;
+    }, timeoutMs).catch(error => page.fail(`${error instanceof Error ? error.message : String(error)}; saw ${viewportText(seen)}`));
+    return seen!;
+}
+
+async function drawsInMainWindow(ui: SmokeUi, host: SmokeHost, id: string): Promise<boolean> {
+    return await waitForViewportDrawing(ui, host, id, false, `the ${id} view draws in the main window`, BASELINE_DRAW_TIMEOUT_MS).then(() => true, () => false);
+}
+
+function drawnText(viewport: SmokeViewport | undefined): string {
+    return viewport === undefined ? "not checked" : `${viewport.drawnPixels} drawn pixels`;
+}
+
+function fitText(fit: ViewportFit | null): string {
+    if (fit === null) return "no shown canvas";
+    return `a ${Math.round(fit.canvasWidth)}x${Math.round(fit.canvasHeight)} canvas in a ${Math.round(fit.viewportWidth)}x${Math.round(fit.viewportHeight)} view`;
+}
+
+async function resizeFloatingGameView(floatingUi: SmokeUi, floating: SmokeWindowPage): Promise<ViewportFit> {
+    const before = await floatingUi.read<ViewportFit | null>(viewportFitScript(GAME_VIEW_ID));
+    floating.setBounds(LANDSCAPE_FLOATING_BOUNDS);
+    return await waitForCanvasFill(floatingUi, GAME_VIEW_ID, "the Game canvas to refit its floating window once the window grew", before);
+}
+
+async function setPlaying(ui: SmokeUi, playing: boolean): Promise<void> {
+    const play = toolbarCommand(COMMANDS.play);
+    const wanted = playing ? TRUE_TEXT : FALSE_TEXT;
+    if (await ui.attribute(play, ARIA_PRESSED) === wanted) return;
+    await ui.click(play, playing ? "the Play button" : "the Stop button");
+    await ui.waitForAttribute(play, ARIA_PRESSED, wanted, "the Play button");
+}
+
+async function checkFloatingGameInput(ui: SmokeUi, floatingUi: SmokeUi): Promise<void> {
+    await floatingUi.read<boolean>(INSTALL_INPUT_PROBE_SCRIPT);
+    await floatingUi.click(FLOATING_GAME_VIEWPORT, "the floating Game view");
+    await floatingUi.waitForFocus(FLOATING_GAME_CANVAS, "the floating Game view's canvas");
+    await floatingUi.press(GAME_KEY_CHORD);
+    await floatingUi.press(PALETTE_CHORD);
+    let probe: GameInputProbe | undefined;
+    await floatingUi.waitFor("the floating Game view's input listeners to take a click, a key and a command chord", async () => {
+        probe = await floatingUi.read<GameInputProbe>(INPUT_PROBE_SCRIPT);
+        return probe.keyboard && probe.pointer && probe.commandChords > 0;
+    }).catch(error => ui.fail(`${error instanceof Error ? error.message : String(error)}; saw ${JSON.stringify(probe ?? null)}`));
+    ui.expect(!await floatingUi.isVisible(PALETTE) && !await ui.isVisible(PALETTE), "the command palette opened while the floating game canvas had focus");
+}
+
+async function pickedFramedEntity(ui: SmokeUi, host: SmokeHost, scene: ScenePickView, template: TemplateCommand): Promise<boolean> {
+    if (!await menuCommandEnabled(ui, "edit", COMMANDS.frameSelected)) {
+        await closeMenus(ui);
+        return false;
+    }
+    await ui.click(popupCommand(COMMANDS.frameSelected), "Frame Selected");
+    await ui.waitForNone(POPUP, "the edit menu");
+    await ui.read<boolean>(SETTLE_SCRIPT);
+    await waitForRenderedCanvasFit(scene.page, host, scene.view, `the ${scene.view} canvas to fit its view before picking in it`);
+    await scene.page.click(scene.overlay, "the centre of the Scene view", TOGGLE_MODIFIERS);
+    const changed = async (): Promise<boolean> => await ui.visibleCount(SELECTED_ENTITY_ROWS) !== 1;
+    return await ui.waitFor(`a Ctrl+click on the framed ${template.name} to change the selection`, changed, PICK_TIMEOUT_MS).then(() => true, () => false);
+}
+
+async function pickableTemplates(scene: ScenePickView): Promise<readonly TemplateCommand[]> {
+    const seen: {camera: string | null} = {camera: null};
+    await scene.page.waitFor("the Scene view to report its camera before picking", async () => (seen.camera = await scene.page.attribute(scene.overlay, SCENE_CAMERA_HOOK)) !== null);
+    return seen.camera?.startsWith(ORTHOGRAPHIC_CAMERA_PREFIX) === true ? ORTHOGRAPHIC_PICKABLE_TEMPLATES : PICKABLE_TEMPLATES;
+}
+
+async function createPickedEntity(ui: SmokeUi, host: SmokeHost, scene: ScenePickView): Promise<CreatedEntity> {
+    const rotate = toolbarCommand(COMMANDS.rotateTool);
+    await ui.click(rotate, "the Rotate tool");
+    await ui.waitForAttribute(rotate, ARIA_PRESSED, TRUE_TEXT, "the Rotate tool");
+    const tried: string[] = [];
+    try {
+        for (const template of await pickableTemplates(scene)) {
+            const rowsBefore = await ui.visibleCount(ENTITY_ROWS);
+            if (!await menuCommandEnabled(ui, "entity", template.command)) {
+                await closeMenus(ui);
+                continue;
+            }
+            await createFromTemplate(ui, template, rowsBefore);
+            if (await pickedFramedEntity(ui, host, scene, template)) return {template, rowsBefore};
+            tried.push(template.name);            await undoCreationFromMenu(ui, rowsBefore);
+        }
+        return ui.fail(tried.length === 0 ? "this game offers no entity template to pick in the Scene view" : `a Ctrl+click in the Scene view picked no framed ${tried.join(" or ")}`);
+    } finally {
+        await ui.click(toolbarCommand(COMMANDS.moveTool), "the Move tool").catch(() => undefined);
+    }
+}
+
+async function waitForSceneFrames(page: SmokeUi, after: number, description: string): Promise<number> {
+    const seen: {frames: number | null} = {frames: null};
+    await page.waitFor(description, async () => {
+        seen.frames = await page.read<number | null>(FLOATING_SCENE_FRAMES_SCRIPT);
+        return seen.frames !== null && seen.frames > after;
+    }).catch(error => page.fail(`${error instanceof Error ? error.message : String(error)}; saw ${String(seen.frames)} presented frames, wanted more than ${after}`));
+    return seen.frames ?? after;
+}
+
+async function waitForVisibility(page: SmokeUi, state: DocumentVisibilityState, description: string): Promise<void> {
+    await page.waitFor(description, async () => await page.read<string>(VISIBILITY_STATE_SCRIPT) === state);
+}
+
+async function pageClockMs(ui: SmokeUi): Promise<number> {
+    return await ui.read<number>(PAGE_CLOCK_SCRIPT);
+}
+
+async function checkMinimizedSceneView(ui: SmokeUi, floatingUi: SmokeUi, floating: SmokeWindowPage): Promise<string> {
+    floating.setBounds(OFFSCREEN_FLOATING_BOUNDS);
+    floating.showInactive();
+    await waitForVisibility(floatingUi, VISIBLE_DOCUMENT, "the floating window shown off-screen to have a visible document");
+    const first = await waitForSceneFrames(floatingUi, NO_FRAMES, "the floating Scene view to report presented frames");
+    const firstAt = await pageClockMs(ui);
+    await ui.read<boolean>(pauseScript(FRAME_RATE_SAMPLE_MS));
+    const sampled = await waitForSceneFrames(floatingUi, first, "the floating Scene view to present more frames");
+    const framesPerMs = (sampled - first) / Math.max(1, await pageClockMs(ui) - firstAt);
+    floating.minimize();
+    await waitForVisibility(floatingUi, HIDDEN_DOCUMENT, "the minimized floating window's document to be hidden");
+    const hiddenAt = await pageClockMs(ui);
+    await ui.read<boolean>(pauseScript(MINIMIZED_HOLD_MS));
+    const held = await floatingUi.read<number | null>(FLOATING_SCENE_FRAMES_SCRIPT) ?? sampled;
+    floating.showInactive();
+    await waitForVisibility(floatingUi, VISIBLE_DOCUMENT, "the restored floating window's document to be visible");
+    const resumed = await waitForSceneFrames(floatingUi, held, "the restored Scene view to report frames again");
+    const hiddenMs = await pageClockMs(ui) - hiddenAt;
+    const expected = framesPerMs * hiddenMs;
+    const whileHidden = resumed - held;
+    const judged = expected >= MIN_FRAMES_TO_JUDGE;
+    if (judged) {
+        ui.expect(whileHidden <= expected * MAX_FRAME_SHARE_WHILE_MINIMIZED,
+            `the Scene view presented ${whileHidden} frames across ${Math.round(hiddenMs)} ms minimized, close to the ${Math.round(expected)} it presents shown`);
+    }
+    const again = await waitForSceneFrames(floatingUi, resumed + RESUMED_FRAMES, "the restored Scene view to keep presenting frames");
+    const judgement = judged ? "" : ", too few to judge";
+    return `minimized for ${Math.round(hiddenMs)} ms the floating Scene view presented ${whileHidden} frames (about ${Math.round(expected)} at its shown rate${judgement}); restored, it presented ${again - resumed} more`;
+}
+
+async function floatingViewportsFlowSteps(ui: SmokeUi, host: SmokeHost, note: (text: string) => void): Promise<void> {
+    ui.expect(host.floatingWindows().length === 0, "a floating window was already open");
+    const sceneDraws = await drawsInMainWindow(ui, host, SCENE_VIEW_ID);
+    const gameDraws = await drawsInMainWindow(ui, host, GAME_VIEW_ID);
+    if (!sceneDraws) note("the open scene draws nothing in the Scene view, so where the Scene view draws was not checked");
+    if (!gameDraws) note("the Game view draws nothing outside play, so where it draws was checked only while playing");
+    await floatFromTabMenu(ui, "game");
+    const floating = await onlyFloatingWindow(ui, host, "the Game view's window");
+    const floatingUi = ui.onPage(floating);
+    await floatingUi.waitForVisible(`${FLOATING_DOCK} ${dockPanel("game")}`, "the Game view in its floating window");
+    await ui.waitForNone(dockTab("game"), "the Game tab in the main window");
+    const floated = gameDraws ? await waitForViewportDrawing(floatingUi, host, GAME_VIEW_ID, true, "the Game view to draw in its floating window") : undefined;
+    const resized = await resizeFloatingGameView(floatingUi, floating);
+    note(`the floating window grew to ${boundsText(floating.bounds())} and its Game view refitted to ${fitText(resized)}`);
+    await setPlaying(ui, true);
+    const playing = await waitForViewportDrawing(floatingUi, host, GAME_VIEW_ID, true, "the Game view to draw in its floating window while playing");
+    await checkFloatingGameInput(ui, floatingUi);
+    await setPlaying(ui, false);
+    await ui.click(`${dockTab("scene")} ${hookSelector(DOCK_TAB_CLOSE_HOOK)}`, "the Scene tab's close button");
+    await ui.waitForNone(dockTab("scene"), "the Scene tab after closing it");
+    await floatingUi.rightClick(dockTab("game"), "the floating Game tab");
+    await floatingUi.click(popupSubmenu(ADD_TAB_SUBMENU), "the Add Tab submenu");
+    await floatingUi.click(popupCommand(COMMANDS.addTab), "Scene in the Add Tab submenu");
+    await floatingUi.waitForVisible(`${FLOATING_DOCK} ${dockPanel("scene")}`, "the Scene view added to the floating window");
+    await floatingUi.drag(dockTab("scene"), `${FLOATING_DOCK} ${DOCK_STACK}`, "dragging the Scene tab to the right edge of its stack", SPLIT_DROP_POINT);
+    await floatingUi.waitFor("the Scene and Game views to split the floating window", async () => !await inSameStack(floatingUi, "scene", "game"));
+    await floatingUi.waitForVisible(`${FLOATING_DOCK} ${dockPanel("game")}`, "the Game view beside the Scene view");
+    const created = await createPickedEntity(ui, host, {page: floatingUi, overlay: FLOATING_SCENE_OVERLAY, view: SCENE_VIEW_ID});
+    const scene = sceneDraws ? await waitForViewportDrawing(floatingUi, host, SCENE_VIEW_ID, true, "the Scene view to draw in the floating window") : undefined;
+    const game = gameDraws ? await waitForViewportDrawing(floatingUi, host, GAME_VIEW_ID, true, "the Game view to draw beside the Scene view") : undefined;
+    note(`floating window ${floating.id}: Game ${drawnText(floated)} alone and ${playing.drawnPixels} drawn pixels while playing, then Scene ${drawnText(scene)} and Game ${drawnText(game)} split; a Ctrl+click there picked the framed ${created.template.name}`);
+    note(await checkMinimizedSceneView(ui, floatingUi, floating));
+    await floatingUi.rightClick(dockTab("scene"), "the floating Scene tab");
+    await floatingUi.click(popupCommand(COMMANDS.dockTab), "Dock Tab in the floating Scene tab's menu");
+    await ui.waitForVisible(`${MAIN_DOCK} ${dockPanel("scene")}`, "the Scene view docked in the main window");
+    await floatingUi.rightClick(dockTab("game"), "the floating Game tab");
+    await floatingUi.click(popupCommand(COMMANDS.dockTab), "Dock Tab in the floating Game tab's menu");
+    await noFloatingWindows(ui, host, "the floating window to close once both views docked");
+    const dockedScene = sceneDraws ? await waitForViewportDrawing(ui, host, SCENE_VIEW_ID, false, "the docked Scene view to draw in the main window") : undefined;
+    const dockedGame = gameDraws ? await waitForViewportDrawing(ui, host, GAME_VIEW_ID, false, "the docked Game view to draw in the main window") : undefined;
+    note(`docked back: Scene ${drawnText(dockedScene)} and Game ${drawnText(dockedGame)} in the main window`);
+    await undoCreationFromMenu(ui, created.rowsBefore);
+    await floatFromTabMenu(ui, "game");
+    const beforeReload = await onlyFloatingWindow(ui, host, "the Game view's window, floated again");
+    await host.reloadPage();
+    await waitForPageState(ui, READY_STATE, PROJECT_OPEN_TIMEOUT_MS);
+    const restored = await onlyFloatingWindow(ui, host, "the Game view's window reopened after a reload", beforeReload);
+    const restoredUi = ui.onPage(restored);
+    await restoredUi.waitForVisible(`${FLOATING_DOCK} ${dockPanel("game")}`, "the Game view in the reopened floating window");
+    await setPlaying(ui, true);
+    const restoredGame = await waitForViewportDrawing(restoredUi, host, GAME_VIEW_ID, true, "the restored floating Game view to draw while playing after a reload");
+    await setPlaying(ui, false);
+    note(`after a reload window ${restored.id} shows the Game view with ${restoredGame.drawnPixels} drawn pixels while playing`);
+}
+
+const floatingViewportsFlow: SmokeFlow = {
+    name: "floatingViewports",
+    budgetMs: PROJECT_BUDGET_MS,
+    async run({ui, host, note}) {
+        try {
+            await floatingViewportsFlowSteps(ui, host, note);
+        } finally {
+            await setPlaying(ui, false).catch(() => undefined);
+            await runFromMenu(ui, "window", COMMANDS.resetLayout).catch(() => undefined);
+        }
+    },
+};
+
+function sceneOverlay(view: SceneViewId): string {
+    return hookSelector(SCENE_OVERLAY_HOOK, view);
+}
+
+function sceneAttributeScript(view: SceneViewId, attribute: string): string {
+    return `document.querySelector(${JSON.stringify(sceneOverlay(view))})?.getAttribute(${JSON.stringify(attribute)}) ?? null`;
+}
+
+function stackOfTabScript(panel: DockPanelId): string {
+    return `document.querySelector(${JSON.stringify(dockTab(panel))})?.closest(${JSON.stringify(DOCK_STACK)})?.getAttribute(${JSON.stringify(DOCK_STACK_HOOK)}) ?? null`;
+}
+
+async function sceneCamera(page: SmokeUi, view: SceneViewId, description: string): Promise<string> {
+    const seen: {camera: string | null} = {camera: null};
+    await page.waitFor(`${description} to report its camera`, async () => (seen.camera = await page.read<string | null>(sceneAttributeScript(view, SCENE_CAMERA_HOOK))) !== null);
+    return seen.camera ?? "";
+}
+
+async function waitForSceneCamera(page: SmokeUi, view: SceneViewId, wanted: string, description: string): Promise<void> {
+    let camera: string | null = null;
+    await page.waitFor(description, async () => (camera = await page.read<string | null>(sceneAttributeScript(view, SCENE_CAMERA_HOOK))) === wanted)
+        .catch(error => page.fail(`${error instanceof Error ? error.message : String(error)}; saw ${String(camera)}, wanted ${wanted}`));
+}
+
+async function capturedView(host: SmokeHost, view: string): Promise<SmokeViewport | undefined> {
+    return (await host.viewports()).find(viewport => viewport.id === view);
+}
+
+async function redrawnView(ui: SmokeUi, host: SmokeHost, before: SmokeViewport): Promise<SmokeViewport> {
+    const seen: {view: SmokeViewport | undefined} = {view: undefined};
+    await ui.waitFor(`the ${before.id} view to draw a different image`, async () => {
+        seen.view = await capturedView(host, before.id);
+        return seen.view !== undefined && seen.view.drawnPixels > 0 && seen.view.pixelHash !== before.pixelHash;
+    });
+    return seen.view ?? before;
+}
+
+async function addSecondSceneView(ui: SmokeUi): Promise<void> {
+    await ui.rightClick(dockTab(FIRST_SCENE_VIEW), "the Scene tab");
+    await ui.click(popupSubmenu(ADD_TAB_SUBMENU), "the Add Tab submenu");
+    await ui.click(popupCommand(COMMANDS.addTab), "Scene in the Add Tab submenu");
+    await ui.waitForNone(POPUP, "the tab menu");
+    await ui.waitForAttribute(dockTab(SECOND_SCENE_VIEW), ARIA_SELECTED, TRUE_TEXT, "the second Scene view's tab");
+    const stack = await ui.read<string | null>(stackOfTabScript(SECOND_SCENE_VIEW));
+    ui.expect(stack !== null, "the second Scene view's tab is in no stack");
+    await ui.drag(dockTab(SECOND_SCENE_VIEW), hookSelector(DOCK_STACK_HOOK, stack!), "dragging the second Scene view's tab to the right edge of its stack", SPLIT_DROP_POINT);
+    await ui.waitFor("the two Scene views to split their stack", async () => !await inSameStack(ui, FIRST_SCENE_VIEW, SECOND_SCENE_VIEW));
+    await ui.waitForVisible(dockPanel(FIRST_SCENE_VIEW), "the first Scene view beside the second");
+    await ui.waitForVisible(dockPanel(SECOND_SCENE_VIEW), "the second Scene view beside the first");
+}
+
+async function panSceneView(ui: SmokeUi, view: SceneViewId): Promise<void> {
+    const hand = toolbarCommand(COMMANDS.handTool);
+    await ui.click(hand, "the Hand tool");
+    await ui.waitForAttribute(hand, ARIA_PRESSED, TRUE_TEXT, "the Hand tool");
+    try {
+        await ui.drag(sceneOverlay(view), sceneOverlay(view), `panning the ${view} Scene view`, PAN_DRAG_END);
+    } finally {
+        await ui.click(toolbarCommand(COMMANDS.moveTool), "the Move tool");
+    }
+}
+
+async function multipleSceneViewsFlowSteps(ui: SmokeUi, host: SmokeHost, note: (text: string) => void): Promise<void> {
+    await noFloatingWindows(ui, host, "every floating window to have closed before a second Scene view opens");
+    const sceneDraws = await drawsInMainWindow(ui, host, FIRST_SCENE_VIEW);
+    await addSecondSceneView(ui);
+    const firstCamera = await sceneCamera(ui, FIRST_SCENE_VIEW, "the first Scene view");
+    const secondStart = await sceneCamera(ui, SECOND_SCENE_VIEW, "the second Scene view");
+    const before = sceneDraws ? await waitForViewportDrawing(ui, host, SECOND_SCENE_VIEW, false, "the second Scene view to draw beside the first") : undefined;
+    await panSceneView(ui, SECOND_SCENE_VIEW);
+    await ui.waitFor("the panned second Scene view to report a camera of its own", async () => await sceneCamera(ui, SECOND_SCENE_VIEW, "the second Scene view") !== secondStart);
+    await waitForSceneCamera(ui, FIRST_SCENE_VIEW, firstCamera, "the first Scene view to keep its camera while the second pans");
+    if (before !== undefined) {
+        const panned = await redrawnView(ui, host, before);
+        const first = await capturedView(host, FIRST_SCENE_VIEW);
+        ui.expect(first !== undefined && first.drawnPixels > 0 && first.pixelHash !== panned.pixelHash, "the two Scene views drew the same image");
+        note(`Scene ${first?.drawnPixels ?? 0} and Scene (2) ${panned.drawnPixels} drawn pixels after panning Scene (2), and their images differ`);
+    } else {
+        note("the open scene draws nothing in the Scene view, so the two views' images were not compared");
+    }
+    const created = await createPickedEntity(ui, host, {page: ui, overlay: sceneOverlay(SECOND_SCENE_VIEW), view: SECOND_SCENE_VIEW});
+    await waitForSceneCamera(ui, FIRST_SCENE_VIEW, firstCamera, "Frame Selected in the second Scene view to leave the first view's camera alone");
+    note(`a Ctrl+click in Scene (2) picked the ${created.template.name} it framed, and the first view kept its camera`);
+    await undoCreationFromMenu(ui, created.rowsBefore);
+    const framed = await sceneCamera(ui, SECOND_SCENE_VIEW, "the second Scene view");
+    await panSceneView(ui, SECOND_SCENE_VIEW);
+    await ui.waitFor("the second Scene view to pan away from where it framed", async () => await sceneCamera(ui, SECOND_SCENE_VIEW, "the second Scene view") !== framed);
+    const secondCamera = await sceneCamera(ui, SECOND_SCENE_VIEW, "the second Scene view");
+    ui.expect(secondCamera !== firstCamera, `the two Scene views share the camera ${secondCamera}`);
+    await floatFromTabMenu(ui, SECOND_SCENE_VIEW);
+    const floating = await onlyFloatingWindow(ui, host, "the second Scene view's window");
+    const floatingUi = ui.onPage(floating);
+    await floatingUi.waitForVisible(`${FLOATING_DOCK} ${dockPanel(SECOND_SCENE_VIEW)}`, "the second Scene view in its floating window");
+    if (sceneDraws) await waitForViewportDrawing(floatingUi, host, SECOND_SCENE_VIEW, true, "the second Scene view to draw in its floating window");
+    await waitForSceneCamera(floatingUi, SECOND_SCENE_VIEW, secondCamera, "the floated second Scene view to keep its camera");
+    await ui.read<boolean>(pauseScript(CAMERA_STORE_SETTLE_MS));
+    await host.reloadPage();
+    await waitForPageState(ui, READY_STATE, PROJECT_OPEN_TIMEOUT_MS);
+    const restored = await onlyFloatingWindow(ui, host, "the second Scene view's window reopened after a reload", floating);
+    const restoredUi = ui.onPage(restored);
+    await restoredUi.waitForVisible(`${FLOATING_DOCK} ${dockPanel(SECOND_SCENE_VIEW)}`, "the second Scene view in the reopened floating window");
+    await waitForSceneCamera(restoredUi, SECOND_SCENE_VIEW, secondCamera, "the second Scene view to come back with its camera after a reload");
+    await waitForSceneCamera(ui, FIRST_SCENE_VIEW, firstCamera, "the first Scene view to come back with its camera after a reload");
+    if (sceneDraws) await waitForViewportDrawing(restoredUi, host, SECOND_SCENE_VIEW, true, "the restored second Scene view to draw");
+    note(`after a reload window ${restored.id} shows Scene (2) at ${secondCamera} and the main window's Scene at ${firstCamera}`);
+    await restoredUi.click(`${dockTab(SECOND_SCENE_VIEW)} ${hookSelector(DOCK_TAB_CLOSE_HOOK)}`, "the second Scene view's close button");
+    await noFloatingWindows(ui, host, "the floating window to close with its only Scene view");
+    await ui.waitForNone(dockTab(SECOND_SCENE_VIEW), "the second Scene view's tab after closing it");
+    let views: string | null = null;
+    await ui.waitFor("the world to report one Scene view once the second closed", async () => (views = await ui.read<string | null>(sceneAttributeScript(FIRST_SCENE_VIEW, SCENE_VIEWS_HOOK))) === FIRST_SCENE_VIEW)
+        .catch(error => ui.fail(`${error instanceof Error ? error.message : String(error)}; it reports ${String(views)}`));
+}
+
+const multipleSceneViewsFlow: SmokeFlow = {
+    name: "multipleSceneViews",
+    budgetMs: PROJECT_BUDGET_MS,
+    async run({ui, host, note}) {
+        try {
+            await multipleSceneViewsFlowSteps(ui, host, note);
+        } finally {
+            await runFromMenu(ui, "window", COMMANDS.resetLayout).catch(() => undefined);
         }
     },
 };
@@ -930,6 +1396,8 @@ export function editorSmokeFlows(): SmokeFlow[] {
         commandPaletteFlow,
         dockingFlow,
         floatingWindowFlow,
+        floatingViewportsFlow,
+        multipleSceneViewsFlow,
         pivotCenterFlow,
         snapFlow,
         entityTemplatesFlow,

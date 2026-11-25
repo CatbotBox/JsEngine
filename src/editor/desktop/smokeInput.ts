@@ -49,8 +49,8 @@ export function keyEventsOfChord(chord: string): SmokeKeyEvent[] {
     ];
 }
 
-export function mouseEventsOfClick(x: number, y: number, button: SmokeMouseButton): SmokeMouseEvent[] {
-    const at = {x: Math.round(x), y: Math.round(y), button, modifiers: []};
+export function mouseEventsOfClick(x: number, y: number, button: SmokeMouseButton, modifiers: readonly SmokeModifier[] = []): SmokeMouseEvent[] {
+    const at = {x: Math.round(x), y: Math.round(y), button, modifiers: [...modifiers]};
     return [
         {...at, type: "mouseMove", clickCount: NO_CLICK},
         {...at, type: "mouseDown", clickCount: SINGLE_CLICK},

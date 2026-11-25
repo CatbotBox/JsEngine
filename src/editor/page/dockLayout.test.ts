@@ -1,6 +1,7 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {
     activatePanel,
+    addableDockPanels,
     closedDockPanels,
     closeFloatingWindow,
     closePanel,
@@ -27,6 +28,7 @@ import {
     openDockPanels,
     openPanel,
     parseDockLayout,
+    releasedDockPanels,
     resizeSplit,
     ROOT_EDGE_SHARE,
     stackOfPanel,
@@ -567,5 +569,51 @@ describe("stored layouts with floating windows", () => {
         const parsed = parseDockLayout(text);
         expect(shape(parsed?.root)).toBe("[*scene]");
         expect(parsed?.floating).toEqual([{id: "float-10", bounds: MOVED_BOUNDS, root: dockStack("stack-11", ["console"])}]);
+    });
+});
+
+describe("panel instances", () => {
+    test("an extra Scene view docks like any panel, and closing it forgets it while the first Scene view is remembered", () => {
+        const added = movePanel(sample(), "scene:2", {stack: "stack-5", edge: "right"});
+        expect(shape(added.root)).toBe("row(column(row([*hierarchy] [*scene] [*scene:2] [*game]) [*project,console,history]) [*inspector])");
+        const closedExtra = closePanel(added, "scene:2");
+        expect([isDockPanelOpen(closedExtra, "scene:2"), closedExtra.closed]).toEqual([false, []]);
+        const closedFirst = closePanel(added, "scene");
+        expect(closedFirst.closed).toEqual([{panel: "scene", stack: "stack-5", index: 0}]);
+    });
+
+    test("closing a floating window remembers only first instances", () => {
+        const floated = floatPanel(movePanel(sample(), "scene:2", {stack: "stack-6", index: 1}), "scene:2", FLOAT_BOUNDS);
+        const window = floated.floating[0];
+        const withConsole = movePanel(floated, "console", {stack: dockStacks(window.root)[0].id, index: 1});
+        const closed = closeFloatingWindow(withConsole, window.id);
+        expect(closed.closed.map(entry => entry.panel)).toEqual(["console"]);
+        expect(isDockPanelOpen(closed, "scene:2")).toBe(false);
+    });
+
+    test("Add Tab offers every closed panel, and for Scene the first view when it is closed or else the next free instance", () => {
+        expect(addableDockPanels(sample())).toEqual(["scene:2", "settings", "assets"]);
+        const withSecond = movePanel(sample(), "scene:2", {stack: "stack-5", index: 1});
+        expect(addableDockPanels(withSecond)).toEqual(["scene:3", "settings", "assets"]);
+        expect(addableDockPanels(closePanel(withSecond, "scene"))).toEqual(["scene", "settings", "assets"]);
+        expect(addableDockPanels(closePanel(closePanel(withSecond, "scene:2"), "scene"))).toEqual(["scene", "settings", "assets"]);
+    });
+
+    test("registered extra instances that left the layout are released; first instances never are", () => {
+        const withSecond = movePanel(sample(), "scene:2", {stack: "stack-5", index: 1});
+        expect(releasedDockPanels(withSecond, ["scene", "scene:2", "console"])).toEqual([]);
+        expect(releasedDockPanels(closePanel(closePanel(withSecond, "scene:2"), "scene"), ["scene", "scene:2", "console"])).toEqual(["scene:2"]);
+    });
+
+    test("a version 3 layout keeps its instances through its text, a version 2 layout still reads, and bad instance ids are dropped", () => {
+        const layout = floatPanel(movePanel(sample(), "scene:2", {stack: "stack-5", index: 1}), "scene:2", FLOAT_BOUNDS);
+        expect(DOCK_LAYOUT_VERSION).toBe(3);
+        expect(parseDockLayout(dockLayoutText(layout))).toEqual(layout);
+        const versionTwo = {version: 2, root: sample().root, closed: [], floating: []};
+        expect(parseDockLayout(JSON.stringify(versionTwo))).toEqual(sample());
+        const stack = (panels: readonly string[]): unknown => ({kind: "stack", id: "stack-1", panels, active: panels[0]});
+        const parsed = parseDockLayout(JSON.stringify({version: DOCK_LAYOUT_VERSION, root: stack(["scene:1", "scene:2", "game:2", "scene"]), closed: [{panel: "scene:2", stack: "stack-1", index: 0}]}));
+        expect(shape(parsed?.root)).toBe("[*scene:2,scene]");
+        expect(parsed?.closed).toEqual([]);
     });
 });

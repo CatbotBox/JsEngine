@@ -21,24 +21,28 @@ interface MessageChannelLike {
     readonly port2: MessagePortLike;
 }
 
-interface YieldHost {
+export interface FrameTimerHost {
+    setTimeout(task: () => void, delayMs: number): unknown;
+    clearTimeout(handle: unknown): void;
+    setInterval(task: () => void, intervalMs: number): unknown;
+    clearInterval(handle: unknown): void;
     readonly setImmediate?: (task: () => void) => unknown;
     readonly clearImmediate?: (handle: unknown) => void;
     readonly MessageChannel?: new () => MessageChannelLike;
 }
 
-export function timerFrameScheduler(now: () => number): FrameScheduler {
+export function timerFrameScheduler(now: () => number, timers: FrameTimerHost = globalThis as unknown as FrameTimerHost): FrameScheduler {
     return {
         start(pacing: FramePacing, onFrame: FrameCallback, backlog?: PresentationBacklog): () => void {
-            if (pacing.kind === "uncapped") return startUncapped(now, onFrame, backlog);
-            return startInterval(now, minimumFrameIntervalMs(pacing), onFrame);
+            if (pacing.kind === "uncapped") return startUncapped(now, timers, onFrame, backlog);
+            return startInterval(now, timers, minimumFrameIntervalMs(pacing), onFrame);
         },
     };
 }
 
-function startInterval(now: () => number, intervalMs: number, onFrame: FrameCallback): () => void {
+function startInterval(now: () => number, timers: FrameTimerHost, intervalMs: number, onFrame: FrameCallback): () => void {
     let nextFrameAtMs = now() + intervalMs;
-    const handle = setInterval(() => {
+    const handle = timers.setInterval(() => {
         const nowMs = now();
         if (nowMs < nextFrameAtMs) return;
         const fellBehindAFrame = nowMs - nextFrameAtMs >= intervalMs;
@@ -46,23 +50,23 @@ function startInterval(now: () => number, intervalMs: number, onFrame: FrameCall
         nextFrameAtMs = frameTimeMs + intervalMs;
         onFrame(frameTimeMs);
     }, intervalMs / POLLS_PER_FRAME);
-    return () => clearInterval(handle);
+    return () => timers.clearInterval(handle);
 }
 
-function startUncapped(now: () => number, onFrame: FrameCallback, backlog: PresentationBacklog | undefined): () => void {
-    const taskYield = createTaskYield(globalThis as unknown as YieldHost);
+function startUncapped(now: () => number, timers: FrameTimerHost, onFrame: FrameCallback, backlog: PresentationBacklog | undefined): () => void {
+    const taskYield = createTaskYield(timers);
     let running = true;
-    let presentationWait: ReturnType<typeof setTimeout> | undefined;
+    let presentationWait: unknown;
     const frame = (): void => {
         if (!running) return;
         onFrame(now());
         if (!running) return;
-        if (backlog?.backlogged() === true) presentationWait = setTimeout(endPresentationWait, MAX_PRESENTATION_WAIT_MS);
+        if (backlog?.backlogged() === true) presentationWait = timers.setTimeout(endPresentationWait, MAX_PRESENTATION_WAIT_MS);
         else taskYield.schedule(frame);
     };
     const endPresentationWait = (): void => {
         if (presentationWait === undefined) return;
-        clearTimeout(presentationWait);
+        timers.clearTimeout(presentationWait);
         presentationWait = undefined;
         taskYield.schedule(frame);
     };
@@ -70,14 +74,14 @@ function startUncapped(now: () => number, onFrame: FrameCallback, backlog: Prese
     taskYield.schedule(frame);
     return () => {
         running = false;
-        clearTimeout(presentationWait);
+        timers.clearTimeout(presentationWait);
         presentationWait = undefined;
         stopListening?.();
         taskYield.cancel();
     };
 }
 
-function createTaskYield(host: YieldHost): TaskYield {
+function createTaskYield(host: FrameTimerHost): TaskYield {
     const {setImmediate, clearImmediate, MessageChannel} = host;
     if (setImmediate !== undefined && clearImmediate !== undefined) {
         let handle: unknown;
@@ -105,11 +109,11 @@ function createTaskYield(host: YieldHost): TaskYield {
             },
         };
     }
-    let handle: ReturnType<typeof setTimeout> | undefined;
+    let handle: unknown;
     return {
         schedule: task => {
-            handle = setTimeout(task, NEXT_TASK_DELAY_MS);
+            handle = host.setTimeout(task, NEXT_TASK_DELAY_MS);
         },
-        cancel: () => clearTimeout(handle),
+        cancel: () => host.clearTimeout(handle),
     };
 }

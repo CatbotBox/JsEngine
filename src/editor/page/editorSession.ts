@@ -1,6 +1,7 @@
 import type {Entity} from "../../engine/core";
 import type {EditorEvent} from "../editorProtocol";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
+import type {SceneViewId} from "../project/dockPanelIds";
 import type {MenuEntry} from "./commandMenus";
 import type {CommandRegistry} from "./commandRegistry";
 import type {EditorClient} from "./editorClient";
@@ -27,9 +28,21 @@ export type EntityRemap = ReadonlyMap<Entity, Entity>;
 
 export type EditorNoticeLevel = "info" | "warn" | "error";
 
+export interface SceneViewSlot {
+    readonly view: SceneViewId;
+    readonly viewport: HTMLElement;
+}
+
+export interface SceneViewSlotWatcher {
+    opened(slot: SceneViewSlot, shown: boolean): void;
+
+    shown(view: SceneViewId, shown: boolean): void;
+
+    closed(view: SceneViewId): void;
+}
+
 export interface EditorShell {
     readonly viewport: HTMLElement;
-    readonly sceneViewport: HTMLElement;
     readonly commands: CommandRegistry;
 
     mount(session: EditorSession): Promise<void>;
@@ -42,5 +55,5 @@ export interface EditorShell {
 
     setGameTargetMenu(entries: readonly MenuEntry[]): void;
 
-    onSceneViewShown(listener: (shown: boolean) => void): () => void;
+    watchSceneViews(watcher: SceneViewSlotWatcher): () => void;
 }

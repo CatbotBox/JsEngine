@@ -17,7 +17,7 @@ import {
 import type {DockChrome, DockDrop, DockDropArea, DockMinimums, DockPoint, DockPointerSample, DockRect, DockSize, DockWindowMetrics} from "./dockGeometry";
 import {
     activatePanel,
-    closedDockPanels,
+    addableDockPanels,
     closeFloatingWindow,
     closePanel,
     dockPanelHome,
@@ -39,6 +39,7 @@ import {
     movePanel,
     openDockPanels,
     openPanel,
+    releasedDockPanels,
     resizeSplit,
     stackOfPanel,
 } from "./dockLayout";
@@ -51,6 +52,7 @@ export interface DockPanel {
     readonly title: string;
     readonly element: HTMLElement;
     readonly onShown?: (shown: boolean) => void;
+    readonly onMoved?: (document: Document) => void;
 }
 
 export interface DockViewOptions {
@@ -61,10 +63,10 @@ export interface DockViewOptions {
     readonly tabMenu: (panel: DockPanelId) => readonly MenuEntry[];
     readonly homes?: (panel: DockPanelId) => readonly DockViewHome[];
     readonly floatingHost?: FloatingWindowHost;
-    readonly canFloat?: (panel: DockPanelId) => boolean;
     readonly screenScale?: () => number;
     readonly windowOpened?: (document: Document) => void;
     readonly floatingRefused?: (panels: readonly DockPanelId[]) => void;
+    readonly released?: (panel: DockPanelId) => void;
 }
 
 export interface DockViewTabHome {
@@ -102,7 +104,6 @@ interface DragWindow {
     readonly drop: DockDropArea;
     readonly origin: DockPoint;
     readonly rect: DockBounds;
-    readonly accepts: boolean;
 }
 
 interface DragHover {
@@ -167,11 +168,14 @@ export class DockView {
     private readonly pointers = new Map<string, PointerRecord>();
     private readonly tabParts = new Map<DockPanelId, TabParts>();
     private readonly shown = new Map<DockPanelId, boolean>();
+    private readonly placedIn = new Map<DockPanelId, Document>();
+    private readonly panels: Map<DockPanelId, DockPanel>;
     private readonly areaHost: DockAreaHost;
 
     public constructor(root: HTMLElement, layout: DockLayout, private readonly options: DockViewOptions) {
         this.current = layout;
         this.document = root.ownerDocument;
+        this.panels = new Map(options.panels);
         this.areaHost = {
             minimums: options.minimums,
             tabElement: panel => this.tabParts.get(panel)?.element,
@@ -188,11 +192,7 @@ export class DockView {
         };
         this.mainArea = new DockArea(root, MAIN_DOCK_WINDOW, this.areaHost);
         this.areas.set(MAIN_DOCK_WINDOW, this.mainArea);
-        for (const panel of options.panels.values()) {
-            panel.element.classList.add(PANEL_CLASS);
-            panel.element.setAttribute(DOCK_PANEL_HOOK, panel.id);
-            this.tabParts.set(panel.id, this.createTab(panel));
-        }
+        for (const panel of this.panels.values()) this.registerPanel(panel);
         this.trackPointers(this.document, MAIN_DOCK_WINDOW);
         this.document.defaultView?.addEventListener("pagehide", () => this.closeWindowsForUnload());
         this.render();
@@ -239,8 +239,15 @@ export class DockView {
         return maximized === undefined || maximized.id === stack.id;
     }
 
-    public closedPanels(): DockPanelId[] {
-        return closedDockPanels(this.current);
+    public addablePanels(): DockPanelId[] {
+        return addableDockPanels(this.current);
+    }
+
+    public addPanel(panel: DockPanel): void {
+        if (this.panels.has(panel.id)) return;
+        this.panels.set(panel.id, panel);
+        this.registerPanel(panel);
+        this.placedIn.set(panel.id, panel.element.ownerDocument);
     }
 
     public isMaximized(panel: DockPanelId): boolean {
@@ -287,7 +294,7 @@ export class DockView {
     }
 
     public floatPanel(panel: DockPanelId): void {
-        if (!this.canFloat(panel)) return;
+        if (!this.canFloat()) return;
         this.update(floatPanel(this.current, panel, this.floatTabBounds(panel)));
         this.focusWindowOf(panel);
     }
@@ -297,7 +304,7 @@ export class DockView {
     }
 
     public focusPanel(panel: DockPanelId): void {
-        const element = this.options.panels.get(panel)?.element;
+        const element = this.panels.get(panel)?.element;
         if (element === undefined || !this.isShown(panel)) return;
         this.focusWindowOf(panel);
         if (!element.hasAttribute(TAB_INDEX_ATTRIBUTE)) {
@@ -329,8 +336,26 @@ export class DockView {
         this.options.changed(this.current);
     }
 
-    private canFloat(panel: DockPanelId): boolean {
-        return this.options.floatingHost !== undefined && (this.options.canFloat?.(panel) ?? true);
+    private registerPanel(panel: DockPanel): void {
+        panel.element.classList.add(PANEL_CLASS);
+        panel.element.setAttribute(DOCK_PANEL_HOOK, panel.id);
+        this.tabParts.set(panel.id, this.createTab(panel));
+    }
+
+    private releaseClosedInstances(): void {
+        for (const panel of releasedDockPanels(this.current, this.panels.keys())) {
+            this.tabParts.get(panel)?.element.remove();
+            this.panels.get(panel)?.element.remove();
+            this.panels.delete(panel);
+            this.tabParts.delete(panel);
+            this.shown.delete(panel);
+            this.placedIn.delete(panel);
+            this.options.released?.(panel);
+        }
+    }
+
+    private canFloat(): boolean {
+        return this.options.floatingHost !== undefined;
     }
 
     private homesOf(panel: DockPanelId): readonly DockViewHome[] {
@@ -352,9 +377,6 @@ export class DockView {
         let result = layout;
         const refused: DockPanelId[] = [];
         for (const floating of layout.floating) {
-            for (const panel of dockWindowPanels(result, floating.id)) {
-                if (!this.canFloat(panel)) result = dockPanelHome(result, panel, this.resolvedHomes(this.homesOf(panel)));
-            }
             const window = findFloatingWindow(result, floating.id);
             if (window === undefined || this.windows.has(window.id)) continue;
             const opened = this.openWindow(window);
@@ -441,7 +463,7 @@ export class DockView {
     }
 
     private panelElement(panel: DockPanelId): HTMLElement | undefined {
-        return this.options.panels.get(panel)?.element;
+        return this.panels.get(panel)?.element;
     }
 
     private render(): void {
@@ -452,7 +474,9 @@ export class DockView {
         this.parkClosedPanels();
         this.closeRemovedWindows();
         this.placeWindows();
+        this.notifyMoved();
         this.notifyShown();
+        this.releaseClosedInstances();
     }
 
     private parkClosedPanels(): void {
@@ -484,11 +508,20 @@ export class DockView {
     }
 
     private titleOf(window: string): string {
-        return dockWindowPanels(this.current, window).map(panel => this.options.panels.get(panel)?.title ?? panel).join(TITLE_SEPARATOR) + FLOATING_TITLE_SUFFIX;
+        return dockWindowPanels(this.current, window).map(panel => this.panels.get(panel)?.title ?? panel).join(TITLE_SEPARATOR) + FLOATING_TITLE_SUFFIX;
+    }
+
+    private notifyMoved(): void {
+        for (const [id, panel] of this.panels) {
+            const document = panel.element.ownerDocument;
+            const previous = this.placedIn.get(id);
+            this.placedIn.set(id, document);
+            if (previous !== undefined && previous !== document) panel.onMoved?.(document);
+        }
     }
 
     private notifyShown(): void {
-        for (const [id, panel] of this.options.panels) {
+        for (const [id, panel] of [...this.panels]) {
             const shown = this.isShown(id);
             if (this.shown.get(id) === shown) continue;
             this.shown.set(id, shown);
@@ -604,8 +637,7 @@ export class DockView {
         return {element, label, close};
     }
 
-    private dragWindows(panel: DockPanelId, sourceWindow: string, down: PointerEvent, scale: number): DragWindow[] {
-        const floats = this.canFloat(panel);
+    private dragWindows(sourceWindow: string, down: PointerEvent, scale: number): DragWindow[] {
         return [...this.frontToBack, MAIN_DOCK_WINDOW].flatMap(id => {
             const area = this.areas.get(id);
             const metrics = this.metricsOf(id);
@@ -614,7 +646,7 @@ export class DockView {
                 ? {x: down.screenX - down.clientX * scale, y: down.screenY - down.clientY * scale}
                 : contentOrigin(metrics, this.chromeOf(id, metrics, scale));
             const drop = area.dropArea(dockStacks(this.shownRootOf(id)));
-            return [{id, area, drop, origin, rect: outerRectOf(metrics), accepts: floats || id === MAIN_DOCK_WINDOW}];
+            return [{id, area, drop, origin, rect: outerRectOf(metrics)}];
         });
     }
 
@@ -641,7 +673,7 @@ export class DockView {
     private hoverIn(window: DragWindow, client: DockPoint, excluded: string | undefined): DragHover {
         const local = window.area.localPoint(client.x, client.y);
         const inArea = dockAreaContains(window.drop, local.x, local.y);
-        const found = window.accepts && inArea ? dockDropAt(local.x, local.y, window.drop, excluded) : undefined;
+        const found = inArea ? dockDropAt(local.x, local.y, window.drop, excluded) : undefined;
         return {window, inArea, drop: found === undefined ? undefined : {...found, target: inWindowTarget(found.target, window.id)}};
     }
 
@@ -650,7 +682,7 @@ export class DockView {
             this.movePanel(panel, hover.drop.target);
             return;
         }
-        if (hover?.inArea === true || !this.canFloat(panel)) return;
+        if (hover?.inArea === true || !this.canFloat()) return;
         const metrics = this.metricsOf(sourceWindow);
         if (metrics === undefined) return;
         const topLeft = {x: last.screenX - grab.x * scale, y: last.screenY - grab.y * scale};
@@ -701,7 +733,7 @@ export class DockView {
             if (!moved) {
                 if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) < DRAG_THRESHOLD_PX) return;
                 moved = true;
-                windows = this.dragWindows(panel, sourceWindow, down, scale);
+                windows = this.dragWindows(sourceWindow, down, scale);
                 for (const area of this.areas.values()) area.setDragging(true);
                 element.classList.add(DRAGGED_CLASS);
             }

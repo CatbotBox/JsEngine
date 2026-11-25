@@ -1,7 +1,7 @@
 import type {Entity} from "../../engine/core";
 import type {SceneJsonValue} from "../../engine/scene";
 import type {EditorEntityDetails, EditorFieldValue, EditorViewInfo} from "../editorProtocol";
-import {capturePointer, errorText, hasCommandModifier, releasePointer, visualScaleOf} from "./dom";
+import {capturePointer, errorText, hasCommandModifier, readStorage, releasePointer, visualScaleOf, writeStorage} from "./dom";
 import {
     addVectors,
     degreesToRadians,
@@ -20,7 +20,7 @@ import {
     scaleVector,
     unionOfBounds,
 } from "./editorCameraMath";
-import type {CameraPose, OrbitCamera, Quaternion, Vector3} from "./editorCameraMath";
+import type {CameraPose, Quaternion, Vector3} from "./editorCameraMath";
 import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
 import {numberOfWire} from "./fieldValueText";
@@ -47,6 +47,10 @@ import {
 } from "./transformMath";
 import type {LocalTransform, Matrix3} from "./transformMath";
 import {snapsThisDrag} from "./snapSteps";
+import {SCENE_VIEW_CAMERAS_STORAGE_KEY, sceneViewCameraPose, sceneViewCameraText, storedSceneViewCamera, withoutSceneViewCamera, withSceneViewCamera} from "./sceneViewCameras";
+import type {SceneViewCamera} from "./sceneViewCameras";
+import {SCENE_CAMERA_HOOK, SCENE_FRAMES_HOOK, SCENE_VIEWS_HOOK, SCENE_VIEWS_SEPARATOR} from "../project/editorUiHooks";
+import type {SceneViewId} from "../project/dockPanelIds";
 import {HOLDS_NO_ENTITIES} from "./undoStack";
 import type {FieldChange} from "./undoStack";
 import {
@@ -83,6 +87,7 @@ export const WHEEL_PIXELS_PER_NOTCH = 100;
 export const WHEEL_LINES_PER_NOTCH = 3;
 export const POINT_MARKER_RADIUS_PX = 5;
 export const DEFAULT_FIELD_OF_VIEW_DEGREES = 60;
+export const CAMERA_STORE_DELAY_MS = 250;
 
 const LEFT_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
@@ -111,9 +116,13 @@ const QUATERNION_KEY = "xyzw";
 const FLY_KEYS: ReadonlySet<string> = new Set(["w", "a", "s", "d", "q", "e"]);
 const MAX_PICK_ENTITIES = 64;
 
-type EditorCamera =
-    | {readonly kind: "2d", readonly position: Vector3, readonly rotation: Quaternion}
-    | {readonly kind: "3d", readonly orbit: OrbitCamera, readonly fieldOfViewDegrees: number};
+export interface SceneViewOptions {
+    readonly view: SceneViewId;
+
+    activated(): void;
+
+    isFocusTarget(): boolean;
+}
 
 type Handle =
     | {readonly kind: "moveAxis", readonly axis: Vector3, readonly screenPerUnit: ScreenPoint, readonly segment: ScreenSegment, readonly color: string}
@@ -221,7 +230,9 @@ export class SceneView {
     private infoInFlight = false;
     private infoFailedAtMs = Number.NEGATIVE_INFINITY;
     private infoProblem: string | undefined;
-    private camera: EditorCamera | undefined;
+    private camera: SceneViewCamera | undefined;
+    private rememberedCamera: SceneViewCamera | undefined;
+    private cameraStoreTimer: number | undefined;
     private readonly cameraSender = new LatestOnly();
     private gesture: Gesture | undefined;
     private handles: Handle[] = [];
@@ -231,6 +242,9 @@ export class SceneView {
     private flyFast = false;
     private lastFrameMs: number | undefined;
     private frameHandle: number | undefined;
+    private frameWindow: Window | undefined;
+    private disposed = false;
+    private shown = false;
     private wasActive = false;
     private shownSelectionRotated = false;
 
@@ -239,9 +253,12 @@ export class SceneView {
         private readonly viewport: HTMLElement,
         private readonly overlay: HTMLCanvasElement,
         private readonly workspace: EditorWorkspace,
+        private readonly options: SceneViewOptions,
     ) {
+        this.rememberedCamera = storedSceneViewCamera(readStorage(this.storageWindow(), SCENE_VIEW_CAMERAS_STORAGE_KEY), workspace.scenes.projectKey(), options.view);
         overlay.tabIndex = 0;
         overlay.setAttribute("aria-label", "Scene view");
+        overlay.addEventListener("focus", () => options.activated());
         overlay.addEventListener("pointerdown", event => this.onPointerDown(event));
         overlay.addEventListener("pointermove", event => this.onPointerMove(event));
         overlay.addEventListener("pointerup", event => this.onPointerUp(event));
@@ -261,7 +278,6 @@ export class SceneView {
         workspace.on("state", () => this.stateChanged());
         workspace.on("selection", () => this.showSelectionRotation());
         workspace.on("entityPick", () => this.overlay.classList.toggle(PICKING_CLASS, workspace.pickingEntity));
-        this.frameHandle = this.window()?.requestAnimationFrame(this.frame);
     }
 
     public get selectionRotated(): boolean {
@@ -273,8 +289,30 @@ export class SceneView {
     }
 
     public dispose(): void {
-        if (this.frameHandle !== undefined) this.window()?.cancelAnimationFrame(this.frameHandle);
-        this.frameHandle = undefined;
+        this.disposed = true;
+        this.cancelFrame();
+        this.storageWindow()?.clearTimeout(this.cameraStoreTimer);
+        this.cameraStoreTimer = undefined;
+    }
+
+    public forgetCamera(): void {
+        const window = this.storageWindow();
+        writeStorage(window, SCENE_VIEW_CAMERAS_STORAGE_KEY, withoutSceneViewCamera(readStorage(window, SCENE_VIEW_CAMERAS_STORAGE_KEY), this.workspace.scenes.projectKey(), this.options.view));
+    }
+
+    public setShown(shown: boolean): void {
+        if (this.disposed || shown === this.shown) return;
+        this.shown = shown;
+        this.cancelFrame();
+        this.lastFrameMs = undefined;
+        if (shown) this.requestFrame();
+    }
+
+    public relocated(): void {
+        if (this.disposed || !this.shown || this.window() === this.frameWindow) return;
+        this.cancelFrame();
+        this.lastFrameMs = undefined;
+        this.requestFrame();
     }
 
     public resendCamera(): void {
@@ -286,15 +324,14 @@ export class SceneView {
         const selection = this.workspace.selection;
         if (selection.length === 0 || !this.isActive()) return;
         try {
-            const info = await this.workspace.request({op: "getViewInfo", view: "scene", entities: selection.slice(0, MAX_PICK_ENTITIES)});
+            const info = await this.workspace.request({op: "getViewInfo", view: this.options.view, entities: selection.slice(0, MAX_PICK_ENTITIES)});
             this.adoptInfo(info);
             const union = unionOfBounds(info.bounds);
             const camera = this.camera;
             if (union === undefined || camera === undefined) return;
-            this.camera = camera.kind === "2d"
+            this.changeCamera(camera.kind === "2d"
                 ? {...camera, position: focusCamera2d(camera.position, union.min, union.max)}
-                : {...camera, orbit: focusOrbitCamera(camera.orbit, union.min, union.max, camera.fieldOfViewDegrees)};
-            this.sendCamera();
+                : {...camera, orbit: focusOrbitCamera(camera.orbit, union.min, union.max, camera.fieldOfViewDegrees)});
         } catch (error) {
             this.workspace.reportError(error);
         }
@@ -302,6 +339,23 @@ export class SceneView {
 
     private window(): (Window & typeof globalThis) | null {
         return this.overlay.ownerDocument.defaultView;
+    }
+
+    private storageWindow(): (Window & typeof globalThis) | null {
+        return this.workspace.document.defaultView;
+    }
+
+    private requestFrame(): void {
+        const window = this.window() ?? undefined;
+        this.frameWindow = window;
+        this.frameHandle = window?.requestAnimationFrame(this.frame);
+    }
+
+    private cancelFrame(): void {
+        const window = this.frameWindow;
+        if (window !== undefined && this.frameHandle !== undefined && !window.closed) window.cancelAnimationFrame(this.frameHandle);
+        this.frameWindow = undefined;
+        this.frameHandle = undefined;
     }
 
     private isActive(): boolean {
@@ -316,14 +370,14 @@ export class SceneView {
         if (!active) {
             this.gesture = undefined;
             this.flyKeys.clear();
-        } else {
+        } else if (this.options.isFocusTarget()) {
             this.overlay.focus();
         }
         this.wasActive = active;
     }
 
     private readonly frame = (timeMs: number): void => {
-        this.frameHandle = this.window()?.requestAnimationFrame(this.frame);
+        this.requestFrame();
         const elapsedSeconds = this.lastFrameMs === undefined ? 0 : (timeMs - this.lastFrameMs) / MS_PER_SECOND;
         this.lastFrameMs = timeMs;
         const active = this.isActive();
@@ -339,7 +393,8 @@ export class SceneView {
         if (this.infoInFlight || timeMs - this.infoFailedAtMs < VIEW_INFO_RETRY_MS) return;
         this.infoInFlight = true;
         const selection = this.workspace.selection.slice(0, MAX_PICK_ENTITIES);
-        this.workspace.request({op: "getViewInfo", view: "scene", entities: selection}).then(info => {
+        this.workspace.request({op: "getViewInfo", view: this.options.view, entities: selection}).then(info => {
+            if (this.disposed) return;
             this.infoProblem = undefined;
             this.adoptInfo(info);
         }, error => {
@@ -350,18 +405,45 @@ export class SceneView {
 
     private adoptInfo(info: EditorViewInfo): void {
         this.info = info;
+        this.showViewHooks(info);
         this.showSelectionRotation();
         const camera = this.camera;
         const wanted = info.projection === "perspective" ? "3d" : "2d";
         if (camera !== undefined && camera.kind === wanted) return;
+        const remembered = this.rememberedCamera;
+        if (remembered?.kind === wanted) {
+            this.changeCamera(remembered);
+            return;
+        }
         const pose: CameraPose = {position: info.camera.position, rotation: info.camera.rotation};
         this.camera = wanted === "2d"
             ? {kind: "2d", position: pose.position, rotation: pose.rotation}
             : {kind: "3d", orbit: orbitCameraFromPose(pose), fieldOfViewDegrees: info.camera.fieldOfViewDegrees ?? DEFAULT_FIELD_OF_VIEW_DEGREES};
+        this.overlay.setAttribute(SCENE_CAMERA_HOOK, sceneViewCameraText(this.camera));
     }
 
-    private poseOf(camera: EditorCamera): CameraPose {
-        return camera.kind === "2d" ? {position: camera.position, rotation: camera.rotation} : poseOfOrbitCamera(camera.orbit);
+    private showViewHooks(info: EditorViewInfo): void {
+        if (info.presentedFrames !== undefined) this.overlay.setAttribute(SCENE_FRAMES_HOOK, String(info.presentedFrames));
+        this.overlay.setAttribute(SCENE_VIEWS_HOOK, info.sceneViews.join(SCENE_VIEWS_SEPARATOR));
+    }
+
+    private changeCamera(camera: SceneViewCamera): void {
+        this.camera = camera;
+        this.rememberedCamera = camera;
+        this.overlay.setAttribute(SCENE_CAMERA_HOOK, sceneViewCameraText(camera));
+        this.scheduleCameraStore();
+        this.sendCamera();
+    }
+
+    private scheduleCameraStore(): void {
+        const window = this.storageWindow();
+        if (window === null || this.cameraStoreTimer !== undefined) return;
+        this.cameraStoreTimer = window.setTimeout(() => {
+            this.cameraStoreTimer = undefined;
+            const camera = this.rememberedCamera;
+            if (this.disposed || camera === undefined) return;
+            writeStorage(window, SCENE_VIEW_CAMERAS_STORAGE_KEY, withSceneViewCamera(readStorage(window, SCENE_VIEW_CAMERAS_STORAGE_KEY), this.workspace.scenes.projectKey(), this.options.view, camera));
+        }, CAMERA_STORE_DELAY_MS);
     }
 
     private sendCamera(): void {
@@ -369,12 +451,12 @@ export class SceneView {
         if (camera === undefined) return;
         this.cameraSender.run(async () => {
             const current = this.camera;
-            if (current === undefined) return;
-            const pose = this.poseOf(current);
+            if (current === undefined || this.disposed) return;
+            const pose = sceneViewCameraPose(current);
             try {
-                await this.workspace.request({op: "setEditorCamera", position: pose.position, rotation: pose.rotation});
+                await this.workspace.request({op: "setEditorCamera", view: this.options.view, position: pose.position, rotation: pose.rotation});
             } catch (error) {
-                this.workspace.reportError(error);
+                if (!this.disposed) this.workspace.reportError(error);
             }
         });
     }
@@ -469,6 +551,7 @@ export class SceneView {
 
     private onPointerDown(event: PointerEvent): void {
         if (!this.isActive()) return;
+        this.options.activated();
         this.overlay.focus();
         const point = this.pointOf(event);
         const info = this.info;
@@ -554,8 +637,7 @@ export class SceneView {
         event.preventDefault();
         const camera = this.camera;
         if (camera === undefined || camera.kind !== "3d") return;
-        this.camera = {...camera, orbit: dollyCamera(camera.orbit, wheelNotches(event))};
-        this.sendCamera();
+        this.changeCamera({...camera, orbit: dollyCamera(camera.orbit, wheelNotches(event))});
     }
 
     private onKeyDown(event: KeyboardEvent): void {
@@ -578,8 +660,7 @@ export class SceneView {
         if (this.flyKeys.size === 0 || gesture?.kind !== "camera" || camera?.kind !== "3d") return;
         const held = (key: string): number => this.flyKeys.has(key) ? 1 : 0;
         gesture.mode = "look";
-        this.camera = {...camera, orbit: flyCamera(camera.orbit, {right: held("d") - held("a"), up: held("e") - held("q"), forward: held("w") - held("s")}, elapsedSeconds, this.flyFast)};
-        this.sendCamera();
+        this.changeCamera({...camera, orbit: flyCamera(camera.orbit, {right: held("d") - held("a"), up: held("e") - held("q"), forward: held("w") - held("s")}, elapsedSeconds, this.flyFast)});
     }
 
     private moveCamera(gesture: CameraGesture, point: ScreenPoint): void {
@@ -595,24 +676,33 @@ export class SceneView {
             const dxUnits = dx / scale.pxPerUnitX;
             const dyUnits = dy / scale.pxPerUnitY;
             if (camera.kind === "2d") {
-                this.camera = {...camera, position: panCamera2d(camera.position, dxUnits, dyUnits)};
+                this.changeCamera({...camera, position: panCamera2d(camera.position, dxUnits, dyUnits)});
             } else {
                 const geometry: ViewInfoGeometry = {...info, camera: {...poseOfOrbitCamera(camera.orbit), fieldOfViewDegrees: camera.fieldOfViewDegrees}};
-                this.camera = {...camera, orbit: panOrbitCamera(camera.orbit, viewPlaneDelta(geometry, camera.orbit.distance, dxUnits, dyUnits))};
+                this.changeCamera({...camera, orbit: panOrbitCamera(camera.orbit, viewPlaneDelta(geometry, camera.orbit.distance, dxUnits, dyUnits))});
             }
         } else if (camera.kind === "3d") {
-            this.camera = {...camera, orbit: gesture.mode === "orbit" ? orbitAroundPivot(camera.orbit, dx, dy) : lookAround(camera.orbit, dx, dy)};
+            this.changeCamera({...camera, orbit: gesture.mode === "orbit" ? orbitAroundPivot(camera.orbit, dx, dy) : lookAround(camera.orbit, dx, dy)});
         }
-        this.sendCamera();
+    }
+
+    private async currentInfo(): Promise<EditorViewInfo | undefined> {
+        try {
+            const info = await this.workspace.request({op: "getViewInfo", view: this.options.view, entities: this.workspace.selection.slice(0, MAX_PICK_ENTITIES)});
+            if (!this.disposed) this.adoptInfo(info);
+            return info;
+        } catch {
+            return this.info;
+        }
     }
 
     private async pick(click: PendingClick): Promise<void> {
-        const info = this.info;
-        const scale = info === undefined ? undefined : this.overlayScale(info);
+        const info = await this.currentInfo();
+        const scale = info === undefined || this.disposed ? undefined : this.overlayScale(info);
         if (scale === undefined) return;
         const screen = screenPointOf(scale, click.start);
         try {
-            const {entities: hits} = await this.workspace.request({op: "pickEntities", x: screen.x, y: screen.y, view: "scene"});
+            const {entities: hits} = await this.workspace.request({op: "pickEntities", x: screen.x, y: screen.y, view: this.options.view});
             if (click.forEntityPick) {
                 const picked = hits[0];
                 if (picked !== undefined) this.workspace.finishEntityPick(picked);
@@ -819,7 +909,7 @@ export class SceneView {
         const scale = this.overlayScale(info);
         if (scale === undefined) return undefined;
         const screen = screenPointOf(scale, this.pointOf(event));
-        const pose = this.poseOf(camera);
+        const pose = sceneViewCameraPose(camera);
         const geometry: ViewInfoGeometry = {...info, camera: {...pose, fieldOfViewDegrees: camera.kind === "3d" ? camera.fieldOfViewDegrees : undefined}};
         return pointOnViewPlane(geometry, screen, camera.kind === "3d" ? camera.orbit.distance : 0);
     }

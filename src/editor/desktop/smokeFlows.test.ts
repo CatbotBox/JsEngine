@@ -34,6 +34,7 @@ const NO_HOST: SmokeHost = {
     writeFile: async () => undefined,
     floatingWindows: () => [],
     reloadPage: async () => undefined,
+    viewports: async () => [],
 };
 
 function flow(name: string, run: SmokeFlow["run"], requires?: readonly string[]): SmokeFlow {

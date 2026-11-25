@@ -130,7 +130,6 @@ const SAFE_REPLACEMENT = "_";
 const NO_VALUES: SceneJsonObject = {};
 const ENTITY_PICK_HINT = "Click an entity in the Scene view to pick it (Esc cancels)";
 const ENTITY_PICK_SCENE_VIEW_HINT = "The Scene view is hidden while the game view is maximized: stop the game and click an entity in the Scene view to pick it (Esc cancels)";
-const CANCEL_KEY = "Escape";
 const DATA_ASSETS_FOLDER = "assets";
 
 interface EntityPick {
@@ -455,13 +454,8 @@ export class EditorWorkspace implements UndoContext {
     public pickEntity(): Promise<Entity | undefined> {
         this.cancelEntityPick();
         return new Promise(resolve => {
-            const onKey = (event: KeyboardEvent): void => {
-                if (event.key === CANCEL_KEY) this.cancelEntityPick();
-            };
-            this.document.addEventListener("keydown", onKey, true);
             this.entityPick = {
                 finish: entity => {
-                    this.document.removeEventListener("keydown", onKey, true);
                     this.entityPick = undefined;
                     this.emit("entityPick");
                     resolve(entity);

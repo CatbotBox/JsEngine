@@ -144,7 +144,7 @@ describe("editor views", () => {
         expect(harnessed.counter.runs).toBeGreaterThan(runsBefore);
         expect(probe.lastEnabled()).toEqual([scene.camera]);
         expect((await ask(harnessed, {op: "getViewInfo", view: "scene"})).camera.position).toEqual([0, 0, 0]);
-        await ask(harnessed, {op: "setEditorCamera", position: [3, 3, 0], rotation: [0, 0, 0, 1]});
+        await ask(harnessed, {op: "setEditorCamera", view: "scene", position: [3, 3, 0], rotation: [0, 0, 0, 1]});
         expect((await ask(harnessed, {op: "pickEntities", x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2, view: "scene"})).entities).toEqual([scene.large]);
         expect((await ask(harnessed, {op: "getViewInfo", view: "game"})).camera.position).toEqual([0, 0, 0]);
 
@@ -160,11 +160,11 @@ describe("editor views", () => {
         const scene = {} as Scene2d;
         const harnessed = editorWorld(world => scene2d(world, scene));
         expect(await framesPass(harnessed)).toBe(true);
-        const info = await ask(harnessed, {op: "setEditorCamera", position: [5, 1, 0], rotation: [0, 0, 0, 1]});
+        const info = await ask(harnessed, {op: "setEditorCamera", view: "scene", position: [5, 1, 0], rotation: [0, 0, 0, 1]});
         expect(info.camera).toEqual({position: [5, 1, 0], rotation: [0, 0, 0, 1]});
         expect(fieldsOf(await ask(harnessed, {op: "getEntity", entity: scene.camera}), "LocalPosition")).toEqual({xyz: [0, 0, 0]});
         expect((await ask(harnessed, {op: "getViewInfo", view: "game"})).camera.position).toEqual([0, 0, 0]);
-        expect(await failureOf(ask(harnessed, {op: "setEditorCamera", position: [0, 0, 0], rotation: [0, 0, 0, 1], fieldOfViewDegrees: 60})))
+        expect(await failureOf(ask(harnessed, {op: "setEditorCamera", view: "scene", position: [0, 0, 0], rotation: [0, 0, 0, 1], fieldOfViewDegrees: 60})))
             .toBe('Editor request "setEditorCamera" failed: The editor camera is orthographic (the game camera has no FieldOfView), so it takes no field of view');
     });
 
@@ -204,7 +204,7 @@ describe("editor views", () => {
         expect((await ask(harnessed, {op: "pickEntities", x: centre.x + 1, y: centre.y + 1, view: "game"})).entities).toEqual([scene.small, scene.large]);
         expect((await ask(harnessed, {op: "pickEntities", x: centre.x + 3, y: centre.y + 3, view: "game"})).entities).toEqual([scene.large]);
         expect((await ask(harnessed, {op: "pickEntities", x: 0, y: 0, view: "game"})).entities).toEqual([]);
-        await ask(harnessed, {op: "setEditorCamera", position: [3, 3, 0], rotation: [0, 0, 0, 1]});
+        await ask(harnessed, {op: "setEditorCamera", view: "scene", position: [3, 3, 0], rotation: [0, 0, 0, 1]});
         expect((await ask(harnessed, {op: "pickEntities", x: centre.x, y: centre.y, view: "scene"})).entities).toEqual([scene.large]);
     });
 });
@@ -252,7 +252,7 @@ describe("editor 3D views", () => {
         expect((await ask(harnessed, {op: "pickEntities", ...centre, view: "game"})).entities).toEqual([scene.near, scene.far]);
         const projected = projectToScreen((await ask(harnessed, {op: "getViewInfo", view: "game"})).worldToScreen as Mat4, [8, 0, 0]);
         expect((await ask(harnessed, {op: "pickEntities", x: projected.x, y: projected.y, view: "game"})).entities).toEqual([scene.offAxis]);
-        await ask(harnessed, {op: "setEditorCamera", position: [0, 0, 20], rotation: [0, 1, 0, 0], fieldOfViewDegrees: 90});
+        await ask(harnessed, {op: "setEditorCamera", view: "scene", position: [0, 0, 20], rotation: [0, 1, 0, 0], fieldOfViewDegrees: 90});
         expect((await ask(harnessed, {op: "pickEntities", ...centre, view: "scene"})).entities).toEqual([scene.far, scene.near]);
     });
 });
@@ -300,7 +300,7 @@ describe("editor views on a pixel presenter", () => {
         const {world, service} = harnessed;
         const group = world.tryGetSystem(PixelRenderSystemGroup)!;
         expect(await framesPass(harnessed)).toBe(true);
-        service.showSceneView({kind: "pixels", presenter: sceneView});
+        service.showSceneView("scene", {kind: "pixels", presenter: sceneView, presentedFrames: () => sceneView.frames.length});
         expect(await framesPass(harnessed)).toBe(true);
         const secondCamera = (await ask(harnessed, {op: "createEntity", name: "secondCamera", components: {Camera: {}}})).entity;
         expect(await framesPass(harnessed)).toBe(true);
@@ -352,7 +352,7 @@ describe("editor views with a scene view presenter", () => {
         });
         const {world, service} = harnessed;
         expect(await framesPass(harnessed)).toBe(true);
-        service.showSceneView({kind: "pixels", presenter: sceneView});
+        service.showSceneView("scene", {kind: "pixels", presenter: sceneView, presentedFrames: () => sceneView.frames.length});
         expect(world.resources.tryGet(PixelRenderTargets)?.targets.length).toBe(2);
         const hostFrames = host.frames.length;
         expect(await framesPass(harnessed)).toBe(true);
@@ -429,7 +429,7 @@ describe("editor game camera reports", () => {
         expect(await waitUntil(() => gameCameraReports(harnessed).length === 1)).toBe(true);
         expect(gameCameraReports(harnessed)).toEqual([false]);
 
-        await ask(harnessed, {op: "setEditorCamera", position: [0, 0, 0], rotation: [0, 0, 0, 1]});
+        await ask(harnessed, {op: "setEditorCamera", view: "scene", position: [0, 0, 0], rotation: [0, 0, 0, 1]});
         runOneTick(harnessed);
         runOneTick(harnessed);
         await sleep(EVENT_DELIVERY_MS);
@@ -453,3 +453,80 @@ describe("editor game camera reports", () => {
 function cameraMatrixAt(z: number): Mat4 {
     return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, z, 1];
 }
+
+describe("editor views with several scene views", () => {
+    test("each scene view draws its own editor camera into its own presenter, takes its own camera and picks through it, and closing one disposes its camera", async () => {
+        const scene = {} as Scene2d;
+        const host = new MemoryPixelPresenter({widthPx: PRESENTER_WIDTH_PX, heightPx: PRESENTER_HEIGHT_PX});
+        const first = new MemoryPixelPresenter({widthPx: RESIZED_WIDTH_PX, heightPx: RESIZED_HEIGHT_PX});
+        const second = new MemoryPixelPresenter({widthPx: PRESENTER_WIDTH_PX, heightPx: PRESENTER_HEIGHT_PX});
+        const harnessed = editorWorld(world => {
+            scene2d(world, scene);
+            world.resources.insert(new PixelPresenterResource(host));
+            world.getOrCreateSystem(PixelRenderSystemGroup);
+            world.getOrCreateSystem(WalkedCameraProbeSystem);
+        });
+        const {world, service} = harnessed;
+        const entityManager = world.entityManager;
+        expect(await failureOf(ask(harnessed, {op: "getViewInfo", view: "scene:2"}))).toBe('Editor request "getViewInfo" failed: The editor has no Scene view scene:2');
+        service.showSceneView("scene", {kind: "pixels", presenter: first, presentedFrames: () => first.frames.length});
+        service.showSceneView("scene:2", {kind: "pixels", presenter: second, presentedFrames: () => second.frames.length});
+        expect(world.resources.tryGet(PixelRenderTargets)?.targets.map(target => target.presenter)).toEqual([first, second, host]);
+        expect(await framesPass(harnessed)).toBe(true);
+        const firstCamera = service.sceneCameraOf("scene")!;
+        const secondCamera = service.sceneCameraOf("scene:2")!;
+        expect(new Set([firstCamera, secondCamera, scene.camera]).size).toBe(3);
+        expect(entityManager.hasComponent(secondCamera, EditorOnly) && !entityManager.isEnabled(secondCamera)).toBe(true);
+        expect(world.getOrCreateSystem(WalkedCameraProbeSystem).cameras.slice(-3)).toEqual([firstCamera, secondCamera, scene.camera]);
+        expect([first.frames.length > 0, second.frames.length > 0]).toEqual([true, true]);
+
+        await ask(harnessed, {op: "setEditorCamera", view: "scene:2", position: [3, 3, 0], rotation: [0, 0, 0, 1]});
+        const [firstInfo, secondInfo] = [await ask(harnessed, {op: "getViewInfo", view: "scene"}), await ask(harnessed, {op: "getViewInfo", view: "scene:2"})];
+        expect([firstInfo.camera.position, secondInfo.camera.position]).toEqual([[0, 0, 0], [3, 3, 0]]);
+        expect([firstInfo.view, secondInfo.view, secondInfo.sceneViews]).toEqual(["scene", "scene:2", ["scene", "scene:2"]]);
+        const presented = secondInfo.presentedFrames ?? 0;
+        expect(presented > 0 && presented <= second.frames.length).toBe(true);
+        expect(secondInfo.screenWidth).toBe(PRESENTER_WIDTH_PX / PIXELS_PER_SCREEN_UNIT_X);
+        const centre = {x: secondInfo.screenWidth / 2, y: secondInfo.screenHeight / 2};
+        expect((await ask(harnessed, {op: "pickEntities", ...centre, view: "scene:2"})).entities).toEqual([scene.large]);
+        expect((await ask(harnessed, {op: "pickEntities", x: firstInfo.screenWidth / 2, y: firstInfo.screenHeight / 2, view: "scene"})).entities).toEqual([scene.small, scene.large]);
+
+        service.closeSceneView("scene:2");
+        expect(entityManager.exists(secondCamera)).toBe(false);
+        expect(service.sceneCameraOf("scene:2")).toBeUndefined();
+        expect(world.resources.tryGet(PixelRenderTargets)?.targets.map(target => target.presenter)).toEqual([first, host]);
+        expect((await ask(harnessed, {op: "getViewInfo", view: "scene"})).sceneViews).toEqual(["scene"]);
+        expect(await failureOf(ask(harnessed, {op: "setEditorCamera", view: "scene:2", position: [0, 0, 0], rotation: [0, 0, 0, 1]})))
+            .toBe('Editor request "setEditorCamera" failed: The editor has no Scene view scene:2');
+        const secondFrames = second.frames.length;
+        expect(await framesPass(harnessed)).toBe(true);
+        expect(second.frames.length).toBe(secondFrames);
+
+        service.closeSceneView("scene");
+        expect(entityManager.exists(firstCamera)).toBe(true);
+        expect(world.resources.tryGet(PixelRenderTargets)).toBeUndefined();
+        expect((await ask(harnessed, {op: "getViewInfo", view: "scene"})).sceneViews).toEqual([]);
+    });
+
+    test("a hidden scene view's empty presenter costs no frame while the others keep drawing", async () => {
+        const scene = {} as Scene2d;
+        const host = new MemoryPixelPresenter({widthPx: PRESENTER_WIDTH_PX, heightPx: PRESENTER_HEIGHT_PX});
+        const shown = new MemoryPixelPresenter({widthPx: RESIZED_WIDTH_PX, heightPx: RESIZED_HEIGHT_PX});
+        const hidden = new MemoryPixelPresenter({widthPx: RESIZED_WIDTH_PX, heightPx: RESIZED_HEIGHT_PX});
+        const harnessed = editorWorld(world => {
+            scene2d(world, scene);
+            world.resources.insert(new PixelPresenterResource(host));
+            world.getOrCreateSystem(PixelRenderSystemGroup);
+        });
+        harnessed.service.showSceneView("scene", {kind: "pixels", presenter: shown, presentedFrames: () => shown.frames.length});
+        harnessed.service.showSceneView("scene:2", {kind: "pixels", presenter: hidden, presentedFrames: () => hidden.frames.length});
+        hidden.resize(0, 0);
+        const [shownFrames, hiddenFrames] = [shown.frames.length, hidden.frames.length];
+        expect(await framesPass(harnessed)).toBe(true);
+        expect(shown.frames.length).toBeGreaterThan(shownFrames);
+        expect(hidden.frames.length).toBe(hiddenFrames);
+        hidden.resize(RESIZED_WIDTH_PX, RESIZED_HEIGHT_PX);
+        expect(await framesPass(harnessed)).toBe(true);
+        expect(hidden.frames.length).toBeGreaterThan(hiddenFrames);
+    });
+});

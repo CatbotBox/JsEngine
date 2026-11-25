@@ -2,7 +2,7 @@ import type {Entity} from "../../engine/core";
 import {choiceEntries, commandEntry, commandEntryFor, submenuEntry} from "./commandMenus";
 import type {MenuEntry} from "./commandMenus";
 import type {ComponentTarget, EditorCommands, ProjectItem} from "./editorCommands";
-import type {DockPanelId} from "./dockLayout";
+import type {DockPanelId, DockPanelKind} from "../project/dockPanelIds";
 import type {EditorSceneTab} from "./sceneDocuments";
 import type {SceneEntry} from "./sceneTabs";
 import {BOTTOM_PANELS} from "./editorPanels";
@@ -36,7 +36,8 @@ const DATA_ASSET_SUBMENU = "createDataAsset";
 const SNAP_SUBMENU_PREFIX = "snap.";
 const ADD_TAB_LABEL = "Add Tab";
 const ADD_TAB_SUBMENU = "addTab";
-const VIEW_PANELS: readonly DockPanelId[] = ["scene", "game", "hierarchy", "inspector"];
+const VIEW_PANELS: readonly DockPanelKind[] = ["scene", "game", "hierarchy", "inspector"];
+const SCENE_PANEL: DockPanelKind = "scene";
 const MENU_IDS: Readonly<Record<EditorMenuId, EditorMenuId>> = {file: "file", edit: "edit", assets: "assets", entity: "entity", window: "window", help: "help"};
 
 function dataAssetEntries(commands: EditorCommands, folder: string | undefined): MenuEntry[] {
@@ -132,7 +133,7 @@ function windowMenu(commands: EditorCommands): MenuEntry[] {
     return [
         ...GAME_VIEW_OPTIONS.map(option => commandEntry(view.gameViewOptions[option])),
         MENU_SEPARATOR,
-        ...VIEW_PANELS.map(panel => commandEntry(window.panels[panel])),
+        ...VIEW_PANELS.flatMap(panel => panel === SCENE_PANEL ? [commandEntry(window.panels[panel]), commandEntry(window.newSceneView)] : [commandEntry(window.panels[panel])]),
         MENU_SEPARATOR,
         ...BOTTOM_PANELS.map(panel => commandEntry(window.panels[panel])),
         MENU_SEPARATOR,
@@ -155,7 +156,7 @@ export function editorMenuBar(commands: EditorCommands): MenuBarMenu[] {
     ];
 }
 
-export function dockTabMenu(commands: EditorCommands, panel: DockPanelId, closedPanels: readonly DockPanelId[], leading: readonly MenuEntry[] = []): MenuEntry[] {
+export function dockTabMenu(commands: EditorCommands, panel: DockPanelId, addablePanels: readonly DockPanelId[], leading: readonly MenuEntry[] = []): MenuEntry[] {
     const window = commands.window;
     return [
         ...leading,
@@ -166,7 +167,7 @@ export function dockTabMenu(commands: EditorCommands, panel: DockPanelId, closed
         commandEntryFor(window.floatPanel, panel),
         commandEntryFor(window.dockPanel, panel),
         MENU_SEPARATOR,
-        submenuEntry(ADD_TAB_SUBMENU, ADD_TAB_LABEL, closedPanels.map(closed => commandEntryFor(window.addPanel, {panel: closed, beside: panel}))),
+        submenuEntry(ADD_TAB_SUBMENU, ADD_TAB_LABEL, addablePanels.map(added => commandEntryFor(window.addPanel, {panel: added, beside: panel}))),
     ];
 }
 

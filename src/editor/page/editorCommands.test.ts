@@ -29,9 +29,8 @@ import {LAST_LOADED_SCENE_REASON, PREFAB_TAB_SCENES_REASON} from "./sceneDocumen
 import type {EditorSceneTab, TabHistory} from "./sceneDocuments";
 import {SceneTabs} from "./sceneTabs";
 import type {SceneEntry} from "./sceneTabs";
-import type {DockPanelId} from "./dockLayout";
-import {MAIN_WINDOW_PANEL_REASON} from "./editorPanels";
-import {DOCK_PANEL_IDS} from "../project/editorUiHooks";
+import type {DockPanelId} from "../project/dockPanelIds";
+import {DOCK_PANEL_KINDS} from "../project/dockPanelIds";
 import {MENU_SEPARATOR} from "./popupMenu";
 import type {MenuAction, MenuItem, MenuSubmenu} from "./popupMenu";
 import {shortcutRows} from "./shortcutsDialog";
@@ -96,7 +95,7 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
         worldStoppedError: null, snapSteps: DEFAULT_SNAP_STEPS, snapEnabled: false, selectionRotated: false, openExternally: false, showInFolder: false, undoLabel: undefined, entityKeysFocused: true,
         gameViewOptions: DEFAULT_GAME_VIEW_OPTIONS, projectSelection: [], handleModes: DEFAULT_HANDLE_MODES,
     };
-    const openPanels = new Set<DockPanelId>(DOCK_PANEL_IDS);
+    const openPanels = new Set<DockPanelId>(DOCK_PANEL_KINDS);
     const floatingPanels = new Map<DockPanelId, string>();
     let maximized: DockPanelId | undefined;
     let aspect = "free";
@@ -201,6 +200,7 @@ function fakeEditor(closeProject?: () => void): FakeEditor {
             openPanels.add(panel);
             calls.push(`addPanelBeside ${panel} ${besidePanel}`);
         },
+        openSceneView: () => calls.push("openSceneView"),
         panelFloating: panel => floatingPanels.has(panel),
         panelHasOwnWindow: panel => [...floatingPanels.values()].filter(window => window === floatingPanels.get(panel)).length === 1,
         floatPanel: panel => {
@@ -292,7 +292,7 @@ describe("editor menu bar", () => {
             "Create Empty", "Create Empty Child", "-", "Camera", "Sprite", "Text", "Mesh", "-", "Directional Light", "Point Light", "Ambient Light",
         ]);
         expect(labels(menuNamed(menus, "Window"))).toEqual([
-            "Maximize on Play", "Stats", "-", "Scene", "Game", "Hierarchy", "Inspector", "-", "Project", "Console", "History", "Settings", "Data Assets", "-", "Reset Layout",
+            "Maximize on Play", "Stats", "-", "Scene", "New Scene View", "Game", "Hierarchy", "Inspector", "-", "Project", "Console", "History", "Settings", "Data Assets", "-", "Reset Layout",
         ]);
         expect(labels(menuNamed(menus, "Help"))).toEqual(["Command Palette…", "Keyboard Shortcuts"]);
     });
@@ -339,7 +339,7 @@ describe("editor menu bar", () => {
         for (const label of ["Scene", "Game", "Hierarchy", "Inspector", "Data Assets"]) action(windowMenu(), label).run();
         action(windowMenu(), "Reset Layout").run();
         expect(editor.calls).toEqual(["showPanel scene", "showPanel game", "showPanel hierarchy", "showPanel inspector", "showPanel assets", "resetLayout"]);
-        expect(DOCK_PANEL_IDS.map(panel => editor.registry.get(`window.${panel}`)?.stateAlone().enabled)).toEqual(DOCK_PANEL_IDS.map(() => true));
+        expect(DOCK_PANEL_KINDS.map(panel => editor.registry.get(`window.${panel}`)?.stateAlone().enabled)).toEqual(DOCK_PANEL_KINDS.map(() => true));
     });
 
     test("a dock tab's menu closes, maximizes and adds closed panels beside it, after the panel's own entries", () => {
@@ -358,7 +358,18 @@ describe("editor menu bar", () => {
         expect(action(tabMenu("project", ["console"]), "Add Tab", "Console").title).toBe(PANEL_ALREADY_OPEN_REASON);
     });
 
-    test("a dock tab floats into its own window and docks back, while the Scene and Game views stay in the main window", () => {
+    test("another Scene view is added from a tab's Add Tab menu by its instance id, or from Window > New Scene View", () => {
+        const editor = fakeEditor();
+        const addTab = (find(items(dockTabMenu(editor.commands, "game", ["scene:2"])), "Add Tab") as MenuSubmenu).items;
+        expect(labels(addTab)).toEqual(["Scene"]);
+        action(addTab, "Scene").run();
+        action(menuNamed(menuBarItems(editor), "Window"), "New Scene View").run();
+        expect(editor.calls).toEqual(["addPanelBeside scene:2 game", "openSceneView"]);
+        const closeExtra = action(items(dockTabMenu(editor.commands, "scene:2", [])), "Close Tab");
+        expect(closeExtra.disabled).toBe(false);
+    });
+
+    test("a dock tab floats into its own window and docks back, the Scene and Game views like any other", () => {
         const editor = fakeEditor();
         const tabMenu = (panel: DockPanelId): MenuItem[] => items(dockTabMenu(editor.commands, panel, []));
         const state = (panel: DockPanelId, label: string): [boolean | undefined, string | undefined] => [action(tabMenu(panel), label).disabled, action(tabMenu(panel), label).title];
@@ -367,11 +378,16 @@ describe("editor menu bar", () => {
         expect(state("console", "Float Tab")).toEqual([true, PANEL_HAS_OWN_WINDOW_REASON]);
         expect(state("console", "Dock Tab")).toEqual([false, undefined]);
         action(tabMenu("console"), "Dock Tab").run();
-        for (const view of ["scene", "game"] as const) expect(state(view, "Float Tab")).toEqual([true, MAIN_WINDOW_PANEL_REASON]);
+        for (const view of ["scene", "game"] as const) {
+            expect(state(view, "Float Tab")).toEqual([false, undefined]);
+            action(tabMenu(view), "Float Tab").run();
+            expect(state(view, "Float Tab")).toEqual([true, PANEL_HAS_OWN_WINDOW_REASON]);
+            action(tabMenu(view), "Dock Tab").run();
+        }
         editor.commands.window.closePanel.runWith("history");
         expect(state("history", "Float Tab")).toEqual([true, PANEL_CLOSED_REASON]);
         expect(state("history", "Dock Tab")).toEqual([true, PANEL_CLOSED_REASON]);
-        expect(editor.calls).toEqual(["floatPanel console", "dockPanel console", "closePanel history"]);
+        expect(editor.calls).toEqual(["floatPanel console", "dockPanel console", "floatPanel scene", "dockPanel scene", "floatPanel game", "dockPanel game", "closePanel history"]);
     });
 
     test("Preferences… opens before the game connects", () => {

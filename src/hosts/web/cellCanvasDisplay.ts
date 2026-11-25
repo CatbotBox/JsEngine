@@ -1,6 +1,6 @@
 import {CanvasCellPresenter} from "../../backends/cells/canvas";
 import type {CellFrame} from "../../backends/cells/cellFrame";
-import {CanvasDisplayShell, currentDevicePixelRatio} from "./canvasDisplayShell";
+import {CanvasDisplayShell} from "./canvasDisplayShell";
 import type {CellArea} from "./domInput";
 import type {CellWorldDisplay} from "./worldWorkerPage";
 import {FIXED_TERMINAL_LIMITS, fixedTerminalSizeFromQuery} from "./worldWorkerProtocol";
@@ -22,7 +22,7 @@ export class CellCanvasDisplay implements CellWorldDisplay {
             canvas: this.shell.canvas,
             context: this.shell.context2d(),
             atlasCanvas: document.createElement("canvas"),
-            devicePixelRatio: currentDevicePixelRatio(),
+            devicePixelRatio: this.shell.devicePixelRatio(),
         });
         this.shell.mount(this.fit, visible);
     }
@@ -72,7 +72,7 @@ export class CellCanvasDisplay implements CellWorldDisplay {
 
     private readonly fit = (): void => {
         const presenter = this.presenter;
-        presenter.setDevicePixelRatio(currentDevicePixelRatio());
+        presenter.setDevicePixelRatio(this.shell.devicePixelRatio());
         const ratio = presenter.devicePixelRatio;
         const bounds = this.shell.containerBounds();
         presenter.resize(

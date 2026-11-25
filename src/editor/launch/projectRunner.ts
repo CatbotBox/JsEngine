@@ -3,15 +3,17 @@ import {errorFramesOf} from "../../engine/debugging/errorStack";
 import type {InputEvent, InputEventSink} from "../../engine/input/inputEvent";
 import {describeSchemaChange} from "../../engine/scene/schemaChanges";
 import type {SceneLoadReport} from "../../engine/scene/sceneSerialization";
-import type {EditorNoticeLevel, EditorProject, EditorSession, EditorShell, EntityRemap} from "../page/editorSession";
+import type {EditorNoticeLevel, EditorProject, EditorSession, EditorShell, EntityRemap, SceneViewSlot, SceneViewSlotWatcher} from "../page/editorSession";
 import type {CellArea} from "../../hosts/web/domInput";
 import {sameGameTarget} from "../project/editorSettings";
 import type {GameTarget} from "../project/editorSettings";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
+import type {SceneViewId} from "../project/dockPanelIds";
 import {BundleStackMapper} from "../page/stackMapper";
 import {gameTargetLabelText} from "./gameTargets";
 import {ProjectWorkerSession} from "./projectWorkerSession";
 import type {EditorViewports, SessionVisibility} from "./projectWorkerSession";
+import type {EditorViewport} from "./editorViewport";
 
 export const RELOAD_WORKER_START_TIMEOUT_MS = 120_000;
 
@@ -25,10 +27,13 @@ export interface WorkerBuild {
     readonly gameTarget: GameTarget;
 }
 
+export type EditorViewportFactory = (gameTarget: GameTarget, container: HTMLElement, visible: boolean) => EditorViewport;
+
 export interface ProjectRunnerOptions {
     readonly shell: EditorShell;
-    readonly viewports: EditorViewports;
-    readonly createHiddenViewports: (gameTarget: GameTarget) => EditorViewports;
+    readonly gameTarget: GameTarget;
+    readonly gameContainer: HTMLElement;
+    readonly viewportFor: EditorViewportFactory;
     readonly onTargetChanged: (gameTarget: GameTarget) => void;
     readonly files: ProjectFileSystem;
     readonly project: EditorProject;
@@ -39,7 +44,8 @@ export interface ProjectRunnerOptions {
 
 const VISIBLE: SessionVisibility = {visible: true};
 const HIDDEN: SessionVisibility = {visible: false};
-const SCENE_VIEW_SHOWN_AT_START = true;
+const VISIBLE_VIEWPORT = true;
+const HIDDEN_VIEWPORT = false;
 const RELOADED_SUMMARY = "Reloaded the game code";
 
 function describeError(error: unknown): string {
@@ -75,8 +81,13 @@ export function reloadNotices(report: SceneLoadReport, entityCount: number, summ
     return notices;
 }
 
+interface SceneSlotState {
+    readonly slot: SceneViewSlot;
+    shown: boolean;
+}
+
 function disposeViewports(viewports: EditorViewports): void {
-    viewports.scene.dispose();
+    for (const viewport of viewports.scenes.values()) viewport.dispose();
     viewports.game.dispose();
 }
 
@@ -98,17 +109,23 @@ export class ProjectRunner {
         enqueue: (event: InputEvent) => this.current?.input.enqueue(event),
     };
 
+    public readonly sceneViews: SceneViewSlotWatcher = {
+        opened: (slot, shown) => this.sceneViewOpened(slot, shown),
+        shown: (view, shown) => this.sceneViewShown(view, shown),
+        closed: view => this.sceneViewClosed(view),
+    };
+
     private readonly stackMapper = new BundleStackMapper(location.href);
+    private readonly sceneSlots = new Map<SceneViewId, SceneSlotState>();
     private current: ProjectWorkerSession | undefined;
     private viewports: EditorViewports;
-    private sceneViewShown = SCENE_VIEW_SHOWN_AT_START;
     private mounted = false;
     private reloading = false;
     private queuedBuild: WorkerBuild | undefined;
     private stopped = false;
 
     public constructor(private readonly options: ProjectRunnerOptions) {
-        this.viewports = options.viewports;
+        this.viewports = {game: options.viewportFor(options.gameTarget, options.gameContainer, VISIBLE_VIEWPORT), scenes: new Map()};
     }
 
     public get gameTarget(): GameTarget {
@@ -123,10 +140,6 @@ export class ProjectRunner {
         this.viewports.game.showError(text);
     }
 
-    public setSceneViewShown(shown: boolean): void {
-        this.sceneViewShown = shown;
-        this.current?.setSceneViewShown(shown);
-    }
 
     public async start(workerUrl: string): Promise<void> {
         const session = await this.startSession(workerUrl, this.viewports, VISIBLE);
@@ -150,11 +163,64 @@ export class ProjectRunner {
         this.current?.exit();
     }
 
+    private sceneViewOpened(slot: SceneViewSlot, shown: boolean): void {
+        if (this.sceneSlots.has(slot.view)) return;
+        this.sceneSlots.set(slot.view, {slot, shown});
+        const viewport = this.options.viewportFor(this.gameTarget, slot.viewport, VISIBLE_VIEWPORT);
+        this.viewports.scenes.set(slot.view, viewport);
+        this.current?.openSceneView(slot.view, viewport, shown);
+    }
+
+    private sceneViewShown(view: SceneViewId, shown: boolean): void {
+        const state = this.sceneSlots.get(view);
+        if (state === undefined) return;
+        state.shown = shown;
+        this.current?.setSceneViewShown(view, shown);
+    }
+
+    private sceneViewClosed(view: SceneViewId): void {
+        if (!this.sceneSlots.delete(view)) return;
+        this.current?.closeSceneView(view);
+        this.viewports.scenes.get(view)?.dispose();
+        this.viewports.scenes.delete(view);
+    }
+
+    private scenesShown(): Map<SceneViewId, boolean> {
+        return new Map([...this.sceneSlots].map(([view, state]) => [view, state.shown]));
+    }
+
+    private hiddenViewports(gameTarget: GameTarget): EditorViewports {
+        const viewportFor = this.options.viewportFor;
+        return {
+            game: viewportFor(gameTarget, this.options.gameContainer, HIDDEN_VIEWPORT),
+            scenes: new Map([...this.sceneSlots].map(([view, state]) => [view, viewportFor(gameTarget, state.slot.viewport, HIDDEN_VIEWPORT)])),
+        };
+    }
+
+    private matchSceneViews(session: ProjectWorkerSession, viewports: EditorViewports): void {
+        for (const view of session.sceneViewIds) {
+            if (this.sceneSlots.has(view)) continue;
+            session.closeSceneView(view);
+            viewports.scenes.get(view)?.dispose();
+            viewports.scenes.delete(view);
+        }
+        for (const [view, state] of this.sceneSlots) {
+            let viewport = viewports.scenes.get(view);
+            if (viewport === undefined) {
+                viewport = this.options.viewportFor(viewports.game.gameTarget, state.slot.viewport, VISIBLE_VIEWPORT);
+                viewports.scenes.set(view, viewport);
+            }
+            session.openSceneView(view, viewport, state.shown);
+            session.setSceneViewShown(view, state.shown);
+        }
+    }
+
     private async startSession(workerUrl: string, viewports: EditorViewports, visibility: SessionVisibility): Promise<ProjectWorkerSession> {
         this.stackMapper.addBundle(workerUrl);
         const session = await ProjectWorkerSession.start({
             workerUrl,
             viewports,
+            scenesShown: this.scenesShown(),
             files: this.options.files,
             name: this.options.project.name,
             search: this.options.search,
@@ -164,7 +230,6 @@ export class ProjectRunner {
                 this.options.onStopped();
             },
         });
-        session.setSceneViewShown(this.sceneViewShown);
         return session;
     }
 
@@ -182,7 +247,7 @@ export class ProjectRunner {
         this.reloading = true;
         const previousViewports = this.viewports;
         const switching = !sameGameTarget(build.gameTarget, previousViewports.game.gameTarget);
-        const viewports = switching ? this.options.createHiddenViewports(build.gameTarget) : previousViewports;
+        const viewports = switching ? this.hiddenViewports(build.gameTarget) : previousViewports;
         let next: ProjectWorkerSession | undefined;
         try {
             this.notice("info", switching ? `Switching to ${gameTargetLabelText(build.gameTarget)}...` : "Reloading the game code...");
@@ -201,6 +266,7 @@ export class ProjectRunner {
             previous.hide();
             next.show();
             this.current = next;
+            this.matchSceneViews(next, viewports);
             previous.dispose();
             if (switching) {
                 this.viewports = viewports;

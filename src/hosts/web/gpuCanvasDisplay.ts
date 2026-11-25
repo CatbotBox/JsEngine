@@ -1,4 +1,4 @@
-import {CanvasDisplayShell, currentDevicePixelRatio} from "./canvasDisplayShell";
+import {CanvasDisplayShell} from "./canvasDisplayShell";
 import type {CellArea} from "./domInput";
 import type {GpuWorldDisplay} from "./worldWorkerPage";
 import type {PixelSurfaceSize} from "./worldWorkerProtocol";
@@ -93,7 +93,7 @@ export class GpuCanvasDisplay implements GpuWorldDisplay {
     }
 
     private readonly fit = (): void => {
-        const fitted = fitFramebuffer(this.shell.containerBounds(), currentDevicePixelRatio(), this.options);
+        const fitted = fitFramebuffer(this.shell.containerBounds(), this.shell.devicePixelRatio(), this.options);
         const canvas = this.shell.canvas;
         if (!this.transferred) {
             canvas.width = fitted.widthPx;

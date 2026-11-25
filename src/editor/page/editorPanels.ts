@@ -1,11 +1,13 @@
 import {SPLITTER_THICKNESS_PX} from "./dockGeometry";
 import type {DockMinimums, DockSize} from "./dockGeometry";
 import {dockLayoutOf, dockSplit, dockStack, MAX_SHARE, MIN_SHARE} from "./dockLayout";
-import type {DockLayout, DockPanelId} from "./dockLayout";
+import type {DockLayout} from "./dockLayout";
 import type {DockViewHome} from "./dockView";
+import {dockPanelKindOf, dockPanelTitle} from "../project/dockPanelIds";
+import type {DockPanelId, DockPanelKind} from "../project/dockPanelIds";
 
 export {DOCK_LAYOUT_STORAGE_KEY} from "../project/dockWindows";
-export const DOCK_PANEL_TITLES: Readonly<Record<DockPanelId, string>> = {
+export const DOCK_PANEL_TITLES: Readonly<Record<DockPanelKind, string>> = {
     hierarchy: "Hierarchy",
     inspector: "Inspector",
     scene: "Scene",
@@ -16,8 +18,8 @@ export const DOCK_PANEL_TITLES: Readonly<Record<DockPanelId, string>> = {
     settings: "Settings",
     assets: "Data Assets",
 };
-export const BOTTOM_PANELS: readonly DockPanelId[] = ["project", "console", "history", "settings", "assets"];
-export const DEFAULT_BOTTOM_PANEL: DockPanelId = "project";
+export const BOTTOM_PANELS: readonly DockPanelKind[] = ["project", "console", "history", "settings", "assets"];
+export const DEFAULT_BOTTOM_PANEL: DockPanelKind = "project";
 export const HIERARCHY_WIDTH_PX = 260;
 export const INSPECTOR_WIDTH_PX = 340;
 export const BOTTOM_HEIGHT_PX = 220;
@@ -26,8 +28,6 @@ export const MIN_PANEL_HEIGHT_PX = 90;
 export const MIN_VIEW_WIDTH_PX = 120;
 export const MIN_VIEW_HEIGHT_PX = 120;
 export const REFERENCE_DOCK_AREA: DockSize = {widthPx: 1600, heightPx: 860};
-export const MAIN_WINDOW_PANELS: ReadonlySet<DockPanelId> = new Set<DockPanelId>(["scene", "game"]);
-export const MAIN_WINDOW_PANEL_REASON = "Floating the Scene and Game views is planned; their canvases stay in the main window for now";
 
 const SIDE_PANEL_MINIMUM: DockSize = {widthPx: MIN_SIDE_PANEL_WIDTH_PX, heightPx: MIN_PANEL_HEIGHT_PX};
 const VIEW_MINIMUM: DockSize = {widthPx: MIN_VIEW_WIDTH_PX, heightPx: MIN_VIEW_HEIGHT_PX};
@@ -47,7 +47,7 @@ export const DOCK_PANEL_MINIMUMS: DockMinimums = {
     assets: SIDE_PANEL_MINIMUM,
 };
 
-function bottomHomes(panel: DockPanelId): DockViewHome[] {
+function bottomHomes(panel: DockPanelKind): DockViewHome[] {
     return [
         ...BOTTOM_PANELS.filter(other => other !== panel).map(other => ({withPanel: other})),
         {nextTo: "scene", edge: "bottom", sizePx: BOTTOM_HEIGHT_PX},
@@ -56,7 +56,7 @@ function bottomHomes(panel: DockPanelId): DockViewHome[] {
     ];
 }
 
-export const DOCK_PANEL_HOMES: Readonly<Record<DockPanelId, readonly DockViewHome[]>> = {
+export const DOCK_PANEL_HOMES: Readonly<Record<DockPanelKind, readonly DockViewHome[]>> = {
     hierarchy: [{nextTo: "scene", edge: "left", sizePx: HIERARCHY_WIDTH_PX}, {nextTo: "game", edge: "left", sizePx: HIERARCHY_WIDTH_PX}, {rootEdge: "left", sizePx: HIERARCHY_WIDTH_PX}],
     inspector: [{rootEdge: "right", sizePx: INSPECTOR_WIDTH_PX}],
     scene: [{nextTo: "game", edge: "left"}, {nextTo: "hierarchy", edge: "right"}, {rootEdge: "top"}],
@@ -68,8 +68,12 @@ export const DOCK_PANEL_HOMES: Readonly<Record<DockPanelId, readonly DockViewHom
     assets: bottomHomes("assets"),
 };
 
-export function canFloatPanel(panel: DockPanelId): boolean {
-    return !MAIN_WINDOW_PANELS.has(panel);
+export function dockPanelTitleOf(panel: DockPanelId): string {
+    return dockPanelTitle(panel, DOCK_PANEL_TITLES[dockPanelKindOf(panel)]);
+}
+
+export function dockPanelHomesOf(panel: DockPanelId): readonly DockViewHome[] {
+    return DOCK_PANEL_HOMES[dockPanelKindOf(panel)];
 }
 
 function shareOf(sizePx: number, availablePx: number): number {

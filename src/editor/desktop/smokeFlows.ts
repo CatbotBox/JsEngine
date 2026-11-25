@@ -9,7 +9,20 @@ export interface SmokeWindowPage extends SmokePage {
 
     setBounds(bounds: ScreenBounds): void;
 
+    minimize(): void;
+
+    showInactive(): void;
+
     close(): void;
+}
+
+export interface SmokeViewport {
+    readonly id: string;
+    readonly windowId: number;
+    readonly floating: boolean;
+    readonly canvas: boolean;
+    readonly drawnPixels: number;
+    readonly pixelHash: number;
 }
 
 export interface SmokeHost {
@@ -24,6 +37,8 @@ export interface SmokeHost {
     floatingWindows(): readonly SmokeWindowPage[];
 
     reloadPage(): Promise<void>;
+
+    viewports(): Promise<readonly SmokeViewport[]>;
 }
 
 export interface SmokeFlowContext {

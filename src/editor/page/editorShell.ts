@@ -1,24 +1,25 @@
 import type {Entity} from "../../engine/core";
-import type {EditorMode, EditorView} from "../editorProtocol";
-import {showChoicePopup} from "./choicePopup";
+import type {EditorMode} from "../editorProtocol";
+import {closeChoicePopup, showChoicePopup} from "./choicePopup";
 import type {MenuEntry} from "./commandMenus";
 import {closeCommandPalette, isCommandPaletteOpen, showCommandPalette} from "./commandPalette";
 import {CommandRegistry, keyChordOf} from "./commandRegistry";
 import type {RegisteredCommand} from "./commandRegistry";
 import {ConsoleView} from "./consoleView";
 import {DataAssetsView, DIRTY_MARKER} from "./dataAssetsView";
-import {createElement, isHtmlElement, isTextEntryElement, isValueInputElement, readStorage, visualScaleOf, writeStorage} from "./dom";
-import {dockLayoutText, parseDockLayout} from "./dockLayout";
-import type {DockPanelId} from "./dockLayout";
+import {createElement, isFocusWithin, isHtmlElement, isTextEntryElement, isValueInputElement, readStorage, visualScaleOf, writeStorage} from "./dom";
+import {dockLayoutText, openDockPanels, parseDockLayout} from "./dockLayout";
+import type {DockLayout} from "./dockLayout";
 import {DockView} from "./dockView";
-import type {DockPanel} from "./dockView";
+import type {DockPanel, DockViewHome} from "./dockView";
 import type {DockSize} from "./dockGeometry";
 import {registerEditorCommands} from "./editorCommands";
-import type {EditorCommandHost, EditorCommands} from "./editorCommands";
+import type {EditorCommandHost, EditorCommands, FocusableView} from "./editorCommands";
 import {dockTabMenu, editorMenuBar, FILE_MENU_LABEL} from "./editorMenus";
-import {canFloatPanel, DOCK_LAYOUT_STORAGE_KEY, DOCK_PANEL_HOMES, DOCK_PANEL_MINIMUMS, DOCK_PANEL_TITLES, defaultDockLayout} from "./editorPanels";
+import {DOCK_LAYOUT_STORAGE_KEY, DOCK_PANEL_MINIMUMS, DOCK_PANEL_TITLES, defaultDockLayout, dockPanelHomesOf, dockPanelTitleOf} from "./editorPanels";
 import {BrowserFloatingWindowHost} from "./floatingWindows";
-import type {EditorNoticeLevel, EditorSession, EditorShell, EntityRemap} from "./editorSession";
+import {FollowedElementSize} from "./followedElementSize";
+import type {EditorNoticeLevel, EditorSession, EditorShell, EntityRemap, SceneViewSlot, SceneViewSlotWatcher} from "./editorSession";
 import {buildToolbar, EditorStatusView} from "./editorToolbar";
 import {EditorWorkspace} from "./editorWorkspace";
 import {fittedAspectRect, GAME_VIEW_ASPECT_STORAGE_KEY, gameViewAspectOf} from "./gameViewAspect";
@@ -33,6 +34,7 @@ import type {ProjectTarget} from "../../engine/project/projectTargets";
 import {PROJECT_MANIFEST_FILE} from "../../engine/project/projectManifest";
 import {InspectorView} from "./inspectorView";
 import {MenuBar} from "./menuBar";
+import {closePopupMenu} from "./popupMenu";
 import {sceneAndPrefabPaths} from "./projectFiles";
 import {ProjectSettingsWindow} from "./projectSettingsWindow";
 import {openBuildWindow} from "./buildWindow";
@@ -44,17 +46,20 @@ import type {UiScale} from "./uiScale";
 import {RotationEulerCache} from "./rotationEulerCache";
 import {SceneTabsView} from "./sceneTabsView";
 import {SceneView} from "./sceneView";
+import {FollowedDocumentVisibility, isSceneViewVisible} from "./sceneViewVisibility";
 import {SettingsView} from "./settingsView";
 import {showKeyboardShortcuts} from "./shortcutsDialog";
 import {UndoHistoryView} from "./undoHistoryView";
-import {DOCK_PANEL_IDS, EDITOR_VIEWPORT_HOOK, PREFAB_BREADCRUMB_HOOK, TOOLBAR_HOOK} from "../project/editorUiHooks";
+import {EDITOR_VIEWPORT_HOOK, PREFAB_BREADCRUMB_HOOK, SCENE_OVERLAY_HOOK, TOOLBAR_HOOK} from "../project/editorUiHooks";
+import {DOCK_PANEL_KINDS, FIRST_SCENE_VIEW, GAME_VIEW_ID, isSceneViewId, SCENE_VIEW_KIND} from "../project/dockPanelIds";
+import type {DockPanelId, DockPanelKind, SceneViewId} from "../project/dockPanelIds";
 
 export const EDITOR_VIEWPORT_ID = "viewport";
 export const UNSAVED_CHANGES_PROMPT = "A scene, a data asset or the project settings have unsaved changes.";
 
-const SCENE_VIEW: EditorView = "scene";
-const GAME_VIEW: EditorView = "game";
-const SCENE_VIEW_SHOWN_AT_START = true;
+const GAME_VIEW = GAME_VIEW_ID;
+const SCENE_FOCUS: FocusableView = SCENE_VIEW_KIND;
+const NOT_SHOWN = false;
 const PLAY_MODE: EditorMode = "play";
 const EDIT_MODE: EditorMode = "edit";
 const CANVAS_SELECTOR = "canvas";
@@ -77,9 +82,12 @@ const NO_SCENES_TEXT = "No scenes or prefabs in the project";
 const DEFAULT_SCREEN_SCALE = 1;
 const SCREEN_SCALE_REFRESH_MS = 300;
 const PANEL_LIST_SEPARATOR = ", ";
+const RESIZE_EVENT = "resize";
+const CANCEL_ENTITY_PICK_KEY = "Escape";
+const CAPTURE = true;
 
 function floatingRefusedText(panels: readonly DockPanelId[]): string {
-    const titles = panels.map(panel => DOCK_PANEL_TITLES[panel]).join(PANEL_LIST_SEPARATOR);
+    const titles = panels.map(dockPanelTitleOf).join(PANEL_LIST_SEPARATOR);
     return `A floating window could not open (the browser blocked the pop-up), so ${titles} went back to the main window. Allow pop-ups for this page to keep floating windows.`;
 }
 
@@ -108,18 +116,33 @@ interface ShellLayout {
     readonly hierarchy: HTMLElement;
     readonly sceneTabs: HTMLElement;
     readonly prefabBreadcrumb: HTMLElement;
-    readonly sceneStage: HTMLElement;
-    readonly sceneViewport: HTMLElement;
+    readonly firstScene: SceneViewParts;
     readonly stage: HTMLElement;
     readonly viewport: HTMLElement;
-    readonly overlay: HTMLCanvasElement;
     readonly inspector: HTMLElement;
     readonly projectPanel: HTMLElement;
     readonly consolePanel: HTMLElement;
     readonly historyPanel: HTMLElement;
     readonly settingsPanel: HTMLElement;
     readonly assetsPanel: HTMLElement;
-    readonly panels: Readonly<Record<DockPanelId, HTMLElement>>;
+    readonly panels: Readonly<Record<DockPanelKind, HTMLElement>>;
+}
+
+interface SceneViewParts {
+    readonly panel: HTMLElement;
+    readonly stage: HTMLElement;
+    readonly viewport: HTMLElement;
+    readonly overlay: HTMLCanvasElement;
+}
+
+interface SceneViewState {
+    readonly view: SceneViewId;
+    readonly parts: SceneViewParts;
+    readonly document: FollowedDocumentVisibility;
+    readonly viewportSize: FollowedElementSize;
+    panelShown: boolean;
+    shown: boolean;
+    controller: SceneView | undefined;
 }
 
 interface MountedViews {
@@ -136,6 +159,18 @@ function panel(document: Document, tag: keyof HTMLElementTagNameMap, className: 
     const element = createElement(document, tag, className);
     element.setAttribute("aria-label", ariaLabel);
     return element;
+}
+
+function buildSceneViewParts(document: Document, view: SceneViewId): SceneViewParts {
+    const stage = createElement(document, "div", "editor-stage scene-stage");
+    const viewport = panel(document, "div", "editor-viewport scene-viewport", "Scene viewport");
+    viewport.setAttribute(EDITOR_VIEWPORT_HOOK, view);
+    const overlay = createElement(document, "canvas", "scene-overlay");
+    overlay.setAttribute(SCENE_OVERLAY_HOOK, view);
+    stage.append(viewport, overlay);
+    const scenePanel = panel(document, "section", "editor-view scene-view", `${dockPanelTitleOf(view)} view`);
+    scenePanel.append(stage);
+    return {panel: scenePanel, stage, viewport, overlay};
 }
 
 function buildLayout(body: HTMLElement): ShellLayout {
@@ -156,13 +191,8 @@ function buildLayout(body: HTMLElement): ShellLayout {
     prefabBreadcrumb.setAttribute("aria-label", "Prefab breadcrumb");
     prefabBreadcrumb.setAttribute(PREFAB_BREADCRUMB_HOOK, "");
     prefabBreadcrumb.hidden = true;
-    const sceneStage = createElement(document, "div", "editor-stage scene-stage");
-    const sceneViewport = panel(document, "div", "editor-viewport scene-viewport", "Scene viewport");
-    sceneViewport.setAttribute(EDITOR_VIEWPORT_HOOK, SCENE_VIEW);
-    const overlay = createElement(document, "canvas", "scene-overlay");
-    sceneStage.append(sceneViewport, overlay);
-    const scenePanel = panel(document, "section", "editor-view scene-view", "Scene view");
-    scenePanel.append(sceneTabs, prefabBreadcrumb, sceneStage);
+    const firstScene = buildSceneViewParts(document, FIRST_SCENE_VIEW);
+    firstScene.panel.prepend(sceneTabs, prefabBreadcrumb);
     const stage = createElement(document, "div", "editor-stage game-stage");
     const viewport = panel(document, "main", "editor-viewport game-viewport", "Game viewport");
     viewport.id = EDITOR_VIEWPORT_ID;
@@ -179,47 +209,36 @@ function buildLayout(body: HTMLElement): ShellLayout {
     root.append(menuRow, toolbar, dock);
     for (const element of [hierarchy, inspector, projectPanel, historyPanel, settingsPanel, assetsPanel]) element.append(createElement(document, "p", "panel-placeholder", CONNECTING_TEXT));
     body.append(root);
-    const panels: Readonly<Record<DockPanelId, HTMLElement>> = {
-        hierarchy, inspector, scene: scenePanel, game: gamePanel, project: projectPanel, console: consolePanel, history: historyPanel, settings: settingsPanel, assets: assetsPanel,
+    const panels: Readonly<Record<DockPanelKind, HTMLElement>> = {
+        hierarchy, inspector, scene: firstScene.panel, game: gamePanel, project: projectPanel, console: consolePanel, history: historyPanel, settings: settingsPanel, assets: assetsPanel,
     };
     return {
-        root, menuRow, menuStatus, toolbar, dock, hierarchy, sceneTabs, prefabBreadcrumb, sceneStage, sceneViewport, stage, viewport, overlay,
+        root, menuRow, menuStatus, toolbar, dock, hierarchy, sceneTabs, prefabBreadcrumb, firstScene, stage, viewport,
         inspector, projectPanel, consolePanel, historyPanel, settingsPanel, assetsPanel, panels,
     };
 }
 
-function onSizeChange(element: HTMLElement, changed: () => void): void {
-    const window = element.ownerDocument.defaultView;
-    if (window === null || typeof window.ResizeObserver !== "function") return;
-    let width = -1;
-    let height = -1;
-    let scheduled = false;
-    new window.ResizeObserver(() => {
-        const bounds = element.getBoundingClientRect();
-        if (bounds.width === width && bounds.height === height) return;
-        width = bounds.width;
-        height = bounds.height;
-        if (scheduled) return;
-        scheduled = true;
-        window.requestAnimationFrame(() => {
-            scheduled = false;
-            changed();
-        });
-    }).observe(element);
+type ShellWindow = Window & typeof globalThis;
+
+function windowOf(element: HTMLElement): ShellWindow | null {
+    return element.ownerDocument.defaultView;
 }
 
 function shownCanvasIn(container: HTMLElement): HTMLCanvasElement | undefined {
     return [...container.querySelectorAll(CANVAS_SELECTOR)].find(canvas => canvas.style.display !== NOT_DISPLAYED);
 }
 
-function observeViewportSize(viewport: HTMLElement): void {
-    const window = viewport.ownerDocument.defaultView;
-    onSizeChange(viewport, () => window?.dispatchEvent(new window.Event("resize")));
+function dispatchResize(element: HTMLElement): void {
+    const window = windowOf(element);
+    if (window !== null) element.dispatchEvent(new window.Event(RESIZE_EVENT));
+}
+
+function observeViewportSize(viewport: HTMLElement): FollowedElementSize {
+    return new FollowedElementSize(viewport, () => dispatchResize(viewport));
 }
 
 class EditorShellImplementation implements EditorShell {
     public readonly viewport: HTMLElement;
-    public readonly sceneViewport: HTMLElement;
     public readonly commands = new CommandRegistry();
     private readonly document: Document;
     private readonly layout: ShellLayout;
@@ -235,27 +254,35 @@ class EditorShellImplementation implements EditorShell {
     private projectSettings: ProjectSettingsWindow | undefined;
     private buildWindow: BuildWindow | undefined;
     private preferences: PreferencesDialog | undefined;
-    private readonly sceneViewShownListeners = new Set<(shown: boolean) => void>();
-    private sceneViewShown = SCENE_VIEW_SHOWN_AT_START;
-    private sceneViewDocked = SCENE_VIEW_SHOWN_AT_START;
+    private readonly sceneViews = new Map<SceneViewId, SceneViewState>();
+    private readonly sceneViewWatchers = new Set<SceneViewSlotWatcher>();
+    private activeSceneView: SceneViewId = FIRST_SCENE_VIEW;
     private shownMode: EditorMode | undefined;
     private screenScale = DEFAULT_SCREEN_SCALE;
     private screenScaleTimer: number | undefined;
     private keyDocument: Document | undefined;
+    private readonly gameViewSizes: readonly FollowedElementSize[];
 
     public constructor(body: HTMLElement, private readonly options: EditorShellOptions) {
         this.document = body.ownerDocument;
         const window = this.document.defaultView;
         this.layout = buildLayout(body);
         this.viewport = this.layout.viewport;
-        this.sceneViewport = this.layout.sceneViewport;
         applyPageUiScale(this.document.documentElement, storedPageUiScale(window));
         this.followScreenScale(window);
-        this.dock = this.createDock(window);
-        observeViewportSize(this.viewport);
-        observeViewportSize(this.sceneViewport);
-        onSizeChange(this.layout.stage, () => this.applyGameViewAspect());
         this.gameViewAspectId = gameViewAspectOf(readStorage(window, GAME_VIEW_ASPECT_STORAGE_KEY)).id;
+        const layout = parseDockLayout(readStorage(window, DOCK_LAYOUT_STORAGE_KEY)) ?? defaultDockLayout(this.dockArea());
+        this.gameViewSizes = [observeViewportSize(this.viewport), new FollowedElementSize(this.layout.stage, () => this.applyGameViewAspect())];
+        this.registerSceneView(FIRST_SCENE_VIEW, this.layout.firstScene);
+        for (const panel of openDockPanels(layout)) {
+            if (isSceneViewId(panel) && !this.sceneViews.has(panel)) this.registerSceneView(panel, buildSceneViewParts(this.document, panel));
+        }
+        this.dock = this.createDock(window, layout);
+        for (const state of this.sceneViews.values()) {
+            state.document.follow(state.parts.panel.ownerDocument);
+            state.viewportSize.follow();
+        }
+        for (const size of this.gameViewSizes) size.follow();
         this.targetLabel = options.targetLabel ?? NO_TARGET_LABEL;
         this.editorCommands = registerEditorCommands(this.commands, this.commandHost());
         this.menuBar = new MenuBar(this.document, editorMenuBar(this.editorCommands));
@@ -266,8 +293,9 @@ class EditorShellImplementation implements EditorShell {
             gameTargetMenu: () => this.gameTargetMenu,
             handleModes: () => this.mounted?.workspace.handleModes ?? DEFAULT_HANDLE_MODES,
         });
-        this.installKeyboard(this.document);
+        this.installWindowInput(this.document);
         this.installUnloadGuard();
+        window?.addEventListener("pagehide", () => this.stopObservingSizes());
     }
 
     public async mount(session: EditorSession): Promise<void> {
@@ -286,12 +314,15 @@ class EditorShellImplementation implements EditorShell {
         const consoleView = new ConsoleView(this.layout.consolePanel, workspace);
         consoleView.onCountsChanged(() => this.showConsoleBadge(workspace));
         new UndoHistoryView(this.layout.historyPanel, workspace);
-        const scene = new SceneView(this.layout.sceneStage, this.sceneViewport, this.layout.overlay, workspace);
+        for (const state of this.sceneViews.values()) this.attachSceneView(state, workspace);
         this.layout.stage.append(new GameCameraNotice(this.document, workspace).element);
         this.layout.stage.append(new GameStatsOverlay(this.document, workspace, this.viewport, () => this.targetLabel).element);
         const settings = new SettingsView(this.layout.settingsPanel, workspace, rotations);
         const dataAssets = new DataAssetsView(this.layout.assetsPanel, workspace, rotations);
-        this.mounted = {workspace, scene, hierarchy, project, settings, dataAssets, rotations};
+        const activeScene = (): SceneView => this.activeSceneController();
+        this.mounted = {workspace, hierarchy, project, settings, dataAssets, rotations, get scene() {
+            return activeScene();
+        }};
         settings.setVisible(this.dock.isShown(SETTINGS_PANEL));
         dataAssets.setVisible(this.dock.isShown(ASSETS_PANEL));
         dataAssets.onDirtyChanged(() => this.showDataAssetsTitle(dataAssets));
@@ -312,12 +343,12 @@ class EditorShellImplementation implements EditorShell {
             await this.mount(session);
             return;
         }
-        const {workspace, scene, project, dataAssets, rotations} = mounted;
+        const {workspace, project, dataAssets, rotations} = mounted;
         rotations.retainEntities(new Set<Entity>());
         await workspace.replaceSession(session, remap);
         project.rebind();
         dataAssets.rebind();
-        scene.resendCamera();
+        for (const state of this.sceneViews.values()) state.controller?.resendCamera();
         workspace.emit("state");
         workspace.emit("document");
     }
@@ -338,12 +369,11 @@ class EditorShellImplementation implements EditorShell {
         this.commands.changed();
     }
 
-    public onSceneViewShown(listener: (shown: boolean) => void): () => void {
-        const entry = (shown: boolean): void => listener(shown);
-        this.sceneViewShownListeners.add(entry);
-        if (this.sceneViewShown !== SCENE_VIEW_SHOWN_AT_START) entry(this.sceneViewShown);
+    public watchSceneViews(watcher: SceneViewSlotWatcher): () => void {
+        this.sceneViewWatchers.add(watcher);
+        for (const state of this.sceneViews.values()) watcher.opened(this.slotOf(state), state.shown);
         return () => {
-            this.sceneViewShownListeners.delete(entry);
+            this.sceneViewWatchers.delete(watcher);
         };
     }
 
@@ -359,7 +389,8 @@ class EditorShellImplementation implements EditorShell {
                 this.dock.toggleMaximized(panel);
                 this.commands.changed();
             },
-            addPanelBeside: (panel, besidePanel) => this.dock.addPanelBeside(panel, besidePanel),
+            addPanelBeside: (panel, besidePanel) => this.addPanelBeside(panel, besidePanel),
+            openSceneView: () => this.openSceneView(),
             panelFloating: panel => this.dock.isFloating(panel),
             panelHasOwnWindow: panel => this.dock.hasOwnWindow(panel),
             floatPanel: panel => this.dock.floatPanel(panel),
@@ -380,14 +411,16 @@ class EditorShellImplementation implements EditorShell {
         };
     }
 
-    private createDock(window: (Window & typeof globalThis) | null): DockView {
-        const panels = new Map<DockPanelId, DockPanel>(DOCK_PANEL_IDS.map(id => [id, {
-            id,
-            title: DOCK_PANEL_TITLES[id],
-            element: this.layout.panels[id],
-            onShown: shown => this.panelShown(id, shown),
+    private createDock(window: (Window & typeof globalThis) | null, layout: DockLayout): DockView {
+        const panels = new Map<DockPanelId, DockPanel>(DOCK_PANEL_KINDS.filter(kind => kind !== SCENE_VIEW_KIND).map(kind => [kind, {
+            id: kind,
+            title: DOCK_PANEL_TITLES[kind],
+            element: this.layout.panels[kind],
+            onShown: shown => this.panelShown(kind, shown),
+            onMoved: () => this.panelMoved(kind),
         }]));
-        const dock = new DockView(this.layout.dock, parseDockLayout(readStorage(window, DOCK_LAYOUT_STORAGE_KEY)) ?? defaultDockLayout(this.dockArea()), {
+        for (const state of this.sceneViews.values()) panels.set(state.view, this.sceneViewPanel(state));
+        const dock = new DockView(this.layout.dock, layout, {
             panels,
             minimums: DOCK_PANEL_MINIMUMS,
             changed: layout => {
@@ -395,17 +428,130 @@ class EditorShellImplementation implements EditorShell {
                 this.commands.changed();
             },
             closeRequested: panel => void this.editorCommands.window.closePanel.runWith(panel),
-            tabMenu: panel => dockTabMenu(this.editorCommands, panel, this.dock.closedPanels(), panel === GAME_VIEW ? this.gameTargetMenu ?? [] : []),
-            homes: panel => DOCK_PANEL_HOMES[panel],
+            tabMenu: panel => dockTabMenu(this.editorCommands, panel, this.dock.addablePanels(), panel === GAME_VIEW ? this.gameTargetMenu ?? [] : []),
+            homes: dockPanelHomesOf,
             ...(window === null ? {} : {floatingHost: new BrowserFloatingWindowHost(window)}),
-            canFloat: canFloatPanel,
             screenScale: () => this.screenScale,
-            windowOpened: document => this.installKeyboard(document),
+            windowOpened: document => this.installWindowInput(document),
             floatingRefused: panels => this.notice("warn", floatingRefusedText(panels)),
+            released: panel => this.panelReleased(panel),
         });
-        dock.setTabTooltip(SCENE_VIEW, SCENE_HEADER_TITLE);
+        for (const view of this.sceneViews.keys()) dock.setTabTooltip(view, SCENE_HEADER_TITLE);
         dock.setTabTooltip(GAME_VIEW, GAME_HEADER_TITLE);
         return dock;
+    }
+
+    private registerSceneView(view: SceneViewId, parts: SceneViewParts): SceneViewState {
+        const state: SceneViewState = {
+            view,
+            parts,
+            document: new FollowedDocumentVisibility(() => this.updateSceneViewShown(state)),
+            viewportSize: observeViewportSize(parts.viewport),
+            panelShown: NOT_SHOWN,
+            shown: NOT_SHOWN,
+            controller: undefined,
+        };
+        this.sceneViews.set(view, state);
+        return state;
+    }
+
+    private sceneViewPanel(state: SceneViewState): DockPanel {
+        const view = state.view;
+        return {
+            id: view,
+            title: dockPanelTitleOf(view),
+            element: state.parts.panel,
+            onShown: shown => {
+                state.panelShown = shown;
+                this.updateSceneViewShown(state);
+            },
+            onMoved: document => this.sceneViewMoved(state, document),
+        };
+    }
+
+    private attachSceneView(state: SceneViewState, workspace: EditorWorkspace): void {
+        const view = state.view;
+        const {stage, viewport, overlay} = state.parts;
+        state.controller = new SceneView(stage, viewport, overlay, workspace, {
+            view,
+            activated: () => this.activateSceneView(view),
+            isFocusTarget: () => this.focusedSceneView().view === view,
+        });
+        state.controller.setShown(state.shown);
+    }
+
+    private slotOf(state: SceneViewState): SceneViewSlot {
+        return {view: state.view, viewport: state.parts.viewport};
+    }
+
+    private addSceneView(view: SceneViewId, place: (view: SceneViewId) => void): void {
+        if (this.sceneViews.has(view)) {
+            place(view);
+            this.activateSceneView(view);
+            return;
+        }
+        const state = this.registerSceneView(view, buildSceneViewParts(this.document, view));
+        this.dock.addPanel(this.sceneViewPanel(state));
+        this.dock.setTabTooltip(view, SCENE_HEADER_TITLE);
+        place(view);
+        state.document.follow(state.parts.panel.ownerDocument);
+        state.viewportSize.follow();
+        const workspace = this.mounted?.workspace;
+        if (workspace !== undefined) this.attachSceneView(state, workspace);
+        for (const watcher of [...this.sceneViewWatchers]) watcher.opened(this.slotOf(state), state.shown);
+        this.activateSceneView(view);
+    }
+
+    private addPanelBeside(panel: DockPanelId, besidePanel: DockPanelId): void {
+        if (isSceneViewId(panel)) this.addSceneView(panel, view => this.dock.addPanelBeside(view, besidePanel));
+        else this.dock.addPanelBeside(panel, besidePanel);
+    }
+
+    private openSceneView(): void {
+        const view = this.dock.addablePanels().find(isSceneViewId);
+        if (view === undefined) return;
+        this.addSceneView(view, added => this.dock.revealPanel(added, this.newSceneViewHomes(added)));
+        this.focusView(SCENE_FOCUS);
+    }
+
+    private newSceneViewHomes(view: SceneViewId): DockViewHome[] {
+        const beside = this.focusedSceneView().view;
+        const homes = dockPanelHomesOf(view);
+        return beside !== view && this.dock.isOpen(beside) ? [{withPanel: beside}, ...homes] : [...homes];
+    }
+
+    private panelReleased(panel: DockPanelId): void {
+        if (!isSceneViewId(panel)) return;
+        const state = this.sceneViews.get(panel);
+        if (state === undefined) return;
+        this.sceneViews.delete(panel);
+        state.controller?.forgetCamera();
+        state.controller?.dispose();
+        state.document.dispose();
+        state.viewportSize.dispose();
+        if (this.activeSceneView === panel) this.activeSceneView = FIRST_SCENE_VIEW;
+        for (const watcher of [...this.sceneViewWatchers]) watcher.closed(panel);
+        this.commands.changed();
+    }
+
+    private activateSceneView(view: SceneViewId): void {
+        if (view === this.activeSceneView || !this.sceneViews.has(view)) return;
+        this.activeSceneView = view;
+        this.commands.changed();
+    }
+
+    private focusedSceneView(): SceneViewState {
+        const active = this.sceneViews.get(this.activeSceneView);
+        const first = this.sceneViews.get(FIRST_SCENE_VIEW)!;
+        return active !== undefined && this.dock.isOpen(active.view) ? active : first;
+    }
+
+    private activeSceneController(): SceneView {
+        return this.focusedSceneView().controller ?? this.sceneViews.get(FIRST_SCENE_VIEW)!.controller!;
+    }
+
+    private isSceneOverlay(element: Element | null): boolean {
+        return [...this.sceneViews.values()].some(state => state.parts.overlay === element);
     }
 
     private dockArea(): DockSize {
@@ -413,21 +559,31 @@ class EditorShellImplementation implements EditorShell {
         return {widthPx: dock.clientWidth, heightPx: dock.clientHeight};
     }
 
-    private panelShown(panel: DockPanelId, shown: boolean): void {
+    private panelShown(panel: DockPanelKind, shown: boolean): void {
         if (panel === SETTINGS_PANEL) this.mounted?.settings.setVisible(shown);
         else if (panel === ASSETS_PANEL) this.mounted?.dataAssets.setVisible(shown);
-        else if (panel === SCENE_VIEW) {
-            this.sceneViewDocked = shown;
-            this.updateSceneViewShown();
-        }
+    }
+
+    private panelMoved(panel: DockPanelKind): void {
+        if (panel !== GAME_VIEW) return;
+        for (const size of this.gameViewSizes) size.follow();
+        dispatchResize(this.viewport);
+        this.applyGameViewAspect();
+    }
+
+    private sceneViewMoved(state: SceneViewState, document: Document): void {
+        state.document.follow(document);
+        state.viewportSize.follow();
+        dispatchResize(state.parts.viewport);
+        state.controller?.relocated();
     }
 
     private revealPanel(panel: DockPanelId): void {
-        this.dock.revealPanel(panel, DOCK_PANEL_HOMES[panel]);
+        this.dock.revealPanel(panel, dockPanelHomesOf(panel));
     }
 
-    private showPanel(panel: DockPanelId): void {
-        if (panel === SCENE_VIEW || panel === GAME_VIEW) {
+    private showPanel(panel: DockPanelKind): void {
+        if (panel === SCENE_VIEW_KIND || panel === GAME_VIEW) {
             this.focusView(panel);
             return;
         }
@@ -442,21 +598,23 @@ class EditorShellImplementation implements EditorShell {
     private stateChanged(workspace: EditorWorkspace): void {
         this.layout.toolbar.dataset.mode = workspace.mode;
         this.dock.setForcedPanel(isLayoutMaximized(workspace.gameViewOptions, workspace.mode) ? GAME_VIEW : undefined);
-        this.updateSceneViewShown();
+        for (const state of this.sceneViews.values()) this.updateSceneViewShown(state);
         this.moveFocusWithMode(workspace.mode);
         this.applyGameViewAspect();
         this.commands.changed();
     }
 
-    private updateSceneViewShown(): void {
+    private updateSceneViewShown(state: SceneViewState): void {
         const workspace = this.mounted?.workspace;
-        this.showSceneViewShown(this.sceneViewDocked && (workspace === undefined || workspace.sceneViewShown));
-    }
-
-    private showSceneViewShown(shown: boolean): void {
-        if (shown === this.sceneViewShown) return;
-        this.sceneViewShown = shown;
-        for (const listener of [...this.sceneViewShownListeners]) listener(shown);
+        const shown = isSceneViewVisible({
+            panelShown: state.panelShown,
+            layoutShowsSceneView: workspace === undefined || workspace.sceneViewShown,
+            documentVisible: state.document.visible,
+        });
+        if (shown === state.shown) return;
+        state.shown = shown;
+        state.controller?.setShown(shown);
+        for (const watcher of [...this.sceneViewWatchers]) watcher.shown(state.view, shown);
     }
 
     private moveFocusWithMode(mode: EditorMode): void {
@@ -464,15 +622,17 @@ class EditorShellImplementation implements EditorShell {
         this.shownMode = mode;
         if (previous === undefined || previous === mode) return;
         if (mode === PLAY_MODE) this.focusView(GAME_VIEW);
-        else if (mode === EDIT_MODE && this.viewport.contains(this.document.activeElement) && this.dock.isOpen(SCENE_VIEW)) this.focusView(SCENE_VIEW);
+        else if (mode === EDIT_MODE && isFocusWithin(this.viewport) && this.dock.isOpen(this.focusedSceneView().view)) this.focusView(SCENE_FOCUS);
     }
 
-    private focusView(view: EditorView): void {
-        this.revealPanel(view);
-        if (view === SCENE_VIEW) {
-            this.layout.overlay.focus();
+    private focusView(view: FocusableView): void {
+        if (view === SCENE_FOCUS) {
+            const scene = this.focusedSceneView();
+            this.revealPanel(scene.view);
+            scene.parts.overlay.focus();
             return;
         }
+        this.revealPanel(GAME_VIEW);
         shownCanvasIn(this.viewport)?.focus();
     }
 
@@ -644,18 +804,39 @@ class EditorShellImplementation implements EditorShell {
         });
     }
 
-    private installKeyboard(document: Document): void {
+    private stopObservingSizes(): void {
+        for (const size of this.gameViewSizes) size.dispose();
+        for (const state of this.sceneViews.values()) state.viewportSize.dispose();
+    }
+
+    private installWindowInput(document: Document): void {
         document.addEventListener("focusin", event => {
             const target = event.target;
             if (isValueInputElement(target)) this.focusValues.set(target, target.value);
         });
+        document.addEventListener("keydown", event => this.cancelEntityPickOn(event), CAPTURE);
         document.addEventListener("keydown", event => this.onKeyDown(event, document));
+        document.addEventListener("pointerdown", () => this.closePopupsOutside(document), CAPTURE);
+    }
+
+    private cancelEntityPickOn(event: KeyboardEvent): void {
+        const workspace = this.mounted?.workspace;
+        if (event.key === CANCEL_ENTITY_PICK_KEY && workspace?.pickingEntity === true) workspace.cancelEntityPick();
+    }
+
+    private closePopupsOutside(document: Document): void {
+        for (const other of this.dock.documents()) {
+            if (other === document) continue;
+            closePopupMenu(other);
+            closeChoicePopup(other);
+            closeCommandPalette(other);
+        }
     }
 
     private entityKeysFocused(): boolean {
         const document = this.activeDocument();
         const active = document.activeElement;
-        return active === null || active === document.body || active === this.layout.overlay || this.layout.hierarchy.contains(active);
+        return active === null || active === document.body || this.isSceneOverlay(active) || this.layout.hierarchy.contains(active);
     }
 
     private hasTextEdits(element: Element): boolean {
