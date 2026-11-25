@@ -171,6 +171,48 @@ function inputWith(definitions: Readonly<Record<string, InputActionDefinition>>)
     return input;
 }
 
+describe("Input pointer claim", () => {
+    test("a claim hides buttons and the wheel from the game for one frame, the raw events stay", () => {
+        const input = new Input();
+        frame(input, pointerDown(PointerButton.Left, 1, 1), {type: "wheel", delta: 1, x: 1, y: 1, ...NO_MODIFIERS});
+        input.claimPointer();
+        expect([input.pointerClaimed, input.buttonPressed(PointerButton.Left), input.buttonHeld(PointerButton.Left), input.wheelDelta]).toEqual([true, false, false, 0]);
+        expect(input.events.map(event => event.type)).toEqual(["pointerDown", "wheel"]);
+        frame(input, pointerUp(PointerButton.Left, 1, 1));
+        expect([input.pointerClaimed, input.buttonReleased(PointerButton.Left)]).toEqual([false, true]);
+        input.claimPointer();
+        expect(input.buttonReleased(PointerButton.Left)).toBe(false);
+    });
+
+    test("while the pointer is claimed, actions answer from their keys alone", () => {
+        const input = inputWith({fire: {keys: [Key.Space], buttons: [PointerButton.Left]}, aim: {buttons: [PointerButton.Right]}});
+        const fire = input.action("fire"), aim = input.action("aim");
+        frame(input, pointerDown(PointerButton.Left, 1, 1), pointerDown(PointerButton.Right, 1, 1));
+        input.claimPointer();
+        expect([input.actionPressed(fire), input.actionHeld(fire), input.actionPressed(aim), input.actionHeld(aim)]).toEqual([false, false, false, false]);
+        frame(input, keyDown(Key.Space));
+        input.claimPointer();
+        expect([input.actionPressed(fire), input.actionHeld(fire)]).toEqual([true, true]);
+        frame(input, keyUp(Key.Space));
+        input.claimPointer();
+        expect([input.actionReleased(fire), input.actionHeld(fire)]).toEqual([true, false]);
+        frame(input);
+        expect([input.actionHeld(fire), input.actionPressed(fire), input.actionHeld(aim)]).toEqual([true, false, true]);
+    });
+
+    test("the releases a focus loss makes are marked as such for that frame, the host's own are not", () => {
+        const input = new Input();
+        frame(input, keyDown(Key.A), pointerDown(PointerButton.Left, 4, 5));
+        const lost = frame(input, {type: "focus", focused: false});
+        expect(lost.map(event => input.releasedByFocusLoss(event))).toEqual([true, true, false]);
+        const released = lost[1];
+        frame(input, {type: "focus", focused: true}, pointerDown(PointerButton.Left, 4, 5));
+        expect(input.releasedByFocusLoss(released)).toBe(false);
+        const [hostRelease] = frame(input, pointerUp(PointerButton.Left, 4, 5));
+        expect(input.releasedByFocusLoss(hostRelease)).toBe(false);
+    });
+});
+
 describe("Input actions", () => {
     test("an action is held, pressed and released through any of its keys", () => {
         const input = inputWith({jump: {keys: [Key.Space, Key.W]}});

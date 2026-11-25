@@ -2,6 +2,9 @@ import {beforeEach, describe, expect, test} from "../testing/harness";
 import {MemoryPlatform} from "../testing/memoryPlatform";
 import {World} from "../core";
 import type {Component, Entity, EntityManager} from "../core";
+import {Input} from "../input/input";
+import {NO_MODIFIERS} from "../input/inputEvent";
+import {PointerButton} from "../input/pointerButton";
 import {Camera} from "../rendering/camera";
 import {ScreenSize} from "../rendering/screenSize";
 import {TextColor} from "../rendering/textColor";
@@ -26,9 +29,10 @@ import {
     UiDrawList,
 } from "./uiDrawList";
 import {ELLIPSIS_CODE_POINT, UiDrawListSystem} from "./uiDrawListSystem";
+import {UiInteractable} from "./uiInteractable";
 import {UiLayout} from "./uiLayout";
 import {UiRoot} from "./uiRoot";
-import {UiScaleSnapping} from "./uiScaleSnapping";
+import {REQUESTED_UI_SCALE_RULE, UiScaleSnapping} from "./uiScaleSnapping";
 import {UiSize} from "./uiSize";
 import {UiText} from "./uiText";
 
@@ -249,10 +253,31 @@ describe("UiDrawListSystem", () => {
         expect(commandsOf(list).at(-1)!.text).toBe("b");
     });
 
+    test("a box takes its disabled, pressed or hovered colours from UiState, and a DEFAULT state colour falls back", () => {
+        const box = uiBox(TextColor.BLUE, "single", TextColor.WHITE);
+        box.hoveredBackground = TextColor.GREEN;
+        box.hoveredBorderColor = TextColor.YELLOW;
+        const panel = panelWith([], box);
+        entityManager.addComponent(panel, new UiInteractable());
+        const input = world.resources.getOrCreate(Input);
+        const boxColors = (): number[] => drawn().slice(0, 2).map(command => command.color);
+        expect(boxColors()).toEqual([TextColor.BLUE, TextColor.WHITE]);
+        input.enqueue({type: "pointerMove", x: 1, y: 1, ...NO_MODIFIERS});
+        expect(boxColors()).toEqual([TextColor.GREEN, TextColor.YELLOW]);
+        input.enqueue({type: "pointerDown", button: PointerButton.Left, x: 1, y: 1, ...NO_MODIFIERS});
+        expect(boxColors()).toEqual([TextColor.GREEN, TextColor.YELLOW]);
+        component(entityManager, panel, UiBox).pressedBackground = TextColor.RED;
+        expect(boxColors()).toEqual([TextColor.RED, TextColor.YELLOW]);
+        component(entityManager, panel, UiInteractable).disabled = true;
+        expect(boxColors()).toEqual([TextColor.BLUE, TextColor.WHITE]);
+        component(entityManager, panel, UiBox).disabledBackground = TextColor.BRIGHT_BLACK;
+        expect(boxColors()).toEqual([TextColor.BRIGHT_BLACK, TextColor.WHITE]);
+    });
+
     test("a new scale rule lays the roots out again at the scale it returns", () => {
         root = entityManager.createEntity("scaled", [new UiRoot(), uiText("x")]);
         world.step();
-        world.resources.get(UiScaleSnapping).use({effectiveScale: () => DOUBLE_SCALE});
+        world.resources.get(UiScaleSnapping).use({...REQUESTED_UI_SCALE_RULE, effectiveScale: () => DOUBLE_SCALE});
         world.step();
         expect(world.resources.get(UiDrawList).rootScales).toEqual([DOUBLE_SCALE, DOUBLE_SCALE]);
     });

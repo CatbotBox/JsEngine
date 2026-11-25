@@ -6,13 +6,15 @@ import {borderInsetOf} from "./layout/flexStyle";
 import type {FlexContainerStyle} from "./layout/flexStyle";
 import {glyphColumnsOf, lineColumns, textLines} from "./text/textColumns";
 import {wrapTextLines} from "./text/wrapTextLines";
-import {UiBox} from "./uiBox";
+import {UiBox, uiBoxBackground, uiBoxBorderColor} from "./uiBox";
 import {UiDrawList} from "./uiDrawList";
 import {UiLayout} from "./uiLayout";
 import {UiLayoutSystem} from "./uiLayoutSystem";
+import {UiPointerSystem} from "./uiPointerSystem";
 import {UI_DRAW_LIST_PRIORITY} from "./uiSystemPriorities";
 import {UI_RECT_CLIP_BOTTOM, UI_RECT_CLIP_LEFT, UI_RECT_CLIP_RIGHT, UI_RECT_CLIP_TOP, UI_RECT_FLOATS, UI_RECT_HEIGHT, UI_RECT_WIDTH, UI_RECT_X, UI_RECT_Y, UiRect} from "./uiRect";
 import {UiRoot} from "./uiRoot";
+import {NO_UI_STATE, UiState} from "./uiState";
 import {UiText} from "./uiText";
 import {NOT_IN_TREE, UiTreeIndex} from "./uiTreeIndex";
 
@@ -33,11 +35,13 @@ const DRAWN_NODE_COMPONENTS = {
     box: UiBox,
     text: UiText,
     layout: UiLayout,
+    state: UiState,
 };
 
 const STYLE_COMPONENTS = {
     box: UiBox,
     text: UiText,
+    state: UiState,
 };
 
 function codeUnitLength(codePoint: number): number {
@@ -57,6 +61,7 @@ export class UiDrawListSystem extends System {
     private readonly _boxes: (Readonly<UiBox> | undefined)[] = [];
     private readonly _texts: (Readonly<UiText> | undefined)[] = [];
     private readonly _layouts: (FlexContainerStyle | undefined)[] = [];
+    private readonly _stateBits: number[] = [];
 
     override systemGroup() {
         return RenderingSystemGroup;
@@ -69,6 +74,7 @@ export class UiDrawListSystem extends System {
     protected onCreate() {
         this.requireAnyForUpdate(this._roots);
         this.world.ensureSystemExists(UiLayoutSystem);
+        this.world.ensureSystemExists(UiPointerSystem);
         this.world.resources.getOrCreate(UiDrawList);
     }
 
@@ -92,11 +98,13 @@ export class UiDrawListSystem extends System {
         this._boxes.length = count;
         this._texts.length = count;
         this._layouts.length = count;
+        this._stateBits.length = count;
         this._boxes.fill(undefined);
         this._texts.fill(undefined);
         this._layouts.fill(undefined);
+        this._stateBits.fill(NO_UI_STATE);
         const rects = this._rects;
-        this._nodes.stream({read: {rect: UiRect}, optional: DRAWN_NODE_COMPONENTS}, {includeEntity: true}).consume(({entity, rect, box, text, layout}) => {
+        this._nodes.stream({read: {rect: UiRect}, optional: DRAWN_NODE_COMPONENTS}, {includeEntity: true}).consume(({entity, rect, box, text, layout, state}) => {
             const node = index.indexOf(entity);
             if (node === NOT_IN_TREE) return;
             const base = node * UI_RECT_FLOATS;
@@ -111,6 +119,7 @@ export class UiDrawListSystem extends System {
             this._boxes[node] = box;
             this._texts[node] = text;
             this._layouts[node] = layout;
+            this._stateBits[node] = state?.bits ?? NO_UI_STATE;
         });
     }
 
@@ -134,8 +143,10 @@ export class UiDrawListSystem extends System {
         list.clipTo(clipLeft, clipTop, clipRight, clipBottom);
         const box = this._boxes[node];
         if (box !== undefined) {
-            if (!TextColor.isDefault(box.background)) list.fillRect(x, y, width, height, box.background);
-            if (box.border !== "none") list.border(x, y, width, height, box.border, box.borderColor);
+            const stateBits = this._stateBits[node];
+            const background = uiBoxBackground(box, stateBits);
+            if (!TextColor.isDefault(background)) list.fillRect(x, y, width, height, background);
+            if (box.border !== "none") list.border(x, y, width, height, box.border, uiBoxBorderColor(box, stateBits));
         }
         const text = this._texts[node];
         if (text === undefined) return;

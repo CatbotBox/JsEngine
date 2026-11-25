@@ -36,6 +36,8 @@ const CELLS_PER_UI_UNIT = 1;
 
 export const CELL_UI_SCALE_RULE: UiScaleRule = {
     effectiveScale: () => CELLS_PER_UI_UNIT,
+    deviceUnitsPerUiUnitX: effectiveScale => effectiveScale,
+    deviceUnitsPerUiUnitY: effectiveScale => effectiveScale,
 };
 
 interface BoxGlyphs {

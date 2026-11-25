@@ -4,7 +4,16 @@ export {UiSize} from "./uiSize";
 export {UiOffset} from "./uiOffset";
 export {UiText} from "./uiText";
 export {UiScroll} from "./uiScroll";
-export {UiBox} from "./uiBox";
+export {UiBox, uiBoxBackground, uiBoxBorderColor, uiBoxDrawsInAnyState} from "./uiBox";
+export {UiInteractable} from "./uiInteractable";
+export {
+    UiState,
+    NO_UI_STATE,
+    UI_POINTER_STATE_BITS,
+    UI_STATE_DISABLED,
+    UI_STATE_HOVERED,
+    UI_STATE_PRESSED,
+} from "./uiState";
 export {
     UiRect,
     UI_RECT_CLIP_BOTTOM,
@@ -20,7 +29,31 @@ export {
 export {UiNodeComponent} from "./uiNodeComponent";
 export {UiTreeIndex, NO_PARENT_INDEX, NOT_IN_TREE} from "./uiTreeIndex";
 export {UiLayoutSystem} from "./uiLayoutSystem";
-export {UI_DRAW_LIST_PRIORITY, UI_LAYOUT_PRIORITY, UI_SCALE_SNAPPING_PRIORITY} from "./uiSystemPriorities";
+export {
+    UI_DRAW_LIST_PRIORITY,
+    UI_INPUT_PRIORITY,
+    UI_LAYOUT_PRIORITY,
+    UI_POINTER_PRIORITY,
+    UI_SCALE_SNAPPING_PRIORITY,
+} from "./uiSystemPriorities";
+export {UiInputSystemGroup} from "./uiInputSystemGroup";
+export {UiPointerSystem, DOUBLE_CLICK_MAX_DISTANCE_UNITS, DOUBLE_CLICK_MAX_INTERVAL_MS} from "./uiPointerSystem";
+export {UiEvents, UiEventRecord} from "./uiEvents";
+export type {
+    UiButtonEvent,
+    UiClickEvent,
+    UiDoubleClickEvent,
+    UiDragEvent,
+    UiEvent,
+    UiEventFields,
+    UiEventOfType,
+    UiEventType,
+    UiPointerEnterEvent,
+    UiPointerLeaveEvent,
+    UiPressEvent,
+    UiReleaseEvent,
+    UiWheelEvent,
+} from "./uiEvents";
 export {UiScaleSnapping, REQUESTED_UI_SCALE_RULE} from "./uiScaleSnapping";
 export type {UiScaleRule} from "./uiScaleSnapping";
 export {SnappedUiRect, snappedUiEdge} from "./uiSnapping";
@@ -81,11 +114,13 @@ export type {TextExtent} from "./text/textColumns";
 export {wrapTextLines} from "./text/wrapTextLines";
 export {
     UI_BOX_SCHEMA_ENTRY,
+    UI_INTERACTABLE_SCHEMA_ENTRY,
     UI_LAYOUT_SCHEMA_ENTRY,
     UI_OFFSET_SCHEMA_ENTRY,
     UI_RECT_SCHEMA_ENTRY,
     UI_ROOT_SCHEMA_ENTRY,
     UI_SCROLL_SCHEMA_ENTRY,
     UI_SIZE_SCHEMA_ENTRY,
+    UI_STATE_SCHEMA_ENTRY,
     UI_TEXT_SCHEMA_ENTRY,
 } from "./schemas";

@@ -1,5 +1,6 @@
 import {System} from "../../engine/core";
 import {RenderingSystemGroup} from "../../engine/rendering/renderingSystemGroup";
+import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../engine/rendering/screenUnits";
 import {UI_SCALE_SNAPPING_PRIORITY} from "../../engine/ui/uiSystemPriorities";
 import {UiRoot} from "../../engine/ui/uiRoot";
 import {UiScaleSnapping} from "../../engine/ui/uiScaleSnapping";
@@ -19,6 +20,14 @@ export class WholePixelUiScaleRule implements UiScaleRule {
 
     public effectiveScale(requestedScale: number): number {
         return uiUnitWidthPx(requestedScale, this.pixelsPerScreenUnitX) / this.pixelsPerScreenUnitX;
+    }
+
+    public deviceUnitsPerUiUnitX(effectiveScale: number): number {
+        return uiUnitWidthPx(effectiveScale, this.pixelsPerScreenUnitX);
+    }
+
+    public deviceUnitsPerUiUnitY(effectiveScale: number): number {
+        return uiUnitWidthPx(effectiveScale, this.pixelsPerScreenUnitX) * SCREEN_UNIT_HEIGHT_PER_WIDTH;
     }
 }
 

@@ -4,19 +4,21 @@ import type {NumberFieldBuildOptions} from "../scene/componentSchemaBuilder";
 import type {SchemaEntry} from "../scene/schemaEntries";
 import {UI_ALIGNS, UI_BORDER_STYLES, UI_DIRECTIONS, UI_JUSTIFIES, UI_SCROLL_AXES, UI_SIZE_MODES, UI_TEXT_ALIGNS, UI_TEXT_OVERFLOWS, UI_TEXT_WRAPS} from "./layout/flexStyle";
 import {UiBox} from "./uiBox";
+import {UiInteractable} from "./uiInteractable";
 import {UiLayout} from "./uiLayout";
 import {UiOffset} from "./uiOffset";
 import {UiRect} from "./uiRect";
 import {UiRoot} from "./uiRoot";
 import {UiScroll} from "./uiScroll";
 import {UiSize} from "./uiSize";
+import {UiState} from "./uiState";
 import {UiText} from "./uiText";
 
 const UNCAPPED_SIZE: NumberFieldBuildOptions = {uncapped: true};
 
 export const UI_ROOT_SCHEMA_ENTRY: SchemaEntry = {
     kind: "componentSchema",
-    build: () => componentSchema(UiRoot, "UiRoot").number("scale").integer("sortOrder").category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
+    build: () => componentSchema(UiRoot, "UiRoot").number("scale").integer("sortOrder").boolean("blocksGameInput").category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
 };
 
 export const UI_LAYOUT_SCHEMA_ENTRY: SchemaEntry = {
@@ -57,6 +59,18 @@ export const UI_RECT_SCHEMA_ENTRY: SchemaEntry = {
 
 export const UI_BOX_SCHEMA_ENTRY: SchemaEntry = {
     kind: "componentSchema",
-    build: () => componentSchema(UiBox, "UiBox").textColor("background").enum("border", UI_BORDER_STYLES).textColor("borderColor")
-        .category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
+    build: () => componentSchema(UiBox, "UiBox").textColor("background").textColor("hoveredBackground").textColor("pressedBackground")
+        .textColor("disabledBackground").enum("border", UI_BORDER_STYLES).textColor("borderColor").textColor("hoveredBorderColor")
+        .textColor("pressedBorderColor").textColor("disabledBorderColor").category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
+};
+
+export const UI_INTERACTABLE_SCHEMA_ENTRY: SchemaEntry = {
+    kind: "componentSchema",
+    build: () => componentSchema(UiInteractable, "UiInteractable").boolean("click").boolean("press").boolean("wheel").boolean("drag")
+        .boolean("disabled").category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
+};
+
+export const UI_STATE_SCHEMA_ENTRY: SchemaEntry = {
+    kind: "componentSchema",
+    build: () => componentSchema(UiState, "UiState").implied().category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
 };
