@@ -5,8 +5,10 @@ import {PIXELS_SPRITE_PASSES} from "../pixels/2d/pixelsSpritePasses";
 import {SpritePixelPassSystem} from "../pixels/2d/spritePixelPassSystem";
 import {HudTextSpritePixelPassSystem} from "../pixels/hudTextSpritePixelPassSystem";
 import {PIXELS_HUD_TEXT_PASSES} from "../pixels/pixelsHudTextPasses";
+import {PIXELS_UI_PASSES} from "../pixels/pixelsUiPasses";
 import {PIXELS_WORLD_TEXT_PASSES} from "../pixels/pixelsWorldTextPasses";
 import {TextSpritePixelPassSystem} from "../pixels/textSpritePixelPassSystem";
+import {UiPixelPassSystem} from "../pixels/uiPixelPassSystem";
 import {GPU_MESH_PASSES} from "./gpuMeshPasses";
 import {GpuMeshPassSystem} from "./gpuMeshPassSystem";
 
@@ -16,6 +18,7 @@ export const GPU_PASS_LISTS: readonly (readonly RenderPassCtor[])[] = [
     PIXELS_WORLD_TEXT_PASSES,
     PIXELS_HUD_SPRITE_PASSES,
     PIXELS_HUD_TEXT_PASSES,
+    PIXELS_UI_PASSES,
 ];
 
 export const GPU_STANDARD_PASSES: readonly RenderPassCtor[] = [
@@ -24,4 +27,5 @@ export const GPU_STANDARD_PASSES: readonly RenderPassCtor[] = [
     TextSpritePixelPassSystem,
     HudSpritePixelPassSystem,
     HudTextSpritePixelPassSystem,
+    UiPixelPassSystem,
 ];

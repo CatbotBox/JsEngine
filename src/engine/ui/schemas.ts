@@ -2,7 +2,8 @@ import {ENGINE_COMPONENT_CATEGORIES} from "../scene/componentCategories";
 import {componentSchema} from "../scene/componentSchemaBuilder";
 import type {NumberFieldBuildOptions} from "../scene/componentSchemaBuilder";
 import type {SchemaEntry} from "../scene/schemaEntries";
-import {UI_ALIGNS, UI_DIRECTIONS, UI_JUSTIFIES, UI_SCROLL_AXES, UI_SIZE_MODES, UI_TEXT_ALIGNS, UI_TEXT_OVERFLOWS, UI_TEXT_WRAPS} from "./layout/flexStyle";
+import {UI_ALIGNS, UI_BORDER_STYLES, UI_DIRECTIONS, UI_JUSTIFIES, UI_SCROLL_AXES, UI_SIZE_MODES, UI_TEXT_ALIGNS, UI_TEXT_OVERFLOWS, UI_TEXT_WRAPS} from "./layout/flexStyle";
+import {UiBox} from "./uiBox";
 import {UiLayout} from "./uiLayout";
 import {UiOffset} from "./uiOffset";
 import {UiRect} from "./uiRect";
@@ -52,4 +53,10 @@ export const UI_SCROLL_SCHEMA_ENTRY: SchemaEntry = {
 export const UI_RECT_SCHEMA_ENTRY: SchemaEntry = {
     kind: "componentSchema",
     build: () => componentSchema(UiRect, "UiRect").implied().category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
+};
+
+export const UI_BOX_SCHEMA_ENTRY: SchemaEntry = {
+    kind: "componentSchema",
+    build: () => componentSchema(UiBox, "UiBox").textColor("background").enum("border", UI_BORDER_STYLES).textColor("borderColor")
+        .category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
 };

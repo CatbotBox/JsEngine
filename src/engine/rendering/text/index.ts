@@ -11,3 +11,6 @@ export {
 export {formatHudLines, formatHudText} from "./hudText";
 export type {HudValues} from "./hudText";
 export {HudLabel} from "./hudLabel";
+export {FULL_COVERAGE} from "./glyphSource";
+export type {GlyphSource} from "./glyphSource";
+export {PixelFontGlyphSource} from "./pixelFontGlyphSource";

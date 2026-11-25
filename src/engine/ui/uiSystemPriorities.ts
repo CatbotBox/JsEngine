@@ -1,0 +1,3 @@
+export const UI_SCALE_SNAPPING_PRIORITY = 49;
+export const UI_LAYOUT_PRIORITY = 50;
+export const UI_DRAW_LIST_PRIORITY = 51;

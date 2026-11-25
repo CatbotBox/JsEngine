@@ -1,7 +1,7 @@
 import {describe, expect, test} from "../../testing/harness";
 import {DEFAULT_FLEX_CONTAINER, DEFAULT_FLEX_SIZE, FlexLayout} from "./flexLayout";
 import type {FlexLayoutTree} from "./flexLayout";
-import type {FlexContainerStyle, FlexOffsetStyle, FlexScrollStyle, FlexSizeStyle, FlexTextContent, UiTextWrap} from "./flexStyle";
+import type {FlexBoxStyle, FlexContainerStyle, FlexOffsetStyle, FlexScrollStyle, FlexSizeStyle, FlexTextContent, UiBorderStyle, UiTextWrap} from "./flexStyle";
 
 const SCREEN_WIDTH = 80;
 const SCREEN_HEIGHT = 24;
@@ -14,6 +14,7 @@ interface NodeSpec {
     readonly text?: string;
     readonly wrap?: UiTextWrap;
     readonly scroll?: Partial<FlexScrollStyle>;
+    readonly border?: UiBorderStyle;
     readonly children?: readonly NodeSpec[];
 }
 
@@ -48,6 +49,7 @@ function treeOf(root: NodeSpec): {tree: FlexLayoutTree, indexOf: Map<string, num
     const offsets: (FlexOffsetStyle | undefined)[] = [];
     const texts: (FlexTextContent | undefined)[] = [];
     const scrolls: (FlexScrollStyle | undefined)[] = [];
+    const boxes: (FlexBoxStyle | undefined)[] = [];
     const visit = (spec: NodeSpec): void => {
         const index = subtreeEnd.length;
         indexOf.set(spec.name, index);
@@ -57,11 +59,12 @@ function treeOf(root: NodeSpec): {tree: FlexLayoutTree, indexOf: Map<string, num
         offsets.push(spec.offset === undefined ? undefined : {...NO_OFFSET, ...spec.offset});
         texts.push(spec.text === undefined ? undefined : {text: spec.text, wrap: spec.wrap ?? "none"});
         scrolls.push(spec.scroll === undefined ? undefined : {...NO_SCROLL, ...spec.scroll});
+        boxes.push(spec.border === undefined ? undefined : {border: spec.border});
         for (const child of spec.children ?? []) visit(child);
         subtreeEnd[index] = subtreeEnd.length;
     };
     visit(root);
-    return {tree: {count: subtreeEnd.length, subtreeEnd: Int32Array.from(subtreeEnd), containers, sizes, offsets, texts, scrolls}, indexOf};
+    return {tree: {count: subtreeEnd.length, subtreeEnd: Int32Array.from(subtreeEnd), containers, sizes, offsets, texts, scrolls, boxes}, indexOf};
 }
 
 function layOut(root: NodeSpec, width: number = SCREEN_WIDTH, height: number = SCREEN_HEIGHT): LaidOutTree {
@@ -442,6 +445,49 @@ describe("flex layout", () => {
         const clip = laidOut.clip("leaf");
         expect(clip.right - clip.left).toBe(0);
         expect(clip.bottom - clip.top).toBe(0);
+    });
+
+    test("a border takes one unit on each side, in the fit size and in front of the padding", () => {
+        const laidOut = layOut({
+            name: "root",
+            container: {align: "start"},
+            children: [{
+                name: "panel",
+                border: "single",
+                container: {direction: "row", paddingLeft: 2, paddingTop: 1, gap: 1},
+                children: [box("a", 3, 2), box("b", 4, 1)],
+            }],
+        });
+        expect(laidOut.rect("panel")).toEqual({x: 0, y: 0, width: 1 + 2 + 3 + 1 + 4 + 1, height: 1 + 1 + 2 + 1});
+        expect(laidOut.rect("a")).toEqual({x: 3, y: 2, width: 3, height: 2});
+        expect(laidOut.rect("b")).toEqual({x: 7, y: 2, width: 4, height: 1});
+    });
+
+    test("every border style insets by one unit and a box without a border insets by none", () => {
+        for (const border of ["single", "double", "thick"] as const) {
+            const laidOut = layOut({name: "root", border, children: [{name: "text", text: "hi"}]}, 10, 5);
+            expect(laidOut.rect("text")).toEqual({x: 1, y: 1, width: 8, height: 1});
+        }
+        const unbordered = layOut({name: "root", border: "none", children: [{name: "text", text: "hi"}]}, 10, 5);
+        expect(unbordered.rect("text")).toEqual({x: 0, y: 0, width: 10, height: 1});
+    });
+
+    test("a bordered text node wraps inside its border and grows by it", () => {
+        const laidOut = layOut({
+            name: "root",
+            container: {direction: "row", align: "start"},
+            children: [{name: "text", border: "double", text: "aa bb", wrap: "word", size: {widthMode: "fixed", width: 4}}],
+        });
+        expect(laidOut.rect("text")).toEqual({x: 0, y: 0, width: 4, height: 2 + 2});
+    });
+
+    test("a clipping bordered container clips its children inside the border", () => {
+        const laidOut = layOut({
+            name: "root",
+            container: {align: "start"},
+            children: [{name: "panel", border: "single", container: {clip: true}, size: fixed(6, 4), children: [box("leaf", 10, 10)]}],
+        });
+        expect(laidOut.clip("leaf")).toEqual({left: 1, top: 1, right: 5, bottom: 3});
     });
 
     test("positions stay fractional", () => {

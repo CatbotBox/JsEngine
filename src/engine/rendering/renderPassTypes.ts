@@ -6,4 +6,5 @@ export const RENDER_PASS_REQUIRED_TYPES: Readonly<Record<RenderPassKind, readonl
     hudSprites: ["HudElement", "Sprite"],
     hudText: ["HudElement", "TextSprite"],
     worldText: ["TextSprite"],
+    ui: ["UiRoot"],
 };

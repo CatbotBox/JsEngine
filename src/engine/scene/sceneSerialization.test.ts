@@ -37,6 +37,7 @@ import {Lifetime} from "../motion/lifetime";
 import {Velocity} from "../motion/velocity";
 import {PanCamera} from "../cameraControllers/2d/panCamera";
 import {FlyCamera} from "../cameraControllers/3d/flyCamera";
+import {UiBox} from "../ui/uiBox";
 import {UiLayout} from "../ui/uiLayout";
 import {UiOffset} from "../ui/uiOffset";
 import {UiRoot} from "../ui/uiRoot";
@@ -207,7 +208,11 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     const uiScroll = new UiScroll();
     uiScroll.scrollY = 4;
     uiScroll.axes = "both";
-    em.createEntity("menu", [uiRoot, uiLayout, uiSize, uiOffset, uiText, uiScroll]);
+    const uiBox = new UiBox();
+    uiBox.background = TextColor.BLUE;
+    uiBox.border = "double";
+    uiBox.borderColor = TextColor.BRIGHT_WHITE;
+    em.createEntity("menu", [uiRoot, uiLayout, uiSize, uiOffset, uiText, uiScroll, uiBox]);
 
     const asleep = em.createEntity("asleep", [new LocalPosition(7, 7, 7)]);
     em.setEnabledState(asleep, DISABLED);

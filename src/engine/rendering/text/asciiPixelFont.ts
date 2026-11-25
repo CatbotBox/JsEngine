@@ -117,10 +117,12 @@ const FULL_BLOCK_CODE_POINT = 0x2588;
 const LIGHT_SHADE_CODE_POINT = 0x2591;
 const MEDIUM_SHADE_CODE_POINT = 0x2592;
 const DARK_SHADE_CODE_POINT = 0x2593;
+const HORIZONTAL_ELLIPSIS_CODE_POINT = 0x2026;
 
 const LIGHT_SHADE_ROW_BITS: readonly number[] = [0x88, 0x22];
 const MEDIUM_SHADE_ROW_BITS: readonly number[] = [0xAA, 0x55];
 const DARK_SHADE_ROW_BITS: readonly number[] = [0x77, 0xDD];
+const HORIZONTAL_ELLIPSIS_SOURCE_ROWS: readonly number[] = [0x00, 0x00, 0x00, 0x00, 0x00, 0xDB, 0xDB, 0x00];
 
 function repeatedRows(sourceRows: readonly number[]): number[] {
     return sourceRows.flatMap(row => new Array<number>(SOURCE_ROW_REPEAT).fill(row));
@@ -144,6 +146,7 @@ function asciiPixelFontGlyphs(): PixelFontGlyph[] {
         [LIGHT_SHADE_CODE_POINT, alternatingRows(LIGHT_SHADE_ROW_BITS)],
         [MEDIUM_SHADE_CODE_POINT, alternatingRows(MEDIUM_SHADE_ROW_BITS)],
         [DARK_SHADE_CODE_POINT, alternatingRows(DARK_SHADE_ROW_BITS)],
+        [HORIZONTAL_ELLIPSIS_CODE_POINT, repeatedRows(HORIZONTAL_ELLIPSIS_SOURCE_ROWS)],
     );
     return glyphs;
 }

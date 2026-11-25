@@ -156,6 +156,28 @@ export class ScreenBuffer {
         this.background[idx] = background;
     }
 
+    public fillBackground(x: number, y: number, depth: number, background: TextColor): void {
+        this.setText(x, y, depth, SPACE_CODE_POINT, TextColor.DEFAULT, background);
+    }
+
+    public setGlyphOverBackground(x: number, y: number, depth: number, glyph: number, foreground: TextColor): void {
+        if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+        this.setText(x, y, depth, glyph, foreground, this.visibleBackgroundAt(y * this.width + x));
+    }
+
+    private visibleBackgroundAt(idx: number): TextColor {
+        switch (this.kind[idx]) {
+            case CellKind.Text:
+                return this.background[idx] as TextColor;
+            case CellKind.Rgb:
+                return TextColor.packedRgb(this.rgb[idx]);
+            case CellKind.RgbSplit:
+                return this.isSolidSplit(idx) ? TextColor.packedRgb(this.rgb[idx]) : this.backgroundBackground;
+            default:
+                return this.backgroundBackground;
+        }
+    }
+
     public writeText(text: string, x: number, y: number, depth: number, foreground: TextColor, background: TextColor) {
         let column = x;
         for (const character of text) {

@@ -14,6 +14,8 @@ export class UiTreeIndex extends Resource {
     private _depth: Int32Array = new Int32Array(INITIAL_CAPACITY_NODES);
     private _subtreeEnd: Int32Array = new Int32Array(INITIAL_CAPACITY_NODES);
     private readonly _roots: number[] = [];
+    private readonly _rootScales: number[] = [];
+    private _version = 0;
     private readonly _indexOfEntity = new Map<Entity, number>();
 
     public get count(): number {
@@ -36,6 +38,14 @@ export class UiTreeIndex extends Resource {
         return this._subtreeEnd;
     }
 
+    public get rootScales(): readonly number[] {
+        return this._rootScales;
+    }
+
+    public get version(): number {
+        return this._version;
+    }
+
     public get roots(): readonly number[] {
         return this._roots;
     }
@@ -48,12 +58,15 @@ export class UiTreeIndex extends Resource {
         this._count = 0;
         this._entities.length = 0;
         this._roots.length = 0;
+        this._rootScales.length = 0;
+        this._version++;
         this._indexOfEntity.clear();
     }
 
-    public beginRoot(entity: Entity): number {
+    public beginRoot(entity: Entity, scale: number): number {
         const index = this.append(entity, NO_PARENT_INDEX);
         this._roots.push(index);
+        this._rootScales.push(scale);
         return index;
     }
 

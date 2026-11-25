@@ -8,7 +8,8 @@ import {HierarchySyncSystem} from "../translation/hierarchySyncSystem";
 import {Parent} from "../translation/parent";
 import {FlexLayout} from "./layout/flexLayout";
 import type {FlexLayoutTree} from "./layout/flexLayout";
-import type {FlexContainerStyle, FlexOffsetStyle, FlexScrollStyle, FlexSizeStyle, FlexTextContent} from "./layout/flexStyle";
+import type {FlexBoxStyle, FlexContainerStyle, FlexOffsetStyle, FlexScrollStyle, FlexSizeStyle, FlexTextContent} from "./layout/flexStyle";
+import {UiBox} from "./uiBox";
 import {UiLayout} from "./uiLayout";
 import {UiOffset} from "./uiOffset";
 import {
@@ -24,14 +25,16 @@ import {
     UiRect,
 } from "./uiRect";
 import {UiRoot} from "./uiRoot";
+import {UiScaleSnapping} from "./uiScaleSnapping";
+import {UI_LAYOUT_PRIORITY} from "./uiSystemPriorities";
 import {UiScroll} from "./uiScroll";
 import {UiSize} from "./uiSize";
 import {UiText} from "./uiText";
 import {NOT_IN_TREE, UiTreeIndex} from "./uiTreeIndex";
 
-const PRIORITY_AFTER_CAMERA_SIZING = 50;
 const INCLUDE_DISABLED = true;
 const NEVER_LAID_OUT = -1;
+const NO_SNAPPING_VERSION = -1;
 const UNKNOWN_CREATION_ORDER = 0;
 
 const WATCHED_NODE_COMPONENTS = {
@@ -41,6 +44,7 @@ const WATCHED_NODE_COMPONENTS = {
     offset: UiOffset,
     text: UiText,
     scroll: UiScroll,
+    box: UiBox,
     children: Children,
     parent: Parent,
 };
@@ -89,6 +93,7 @@ export class UiLayoutSystem extends System {
     private readonly _flexLayout = new FlexLayout();
     private _laidOutStamp = 0;
     private _laidOutNodeCount = NEVER_LAID_OUT;
+    private _laidOutSnappingVersion = NO_SNAPPING_VERSION;
 
     private readonly _slotOfEntity = new Map<Entity, number>();
     private readonly _slotEntities: Entity[] = [];
@@ -99,14 +104,15 @@ export class UiLayoutSystem extends System {
     private readonly _slotOffsets: (FlexOffsetStyle | undefined)[] = [];
     private readonly _slotTexts: (FlexTextContent | undefined)[] = [];
     private readonly _slotScrolls: (FlexScrollStyle | undefined)[] = [];
+    private readonly _slotBoxes: (FlexBoxStyle | undefined)[] = [];
     private readonly _rootOrder: RootOrder[] = [];
-    private readonly _rootScales: number[] = [];
 
     private readonly _containers: (FlexContainerStyle | undefined)[] = [];
     private readonly _sizes: (FlexSizeStyle | undefined)[] = [];
     private readonly _offsets: (FlexOffsetStyle | undefined)[] = [];
     private readonly _texts: (FlexTextContent | undefined)[] = [];
     private readonly _scrollStyles: (FlexScrollStyle | undefined)[] = [];
+    private readonly _boxes: (FlexBoxStyle | undefined)[] = [];
     private readonly _stackSlots: number[] = [];
     private readonly _stackParents: number[] = [];
 
@@ -115,29 +121,33 @@ export class UiLayoutSystem extends System {
     }
 
     override priority(): number {
-        return PRIORITY_AFTER_CAMERA_SIZING;
+        return UI_LAYOUT_PRIORITY;
     }
 
     protected onCreate() {
         this.requireAnyForUpdate(this._roots);
         this.world.ensureSystemExists(HierarchySyncSystem);
         this.world.resources.getOrCreate(UiTreeIndex);
+        this.world.resources.getOrCreate(UiScaleSnapping);
     }
 
     onUpdate() {
         const camera = this._cameras.tryGetSingleton({screenSize: ScreenSize});
-        if (camera === undefined || !this.layoutInputsChanged()) return;
+        const snapping = this.world.resources.getOrCreate(UiScaleSnapping);
+        if (camera === undefined || !this.layoutInputsChanged(snapping)) return;
         const index = this.world.resources.getOrCreate(UiTreeIndex);
         this.gatherNodes();
-        this.buildTree(index);
+        this.buildTree(index, snapping);
         this.layoutRoots(index, camera.screenSize.x, camera.screenSize.y);
         this.writeRects(index);
         this.writeScrolls(index);
         this._laidOutNodeCount = this._nodes.entityCountIncludingDisabled();
+        this._laidOutSnappingVersion = snapping.version;
         this._laidOutStamp = this.world.changeStamps.advance();
     }
 
-    private layoutInputsChanged(): boolean {
+    private layoutInputsChanged(snapping: UiScaleSnapping): boolean {
+        if (snapping.version !== this._laidOutSnappingVersion) return true;
         if (this._nodes.entityCountIncludingDisabled() !== this._laidOutNodeCount) return true;
         const options = {filterLastUpdated: this._laidOutStamp, includeDisabled: INCLUDE_DISABLED};
         return this._nodes.stream({optional: WATCHED_NODE_COMPONENTS}, options).hasAny()
@@ -154,6 +164,7 @@ export class UiLayoutSystem extends System {
         this._slotOffsets.length = 0;
         this._slotTexts.length = 0;
         this._slotScrolls.length = 0;
+        this._slotBoxes.length = 0;
         this._nodes.stream({optional: WATCHED_NODE_COMPONENTS}, {includeEntity: true}).consume(row => {
             this._slotOfEntity.set(row.entity, this._slotEntities.length);
             this._slotEntities.push(row.entity);
@@ -164,16 +175,18 @@ export class UiLayoutSystem extends System {
             this._slotOffsets.push(row.offset);
             this._slotTexts.push(row.text);
             this._slotScrolls.push(row.scroll);
+            this._slotBoxes.push(row.box);
         });
     }
 
-    private buildTree(index: UiTreeIndex): void {
+    private buildTree(index: UiTreeIndex, snapping: UiScaleSnapping): void {
         index.clear();
         this._containers.length = 0;
         this._sizes.length = 0;
         this._offsets.length = 0;
         this._texts.length = 0;
         this._scrollStyles.length = 0;
+        this._boxes.length = 0;
         const roots = this._rootOrder;
         roots.length = 0;
         for (let slot = 0; slot < this._slotEntities.length; slot++) {
@@ -183,10 +196,9 @@ export class UiLayoutSystem extends System {
             roots.push({slot, sortOrder: root.sortOrder, creationOrder});
         }
         roots.sort(compareRoots);
-        this._rootScales.length = 0;
         for (const root of roots) {
-            this._rootScales.push(this._slotRoots[root.slot]!.scale);
-            const rootIndex = index.beginRoot(this._slotEntities[root.slot]);
+            const scale = snapping.effectiveScale(this._slotRoots[root.slot]!.scale);
+            const rootIndex = index.beginRoot(this._slotEntities[root.slot], scale);
             this.copyStyles(root.slot, rootIndex);
             this.pushChildren(root.slot, rootIndex);
             this.appendStackedNodes(index);
@@ -224,6 +236,7 @@ export class UiLayoutSystem extends System {
         this._offsets[treeIndex] = this._slotOffsets[slot];
         this._texts[treeIndex] = this._slotTexts[slot];
         this._scrollStyles[treeIndex] = this._slotScrolls[slot];
+        this._boxes[treeIndex] = this._slotBoxes[slot];
     }
 
     private layoutRoots(index: UiTreeIndex, screenWidth: number, screenHeight: number): void {
@@ -235,10 +248,11 @@ export class UiLayoutSystem extends System {
             offsets: this._offsets,
             texts: this._texts,
             scrolls: this._scrollStyles,
+            boxes: this._boxes,
         };
-        const roots = index.roots;
+        const roots = index.roots, scales = index.rootScales;
         for (let i = 0; i < roots.length; i++) {
-            const scale = this._rootScales[i];
+            const scale = scales[i];
             this._flexLayout.layout(tree, roots[i], screenWidth / scale, screenHeight / scale);
         }
     }

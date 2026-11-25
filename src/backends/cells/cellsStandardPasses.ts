@@ -8,7 +8,9 @@ import {TextSpriteCellPassSystem} from "./2d/textSpriteCellPassSystem";
 import {CELLS_MESH_PASSES} from "./3d/cellsMeshPasses";
 import {MeshCellPassSystem} from "./3d/meshCellPassSystem";
 import {CELLS_HUD_TEXT_PASSES} from "./cellsHudTextPasses";
+import {CELLS_UI_PASSES} from "./cellsUiPasses";
 import {HudTextSpriteCellPassSystem} from "./hudTextSpriteCellPassSystem";
+import {UiCellPassSystem} from "./uiCellPassSystem";
 
 export const CELLS_PASS_LISTS: readonly (readonly RenderPassCtor[])[] = [
     CELLS_MESH_PASSES,
@@ -16,6 +18,7 @@ export const CELLS_PASS_LISTS: readonly (readonly RenderPassCtor[])[] = [
     CELLS_WORLD_TEXT_PASSES,
     CELLS_HUD_SPRITE_PASSES,
     CELLS_HUD_TEXT_PASSES,
+    CELLS_UI_PASSES,
 ];
 
 export const CELLS_STANDARD_PASSES: readonly RenderPassCtor[] = [
@@ -24,4 +27,5 @@ export const CELLS_STANDARD_PASSES: readonly RenderPassCtor[] = [
     TextSpriteCellPassSystem,
     HudSpriteCellPassSystem,
     HudTextSpriteCellPassSystem,
+    UiCellPassSystem,
 ];

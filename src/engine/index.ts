@@ -5,4 +5,3 @@ export * as Datatypes from "./datatypes";
 export * as Debugging from "./debugging";
 export * as Scene from "./scene";
 export * as Project from "./project";
-export * as Ui from "./ui";
