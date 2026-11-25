@@ -9,11 +9,12 @@ import type {InputEvent, InputEventSink, Modifiers} from "../../engine/input/inp
 import {TerminalInput} from "../../hosts/terminalInput/terminalInput";
 import {installDomInput} from "../../hosts/web/domInput";
 import type {CellArea, DomInputTarget, DomKeyboardEvent, DomListenerOptions, DomPointerEvent, DomWheelEvent} from "../../hosts/web/domInput";
+import type {BitmapFrame} from "../../hosts/web/bitmapFrame";
 import {displayBackendOf} from "../../hosts/web/worldWorkerPage";
 import type {CellSurfaceSize, PixelSurfaceSize} from "../../hosts/web/worldWorkerProtocol";
 import type {GameTarget} from "../project/editorSettings";
-import {CellEditorViewport, GpuEditorViewport, NO_CELL_AREA, PixelEditorViewport} from "./editorViewport";
-import type {SessionDisplayEvents, SessionGpuCanvas, SharedCellDisplay, SharedPixelDisplay} from "./editorViewport";
+import {BitmapEditorViewport, CellEditorViewport, GpuEditorViewport, NO_CELL_AREA, PixelEditorViewport} from "./editorViewport";
+import type {SessionDisplayEvents, SessionGpuCanvas, SharedBitmapDisplay, SharedCellDisplay, SharedPixelDisplay} from "./editorViewport";
 import {TerminalInputChannel, terminalInputMessage} from "./terminalInputChannel";
 import type {TerminalInputPort} from "./terminalInputChannel";
 
@@ -77,6 +78,65 @@ class FakePixelDisplay implements SharedPixelDisplay {
 
     public presentPixels(_frame: PixelFrame, onPresented: () => void): void {
         this.presented++;
+        onPresented();
+    }
+
+    public showStatus(text: string): void {
+        this.shown.push(`status: ${text}`);
+    }
+
+    public hideStatus(): void {
+    }
+
+    public showError(text: string): void {
+        this.shown.push(`error: ${text}`);
+    }
+
+    public cellArea(): CellArea {
+        return areaOf(1);
+    }
+}
+
+class FakeBitmap {
+    public closed = false;
+
+    public close(): void {
+        this.closed = true;
+    }
+}
+
+function bitmapFrame(): BitmapFrame {
+    return {bitmap: new FakeBitmap() as unknown as ImageBitmap, pixelsPerScreenUnitX: SCREEN_UNIT_X, pixelsPerScreenUnitY: SCREEN_UNIT_Y};
+}
+
+function bitmapClosed(frame: BitmapFrame): boolean {
+    return (frame.bitmap as unknown as FakeBitmap).closed;
+}
+
+class FakeBitmapDisplay implements SharedBitmapDisplay {
+    public readonly drawn: BitmapFrame[] = [];
+    public readonly shown: string[] = [];
+    public visible = false;
+    public disposed = false;
+
+    public show(): void {
+        this.visible = true;
+    }
+
+    public dispose(): void {
+        this.disposed = true;
+    }
+
+    public surfaceSize(): PixelSurfaceSize {
+        return SURFACE;
+    }
+
+    public onResize(): () => void {
+        return () => undefined;
+    }
+
+    public presentBitmap(frame: BitmapFrame, onPresented: () => void): void {
+        this.drawn.push(frame);
         onPresented();
     }
 
@@ -205,6 +265,36 @@ describe("PixelEditorViewport", () => {
         current.hide();
         current.dispose();
         expect([display.visible, display.disposed]).toEqual([true, false]);
+        viewport.dispose();
+        expect(display.disposed).toBe(true);
+    });
+});
+
+describe("BitmapEditorViewport", () => {
+    test("every Scene view session shares the one bitmap display; a hidden session acknowledges each bitmap and closes it instead of drawing it", () => {
+        const display = new FakeBitmapDisplay();
+        const viewport = new BitmapEditorViewport(display, WEB_GPU);
+        const events = new RecordedEvents();
+        const hidden = viewport.sessionDisplay(HIDDEN, events);
+        let acknowledged = 0;
+        const dropped = bitmapFrame();
+        hidden.presentBitmap(dropped, () => acknowledged++);
+        expect([display.drawn.length, acknowledged, bitmapClosed(dropped)]).toEqual([0, 1, true]);
+        hidden.showStatus("loading");
+        hidden.showError("broken");
+        expect([display.shown, events.failures]).toEqual([[], ["broken"]]);
+
+        hidden.show();
+        const drawn = bitmapFrame();
+        hidden.presentBitmap(drawn, () => acknowledged++);
+        expect([display.visible, display.drawn, acknowledged, bitmapClosed(drawn)]).toEqual([true, [drawn], 2, false]);
+        const next = viewport.sessionDisplay(VISIBLE, new RecordedEvents());
+        next.presentBitmap(bitmapFrame(), () => acknowledged++);
+        expect([display.drawn.length, acknowledged]).toEqual([2, 3]);
+        expect([viewport.cellArea(), viewport.gameTarget]).toEqual([areaOf(1), WEB_GPU]);
+        next.hide();
+        next.dispose();
+        expect(display.disposed).toBe(false);
         viewport.dispose();
         expect(display.disposed).toBe(true);
     });

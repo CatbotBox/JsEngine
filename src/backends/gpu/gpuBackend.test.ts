@@ -84,3 +84,29 @@ describe("installGpuBackend", () => {
         expect(world.resources.tryGet(PixelPresenterResource)).toBeUndefined();
     });
 });
+
+describe("GpuCanvasPixelPresenter", () => {
+    test("holds frames back while the surface it draws for is backlogged, and reports that surface's presentations as well as the GPU's", () => {
+        const gpu = fakeGpu();
+        let surfaceBacklogged = true;
+        const surfaceListeners: (() => void)[] = [];
+        const presenter = new GpuCanvasPixelPresenter({
+            size: () => SIZE,
+            onResize: () => ignore,
+            backlogged: () => surfaceBacklogged,
+            onPresented: listener => {
+                surfaceListeners.push(listener);
+                return () => surfaceListeners.splice(surfaceListeners.indexOf(listener), 1);
+            },
+        }, gpu, ignore);
+        let presentations = 0;
+        const stopListening = presenter.onPresented(() => presentations++);
+        expect(presenter.backlogged()).toBe(true);
+        surfaceBacklogged = false;
+        for (const listener of [...surfaceListeners]) listener();
+        expect([presenter.backlogged(), presentations]).toEqual([false, 1]);
+        stopListening();
+        expect(surfaceListeners.length).toBe(0);
+        expect(new GpuCanvasPixelPresenter(new MemoryPixelPresenter(SIZE), gpu, ignore).backlogged()).toBe(false);
+    });
+});

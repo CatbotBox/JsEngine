@@ -26,6 +26,9 @@ export function currentDevicePixelRatio(): number {
 function stopNothing(): void {
 }
 
+function keepsNothing(): void {
+}
+
 export class CanvasDisplayShell<Frame> {
     public readonly canvas = document.createElement("canvas");
     private context: CanvasRenderingContext2D | undefined;
@@ -40,7 +43,11 @@ export class CanvasDisplayShell<Frame> {
     private followedWindow: Window | undefined;
     private stopFollowingWindow: () => void = stopNothing;
 
-    public constructor(private readonly container: HTMLElement, private readonly draw: (frame: Frame) => void) {
+    public constructor(
+        private readonly container: HTMLElement,
+        private readonly draw: (frame: Frame) => void,
+        private readonly discard: (frame: Frame) => void = keepsNothing,
+    ) {
     }
 
     public context2d(): CanvasRenderingContext2D {
@@ -88,6 +95,7 @@ export class CanvasDisplayShell<Frame> {
     public dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
+        this.discardPendingFrame();
         this.stopFollowingWindow();
         this.stopFollowingWindow = stopNothing;
         this.container.removeEventListener(RESIZE_EVENT, this.containerResized);
@@ -105,7 +113,13 @@ export class CanvasDisplayShell<Frame> {
     }
 
     public present(frame: Frame, onPresented: () => void): void {
+        if (this.disposed) {
+            this.discard(frame);
+            onPresented();
+            return;
+        }
         this.hideStatus();
+        this.discardPendingFrame();
         this.pendingFrame = frame;
         this.pendingAcknowledgements.push(onPresented);
         this.requestDraw();
@@ -123,6 +137,12 @@ export class CanvasDisplayShell<Frame> {
         this.status.classList.add(ERROR_CLASS);
         this.status.hidden = false;
         console.error(text);
+    }
+
+    private discardPendingFrame(): void {
+        const pending = this.pendingFrame;
+        this.pendingFrame = undefined;
+        if (pending !== undefined) this.discard(pending);
     }
 
     private window(): DisplayWindow {

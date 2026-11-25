@@ -1,6 +1,10 @@
 import type {CellFrame} from "../../backends/cells/cellFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import type {InputEventSink} from "../../engine/input/inputEvent";
+import {bitmapCanvasDisplayFromQuery} from "../../hosts/web/bitmapCanvasDisplay";
+import type {BitmapCanvasDisplay, BitmapWorldDisplay} from "../../hosts/web/bitmapCanvasDisplay";
+import {discardBitmapFrame} from "../../hosts/web/bitmapFrame";
+import type {BitmapFrame} from "../../hosts/web/bitmapFrame";
 import {cellCanvasDisplayFromQuery} from "../../hosts/web/cellCanvasDisplay";
 import type {CellCanvasDisplay} from "../../hosts/web/cellCanvasDisplay";
 import type {CellArea} from "../../hosts/web/domInput";
@@ -30,15 +34,17 @@ export interface SessionDisplayControls {
 
 export type EditorSessionDisplay = (CellWorldDisplay | PixelWorldDisplay | GpuWorldDisplay) & SessionDisplayControls;
 
+export type SceneSessionDisplay = (CellWorldDisplay | PixelWorldDisplay | BitmapWorldDisplay) & SessionDisplayControls;
+
 export interface SessionInputPorts {
     readonly events: InputEventSink;
     readonly terminalBytes: TerminalBytesSink;
 }
 
-export interface EditorViewport {
+export interface EditorViewport<Display = EditorSessionDisplay> {
     readonly gameTarget: GameTarget;
 
-    sessionDisplay(visible: boolean, events: SessionDisplayEvents): EditorSessionDisplay;
+    sessionDisplay(visible: boolean, events: SessionDisplayEvents): Display;
 
     sessionInput(ports: SessionInputPorts): InputEventSink;
 
@@ -48,6 +54,8 @@ export interface EditorViewport {
 
     dispose(): void;
 }
+
+export type SceneViewport = EditorViewport<SceneSessionDisplay>;
 
 interface SharedDisplay<Surface> {
     surfaceSize(): Surface;
@@ -62,6 +70,7 @@ interface SharedDisplay<Surface> {
 
 export type SharedPixelDisplay = Pick<PixelCanvasDisplay, "surfaceSize" | "onResize" | "presentPixels" | "showStatus" | "hideStatus" | "showError" | "cellArea" | "show" | "dispose">;
 export type SharedCellDisplay = Pick<CellCanvasDisplay, "surfaceSize" | "onResize" | "presentCells" | "showStatus" | "hideStatus" | "showError" | "cellArea" | "show" | "dispose">;
+export type SharedBitmapDisplay = Pick<BitmapCanvasDisplay, "surfaceSize" | "onResize" | "presentBitmap" | "showStatus" | "hideStatus" | "showError" | "cellArea" | "show" | "dispose">;
 
 abstract class SharedSessionDisplay<Surface> implements SessionDisplayControls {
     protected constructor(private readonly shared: SharedDisplay<Surface>, private visible: boolean, private readonly events: SessionDisplayEvents) {
@@ -126,11 +135,24 @@ export class CellSessionDisplay extends SharedSessionDisplay<CellSurfaceSize> im
     }
 }
 
+export class BitmapSessionDisplay extends SharedSessionDisplay<PixelSurfaceSize> implements BitmapWorldDisplay {
+    public constructor(private readonly display: SharedBitmapDisplay, visible: boolean, events: SessionDisplayEvents) {
+        super(display, visible, events);
+    }
+
+    public presentBitmap(frame: BitmapFrame, onPresented: () => void): void {
+        this.presentWhenVisible(() => this.display.presentBitmap(frame, onPresented), () => {
+            discardBitmapFrame(frame);
+            onPresented();
+        });
+    }
+}
+
 export class PixelEditorViewport implements EditorViewport {
     public constructor(private readonly display: SharedPixelDisplay, public readonly gameTarget: GameTarget) {
     }
 
-    public sessionDisplay(visible: boolean, events: SessionDisplayEvents): EditorSessionDisplay {
+    public sessionDisplay(visible: boolean, events: SessionDisplayEvents): PixelSessionDisplay {
         return new PixelSessionDisplay(this.display, visible, events);
     }
 
@@ -155,13 +177,38 @@ export class CellEditorViewport implements EditorViewport {
     public constructor(private readonly display: SharedCellDisplay, public readonly gameTarget: GameTarget) {
     }
 
-    public sessionDisplay(visible: boolean, events: SessionDisplayEvents): EditorSessionDisplay {
+    public sessionDisplay(visible: boolean, events: SessionDisplayEvents): CellSessionDisplay {
         return new CellSessionDisplay(this.display, visible, events);
     }
 
     public sessionInput(ports: SessionInputPorts): InputEventSink {
         if (this.gameTarget.target !== TERMINAL_TARGET) return ports.events;
         return new TerminalInputEncoder(ports.terminalBytes, () => this.cellArea());
+    }
+
+    public cellArea(): CellArea {
+        return this.display.cellArea();
+    }
+
+    public showError(text: string): void {
+        this.display.showError(text);
+    }
+
+    public dispose(): void {
+        this.display.dispose();
+    }
+}
+
+export class BitmapEditorViewport implements SceneViewport {
+    public constructor(private readonly display: SharedBitmapDisplay, public readonly gameTarget: GameTarget) {
+    }
+
+    public sessionDisplay(visible: boolean, events: SessionDisplayEvents): BitmapSessionDisplay {
+        return new BitmapSessionDisplay(this.display, visible, events);
+    }
+
+    public sessionInput(ports: SessionInputPorts): InputEventSink {
+        return ports.events;
     }
 
     public cellArea(): CellArea {
@@ -292,5 +339,16 @@ export function editorViewportFor(gameTarget: GameTarget, container: HTMLElement
             const options = pixelCanvasDisplayOptionsFromQuery(search, pixelScale);
             return new GpuEditorViewport(sessionVisible => new GpuCanvasDisplay(container, options, sessionVisible), gameTarget);
         }
+    }
+}
+
+export function sceneViewportFor(gameTarget: GameTarget, container: HTMLElement, search: string, visible: boolean, pixelScale?: number): SceneViewport {
+    switch (gameTarget.backend) {
+        case "cells":
+            return new CellEditorViewport(cellCanvasDisplayFromQuery(container, search, visible), gameTarget);
+        case "pixels":
+            return new PixelEditorViewport(pixelCanvasDisplayFromQuery(container, search, visible, pixelScale), gameTarget);
+        case "gpu":
+            return new BitmapEditorViewport(bitmapCanvasDisplayFromQuery(container, search, visible, pixelScale), gameTarget);
     }
 }

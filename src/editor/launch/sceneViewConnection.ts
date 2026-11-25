@@ -1,13 +1,18 @@
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
+import type {BitmapWorldDisplay} from "../../hosts/web/bitmapCanvasDisplay";
+import {discardBitmapFrame} from "../../hosts/web/bitmapFrame";
 import {startingStatus} from "../../hosts/web/worldWorkerPage";
-import type {GpuWorldDisplay, PageTransferable, WorldDisplay} from "../../hosts/web/worldWorkerPage";
+import type {CellWorldDisplay, PageTransferable, PixelWorldDisplay} from "../../hosts/web/worldWorkerPage";
 import {isWorldToPageMessage} from "../../hosts/web/worldWorkerProtocol";
 import type {SurfaceSize} from "../../hosts/web/worldWorkerProtocol";
+import type {EditorViewInfo} from "../editorProtocol";
 import type {SceneViewId} from "../project/dockPanelIds";
 import {isSceneViewWorkerMessage, SCENE_VIEW_MESSAGE_TYPE} from "./sceneViewProtocol";
 import type {SceneViewPageMessage} from "./sceneViewProtocol";
 
 type WorkerMessageListener = (event: {readonly data: unknown}) => void;
+
+export type SceneViewDisplay = CellWorldDisplay | PixelWorldDisplay | BitmapWorldDisplay;
 
 export interface SceneViewWorker {
     postMessage(message: SceneViewPageMessage, transfer: PageTransferable[]): void;
@@ -24,14 +29,11 @@ export interface SceneViewConnectionOptions {
     readonly view: SceneViewId;
     readonly name: string;
     readonly shown: boolean;
+    readonly frameInfo?: (info: EditorViewInfo) => void;
 }
 
 const READY_MESSAGE = "ready";
 const NOTHING = 0;
-
-function isGpuDisplay(display: WorldDisplay): display is GpuWorldDisplay {
-    return "transferCanvas" in display;
-}
 
 function emptySurfaceLike(surface: SurfaceSize): SurfaceSize {
     return surface.kind === "cells" ? {kind: "cells", columns: NOTHING, rows: NOTHING} : {kind: "pixels", widthPx: NOTHING, heightPx: NOTHING};
@@ -45,8 +47,11 @@ export function sceneViewFailureMessage(name: string, reason: string): string {
     return `The Scene view of ${name} could not start: ${reason}`;
 }
 
-export function connectSceneView(display: WorldDisplay, worker: SceneViewWorker, options: SceneViewConnectionOptions): SceneViewConnection {
+export function connectSceneView(display: SceneViewDisplay, worker: SceneViewWorker, options: SceneViewConnectionOptions): SceneViewConnection {
     const {view, name} = options;
+    const showFrameInfo = (info: EditorViewInfo | undefined): void => {
+        if (info !== undefined) options.frameInfo?.(info);
+    };
     let closed = false;
     let shown = options.shown;
     const post = (message: SceneViewPageMessage, transfer: PageTransferable[] = []): void => {
@@ -70,13 +75,21 @@ export function connectSceneView(display: WorldDisplay, worker: SceneViewWorker,
             case "frame":
                 if ("presentCells" in display) display.presentCells(message.frame, acknowledge);
                 else display.showError(sceneViewMismatchMessage(name, "cells"));
+                showFrameInfo(message.info);
                 break;
             case "pixelFrame":
                 if ("presentPixels" in display) display.presentPixels(message.frame, acknowledgeReturningBufferOf(message.frame));
                 else display.showError(sceneViewMismatchMessage(name, "pixels"));
+                showFrameInfo(message.info);
                 break;
-            case "screenUnit":
-                if (isGpuDisplay(display)) display.showScreenUnit(message.pixelsPerScreenUnitX, message.pixelsPerScreenUnitY);
+            case "bitmapFrame":
+                if ("presentBitmap" in display) {
+                    display.presentBitmap(message.frame, acknowledge);
+                } else {
+                    discardBitmapFrame(message.frame);
+                    display.showError(sceneViewMismatchMessage(name, "bitmap"));
+                }
+                showFrameInfo(message.info);
                 break;
             case "error":
                 display.showError(sceneViewFailureMessage(name, message.message));
@@ -90,12 +103,7 @@ export function connectSceneView(display: WorldDisplay, worker: SceneViewWorker,
         const current = display.surfaceSize();
         return shown ? current : emptySurfaceLike(current);
     };
-    if (isGpuDisplay(display)) {
-        const canvas = display.transferCanvas();
-        post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface: shownSurface(), canvas}, [canvas]);
-    } else {
-        post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface: shownSurface()});
-    }
+    post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface: shownSurface()});
     const postSurface = (): void => post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "resize", surface: shownSurface()});
     const stopWatchingResize = display.onResize(() => {
         if (shown) postSurface();

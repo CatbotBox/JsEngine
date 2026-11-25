@@ -7,15 +7,15 @@ export const MAX_GPU_FRAMES_IN_FLIGHT = 2;
 
 export type ScreenUnitReport = (pixelsPerScreenUnitX: number, pixelsPerScreenUnitY: number) => void;
 
-export type GpuCanvasSurfaceSize = Pick<PixelPresenter, "size" | "onResize">;
+export type GpuCanvasPresenterSurface = Pick<PixelPresenter, "size" | "onResize" | "backlogged" | "onPresented">;
 
-export type GpuCanvasPresenterFactory = (canvas: OffscreenCanvas, surface: GpuCanvasSurfaceSize, reportScreenUnit: ScreenUnitReport) => PixelPresenter;
+export type GpuCanvasPresenterFactory = (canvas: OffscreenCanvas, surface: GpuCanvasPresenterSurface, reportScreenUnit: ScreenUnitReport) => PixelPresenter;
 
 export class GpuCanvasPixelPresenter implements PixelPresenter {
     public readonly overlaysScene = true;
 
     public constructor(
-        private readonly surface: GpuCanvasSurfaceSize,
+        private readonly surface: GpuCanvasPresenterSurface,
         private readonly gpu: GpuDeviceResource,
         private readonly reportScreenUnit: ScreenUnitReport,
         public readonly frame: GpuFrame = gpu.frame,
@@ -31,11 +31,16 @@ export class GpuCanvasPixelPresenter implements PixelPresenter {
     }
 
     public backlogged(): boolean {
-        return this.frame.framesInFlight >= MAX_GPU_FRAMES_IN_FLIGHT;
+        return this.frame.framesInFlight >= MAX_GPU_FRAMES_IN_FLIGHT || this.surface.backlogged?.() === true;
     }
 
     public onPresented(listener: () => void): () => void {
-        return this.frame.onPresented(listener);
+        const stopWatchingFrame = this.frame.onPresented(listener);
+        const stopWatchingSurface = this.surface.onPresented?.(listener);
+        return () => {
+            stopWatchingFrame();
+            stopWatchingSurface?.();
+        };
     }
 
     public start(): void {

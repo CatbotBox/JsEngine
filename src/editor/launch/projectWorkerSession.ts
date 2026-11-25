@@ -2,15 +2,15 @@ import {connectWorldWorker} from "../../hosts/web/worldWorkerPage";
 import type {WorldWorkerPage} from "../../hosts/web/worldWorkerPage";
 import {requestedRasterWorkersFromQuery} from "../../hosts/web/worldWorkerProtocol";
 import {isEditorEventMessage} from "../editorProtocol";
-import type {EditorEvent} from "../editorProtocol";
+import type {EditorEvent, EditorViewInfo} from "../editorProtocol";
 import {EditorClient} from "../page/editorClient";
-import type {EditorEventSource} from "../page/editorSession";
+import type {EditorEventSource, SceneFrameSource} from "../page/editorSession";
 import type {ProjectFileSystem} from "../project/projectFileSystem";
 import {serveProjectFiles} from "../project/projectFileServing";
 import type {ProjectFileServing} from "../project/projectFileServing";
 import type {SceneViewId} from "../project/dockPanelIds";
 import type {InputEventSink} from "../../engine/input/inputEvent";
-import type {EditorSessionDisplay, EditorViewport, SessionDisplayEvents} from "./editorViewport";
+import type {EditorSessionDisplay, EditorViewport, SceneSessionDisplay, SceneViewport, SessionDisplayEvents} from "./editorViewport";
 import {connectSceneView} from "./sceneViewConnection";
 import type {SceneViewConnection} from "./sceneViewConnection";
 import {terminalInputMessage} from "./terminalInputChannel";
@@ -28,7 +28,7 @@ export interface SessionVisibility {
 
 export interface EditorViewports {
     readonly game: EditorViewport;
-    readonly scenes: Map<SceneViewId, EditorViewport>;
+    readonly scenes: Map<SceneViewId, SceneViewport>;
 }
 
 export interface ProjectWorkerSessionOptions {
@@ -74,14 +74,36 @@ export class WorkerEditorEvents implements EditorEventSource {
     }
 }
 
+export class SceneFrameListeners implements SceneFrameSource {
+    private readonly listeners = new Set<(info: EditorViewInfo) => void>();
+
+    public onFrameInfo(listener: (info: EditorViewInfo) => void): () => void {
+        const entry = (info: EditorViewInfo): void => listener(info);
+        this.listeners.add(entry);
+        return () => {
+            this.listeners.delete(entry);
+        };
+    }
+
+    public deliver(info: EditorViewInfo): void {
+        for (const listener of [...this.listeners]) listener(info);
+    }
+}
+
 interface SessionSceneView {
-    readonly display: EditorSessionDisplay;
+    readonly display: SceneSessionDisplay;
     readonly connection: SceneViewConnection;
 }
 
-function openSessionSceneView(worker: Worker, name: string, view: SceneViewId, viewport: EditorViewport, visible: boolean, shown: boolean): SessionSceneView {
+interface SceneViewOpening {
+    readonly worker: Worker;
+    readonly name: string;
+    readonly frames: SceneFrameListeners;
+}
+
+function openSessionSceneView(opening: SceneViewOpening, view: SceneViewId, viewport: SceneViewport, visible: boolean, shown: boolean): SessionSceneView {
     const display = viewport.sessionDisplay(visible, SCENE_VIEW_FAILURES_KEEP_THE_SESSION);
-    return {display, connection: connectSceneView(display, worker, {view, name, shown})};
+    return {display, connection: connectSceneView(display, opening.worker, {view, name: opening.name, shown, frameInfo: info => opening.frames.deliver(info)})};
 }
 
 function closeSessionSceneView(sceneView: SessionSceneView): void {
@@ -94,8 +116,7 @@ export class ProjectWorkerSession {
     private disposed = false;
 
     private constructor(
-        private readonly worker: Worker,
-        private readonly name: string,
+        private readonly opening: SceneViewOpening,
         private visible: boolean,
         private readonly display: EditorSessionDisplay,
         private readonly sceneViews: Map<SceneViewId, SessionSceneView>,
@@ -108,9 +129,14 @@ export class ProjectWorkerSession {
         this.input = viewport.sessionInput({events: page.input, terminalBytes: data => this.sendTerminalBytes(data)});
     }
 
+    public get sceneFrames(): SceneFrameSource {
+        return this.opening.frames;
+    }
+
     public static start(options: ProjectWorkerSessionOptions): Promise<ProjectWorkerSession> {
         const worker = new Worker(options.workerUrl, MODULE_WORKER);
         const events = new WorkerEditorEvents(worker);
+        const opening: SceneViewOpening = {worker, name: options.name, frames: new SceneFrameListeners()};
         const fileServing = serveProjectFiles(worker, options.files);
         return new Promise<ProjectWorkerSession>((resolve, reject) => {
             let settled = false;
@@ -129,7 +155,7 @@ export class ProjectWorkerSession {
             };
             const sceneViews = new Map<SceneViewId, SessionSceneView>();
             for (const [view, viewport] of options.viewports.scenes) {
-                sceneViews.set(view, openSessionSceneView(worker, options.name, view, viewport, options.visibility.visible, options.scenesShown.get(view) ?? SCENE_VIEW_SHOWN));
+                sceneViews.set(view, openSessionSceneView(opening, view, viewport, options.visibility.visible, options.scenesShown.get(view) ?? SCENE_VIEW_SHOWN));
             }
             const display = options.viewports.game.sessionDisplay(options.visibility.visible, {
                 failed: text => {
@@ -144,7 +170,7 @@ export class ProjectWorkerSession {
                 onReady: () => {
                     if (settled) return;
                     settled = true;
-                    session = new ProjectWorkerSession(worker, options.name, options.visibility.visible, display, sceneViews, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events, options.viewports.game);
+                    session = new ProjectWorkerSession(opening, options.visibility.visible, display, sceneViews, fileServing, page, new EditorClient(worker, {timeoutMs: EDITOR_REQUEST_TIMEOUT_MS}), events, options.viewports.game);
                     resolve(session);
                 },
                 onQuit: () => {
@@ -171,9 +197,9 @@ export class ProjectWorkerSession {
         this.display.hide();
     }
 
-    public openSceneView(view: SceneViewId, viewport: EditorViewport, shown: boolean): void {
+    public openSceneView(view: SceneViewId, viewport: SceneViewport, shown: boolean): void {
         if (this.disposed || this.sceneViews.has(view)) return;
-        this.sceneViews.set(view, openSessionSceneView(this.worker, this.name, view, viewport, this.visible, shown));
+        this.sceneViews.set(view, openSessionSceneView(this.opening, view, viewport, this.visible, shown));
     }
 
     public closeSceneView(view: SceneViewId): void {
@@ -192,7 +218,7 @@ export class ProjectWorkerSession {
     }
 
     private sendTerminalBytes(data: string): void {
-        if (!this.disposed) this.worker.postMessage(terminalInputMessage(data));
+        if (!this.disposed) this.opening.worker.postMessage(terminalInputMessage(data));
     }
 
     public dispose(): void {

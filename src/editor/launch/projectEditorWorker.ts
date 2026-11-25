@@ -156,6 +156,7 @@ async function startProjectWorld(
         ...(installed?.canvasPresenter === undefined ? {} : {canvasPresenter: installed.canvasPresenter}),
         open: (view, presenter) => service.showSceneView(view, presenter),
         close: view => service.closeSceneView(view),
+        frameInfo: view => service.sceneFrameInfo(view),
     });
 }
 

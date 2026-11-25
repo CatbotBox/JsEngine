@@ -1,22 +1,25 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import type {CellFrame} from "../../backends/cells/cellFrame";
 import type {CellPresenter} from "../../backends/cells/cellPresenter";
-import type {GpuCanvasPresenterFactory, GpuCanvasSurfaceSize} from "../../backends/gpu/gpuCanvasPixelPresenter";
+import type {GpuCanvasPresenterFactory, GpuCanvasPresenterSurface} from "../../backends/gpu/gpuCanvasPixelPresenter";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import type {PixelPresenter} from "../../backends/pixels/pixelPresenter";
 import type {RenderBackendKind} from "../../engine/rendering/renderBackend";
 import {TextColor} from "../../engine/rendering/textColor";
-import type {CellWorldDisplay, GpuWorldDisplay, PageTransferable, PixelWorldDisplay} from "../../hosts/web/worldWorkerPage";
+import type {BitmapWorldDisplay} from "../../hosts/web/bitmapCanvasDisplay";
+import type {BitmapFrame} from "../../hosts/web/bitmapFrame";
+import type {CellWorldDisplay, PageTransferable, PixelWorldDisplay} from "../../hosts/web/worldWorkerPage";
 import {isPageToWorldMessage, isWorldToPageMessage} from "../../hosts/web/worldWorkerProtocol";
 import type {CellSurfaceSize, PixelSurfaceSize, SurfaceSize} from "../../hosts/web/worldWorkerProtocol";
+import type {EditorViewInfo} from "../editorProtocol";
 import type {SceneViewPresenter} from "../world/editorViews";
 import {SceneViewChannel} from "./sceneViewChannel";
-import type {SceneViewScope} from "./sceneViewChannel";
-import {connectSceneView, sceneViewFailureMessage} from "./sceneViewConnection";
+import type {SceneViewScope, SceneViewTransferable} from "./sceneViewChannel";
+import {connectSceneView, sceneViewFailureMessage, sceneViewMismatchMessage} from "./sceneViewConnection";
 import type {SceneViewConnectionOptions} from "./sceneViewConnection";
 import type {SceneViewId} from "../project/dockPanelIds";
 import {isSceneViewPageMessage, isSceneViewWorkerMessage, SCENE_VIEW_MESSAGE_TYPE} from "./sceneViewProtocol";
-import type {SceneViewPageMessage, SceneViewWorkerMessage} from "./sceneViewProtocol";
+import type {SceneViewBitmapFrameMessage, SceneViewPageMessage, SceneViewWorkerMessage} from "./sceneViewProtocol";
 
 const PIXEL_SURFACE: PixelSurfaceSize = {kind: "pixels", widthPx: 4, heightPx: 2};
 const RESIZED_PIXEL_SURFACE: PixelSurfaceSize = {kind: "pixels", widthPx: 8, heightPx: 6};
@@ -29,9 +32,25 @@ const SPACE = 0x20;
 const VIEW: SceneViewId = "scene";
 const SECOND_VIEW: SceneViewId = "scene:2";
 const SHOWN_VIEW: SceneViewConnectionOptions = {view: VIEW, name: NAME, shown: true};
+const UNIT_SCREEN = 1;
+const DRAWN = "drawn";
 
 function pixelFrame(widthPx: number, heightPx: number): PixelFrame {
     return {widthPx, heightPx, rgba: new Uint8ClampedArray(widthPx * heightPx * RGBA_BYTES_PER_PIXEL), pixelsPerScreenUnitX: SCREEN_UNIT_X, pixelsPerScreenUnitY: SCREEN_UNIT_Y};
+}
+
+function viewInfo(view: SceneViewId, presentedFrames: number): EditorViewInfo {
+    return {
+        view,
+        projection: "orthographic",
+        worldToScreen: [],
+        screenWidth: UNIT_SCREEN,
+        screenHeight: UNIT_SCREEN,
+        camera: {position: [0, 0, 0], rotation: [0, 0, 0, 1]},
+        bounds: [],
+        sceneViews: [view],
+        presentedFrames,
+    };
 }
 
 function cellFrame(width: number, height: number): CellFrame {
@@ -45,26 +64,79 @@ function cellFrame(width: number, height: number): CellFrame {
     };
 }
 
-class FakeOffscreenCanvas {
-}
+class FakeImageBitmap {
+    public closed = false;
 
-function withOffscreenCanvasGlobal(body: () => void): void {
-    const scope = globalThis as {OffscreenCanvas?: unknown};
-    const previous = scope.OffscreenCanvas;
-    scope.OffscreenCanvas = FakeOffscreenCanvas;
-    try {
-        body();
-    } finally {
-        if (previous === undefined) delete scope.OffscreenCanvas;
-        else scope.OffscreenCanvas = previous;
+    public close(): void {
+        this.closed = true;
     }
 }
 
+class FakeOffscreenCanvas {
+    public readonly bitmaps: FakeImageBitmap[] = [];
+
+    public constructor(public readonly width: number, public readonly height: number) {
+    }
+
+    public transferToImageBitmap(): FakeImageBitmap {
+        const bitmap = new FakeImageBitmap();
+        this.bitmaps.push(bitmap);
+        return bitmap;
+    }
+}
+
+type BrowserGlobals = {OffscreenCanvas?: unknown, ImageBitmap?: unknown};
+
+function withBrowserGlobals(body: () => void): void {
+    const scope = globalThis as BrowserGlobals;
+    const previous: BrowserGlobals = {OffscreenCanvas: scope.OffscreenCanvas, ImageBitmap: scope.ImageBitmap};
+    scope.OffscreenCanvas = FakeOffscreenCanvas;
+    scope.ImageBitmap = FakeImageBitmap;
+    try {
+        body();
+    } finally {
+        for (const name of ["OffscreenCanvas", "ImageBitmap"] as const) {
+            if (previous[name] === undefined) delete scope[name];
+            else scope[name] = previous[name];
+        }
+    }
+}
+
+function bitmapFrame(): BitmapFrame {
+    return {bitmap: new FakeImageBitmap() as unknown as ImageBitmap, pixelsPerScreenUnitX: SCREEN_UNIT_X, pixelsPerScreenUnitY: SCREEN_UNIT_Y};
+}
+
+function closed(frame: BitmapFrame): boolean {
+    return (frame.bitmap as unknown as FakeImageBitmap).closed;
+}
+
+interface MadeCanvasPresenter {
+    readonly canvas: FakeOffscreenCanvas;
+    readonly surface: GpuCanvasPresenterSurface;
+    readonly presenter: PixelPresenter;
+}
+
+function canvasPresenterFactory(made: MadeCanvasPresenter[]): GpuCanvasPresenterFactory {
+    return (canvas, surface, reportScreenUnit) => {
+        const presenter: PixelPresenter = {
+            size: surface.size,
+            onResize: surface.onResize,
+            backlogged: () => surface.backlogged?.() === true,
+            onPresented: listener => surface.onPresented?.(listener) ?? (() => undefined),
+            start: () => {},
+            stop: () => {},
+            present: () => reportScreenUnit(SCREEN_UNIT_X, SCREEN_UNIT_Y),
+        };
+        made.push({canvas: canvas as unknown as FakeOffscreenCanvas, surface, presenter});
+        return presenter;
+    };
+}
+
 class FakeWorkerScope implements SceneViewScope {
-    public readonly posted: {message: SceneViewWorkerMessage, transfer: ArrayBuffer[] | undefined}[] = [];
+    public readonly posted: {message: SceneViewWorkerMessage, transfer: SceneViewTransferable[] | undefined}[] = [];
     private readonly listeners: ((event: {readonly data: unknown}) => void)[] = [];
 
-    public postMessage(message: SceneViewWorkerMessage, transfer?: ArrayBuffer[]): void {
+    public postMessage(message: SceneViewWorkerMessage, transfer?: SceneViewTransferable[]): void {
         this.posted.push({message, transfer});
     }
 
@@ -85,6 +157,7 @@ class RecordingHost {
     public readonly shown: SceneViewPresenter[] = [];
     public readonly opened: SceneViewId[] = [];
     public readonly closed: SceneViewId[] = [];
+    public reportsFrameInfo = false;
 
     public constructor(public readonly backend: RenderBackendKind, public readonly canvasPresenter?: GpuCanvasPresenterFactory) {
     }
@@ -97,10 +170,15 @@ class RecordingHost {
     public close(view: SceneViewId): void {
         this.closed.push(view);
     }
+
+    public frameInfo(view: SceneViewId): EditorViewInfo | undefined {
+        const presenter = this.shown[this.opened.lastIndexOf(view)];
+        return this.reportsFrameInfo && presenter !== undefined ? viewInfo(view, presenter.presentedFrames()) : undefined;
+    }
 }
 
-function open(surface: SurfaceSize, canvas?: OffscreenCanvas, view: SceneViewId = VIEW): SceneViewPageMessage {
-    return canvas === undefined ? {type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface} : {type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface, canvas};
+function open(surface: SurfaceSize, view: SceneViewId = VIEW): SceneViewPageMessage {
+    return {type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface};
 }
 
 function pixelPresenterOf(host: RecordingHost): PixelPresenter {
@@ -118,19 +196,39 @@ function cellPresenterOf(host: RecordingHost): CellPresenter {
 describe("scene view protocol", () => {
     test("page and worker messages are recognised by their type and kind, and the world protocol ignores them", () => {
         const page: SceneViewPageMessage[] = [open(PIXEL_SURFACE), {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "resize", surface: CELL_SURFACE}, {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "presented"}];
-        const worker: SceneViewWorkerMessage[] = [
-            {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "pixelFrame", frame: pixelFrame(1, 1)},
-            {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "screenUnit", pixelsPerScreenUnitX: SCREEN_UNIT_X, pixelsPerScreenUnitY: SCREEN_UNIT_Y},
-            {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "error", message: "broken"},
-        ];
-        expect(page.every(isSceneViewPageMessage)).toBe(true);
-        expect(worker.every(isSceneViewWorkerMessage)).toBe(true);
-        expect([...page, ...worker].some(message => isPageToWorldMessage(message) || isWorldToPageMessage(message))).toBe(false);
-        expect(worker.some(isSceneViewPageMessage) || page.some(isSceneViewWorkerMessage)).toBe(false);
-        expect(isSceneViewPageMessage({type: "resize", surface: CELL_SURFACE})).toBe(false);
-        expect(isSceneViewPageMessage({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "open", surface: {kind: "pixels", widthPx: -1, heightPx: 2}})).toBe(false);
-        expect(isSceneViewPageMessage({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "open", surface: PIXEL_SURFACE, canvas: {}})).toBe(false);
-        expect(isSceneViewWorkerMessage({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "screenUnit", pixelsPerScreenUnitX: 0, pixelsPerScreenUnitY: 1})).toBe(false);
+        withBrowserGlobals(() => {
+            const worker: SceneViewWorkerMessage[] = [
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "pixelFrame", frame: pixelFrame(1, 1)},
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "bitmapFrame", frame: bitmapFrame()},
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "error", message: "broken"},
+            ];
+            expect(page.every(isSceneViewPageMessage)).toBe(true);
+            expect(worker.every(isSceneViewWorkerMessage)).toBe(true);
+            expect([...page, ...worker].some(message => isPageToWorldMessage(message) || isWorldToPageMessage(message))).toBe(false);
+            expect(worker.some(isSceneViewPageMessage) || page.some(isSceneViewWorkerMessage)).toBe(false);
+            expect(isSceneViewPageMessage({type: "resize", surface: CELL_SURFACE})).toBe(false);
+            expect(isSceneViewPageMessage({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "open", surface: {kind: "pixels", widthPx: -1, heightPx: 2}})).toBe(false);
+            expect(isSceneViewWorkerMessage({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "bitmapFrame", frame: {...bitmapFrame(), pixelsPerScreenUnitX: 0}})).toBe(false);
+            expect(isSceneViewWorkerMessage({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "bitmapFrame", frame: {bitmap: {}, pixelsPerScreenUnitX: SCREEN_UNIT_X, pixelsPerScreenUnitY: SCREEN_UNIT_Y}})).toBe(false);
+            expect(isSceneViewWorkerMessage({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "screenUnit", pixelsPerScreenUnitX: SCREEN_UNIT_X, pixelsPerScreenUnitY: SCREEN_UNIT_Y})).toBe(false);
+        });
+    });
+
+    test("frame messages may carry their own view's info", () => {
+        withBrowserGlobals(() => {
+            const info = viewInfo(VIEW, 1);
+            expect([
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "pixelFrame", frame: pixelFrame(1, 1), info},
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "frame", frame: cellFrame(1, 1), info},
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "bitmapFrame", frame: bitmapFrame(), info},
+            ].every(isSceneViewWorkerMessage)).toBe(true);
+            expect([
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: SECOND_VIEW, kind: "pixelFrame", frame: pixelFrame(1, 1), info},
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "frame", frame: cellFrame(1, 1), info: null},
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: SECOND_VIEW, kind: "bitmapFrame", frame: bitmapFrame(), info},
+                {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "frameInfo", info},
+            ].some(isSceneViewWorkerMessage)).toBe(false);
+        });
     });
 });
 
@@ -183,35 +281,78 @@ describe("scene view channel in the worker", () => {
         expect(mismatched.kinds()).toEqual(["error"]);
     });
 
-    test("a gpu world hands the transferred canvas to its canvas presenter and reports each new screen unit once", () => {
-        withOffscreenCanvasGlobal(() => {
+    test("a gpu world draws into a canvas of its own, sized by the page's surface, and posts each frame as a transferred bitmap, one at a time", () => {
+        withBrowserGlobals(() => {
             const scope = new FakeWorkerScope();
-            const canvas = new FakeOffscreenCanvas() as unknown as OffscreenCanvas;
-            const surfaces: GpuCanvasSurfaceSize[] = [];
-            const made: PixelPresenter[] = [];
-            const host = new RecordingHost("gpu", (given, surface, reportScreenUnit) => {
-                expect(given).toBe(canvas);
-                surfaces.push(surface);
-                reportScreenUnit(SCREEN_UNIT_X, SCREEN_UNIT_Y);
-                reportScreenUnit(SCREEN_UNIT_X, SCREEN_UNIT_Y);
-                const presenter = {size: surface.size, onResize: surface.onResize, start: () => {}, stop: () => {}, present: () => {}};
-                made.push(presenter);
-                return presenter;
-            });
+            const made: MadeCanvasPresenter[] = [];
+            const host = new RecordingHost("gpu", canvasPresenterFactory(made));
             new SceneViewChannel(scope).attach(host);
-            scope.send(open(PIXEL_SURFACE, canvas));
-            expect(pixelPresenterOf(host)).toBe(made[0]);
-            expect(surfaces[0].size()).toEqual({widthPx: 4, heightPx: 2});
-            expect(scope.kinds()).toEqual(["screenUnit"]);
+            scope.send(open(PIXEL_SURFACE));
+            const [{canvas, surface, presenter}] = made;
+            expect(pixelPresenterOf(host)).toBe(presenter);
+            expect([canvas.width, canvas.height, surface.size()]).toEqual([4, 2, {widthPx: 4, heightPx: 2}]);
+            let acknowledgements = 0;
+            presenter.onPresented?.(() => acknowledgements++);
 
-            const withoutCanvas = new FakeWorkerScope();
-            const refused = new RecordingHost("gpu", () => {
-                throw new Error("not called");
-            });
-            new SceneViewChannel(withoutCanvas).attach(refused);
-            withoutCanvas.send(open(PIXEL_SURFACE));
-            expect([refused.shown.length, withoutCanvas.kinds()]).toEqual([0, ["error"]]);
+            presenter.present(pixelFrame(4, 2));
+            expect(presenter.backlogged?.()).toBe(true);
+            const [posted] = scope.posted;
+            const frame = (posted.message as SceneViewBitmapFrameMessage).frame;
+            expect([posted.message.kind, frame.pixelsPerScreenUnitX, frame.pixelsPerScreenUnitY]).toEqual(["bitmapFrame", SCREEN_UNIT_X, SCREEN_UNIT_Y]);
+            expect(frame.bitmap as unknown).toBe(canvas.bitmaps[0]);
+            expect(posted.transfer?.[0] as unknown).toBe(canvas.bitmaps[0]);
+            scope.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "presented"});
+            expect([presenter.backlogged?.(), acknowledgements, host.shown[0].presentedFrames()]).toEqual([false, 1, 1]);
+
+            const withoutPresenter = new FakeWorkerScope();
+            const refused = new RecordingHost("gpu");
+            new SceneViewChannel(withoutPresenter).attach(refused);
+            withoutPresenter.send(open(PIXEL_SURFACE));
+            const onCells = new FakeWorkerScope();
+            const cellsRefused = new RecordingHost("gpu", canvasPresenterFactory([]));
+            new SceneViewChannel(onCells).attach(cellsRefused);
+            onCells.send(open(CELL_SURFACE));
+            expect([refused.shown.length, withoutPresenter.kinds(), cellsRefused.shown.length, onCells.kinds()]).toEqual([0, ["error"], 0, ["error"]]);
         });
+    });
+
+    test("each presented frame message carries the world's view info for that frame, whatever the backend", () => {
+        const pixels = new FakeWorkerScope();
+        const pixelHost = new RecordingHost("pixels");
+        pixelHost.reportsFrameInfo = true;
+        new SceneViewChannel(pixels).attach(pixelHost);
+        pixels.send(open(PIXEL_SURFACE));
+        pixelPresenterOf(pixelHost).present(pixelFrame(4, 2));
+        pixelPresenterOf(pixelHost).present(pixelFrame(4, 2));
+        expect(pixels.posted.map(({message}) => message.kind === "pixelFrame" ? message.info : undefined)).toEqual([viewInfo(VIEW, 1), viewInfo(VIEW, 2)]);
+
+        const cells = new FakeWorkerScope();
+        const cellHost = new RecordingHost("cells");
+        cellHost.reportsFrameInfo = true;
+        new SceneViewChannel(cells).attach(cellHost);
+        cells.send(open(CELL_SURFACE));
+        cellPresenterOf(cellHost).present(cellFrame(3, 2), "full");
+        expect(cells.posted.map(({message}) => message.kind === "frame" ? message.info : undefined)).toEqual([viewInfo(VIEW, 1)]);
+
+        withBrowserGlobals(() => {
+            const gpu = new FakeWorkerScope();
+            const gpuHost = new RecordingHost("gpu", canvasPresenterFactory([]));
+            gpuHost.reportsFrameInfo = true;
+            new SceneViewChannel(gpu).attach(gpuHost);
+            gpu.send(open(PIXEL_SURFACE));
+            pixelPresenterOf(gpuHost).present(pixelFrame(4, 2));
+            gpu.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "presented"});
+            pixelPresenterOf(gpuHost).present(pixelFrame(4, 2));
+            expect(gpu.kinds()).toEqual(["bitmapFrame", "bitmapFrame"]);
+            expect(gpu.posted.map(({message}) => message.kind === "bitmapFrame" ? message.info : undefined)).toEqual([viewInfo(VIEW, 1), viewInfo(VIEW, 2)]);
+        });
+
+        const silent = new FakeWorkerScope();
+        const silentHost = new RecordingHost("pixels");
+        new SceneViewChannel(silent).attach(silentHost);
+        silent.send(open(PIXEL_SURFACE));
+        pixelPresenterOf(silentHost).present(pixelFrame(4, 2));
+        expect("info" in silent.posted[0].message).toBe(false);
     });
 });
 
@@ -306,9 +447,8 @@ class RecordingCellDisplay implements CellWorldDisplay {
     }
 }
 
-class RecordingGpuDisplay implements GpuWorldDisplay {
-    public readonly canvas = {} as OffscreenCanvas;
-    public readonly screenUnits: [number, number][] = [];
+class RecordingBitmapDisplay implements BitmapWorldDisplay {
+    public readonly frames: BitmapFrame[] = [];
 
     public surfaceSize(): PixelSurfaceSize {
         return PIXEL_SURFACE;
@@ -318,12 +458,9 @@ class RecordingGpuDisplay implements GpuWorldDisplay {
         return () => undefined;
     }
 
-    public transferCanvas(): OffscreenCanvas {
-        return this.canvas;
-    }
-
-    public showScreenUnit(x: number, y: number): void {
-        this.screenUnits.push([x, y]);
+    public presentBitmap(frame: BitmapFrame, onPresented: () => void): void {
+        this.frames.push(frame);
+        onPresented();
     }
 
     public showStatus(): void {
@@ -378,13 +515,24 @@ describe("scene view connection on the page", () => {
         expect(cells.posted[1].message).toEqual({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "resize", surface: {kind: "cells", columns: 0, rows: 0}});
     });
 
-    test("a gpu display transfers its canvas with the open request and shows screen units; frames of the wrong kind are an error", () => {
-        const worker = new FakeWorker();
-        const gpu = new RecordingGpuDisplay();
-        connectSceneView(gpu, worker, SHOWN_VIEW);
-        expect(worker.posted[0]).toEqual({message: {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "open", surface: PIXEL_SURFACE, canvas: gpu.canvas}, transfer: [gpu.canvas]});
-        worker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "screenUnit", pixelsPerScreenUnitX: SCREEN_UNIT_X, pixelsPerScreenUnitY: SCREEN_UNIT_Y});
-        expect(gpu.screenUnits).toEqual([[SCREEN_UNIT_X, SCREEN_UNIT_Y]]);
+    test("a bitmap display opens with its surface alone, draws each bitmap frame and acknowledges it; a display that cannot draw bitmaps closes them; frames of the wrong kind are an error", () => {
+        withBrowserGlobals(() => {
+            const worker = new FakeWorker();
+            const bitmaps = new RecordingBitmapDisplay();
+            connectSceneView(bitmaps, worker, SHOWN_VIEW);
+            expect(worker.posted[0]).toEqual({message: {type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "open", surface: PIXEL_SURFACE}, transfer: []});
+            const frame = bitmapFrame();
+            worker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "bitmapFrame", frame});
+            expect(bitmaps.frames).toEqual([frame]);
+            expect(worker.posted[1].message).toEqual({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "presented"});
+
+            const pixels = new RecordingPixelDisplay();
+            const pixelWorker = new FakeWorker();
+            connectSceneView(pixels, pixelWorker, SHOWN_VIEW);
+            const refused = bitmapFrame();
+            pixelWorker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "bitmapFrame", frame: refused});
+            expect([closed(refused), pixels.shown.includes(`error: ${sceneViewMismatchMessage(NAME, "bitmap")}`)]).toEqual([true, true]);
+        });
 
         const cells = new RecordingCellDisplay();
         const cellWorker = new FakeWorker();
@@ -393,6 +541,37 @@ describe("scene view connection on the page", () => {
         cellWorker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "frame", frame: cellFrame(3, 2)});
         expect(cells.shown.length).toBe(1);
         expect(cellWorker.posted.map(({message}) => message.kind)).toEqual(["open", "presented"]);
+    });
+
+    test("hands on the view info that arrives with each of its view's frames as the frame arrives", () => {
+        const received: (EditorViewInfo | string)[] = [];
+        const worker = new FakeWorker();
+        const display = new RecordingPixelDisplay();
+        const presentPixels = display.presentPixels.bind(display);
+        display.presentPixels = (frame, onPresented) => {
+            received.push(DRAWN);
+            presentPixels(frame, onPresented);
+        };
+        connectSceneView(display, worker, {...SHOWN_VIEW, frameInfo: info => received.push(info)});
+        worker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "pixelFrame", frame: pixelFrame(4, 2), info: viewInfo(VIEW, 1)});
+        worker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "pixelFrame", frame: pixelFrame(4, 2)});
+        worker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: SECOND_VIEW, kind: "pixelFrame", frame: pixelFrame(4, 2), info: viewInfo(SECOND_VIEW, 1)});
+        expect(received).toEqual([DRAWN, viewInfo(VIEW, 1), DRAWN]);
+
+        withBrowserGlobals(() => {
+            const bitmapInfos: EditorViewInfo[] = [];
+            const bitmapWorker = new FakeWorker();
+            connectSceneView(new RecordingBitmapDisplay(), bitmapWorker, {...SHOWN_VIEW, frameInfo: info => bitmapInfos.push(info)});
+            bitmapWorker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "bitmapFrame", frame: bitmapFrame(), info: viewInfo(VIEW, 3)});
+            bitmapWorker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: SECOND_VIEW, kind: "bitmapFrame", frame: bitmapFrame(), info: viewInfo(SECOND_VIEW, 4)});
+            expect(bitmapInfos).toEqual([viewInfo(VIEW, 3)]);
+        });
+
+        const cellInfos: EditorViewInfo[] = [];
+        const cellWorker = new FakeWorker();
+        connectSceneView(new RecordingCellDisplay(), cellWorker, {...SHOWN_VIEW, frameInfo: info => cellInfos.push(info)});
+        cellWorker.send({type: SCENE_VIEW_MESSAGE_TYPE, view: VIEW, kind: "frame", frame: cellFrame(3, 2), info: viewInfo(VIEW, 5)});
+        expect(cellInfos).toEqual([viewInfo(VIEW, 5)]);
     });
 });
 
@@ -410,7 +589,7 @@ describe("several scene views over one channel", () => {
         const host = new RecordingHost("pixels");
         channel.attach(host);
         scope.send(open(PIXEL_SURFACE));
-        scope.send(open(RESIZED_PIXEL_SURFACE, undefined, SECOND_VIEW));
+        scope.send(open(RESIZED_PIXEL_SURFACE, SECOND_VIEW));
         expect(host.opened).toEqual([VIEW, SECOND_VIEW]);
         const [firstView, secondView] = host.shown;
         if (firstView.kind !== "pixels" || secondView.kind !== "pixels") throw new Error("pixel presenters were expected");
@@ -432,7 +611,7 @@ describe("several scene views over one channel", () => {
         scope.send({type: SCENE_VIEW_MESSAGE_TYPE, view: SECOND_VIEW, kind: "close"});
         scope.send({type: SCENE_VIEW_MESSAGE_TYPE, view: SECOND_VIEW, kind: "close"});
         expect(host.closed).toEqual([SECOND_VIEW]);
-        scope.send(open(PIXEL_SURFACE, undefined, SECOND_VIEW));
+        scope.send(open(PIXEL_SURFACE, SECOND_VIEW));
         expect(host.opened).toEqual([VIEW, SECOND_VIEW, SECOND_VIEW]);
         expect(host.shown[2]).not.toBe(secondView);
     });
@@ -441,9 +620,9 @@ describe("several scene views over one channel", () => {
         const scope = new FakeWorkerScope();
         let disposed = 0;
         const host = new RecordingHost("gpu", (_canvas, surface) => ({size: surface.size, onResize: surface.onResize, start: () => {}, stop: () => {}, present: () => {}, dispose: () => disposed++}));
-        withOffscreenCanvasGlobal(() => {
+        withBrowserGlobals(() => {
             new SceneViewChannel(scope).attach(host);
-            scope.send(open(PIXEL_SURFACE, new FakeOffscreenCanvas() as unknown as OffscreenCanvas, SECOND_VIEW));
+            scope.send(open(PIXEL_SURFACE, SECOND_VIEW));
         });
         scope.send({type: SCENE_VIEW_MESSAGE_TYPE, view: SECOND_VIEW, kind: "close"});
         expect([host.closed, disposed]).toEqual([[SECOND_VIEW], 1]);
