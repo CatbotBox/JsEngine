@@ -32,6 +32,7 @@ import {ENGINE_SCHEMAS} from "../../engine/scene/engineComponentSchemas";
 import type {FieldSchema, FieldType} from "../../engine/scene/fieldSchema";
 import type {SchemaEntry} from "../../engine/scene/schemaEntries";
 import * as translation from "../../engine/translation";
+import * as ui from "../../engine/ui";
 
 export interface SourceExport {
     readonly entryPoint: string;
@@ -82,6 +83,7 @@ const ENGINE_SCHEMA_MODULES: readonly SourceModule[] = [
     {entryPoint: "engine/rendering", exports: rendering},
     {entryPoint: "engine/scene", exports: scene},
     {entryPoint: "engine/translation", exports: translation},
+    {entryPoint: "engine/ui", exports: ui},
 ];
 
 const BACKEND_SCHEMA_MODULES: readonly SourceModule[] = [

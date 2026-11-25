@@ -25,6 +25,7 @@
     "./rendering/text": "./rendering/text/index.ts",
     "./scene": "./scene/index.ts",
     "./testing": "./testing/index.ts",
-    "./translation": "./translation/index.ts"
+    "./translation": "./translation/index.ts",
+    "./ui": "./ui/index.ts"
   }
 }
