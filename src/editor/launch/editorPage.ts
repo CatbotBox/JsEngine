@@ -30,7 +30,6 @@ import {browseForFolder} from "./folderBrowser";
 import {addressKeepingBackendOverride, chooseGameTarget, gameTargetLabelText, gpuFallbackNotice, projectGameTarget, registerGameTargetCommand, webGpuAvailability} from "./gameTargets";
 import type {GameTargetChoice, WebGpuAvailability} from "./gameTargets";
 import {ProjectRunner} from "./projectRunner";
-import type {EditorViewports} from "./projectWorkerSession";
 import {ProjectServerClient} from "./projectServerClient";
 import {browserStorageOrUndefined, forgetRecentProject, readRecentProjects, rememberRecentProject} from "./recentProjects";
 import {StartScreen} from "./startScreen";
@@ -47,8 +46,6 @@ const EDITOR_TITLE_SUFFIX = " - JsEngine editor";
 const SCRIPT_TYPE = "text/javascript";
 const ABORT_ERROR_NAME = "AbortError";
 const PATH_SEPARATORS = /[\\/]+/;
-const VISIBLE = true;
-const HIDDEN = false;
 const NO_SETTINGS: EditorSettings = {};
 const SERVER_MODE_NOTE = "Pick any folder: a JsEngine project has a jsengine.project.json naming its entry module. Its code is built for the editor on open and rebuilt when it changes.";
 const SERVER_WITHOUT_BUILD_NOTE = "This host cannot build project code";
@@ -327,14 +324,11 @@ class EditorStart {
             shell.notice("warn", notice);
         }
         showGameTarget(initialTarget);
-        const viewportsFor = (gameTarget: GameTarget, visible: boolean): EditorViewports => ({
-            scene: editorViewportFor(gameTarget, shell.sceneViewport, location.search, visible, pixelScaleOf(gameTarget)),
-            game: editorViewportFor(gameTarget, shell.viewport, location.search, visible, pixelScaleOf(gameTarget)),
-        });
         const runner = new ProjectRunner({
             shell,
-            viewports: viewportsFor(initialTarget, VISIBLE),
-            createHiddenViewports: gameTarget => viewportsFor(gameTarget, HIDDEN),
+            gameTarget: initialTarget,
+            gameContainer: shell.viewport,
+            viewportFor: (gameTarget, container, visible) => editorViewportFor(gameTarget, container, location.search, visible, pixelScaleOf(gameTarget)),
             onTargetChanged: gameTarget => {
                 shell.showTargetLabel(gameTargetLabelText(gameTarget));
                 showGameTarget(gameTarget);
@@ -346,7 +340,7 @@ class EditorStart {
             onStopped: () => setPageState("stopped"),
         });
         installDomInput(shell.viewport, {sink: runner.input, cellArea: () => runner.cellArea()});
-        shell.onSceneViewShown(shown => runner.setSceneViewShown(shown));
+        shell.watchSceneViews(runner.sceneViews);
         window.addEventListener("pagehide", () => runner.exit());
         let desiredTarget = initialTarget;
         const switchTarget = async (gameTarget: GameTarget): Promise<void> => {

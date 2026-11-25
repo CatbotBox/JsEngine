@@ -15,6 +15,8 @@ import {GpuDeviceResource} from "./gpuDeviceResource";
 import {GpuFrame} from "./gpuFrame";
 import {GPU_MESH_PASSES} from "./gpuMeshPasses";
 import {PIXELS_2D_AND_HUD_PASSES} from "../pixels/pixelsStandardPasses";
+import {PIXELS_UI_PASSES} from "../pixels/pixelsUiPasses";
+import {UiPixelPassSystem} from "../pixels/uiPixelPassSystem";
 import {GPU_PASS_LISTS, GPU_STANDARD_PASSES} from "./gpuStandardPasses";
 import {ConsoleRecorder} from "./testing/consoleRecorder";
 import {FakeCanvas, FakeCanvasContext, FakeGpuDevice} from "./testing/fakeGpuDevice";
@@ -51,6 +53,11 @@ describe("installGpuBackend", () => {
     test("the standard passes are the pass lists in order: the gpu mesh pass, then the pixels 2D and HUD passes", () => {
         expect(GPU_PASS_LISTS.flat()).toEqual([...GPU_STANDARD_PASSES]);
         expect(GPU_PASS_LISTS.filter(list => list !== GPU_MESH_PASSES).flat()).toEqual([...PIXELS_2D_AND_HUD_PASSES]);
+    });
+
+    test("the UI pass is the pixels UI pass, drawn into the overlay after the HUD", () => {
+        expect(GPU_PASS_LISTS.includes(PIXELS_UI_PASSES)).toBe(true);
+        expect(GPU_STANDARD_PASSES.at(-1)).toBe(UiPixelPassSystem);
     });
 
     test("inserts the device, the presenter and only the gpu marker, although its 2D and HUD passes are pixel systems", () => {

@@ -1,5 +1,5 @@
 import {keyEventsOfChord, mouseEventOfHover, mouseEventsOfClick, mouseEventsOfDrag} from "./smokeInput";
-import type {SmokeInputEvent, SmokeMouseButton} from "./smokeInput";
+import type {SmokeInputEvent, SmokeModifier, SmokeMouseButton} from "./smokeInput";
 
 export interface SmokePage {
     evaluate<T>(script: string): Promise<T>;
@@ -28,6 +28,11 @@ interface ClickPoint {
     readonly y: number;
 }
 
+export interface SmokeElementPoint {
+    readonly x: number;
+    readonly y: number;
+}
+
 interface ClickProblem {
     readonly problem: string;
 }
@@ -39,6 +44,9 @@ const OUTSIDE_WINDOW_PX = 60;
 const LEFT_BUTTON: SmokeMouseButton = "left";
 const RIGHT_BUTTON: SmokeMouseButton = "right";
 const MIDDLE_BUTTON: SmokeMouseButton = "middle";
+const NO_MODIFIERS: readonly SmokeModifier[] = [];
+
+const ELEMENT_CENTRE: SmokeElementPoint = {x: 0.5, y: 0.5};
 
 function visibleElementsScript(selector: string): string {
     return `[...document.querySelectorAll(${JSON.stringify(selector)})].filter(element => {
@@ -64,7 +72,7 @@ export function focusedScript(selector: string): string {
     return `(document.activeElement !== null && document.activeElement.matches(${JSON.stringify(selector)}))`;
 }
 
-export function clickPointScript(selector: string): string {
+export function clickPointScript(selector: string, at: SmokeElementPoint = ELEMENT_CENTRE): string {
     return `(() => {
         const describe = element => element === null ? "nothing" : element.tagName.toLowerCase() + (typeof element.className === "string" && element.className.length > 0 ? "." + element.className.trim().split(/\\s+/).join(".") : "");
         const target = ${visibleElementsScript(selector)}[0];
@@ -72,8 +80,8 @@ export function clickPointScript(selector: string): string {
         if (target.disabled === true) return {problem: "the element is disabled" + (target.title ? " (" + target.title + ")" : "")};
         target.scrollIntoView({block: "nearest", inline: "nearest"});
         const bounds = target.getBoundingClientRect();
-        const x = bounds.left + bounds.width / 2;
-        const y = bounds.top + bounds.height / 2;
+        const x = bounds.left + bounds.width * ${at.x};
+        const y = bounds.top + bounds.height * ${at.y};
         const hit = document.elementFromPoint(x, y);
         if (hit === null || (hit !== target && !target.contains(hit))) return {problem: "it is covered by " + describe(hit)};
         return {x, y};
@@ -171,8 +179,8 @@ export class SmokeUi {
         await this.waitFor(`${description} to have focus`, () => this.read<boolean>(focusedScript(selector)));
     }
 
-    public async click(selector: string, description: string = selector): Promise<void> {
-        await this.clickWith(selector, LEFT_BUTTON, description);
+    public async click(selector: string, description: string = selector, modifiers: readonly SmokeModifier[] = NO_MODIFIERS): Promise<void> {
+        await this.clickWith(selector, LEFT_BUTTON, description, modifiers);
     }
 
     public async rightClick(selector: string, description: string = selector): Promise<void> {
@@ -189,9 +197,9 @@ export class SmokeUi {
         this.page.sendInput(mouseEventOfHover(point.x * zoom, point.y * zoom));
     }
 
-    public async drag(fromSelector: string, toSelector: string, description: string): Promise<void> {
+    public async drag(fromSelector: string, toSelector: string, description: string, at: SmokeElementPoint = ELEMENT_CENTRE): Promise<void> {
         const from = await this.clickablePoint(fromSelector, `the start of ${description}`);
-        const to = await this.clickablePoint(toSelector, `the end of ${description}`);
+        const to = await this.clickablePoint(toSelector, `the end of ${description}`, at);
         const zoom = this.page.zoomFactor();
         for (const event of mouseEventsOfDrag(from.x * zoom, from.y * zoom, to.x * zoom, to.y * zoom)) this.page.sendInput(event);
     }
@@ -220,16 +228,16 @@ export class SmokeUi {
         if (!condition) this.fail(reason);
     }
 
-    private async clickWith(selector: string, button: SmokeMouseButton, description: string): Promise<void> {
+    private async clickWith(selector: string, button: SmokeMouseButton, description: string, modifiers: readonly SmokeModifier[] = NO_MODIFIERS): Promise<void> {
         const point = await this.clickablePoint(selector, description);
         const zoom = this.page.zoomFactor();
-        for (const event of mouseEventsOfClick(point.x * zoom, point.y * zoom, button)) this.page.sendInput(event);
+        for (const event of mouseEventsOfClick(point.x * zoom, point.y * zoom, button, modifiers)) this.page.sendInput(event);
     }
 
-    private async clickablePoint(selector: string, description: string): Promise<ClickPoint> {
+    private async clickablePoint(selector: string, description: string, at: SmokeElementPoint = ELEMENT_CENTRE): Promise<ClickPoint> {
         let found: ClickPoint | ClickProblem = {problem: "it was never checked"};
         try {
-            await this.waitFor(`${description} to be clickable`, async () => !isProblem(found = await this.read<ClickPoint | ClickProblem>(clickPointScript(selector))));
+            await this.waitFor(`${description} to be clickable`, async () => !isProblem(found = await this.read<ClickPoint | ClickProblem>(clickPointScript(selector, at))));
         } catch (error) {
             if (error instanceof SmokeFailure && isProblem(found)) throw new SmokeFailure(`${error.message}: ${found.problem}`);
             throw error;

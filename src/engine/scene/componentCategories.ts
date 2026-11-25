@@ -10,4 +10,5 @@ export const ENGINE_COMPONENT_CATEGORIES = {
     prefab: "Prefab",
     scene: "Scene",
     settings: "Settings",
+    ui: "UI",
 } as const;

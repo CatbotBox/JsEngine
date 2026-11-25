@@ -1,9 +1,8 @@
 import type {Entity} from "../../engine/core";
-import type {EditorComponentDetails, EditorView} from "../editorProtocol";
+import type {EditorComponentDetails} from "../editorProtocol";
 import type {Command, CommandRegistry, CommandSpec, VoidCommandSpec} from "./commandRegistry";
 import type {DataAssetsView} from "./dataAssetsView";
-import type {DockPanelId} from "./dockLayout";
-import {canFloatPanel, DOCK_PANEL_TITLES, MAIN_WINDOW_PANEL_REASON} from "./editorPanels";
+import {DOCK_PANEL_TITLES} from "./editorPanels";
 import {EDITOR_TOOLS} from "./editorTools";
 import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
@@ -26,7 +25,8 @@ import type {ProjectView} from "./projectView";
 import type {SceneView} from "./sceneView";
 import {SNAP_KIND_LABELS, snapStepChoices, snapStepText} from "./snapSteps";
 import type {SnapStepChoice} from "./snapSteps";
-import {DOCK_PANEL_IDS} from "../project/editorUiHooks";
+import {DOCK_PANEL_KINDS, dockPanelKindOf} from "../project/dockPanelIds";
+import type {DockPanelId, DockPanelKind} from "../project/dockPanelIds";
 
 export interface EditorCommandViews {
     readonly workspace: EditorWorkspace;
@@ -41,7 +41,7 @@ export interface EditorCommandHost {
 
     views(): EditorCommandViews | undefined;
 
-    showPanel(panel: DockPanelId): void;
+    showPanel(panel: DockPanelKind): void;
 
     panelOpen(panel: DockPanelId): boolean;
 
@@ -52,6 +52,8 @@ export interface EditorCommandHost {
     toggleMaximized(panel: DockPanelId): void;
 
     addPanelBeside(panel: DockPanelId, besidePanel: DockPanelId): void;
+
+    openSceneView(): void;
 
     panelFloating(panel: DockPanelId): boolean;
 
@@ -85,8 +87,10 @@ export interface EditorCommandHost {
 
     openPreferences(): void;
 
-    focusView(view: EditorView): void;
+    focusView(view: FocusableView): void;
 }
+
+export type FocusableView = "scene" | "game";
 
 export interface DataAssetCreation {
     readonly folder: string;
@@ -192,13 +196,14 @@ export interface ToolCommands {
 }
 
 export interface ViewCommands {
-    readonly views: Readonly<Record<EditorView, Command<void>>>;
+    readonly views: Readonly<Record<FocusableView, Command<void>>>;
     readonly gameViewAspect: Command<string>;
     readonly gameViewOptions: Readonly<Record<GameViewOption, Command<void>>>;
 }
 
 export interface WindowCommands {
-    readonly panels: Readonly<Record<DockPanelId, Command<void>>>;
+    readonly panels: Readonly<Record<DockPanelKind, Command<void>>>;
+    readonly newSceneView: Command<void>;
     readonly closePanel: Command<DockPanelId>;
     readonly maximizePanel: Command<DockPanelId>;
     readonly addPanel: Command<DockPanelAddition>;
@@ -283,7 +288,7 @@ const NO_COMPONENT_VALUES_REASON = "Nothing to copy yet";
 const NO_COPIED_VALUES_REASON = "No component values copied";
 const UNDO_LABEL = "Undo";
 const REDO_LABEL = "Redo";
-const HISTORY_PANEL: DockPanelId = "history";
+const HISTORY_PANEL: DockPanelKind = "history";
 const PLAY_LABEL = "Play";
 const STOP_LABEL = "Stop";
 const OPEN_LABEL = "Open";
@@ -295,8 +300,8 @@ const ALREADY_LOADED_REASON = "The scene is already loaded";
 const NO_FILE_REASON = "The scene has no file to load from";
 const ALREADY_ACTIVE_REASON = "Already the active scene";
 const OPEN_IN_EDITOR_LABEL = "Open in Editor";
-const VIEW_LABELS: Readonly<Record<EditorView, string>> = {scene: "Focus Scene View", game: "Focus Game View"};
-const VIEW_ORDER: readonly EditorView[] = ["scene", "game"];
+const VIEW_LABELS: Readonly<Record<FocusableView, string>> = {scene: "Focus Scene View", game: "Focus Game View"};
+const VIEW_ORDER: readonly FocusableView[] = ["scene", "game"];
 const TOOL_LABELS: Readonly<Record<EditorTool, string>> = {hand: "Hand", move: "Move", rotate: "Rotate", scale: "Scale"};
 const TOOL_SHORTCUTS: Readonly<Record<EditorTool, string>> = {hand: "Q", move: "W", rotate: "E", scale: "R"};
 
@@ -711,12 +716,13 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
 
     const openPanelProblem = (panel: DockPanelId): string | undefined => host.panelOpen(panel) ? undefined : PANEL_CLOSED_REASON;
     const windowCommands: WindowCommands = {
-        panels: recordOf(DOCK_PANEL_IDS, panel => registry.add({
+        panels: recordOf(DOCK_PANEL_KINDS, panel => registry.add({
             id: `window.${panel}`,
             category: WINDOW_CATEGORY,
             label: DOCK_PANEL_TITLES[panel],
             run: () => host.showPanel(panel),
         })),
+        newSceneView: registry.add({id: "window.newSceneView", category: WINDOW_CATEGORY, label: "New Scene View", run: () => host.openSceneView()}),
         closePanel: registry.addTargeted<DockPanelId>({
             id: "window.closeTab", category: WINDOW_CATEGORY, label: "Close Tab",
             disabledReason: openPanelProblem,
@@ -730,16 +736,13 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
         }),
         addPanel: registry.addTargeted<DockPanelAddition>({
             id: "window.addTab", category: WINDOW_CATEGORY, label: "Add Tab",
-            labelFor: addition => DOCK_PANEL_TITLES[addition.panel],
+            labelFor: addition => DOCK_PANEL_TITLES[dockPanelKindOf(addition.panel)],
             disabledReason: addition => host.panelOpen(addition.panel) ? PANEL_ALREADY_OPEN_REASON : openPanelProblem(addition.beside),
             run: addition => host.addPanelBeside(addition.panel, addition.beside),
         }),
         floatPanel: registry.addTargeted<DockPanelId>({
             id: "window.floatTab", category: WINDOW_CATEGORY, label: "Float Tab",
-            disabledReason: panel => {
-                if (!canFloatPanel(panel)) return MAIN_WINDOW_PANEL_REASON;
-                return openPanelProblem(panel) ?? (host.panelHasOwnWindow(panel) ? PANEL_HAS_OWN_WINDOW_REASON : undefined);
-            },
+            disabledReason: panel => openPanelProblem(panel) ?? (host.panelHasOwnWindow(panel) ? PANEL_HAS_OWN_WINDOW_REASON : undefined),
             run: panel => host.floatPanel(panel),
         }),
         dockPanel: registry.addTargeted<DockPanelId>({

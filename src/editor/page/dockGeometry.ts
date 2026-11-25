@@ -1,5 +1,7 @@
 import {EDGE_AXES, isLeadingEdge, ROOT_EDGE_SHARE, STACK_EDGE_SHARE} from "./dockLayout";
-import type {DockAxis, DockBounds, DockEdge, DockNode, DockPanelId, DockTarget} from "./dockLayout";
+import type {DockAxis, DockBounds, DockEdge, DockNode, DockTarget} from "./dockLayout";
+import {dockPanelKindOf} from "../project/dockPanelIds";
+import type {DockPanelKind} from "../project/dockPanelIds";
 
 export interface DockRect {
     readonly left: number;
@@ -13,7 +15,7 @@ export interface DockSize {
     readonly heightPx: number;
 }
 
-export type DockMinimums = Readonly<Record<DockPanelId, DockSize>>;
+export type DockMinimums = Readonly<Record<DockPanelKind, DockSize>>;
 
 export interface DockSplitPlacement {
     readonly axis: DockAxis;
@@ -104,10 +106,10 @@ function lengthAlong(size: DockSize, axis: DockAxis): number {
 
 export function minimumSizeOf(node: DockNode, minimums: DockMinimums, splitterPx: number = SPLITTER_THICKNESS_PX): DockSize {
     if (node.kind === "stack") {
-        return node.panels.reduce((size, panel) => ({
-            widthPx: Math.max(size.widthPx, minimums[panel].widthPx),
-            heightPx: Math.max(size.heightPx, minimums[panel].heightPx),
-        }), NO_SIZE);
+        return node.panels.reduce((size, panel) => {
+            const minimum = minimums[dockPanelKindOf(panel)];
+            return {widthPx: Math.max(size.widthPx, minimum.widthPx), heightPx: Math.max(size.heightPx, minimum.heightPx)};
+        }, NO_SIZE);
     }
     const sizes = node.children.map(child => minimumSizeOf(child, minimums, splitterPx));
     const gaps = splitterPx * (node.children.length - 1);

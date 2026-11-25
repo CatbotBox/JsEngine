@@ -17,5 +17,7 @@ export {CELLS_SCHEMAS, registerCellsComponentSchemas} from "./cellsComponentSche
 export * as ThreeD from "./3d";
 export {installCellsBackend} from "./cellsBackend";
 export {CELLS_HUD_TEXT_PASSES} from "./cellsHudTextPasses";
+export {CELLS_UI_PASSES} from "./cellsUiPasses";
+export {CELL_UI_SCALE_RULE, UiCellPassSystem} from "./uiCellPassSystem";
 export {CELLS_STANDARD_PASSES} from "./cellsStandardPasses";
 export {CELL_ASPECT_RATIO_SCHEMA_ENTRY, CELL_RENDER_SETTINGS_SCHEMA_ENTRY} from "./schemas";

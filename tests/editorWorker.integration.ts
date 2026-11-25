@@ -42,6 +42,7 @@ import type {SharedPixelDisplay} from "../src/editor/launch/editorViewport";
 import {ProjectWorkerSession} from "../src/editor/launch/projectWorkerSession";
 import {connectSceneView} from "../src/editor/launch/sceneViewConnection";
 import type {SceneViewConnection, SceneViewWorker} from "../src/editor/launch/sceneViewConnection";
+import {FIRST_SCENE_VIEW} from "../src/editor/project/dockPanelIds";
 import type {EditorViewports, SessionVisibility} from "../src/editor/launch/projectWorkerSession";
 import {STARTER_SCENE_FILE} from "../src/editor/project/projectTemplate";
 import type {RenderBackendKind} from "../src/engine/rendering/renderBackend";
@@ -55,6 +56,7 @@ const SURFACE: PixelPresenterSize = {widthPx: 640, heightPx: 384};
 const SCENE_VIEW_SURFACE: PixelPresenterSize = {widthPx: 480, heightPx: 320};
 const SCENE_VIEW_COLUMNS = 60;
 const SCENE_VIEW_ROWS = 20;
+const SCENE_VIEW_SHOWN = true;
 const TIMEOUT_MS = 20_000;
 const POLL_INTERVAL_MS = 10;
 const FRAME_ARRIVAL_WINDOW_MS = 300;
@@ -297,7 +299,7 @@ class EditorPage {
         this.worker.addEventListener("error", event => this.workerErrors.push(event.message));
         this.fileServing = serveProjectFiles(this.worker as unknown as ProjectFilesPort, project.files);
         this.connection = connectWorldWorker(this.display, this.worker as unknown as WorldWorker, {name, onReady: () => this.readyReports++});
-        this.sceneConnection = connectSceneView(this.sceneDisplay, this.worker as unknown as SceneViewWorker, name);
+        this.sceneConnection = connectSceneView(this.sceneDisplay, this.worker as unknown as SceneViewWorker, {view: FIRST_SCENE_VIEW, name, shown: SCENE_VIEW_SHOWN});
         this.client = new EditorClient(this.worker as unknown as EditorChannel, {timeoutMs: TIMEOUT_MS});
         this.worker.addEventListener("message", event => {
             if (isEditorEventMessage(event.data)) this.events.push(event.data.event);
@@ -844,7 +846,7 @@ function removeCamerasFromStarterScene(folder: string): void {
 }
 
 function startEditorSession(project: BuiltProject, viewports: EditorViewports, visibility: SessionVisibility, name: string): Promise<ProjectWorkerSession> {
-    return ProjectWorkerSession.start({workerUrl: project.bundlePath, viewports, files: project.files, name, search: NO_QUERY, visibility, onQuit: () => undefined});
+    return ProjectWorkerSession.start({workerUrl: project.bundlePath, viewports, scenesShown: new Map(), files: project.files, name, search: NO_QUERY, visibility, onQuit: () => undefined});
 }
 
 async function sessionWithin(starting: Promise<ProjectWorkerSession>, timeoutMs: number): Promise<ProjectWorkerSession | undefined> {
@@ -894,7 +896,7 @@ async function verifyCameraLessWorker(project: BuiltProject, label: string): Pro
 async function verifyCameraLessHotReload(project: BuiltProject, label: string): Promise<void> {
     const display = new SharedPixelFrameRecorder();
     const sceneDisplay = new SharedPixelFrameRecorder(SCENE_VIEW_SURFACE);
-    const viewports: EditorViewports = {game: new PixelEditorViewport(display, WEB_PIXELS), scene: new PixelEditorViewport(sceneDisplay, WEB_PIXELS)};
+    const viewports: EditorViewports = {game: new PixelEditorViewport(display, WEB_PIXELS), scenes: new Map([[FIRST_SCENE_VIEW, new PixelEditorViewport(sceneDisplay, WEB_PIXELS)]])};
     const opened = await sessionWithin(startEditorSession(project, viewports, VISIBLE_SESSION, label), TIMEOUT_MS);
     expect(opened !== undefined, `${label}: the editor page's worker session opens within ${TIMEOUT_MS} ms`);
     if (opened === undefined) return;

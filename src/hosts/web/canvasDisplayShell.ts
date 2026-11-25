@@ -7,10 +7,23 @@ const OPAQUE_CANVAS: CanvasRenderingContext2DSettings = {alpha: false};
 const DISPLAYED = "";
 const NOT_DISPLAYED = "none";
 const VISIBLE = true;
+const RESIZE_EVENT = "resize";
+const CLICK_EVENT = "click";
+const CHANGE_EVENT = "change";
+const ONCE: AddEventListenerOptions = {once: true};
 
-export function currentDevicePixelRatio(): number {
+type DisplayWindow = Window & typeof globalThis;
+
+export function devicePixelRatioOf(window: Window): number {
     const ratio = window.devicePixelRatio;
     return ratio > 0 ? ratio : FALLBACK_DEVICE_PIXEL_RATIO;
+}
+
+export function currentDevicePixelRatio(): number {
+    return devicePixelRatioOf(window);
+}
+
+function stopNothing(): void {
 }
 
 export class CanvasDisplayShell<Frame> {
@@ -19,11 +32,13 @@ export class CanvasDisplayShell<Frame> {
     private readonly status = document.createElement("div");
     private readonly pendingAcknowledgements: (() => void)[] = [];
     private pendingFrame: Frame | undefined;
-    private drawRequested = false;
+    private drawRequestedIn: Window | undefined;
     private showingError = false;
     private visible = VISIBLE;
     private disposed = false;
     private fit: (() => void) | undefined;
+    private followedWindow: Window | undefined;
+    private stopFollowingWindow: () => void = stopNothing;
 
     public constructor(private readonly container: HTMLElement, private readonly draw: (frame: Frame) => void) {
     }
@@ -42,12 +57,16 @@ export class CanvasDisplayShell<Frame> {
         this.status.hidden = true;
         this.setVisible(visible);
         this.container.append(this.canvas, this.status);
+        this.followWindow();
         fit();
-        window.addEventListener("resize", fit);
-        this.watchDevicePixelRatio(fit);
-        this.container.addEventListener("click", this.focusCanvas);
+        this.container.addEventListener(RESIZE_EVENT, this.containerResized);
+        this.container.addEventListener(CLICK_EVENT, this.focusCanvas);
         if (visible) this.canvas.focus();
         this.trackFocus(visible);
+    }
+
+    public devicePixelRatio(): number {
+        return devicePixelRatioOf(this.window());
     }
 
     public show(): void {
@@ -69,8 +88,10 @@ export class CanvasDisplayShell<Frame> {
     public dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
-        if (this.fit !== undefined) window.removeEventListener("resize", this.fit);
-        this.container.removeEventListener("click", this.focusCanvas);
+        this.stopFollowingWindow();
+        this.stopFollowingWindow = stopNothing;
+        this.container.removeEventListener(RESIZE_EVENT, this.containerResized);
+        this.container.removeEventListener(CLICK_EVENT, this.focusCanvas);
         this.canvas.remove();
         this.status.remove();
     }
@@ -87,9 +108,7 @@ export class CanvasDisplayShell<Frame> {
         this.hideStatus();
         this.pendingFrame = frame;
         this.pendingAcknowledgements.push(onPresented);
-        if (this.drawRequested) return;
-        this.drawRequested = true;
-        requestAnimationFrame(this.drawPendingFrame);
+        this.requestDraw();
     }
 
     public showStatus(text: string): void {
@@ -106,6 +125,10 @@ export class CanvasDisplayShell<Frame> {
         console.error(text);
     }
 
+    private window(): DisplayWindow {
+        return this.canvas.ownerDocument.defaultView ?? window;
+    }
+
     private setVisible(visible: boolean): void {
         this.visible = visible;
         const display = visible ? DISPLAYED : NOT_DISPLAYED;
@@ -117,25 +140,62 @@ export class CanvasDisplayShell<Frame> {
         if (this.visible) this.canvas.focus();
     };
 
+    private readonly containerResized = (): void => {
+        if (this.disposed) return;
+        this.followWindow();
+        this.fit?.();
+    };
+
+    private followWindow(): void {
+        const fit = this.fit;
+        const current = this.window();
+        if (fit === undefined || current === this.followedWindow) return;
+        this.stopFollowingWindow();
+        this.followedWindow = current;
+        current.addEventListener(RESIZE_EVENT, fit);
+        const stopWatchingRatio = this.watchDevicePixelRatio(current, fit);
+        this.stopFollowingWindow = () => {
+            current.removeEventListener(RESIZE_EVENT, fit);
+            stopWatchingRatio();
+        };
+        if (this.drawRequestedIn !== undefined) this.requestDraw();
+    }
+
+    private requestDraw(): void {
+        const current = this.window();
+        if (this.drawRequestedIn === current) return;
+        this.drawRequestedIn = current;
+        current.requestAnimationFrame(this.drawPendingFrame);
+    }
+
     private readonly drawPendingFrame = (): void => {
-        this.drawRequested = false;
+        this.drawRequestedIn = undefined;
         const frame = this.pendingFrame;
         this.pendingFrame = undefined;
         if (frame !== undefined) this.draw(frame);
         for (const acknowledge of this.pendingAcknowledgements.splice(0)) acknowledge();
     };
 
-    private watchDevicePixelRatio(fit: () => void): void {
-        const query = window.matchMedia(`(resolution: ${currentDevicePixelRatio()}dppx)`);
-        query.addEventListener("change", () => {
+    private watchDevicePixelRatio(window: Window, fit: () => void): () => void {
+        let query: MediaQueryList | undefined;
+        const changed = (): void => {
             if (this.disposed) return;
             fit();
-            this.watchDevicePixelRatio(fit);
-        }, {once: true});
+            watch();
+        };
+        const watch = (): void => {
+            query = window.matchMedia(`(resolution: ${devicePixelRatioOf(window)}dppx)`);
+            query.addEventListener(CHANGE_EVENT, changed, ONCE);
+        };
+        watch();
+        return () => query?.removeEventListener(CHANGE_EVENT, changed);
     }
 
     private trackFocus(showFocusNow: boolean): void {
-        const update = () => document.body.classList.toggle(UNFOCUSED_CLASS, document.activeElement !== this.canvas);
+        const update = (): void => {
+            const document = this.canvas.ownerDocument;
+            document.body.classList.toggle(UNFOCUSED_CLASS, document.activeElement !== this.canvas);
+        };
         this.canvas.addEventListener("focus", update);
         this.canvas.addEventListener("blur", update);
         if (showFocusNow) update();

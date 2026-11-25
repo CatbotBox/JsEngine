@@ -3,8 +3,10 @@ import type {Component, Entity, World} from "../../engine/core";
 import {ComponentType} from "../../engine/core/componentType";
 import type {CellPresenter} from "../../backends/cells/cellPresenter";
 import {CellPresenterResource, CellRenderTargets} from "../../backends/cells/cellPresenterResource";
+import type {CellRenderTarget} from "../../backends/cells/cellPresenterResource";
 import type {PixelPresenter} from "../../backends/pixels/pixelPresenter";
 import {PixelPresenterResource, PixelRenderTargets} from "../../backends/pixels/pixelPresenterResource";
+import type {PixelRenderTarget} from "../../backends/pixels/pixelPresenterResource";
 import {getEntityCreationOrder} from "../../engine/core/ownership";
 import {Vec, Vec4} from "../../engine/math/types/vec";
 import type {ReadonlyVec3} from "../../engine/math/types/vec";
@@ -16,7 +18,10 @@ import {HudElement} from "../../engine/rendering/hudElement";
 import {WorldSpaceRenderBounds} from "../../engine/rendering/worldSpaceRenderBounds";
 import {FieldOfView} from "../../engine/rendering/3d/fieldOfView";
 import {EditorOnly, untrackedComponentOf} from "../../engine/scene";
+import {GAME_VIEW} from "../editorProtocol";
 import type {EditorCameraPose, EditorEntityBounds, EditorQuaternion, EditorVec3, EditorView, EditorViewInfo} from "../editorProtocol";
+import {FIRST_SCENE_VIEW} from "../project/dockPanelIds";
+import type {SceneViewId} from "../project/dockPanelIds";
 import {isSceneEntityHandle} from "./entityInspection";
 import {worldMatrixOf} from "./hierarchyEditing";
 import {mat4FromVec16, orthographicWorldToScreen, perspectiveWorldToScreen, rayBoxDistance, screenRay, translationOf} from "./viewMath";
@@ -42,9 +47,13 @@ interface ScreenExtent {
     readonly height: number;
 }
 
-export type SceneViewPresenter =
+export interface SceneViewFrames {
+    presentedFrames(): number;
+}
+
+export type SceneViewPresenter = SceneViewFrames & (
     | {readonly kind: "cells", readonly presenter: CellPresenter}
-    | {readonly kind: "pixels", readonly presenter: PixelPresenter};
+    | {readonly kind: "pixels", readonly presenter: PixelPresenter});
 
 function quaternionOf(matrix: Mat4): EditorQuaternion {
     const decomposed = new LocalToWorld();
@@ -53,50 +62,85 @@ function quaternionOf(matrix: Mat4): EditorQuaternion {
     return [Vec.x(rotation), Vec.y(rotation), Vec.z(rotation), Vec.w(rotation)];
 }
 
+interface SceneViewSlot {
+    camera: Entity | undefined;
+    presenter: SceneViewPresenter | undefined;
+}
+
 class SceneViewTarget<Presenter> {
-    public constructor(private readonly views: EditorViews, public readonly presenter: Presenter) {
+    public constructor(private readonly views: EditorViews, private readonly slot: SceneViewSlot, public readonly presenter: Presenter) {
     }
 
     public get camera(): Entity {
-        return this.views.editorCamera ?? NULL_ENTITY;
+        return this.views.liveCamera(this.slot) ?? NULL_ENTITY;
     }
 }
 
+function emptySlot(): SceneViewSlot {
+    return {camera: undefined, presenter: undefined};
+}
+
+function noSuchSceneView(view: SceneViewId): Error {
+    return new Error(`The editor has no Scene view ${view}`);
+}
+
 export class EditorViews {
-    private _editorCamera: Entity | undefined;
+    private readonly slots = new Map<SceneViewId, SceneViewSlot>([[FIRST_SCENE_VIEW, emptySlot()]]);
     private sceneTargets: CellRenderTargets | PixelRenderTargets | undefined;
 
     public constructor(private readonly world: World) {
     }
 
     public get editorCamera(): Entity | undefined {
-        return this._editorCamera !== undefined && this.world.entityManager.exists(this._editorCamera) ? this._editorCamera : undefined;
+        return this.editorCameraOf(FIRST_SCENE_VIEW);
     }
 
-    public showScene(view: SceneViewPresenter): void {
-        this.hideScene();
-        const world = this.world;
-        const targets = view.kind === "cells"
-            ? new CellRenderTargets([new SceneViewTarget(this, view.presenter), {camera: undefined, presenter: CellPresenterResource.presenterOf(world)}])
-            : new PixelRenderTargets([new SceneViewTarget(this, view.presenter), {camera: undefined, presenter: PixelPresenterResource.presenterOf(world)}]);
-        world.resources.insert(targets);
-        this.sceneTargets = targets;
+    public get sceneViews(): SceneViewId[] {
+        return [...this.slots].filter(([, slot]) => slot.presenter !== undefined).map(([view]) => view);
+    }
+
+    public editorCameraOf(view: SceneViewId): Entity | undefined {
+        const slot = this.slots.get(view);
+        return slot === undefined ? undefined : this.liveCamera(slot);
+    }
+
+    public liveCamera(slot: SceneViewSlot): Entity | undefined {
+        return slot.camera !== undefined && this.world.entityManager.exists(slot.camera) ? slot.camera : undefined;
+    }
+
+    public showScene(view: SceneViewId, presenter: SceneViewPresenter): void {
+        let slot = this.slots.get(view);
+        if (slot === undefined) this.slots.set(view, slot = emptySlot());
+        slot.presenter = presenter;
+        this.placeSceneTargets();
         this.apply();
     }
 
+    public closeScene(view: SceneViewId): void {
+        const slot = this.slots.get(view);
+        if (slot === undefined) return;
+        slot.presenter = undefined;
+        if (view !== FIRST_SCENE_VIEW) {
+            this.destroyCamera(slot);
+            this.slots.delete(view);
+        }
+        this.placeSceneTargets();
+    }
+
     public apply(): void {
-        this.ensureEditorCamera();
+        for (const slot of this.slots.values()) this.ensureEditorCamera(slot);
     }
 
     public dispose(): void {
-        this.hideScene();
-        const editorCamera = this.editorCamera;
-        if (editorCamera !== undefined) this.world.entityManager.destroyEntity(editorCamera);
-        this._editorCamera = undefined;
+        this.removeSceneTargets();
+        for (const slot of this.slots.values()) this.destroyCamera(slot);
+        this.slots.clear();
+        this.slots.set(FIRST_SCENE_VIEW, emptySlot());
     }
 
-    public setEditorCamera(position: EditorVec3, rotation: EditorQuaternion, fieldOfViewDegrees: number | undefined): void {
-        const editorCamera = this.ensureEditorCamera() ?? this.createEditorCamera(undefined, fieldOfViewDegrees !== undefined);
+    public setEditorCamera(view: SceneViewId, position: EditorVec3, rotation: EditorQuaternion, fieldOfViewDegrees: number | undefined): void {
+        const slot = this.slotOf(view);
+        const editorCamera = this.ensureEditorCamera(slot) ?? this.createEditorCamera(slot, undefined, fieldOfViewDegrees !== undefined);
         const fieldOfView = untrackedComponentOf<FieldOfView>(this.world, editorCamera, ComponentType.of(FieldOfView));
         if (fieldOfViewDegrees !== undefined && fieldOfView === undefined) {
             throw new Error("The editor camera is orthographic (the game camera has no FieldOfView), so it takes no field of view");
@@ -135,12 +179,12 @@ export class EditorViews {
     }
 
     public cameraFor(view: EditorView): Entity {
-        if (view === "game") {
+        if (view === GAME_VIEW) {
             const camera = this.primaryGameCamera();
             if (camera === undefined) throw new Error("The world has no game camera (an entity with Camera)");
             return camera;
         }
-        const camera = this.ensureEditorCamera();
+        const camera = this.ensureEditorCamera(this.slotOf(view));
         if (camera === undefined) throw new Error("The Scene view has no camera yet: the world has no game camera to start it from; set one with setEditorCamera");
         return camera;
     }
@@ -153,6 +197,7 @@ export class EditorViews {
         const pose: EditorCameraPose = fieldOfView === undefined
             ? {position: translationOf(cameraMatrix), rotation: quaternionOf(cameraMatrix)}
             : {position: translationOf(cameraMatrix), rotation: quaternionOf(cameraMatrix), fieldOfViewDegrees: fieldOfView.radians * DEGREES_PER_RADIAN};
+        const presenter = view === GAME_VIEW ? undefined : this.slots.get(view)?.presenter;
         return {
             view,
             projection: fieldOfView === undefined ? "orthographic" : "perspective",
@@ -163,6 +208,8 @@ export class EditorViews {
             screenHeight: screen.height,
             camera: pose,
             bounds: this.boundsOf(entities),
+            sceneViews: this.sceneViews,
+            ...(presenter === undefined ? {} : {presentedFrames: presenter.presentedFrames()}),
         };
     }
 
@@ -242,7 +289,34 @@ export class EditorViews {
         return {width: 0, height: 0};
     }
 
-    private hideScene(): void {
+    private slotOf(view: SceneViewId): SceneViewSlot {
+        const slot = this.slots.get(view);
+        if (slot === undefined) throw noSuchSceneView(view);
+        return slot;
+    }
+
+    private cellTargets(): CellRenderTarget[] {
+        return [...this.slots.values()].flatMap(slot => slot.presenter?.kind === "cells" ? [new SceneViewTarget(this, slot, slot.presenter.presenter)] : []);
+    }
+
+    private pixelTargets(): PixelRenderTarget[] {
+        return [...this.slots.values()].flatMap(slot => slot.presenter?.kind === "pixels" ? [new SceneViewTarget(this, slot, slot.presenter.presenter)] : []);
+    }
+
+    private placeSceneTargets(): void {
+        this.removeSceneTargets();
+        const world = this.world;
+        const cells = this.cellTargets();
+        const pixels = this.pixelTargets();
+        let targets: CellRenderTargets | PixelRenderTargets;
+        if (cells.length > 0) targets = new CellRenderTargets([...cells, {camera: undefined, presenter: CellPresenterResource.presenterOf(world)}]);
+        else if (pixels.length > 0) targets = new PixelRenderTargets([...pixels, {camera: undefined, presenter: PixelPresenterResource.presenterOf(world)}]);
+        else return;
+        world.resources.insert(targets);
+        this.sceneTargets = targets;
+    }
+
+    private removeSceneTargets(): void {
         const targets = this.sceneTargets;
         if (targets === undefined) return;
         this.sceneTargets = undefined;
@@ -258,17 +332,23 @@ export class EditorViews {
         return untrackedComponentOf(this.world, entity, ComponentType.of(FieldOfView)) !== undefined;
     }
 
-    private ensureEditorCamera(): Entity | undefined {
-        const existing = this.editorCamera;
+    private destroyCamera(slot: SceneViewSlot): void {
+        const camera = this.liveCamera(slot);
+        if (camera !== undefined) this.world.entityManager.destroyEntity(camera);
+        slot.camera = undefined;
+    }
+
+    private ensureEditorCamera(slot: SceneViewSlot): Entity | undefined {
+        const existing = this.liveCamera(slot);
         const gameCamera = this.primaryGameCamera();
         if (existing !== undefined && (gameCamera === undefined || this.hasFieldOfView(gameCamera) === this.hasFieldOfView(existing))) return existing;
         if (gameCamera === undefined) return undefined;
-        const created = this.createEditorCamera(gameCamera, this.hasFieldOfView(gameCamera));
+        const created = this.createEditorCamera(slot, gameCamera, this.hasFieldOfView(gameCamera));
         if (existing !== undefined) this.world.entityManager.destroyEntity(existing);
         return created;
     }
 
-    private createEditorCamera(gameCamera: Entity | undefined, perspective: boolean): Entity {
+    private createEditorCamera(slot: SceneViewSlot, gameCamera: Entity | undefined, perspective: boolean): Entity {
         const gamePose = new LocalToWorld();
         if (gameCamera !== undefined) gamePose.matrix = worldMatrixOf(this.world, gameCamera);
         else gamePose.position = Vec.alloc3(0, 0, perspective ? DEFAULT_EDITOR_CAMERA_DISTANCE : 0);
@@ -300,7 +380,7 @@ export class EditorViews {
         }
         const entity = this.world.entityManager.createEntity(EDITOR_CAMERA_NAME, components);
         this.world.entityManager.setEnabledState(entity, DISABLED);
-        this._editorCamera = entity;
+        slot.camera = entity;
         return entity;
     }
 }

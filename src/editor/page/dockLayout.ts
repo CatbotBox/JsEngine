@@ -1,5 +1,6 @@
-import {DOCK_PANEL_IDS, MAIN_DOCK_WINDOW} from "../project/editorUiHooks";
-import type {DockPanelId} from "../project/editorUiHooks";
+import {MAIN_DOCK_WINDOW} from "../project/editorUiHooks";
+import {DOCK_PANEL_KINDS, isDockPanelId, isFirstDockPanelInstance, isInstancedDockPanelKind, nextDockPanelInstance} from "../project/dockPanelIds";
+import type {DockPanelId} from "../project/dockPanelIds";
 import {isScreenBounds} from "../project/dockWindows";
 import type {ScreenBounds} from "../project/dockWindows";
 
@@ -84,21 +85,20 @@ export interface DockRootHome {
 
 export type DockHome = DockTabHome | DockNeighbourHome | DockRootHome;
 
-export const DOCK_LAYOUT_VERSION = 2;
+export const DOCK_LAYOUT_VERSION = 3;
 export const STACK_EDGE_SHARE = 0.5;
 export const ROOT_EDGE_SHARE = 0.25;
 export const MIN_SHARE = 0.05;
 export const MAX_SHARE = 0.95;
 export const EDGE_AXES: Readonly<Record<DockEdge, DockAxis>> = {left: "row", right: "row", top: "column", bottom: "column"};
 
-const READABLE_VERSIONS: ReadonlySet<unknown> = new Set<unknown>([1, DOCK_LAYOUT_VERSION]);
+const READABLE_VERSIONS: ReadonlySet<unknown> = new Set<unknown>([1, 2, DOCK_LAYOUT_VERSION]);
 const STACK_ID_PREFIX = "stack";
 const SPLIT_ID_PREFIX = "split";
 const FLOATING_ID_PREFIX = "float";
 const ID_NUMBER = /-(\d+)$/;
 const NO_ID_NUMBER = 0;
 const LEADING_EDGES: ReadonlySet<DockEdge> = new Set<DockEdge>(["left", "top"]);
-const KNOWN_PANELS: ReadonlySet<string> = new Set<string>(DOCK_PANEL_IDS);
 const AXES: ReadonlySet<string> = new Set<string>(["row", "column"]);
 const WHOLE = 1;
 const SHARE_TOLERANCE = 1e-9;
@@ -206,7 +206,20 @@ export function isDockPanelOpen(layout: DockLayout, panel: DockPanelId): boolean
 
 export function closedDockPanels(layout: DockLayout): DockPanelId[] {
     const open = new Set(openDockPanels(layout));
-    return DOCK_PANEL_IDS.filter(panel => !open.has(panel));
+    return DOCK_PANEL_KINDS.filter(panel => !open.has(panel));
+}
+
+export function addableDockPanels(layout: DockLayout): DockPanelId[] {
+    const open = new Set(openDockPanels(layout));
+    return DOCK_PANEL_KINDS.flatMap((kind): DockPanelId[] => {
+        if (!open.has(kind)) return [kind];
+        return isInstancedDockPanelKind(kind) ? [nextDockPanelInstance(kind, open)] : [];
+    });
+}
+
+export function releasedDockPanels(layout: DockLayout, panels: Iterable<DockPanelId>): DockPanelId[] {
+    const open = new Set(openDockPanels(layout));
+    return [...panels].filter(panel => !isFirstDockPanelInstance(panel) && !open.has(panel));
 }
 
 function idNumberOf(id: string): number {
@@ -284,6 +297,7 @@ export function activatePanel(layout: DockLayout, panel: DockPanelId): DockLayou
 export function closePanel(layout: DockLayout, panel: DockPanelId): DockLayout {
     const stack = stackOfPanel(layout, panel);
     if (stack === undefined) return layout;
+    if (!isFirstDockPanelInstance(panel)) return withoutPanel(layout, panel);
     const remembered: DockClosedPanel = {panel, stack: stack.id, index: stack.panels.indexOf(panel)};
     const removed = withoutPanel(layout, panel);
     return normalizeDockLayout({...removed, closed: [...removed.closed.filter(entry => entry.panel !== panel), remembered]});
@@ -433,7 +447,7 @@ export function floatPanel(layout: DockLayout, panel: DockPanelId, bounds: DockB
 export function closeFloatingWindow(layout: DockLayout, id: string): DockLayout {
     const window = findFloatingWindow(layout, id);
     if (window === undefined) return layout;
-    const remembered = dockStacks(window.root).flatMap(stack => stack.panels.map((panel, index): DockClosedPanel => ({panel, stack: stack.id, index})));
+    const remembered = dockStacks(window.root).flatMap(stack => stack.panels.flatMap((panel, index): DockClosedPanel[] => isFirstDockPanelInstance(panel) ? [{panel, stack: stack.id, index}] : []));
     return normalizeDockLayout({
         ...layout,
         floating: layout.floating.filter(entry => entry.id !== id),
@@ -509,17 +523,13 @@ export function normalizeDockLayout(layout: DockLayout): DockLayout {
     const latest = new Map<DockPanelId, DockClosedPanel>();
     for (const entry of layout.closed) {
         latest.delete(entry.panel);
-        if (!seen.has(entry.panel)) latest.set(entry.panel, entry);
+        if (!seen.has(entry.panel) && isFirstDockPanelInstance(entry.panel)) latest.set(entry.panel, entry);
     }
     return {version: DOCK_LAYOUT_VERSION, root, closed: [...latest.values()], floating};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isPanelId(value: unknown): value is DockPanelId {
-    return typeof value === "string" && KNOWN_PANELS.has(value);
 }
 
 function claimId(value: unknown, ids: Set<string>): string | undefined {
@@ -530,9 +540,9 @@ function claimId(value: unknown, ids: Set<string>): string | undefined {
 
 function parseStack(record: Record<string, unknown>, id: string): ParsedNode {
     if (!Array.isArray(record.panels)) return undefined;
-    const panels = record.panels.filter(isPanelId);
+    const panels = record.panels.filter(isDockPanelId);
     if (panels.length === 0) return REMOVED;
-    return dockStack(id, panels, isPanelId(record.active) && panels.includes(record.active) ? record.active : panels[0]);
+    return dockStack(id, panels, isDockPanelId(record.active) && panels.includes(record.active) ? record.active : panels[0]);
 }
 
 function parseSplit(record: Record<string, unknown>, id: string, ids: Set<string>): ParsedNode {
@@ -563,7 +573,7 @@ function parseNode(value: unknown, ids: Set<string>): ParsedNode {
 function parseClosed(value: unknown): DockClosedPanel[] {
     if (!isRecord(value)) return [];
     const {panel, stack, index} = value;
-    if (!isPanelId(panel) || typeof stack !== "string" || typeof index !== "number" || !Number.isInteger(index) || index < 0) return [];
+    if (!isDockPanelId(panel) || typeof stack !== "string" || typeof index !== "number" || !Number.isInteger(index) || index < 0) return [];
     return [{panel, stack, index}];
 }
 

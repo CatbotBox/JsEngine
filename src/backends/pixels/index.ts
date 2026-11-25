@@ -19,5 +19,8 @@ export * as ThreeD from "./3d";
 export {installPixelsBackend} from "./pixelsBackend";
 export {PIXELS_WORLD_TEXT_PASSES} from "./pixelsWorldTextPasses";
 export {PIXELS_HUD_TEXT_PASSES} from "./pixelsHudTextPasses";
+export {PIXELS_UI_PASSES} from "./pixelsUiPasses";
+export {UiPixelPassSystem} from "./uiPixelPassSystem";
+export {UiPixelScaleSnappingSystem, WholePixelUiScaleRule} from "./uiPixelScaleSnappingSystem";
 export {PIXELS_2D_AND_HUD_PASSES, PIXELS_STANDARD_PASSES} from "./pixelsStandardPasses";
 export {PIXEL_RENDER_SETTINGS_SCHEMA_ENTRY} from "./schemas";

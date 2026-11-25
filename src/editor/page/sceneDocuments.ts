@@ -557,7 +557,7 @@ export class SceneDocuments {
         return this.workspace.document.defaultView;
     }
 
-    private projectKey(): string {
+    public projectKey(): string {
         return recentScenesProjectKey(this.workspace.session.project.name, this.files().rootLabel);
     }
 }

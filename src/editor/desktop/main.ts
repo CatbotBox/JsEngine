@@ -1,5 +1,5 @@
 import {app, BrowserWindow, crashReporter, dialog, Menu, protocol, screen, shell} from "electron";
-import type {Details, GPUFeatureStatus, WebContents} from "electron";
+import type {Details, GPUFeatureStatus, NativeImage, WebContents} from "electron";
 import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync} from "fs";
 import {access, mkdtemp, readFile, rm, writeFile} from "fs/promises";
 import {tmpdir} from "os";
@@ -9,14 +9,14 @@ import {createProjectServer, locateBun} from "./projectServer";
 import {renderBackendMatches, requestedRenderBackend} from "./smokeBackend";
 import {editorSmokeFlows, recoverEditor} from "./editorSmokeFlows";
 import {runSmokeFlows, selectFlows, smokeFlowsPassed} from "./smokeFlows";
-import type {SmokeFlow, SmokeFlowResult, SmokeHost, SmokeWindowPage} from "./smokeFlows";
+import type {SmokeFlow, SmokeFlowResult, SmokeHost, SmokeViewport, SmokeWindowPage} from "./smokeFlows";
 import type {SmokeInputEvent} from "./smokeInput";
 import type {SmokeClock, SmokePage} from "./smokeUi";
 import {nextZoomFactor, storedZoomFactor, WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomCommandOf, zoomFactorOfText, zoomSettingsText} from "../project/windowZoom";
 import {boundsOfDockWindowFeatures, clampedScreenBounds, DOCK_WINDOW_BACKGROUND, DOCK_WINDOW_URL, isDockWindowName} from "../project/dockWindows";
 import type {ScreenBounds} from "../project/dockWindows";
 import {EDITOR_VIEWPORT_HOOK, hookSelector} from "../project/editorUiHooks";
-import {BITMAP_BYTES_PER_PIXEL, bitmapWidthPx, drawnPixelsIn, scaledRect} from "./capturedViews";
+import {BITMAP_BYTES_PER_PIXEL, bitmapWidthPx, drawnPixelsIn, pixelHashIn, scaledRect} from "./capturedViews";
 import type {CapturedRect} from "./capturedViews";
 
 const SCHEME = "app";
@@ -64,6 +64,9 @@ const SMOKE_CRASH_DUMPS_FOLDER = "jsengine-smoke-crashes";
 const CRASH_DUMP_EXTENSION = ".dmp";
 const CLEAN_EXIT_REASON = "clean-exit";
 const RENDERER_CONSOLE_LINES = 50;
+const FLOATING_VIEWPORT_SUFFIX = " (floating)";
+const DISABLED_FEATURES_SWITCH = "disable-features";
+const NATIVE_WINDOW_OCCLUSION_FEATURE = "CalculateNativeWinOcclusion";
 const LISTED_RECURSIVELY = {recursive: true, encoding: "utf8"} as const;
 
 interface SmokeFailure {
@@ -82,12 +85,15 @@ interface ViewportReport extends CapturedRect {
     readonly canvas: boolean;
 }
 
+interface WindowViewports {
+    readonly cssWidthPx: number;
+    readonly viewports: readonly ViewportReport[];
+}
+
 interface PageReport {
     readonly crossOriginIsolated: boolean;
     readonly canvas: boolean;
     readonly renderBackend: string | undefined;
-    readonly cssWidthPx: number;
-    readonly viewports: readonly ViewportReport[];
 }
 
 export interface PackagedLaunch {
@@ -119,6 +125,22 @@ const screenshotPath = flagValue("screenshot");
 const MIN_DRAWN_PIXELS = 256;
 const DISPLAY_CANVAS_SELECTOR = "#terminal canvas, #viewport canvas, [data-editor-viewport] canvas";
 const EDITOR_VIEWPORT_SELECTOR = hookSelector(EDITOR_VIEWPORT_HOOK);
+const VIEWPORT_EDGE_INSET_PX = 4;
+const VIEWPORTS_SCRIPT = `(() => {
+    const sized = canvas => canvas.width > 0 && canvas.height > 0 && canvas.style.display !== "none";
+    const inset = ${VIEWPORT_EDGE_INSET_PX};
+    return {
+        cssWidthPx: window.innerWidth,
+        viewports: [...document.querySelectorAll(${JSON.stringify(EDITOR_VIEWPORT_SELECTOR)})].map(viewport => {
+            const bounds = viewport.getBoundingClientRect();
+            return {
+                id: viewport.getAttribute(${JSON.stringify(EDITOR_VIEWPORT_HOOK)}),
+                canvas: [...viewport.querySelectorAll("canvas")].some(sized),
+                left: bounds.left + inset, top: bounds.top + inset, width: Math.max(0, bounds.width - inset - inset), height: Math.max(0, bounds.height - inset - inset),
+            };
+        }),
+    };
+})()`;
 const repoRoot = flagValue("repo");
 const requestedFlows = flagValue("flows");
 const smokeFolderAnswers: string[] = [];
@@ -163,6 +185,7 @@ function keepRendererConsoleLine(line: string): void {
 }
 
 if (smoke) {
+    app.commandLine.appendSwitch(DISABLED_FEATURES_SWITCH, NATIVE_WINDOW_OCCLUSION_FEATURE);
     app.setPath("userData", isolatedSmokeProfile());
     app.setPath("crashDumps", smokeCrashDumps);
     crashReporter.start({uploadToServer: false});
@@ -256,7 +279,34 @@ function smokePageOf(window: BrowserWindow): SmokePage {
 }
 
 function smokeWindowPageOf(window: BrowserWindow): SmokeWindowPage {
-    return {...smokePageOf(window), id: window.id, bounds: () => window.getBounds(), setBounds: bounds => window.setBounds(bounds), close: () => window.close()};
+    return {
+        ...smokePageOf(window),
+        id: window.id,
+        bounds: () => window.getBounds(),
+        setBounds: bounds => window.setBounds(bounds),
+        minimize: () => window.minimize(),
+        showInactive: () => window.showInactive(),
+        close: () => window.close(),
+    };
+}
+
+async function viewportsIn(window: BrowserWindow, captured?: NativeImage): Promise<SmokeViewport[]> {
+    const report = await window.webContents.executeJavaScript(VIEWPORTS_SCRIPT) as WindowViewports;
+    if (report.viewports.length === 0) return [];
+    const image = captured ?? await window.webContents.capturePage();
+    const bitmap = image.toBitmap();
+    const widthPx = bitmapWidthPx(bitmap.length, image.getSize());
+    const pxPerCssPx = report.cssWidthPx > 0 ? widthPx / report.cssWidthPx : 0;
+    const floating = window !== mainWindow;
+    return report.viewports.map(viewport => {
+        const rect = scaledRect(viewport, pxPerCssPx);
+        return {id: viewport.id, windowId: window.id, floating, canvas: viewport.canvas, drawnPixels: drawnPixelsIn(bitmap, widthPx, rect), pixelHash: pixelHashIn(bitmap, widthPx, rect)};
+    });
+}
+
+async function editorViewports(mainImage?: NativeImage): Promise<SmokeViewport[]> {
+    const found = await Promise.all(editorWindows().map(window => viewportsIn(window, window === mainWindow ? mainImage : undefined)));
+    return found.flat();
 }
 
 function reloadMainWindow(): Promise<void> {
@@ -283,6 +333,7 @@ const smokeHost: SmokeHost = {
     writeFile: (path, text) => writeFile(path, text),
     floatingWindows: () => [...dockWindows].filter(window => !window.isDestroyed()).map(smokeWindowPageOf),
     reloadPage: reloadMainWindow,
+    viewports: () => editorViewports(),
 };
 
 function flowNames(): readonly string[] | undefined {
@@ -318,39 +369,27 @@ async function smokeTest(window: BrowserWindow, pageErrors: string[]): Promise<v
     const editorState = await editorStateOf(window);
     const report = await window.webContents.executeJavaScript(`(() => {
         const sized = canvas => canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0 && canvas.style.display !== "none";
-        const canvas = document.querySelector(${JSON.stringify(DISPLAY_CANVAS_SELECTOR)});
-        const viewports = [...document.querySelectorAll(${JSON.stringify(EDITOR_VIEWPORT_SELECTOR)})].map(viewport => {
-            const bounds = viewport.getBoundingClientRect();
-            return {
-                id: viewport.getAttribute(${JSON.stringify(EDITOR_VIEWPORT_HOOK)}),
-                canvas: [...viewport.querySelectorAll("canvas")].some(sized),
-                left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height,
-            };
-        });
         return {
             crossOriginIsolated,
-            canvas: viewports.length > 0 ? viewports.every(viewport => viewport.canvas) : sized(canvas),
+            canvas: sized(document.querySelector(${JSON.stringify(DISPLAY_CANVAS_SELECTOR)})),
             renderBackend: document.documentElement.dataset.renderBackend,
-            cssWidthPx: window.innerWidth,
-            viewports,
         };
     })()`) as PageReport;
     const image = await window.webContents.capturePage();
     if (screenshotPath !== undefined) await writeFile(screenshotPath, image.toPNG());
-    const bitmap = image.toBitmap();
-    const widthPx = bitmapWidthPx(bitmap.length, image.getSize());
-    const pxPerCssPx = report.cssWidthPx > 0 ? widthPx / report.cssWidthPx : 0;
-    const drawnPixels = drawnPixelCount(bitmap);
-    const viewportDrawnPixels = Object.fromEntries(report.viewports.map(viewport => [viewport.id, drawnPixelsIn(bitmap, widthPx, scaledRect(viewport, pxPerCssPx))]));
+    const drawnPixels = drawnPixelCount(image.toBitmap());
+    const viewports = await editorViewports(image);
+    const viewportDrawnPixels = Object.fromEntries(viewports.map(viewport => [viewport.floating ? `${viewport.id}${FLOATING_VIEWPORT_SUFFIX}` : viewport.id, viewport.drawnPixels]));
+    const canvas = viewports.length > 0 ? viewports.every(viewport => viewport.canvas) : report.canvas;
     const editorReady = editorState === undefined || editorState === EDITOR_READY_STATE;
     const requestedBackend = requestedRenderBackend(page);
     const backendMatches = renderBackendMatches(requestedBackend, report.renderBackend);
-    const pagePassed = report.crossOriginIsolated && report.canvas && editorReady && backendMatches && drawnPixels >= MIN_DRAWN_PIXELS && pageErrors.length === 0;
+    const pagePassed = report.crossOriginIsolated && canvas && editorReady && backendMatches && drawnPixels >= MIN_DRAWN_PIXELS && pageErrors.length === 0;
     const loadErrors = [...pageErrors];
     const flows = pagePassed && editorState !== undefined ? await runEditorFlows(window, pageErrors) : [];
     const passed = pagePassed && smokeFlowsPassed(flows);
     if (pendingSmokeFailure !== undefined) return;
-    const {crossOriginIsolated, canvas, renderBackend} = report;
+    const {crossOriginIsolated, renderBackend} = report;
     console.log(JSON.stringify({page, crossOriginIsolated, canvas, renderBackend, requestedBackend, editorState, drawnPixels, viewportDrawnPixels, pageErrors: loadErrors, flows, childProcessesGone: goneChildProcesses, ...crashEvidence(), ...(passed ? {} : {rendererConsole}), passed}));
     app.exit(passed ? SMOKE_PASSED_EXIT_CODE : SMOKE_FAILED_EXIT_CODE);
 }

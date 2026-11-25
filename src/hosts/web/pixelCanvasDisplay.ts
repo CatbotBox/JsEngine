@@ -1,6 +1,6 @@
 import {CanvasPixelPresenter} from "../../backends/pixels/canvas/canvasPixelPresenter";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
-import {CanvasDisplayShell, currentDevicePixelRatio} from "./canvasDisplayShell";
+import {CanvasDisplayShell} from "./canvasDisplayShell";
 import type {CellArea} from "./domInput";
 import type {PixelWorldDisplay} from "./worldWorkerPage";
 import {FIXED_FRAMEBUFFER_LIMITS, fixedFramebufferSizeFromQuery, PIXEL_SCALE_LIMITS, pixelScaleFromQuery} from "./worldWorkerProtocol";
@@ -125,7 +125,7 @@ export class PixelCanvasDisplay implements PixelWorldDisplay {
     }
 
     private readonly fit = (): void => {
-        const fitted = fitFramebuffer(this.shell.containerBounds(), currentDevicePixelRatio(), this.options);
+        const fitted = fitFramebuffer(this.shell.containerBounds(), this.shell.devicePixelRatio(), this.options);
         this.presenter.resize(fitted.widthPx, fitted.heightPx);
         const style = this.shell.canvas.style;
         style.width = `${fitted.cssWidthPx}px`;

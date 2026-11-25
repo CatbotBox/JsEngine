@@ -7,6 +7,7 @@ const PIXELS_PER_UNIT_X = 8;
 const RED_RGB = 0xFF0000, BLUE_RGB = 0x0000FF;
 const NEAR = 1, FAR = 5;
 const HALF = 0.5;
+const HALF_ALPHA = 128;
 
 function framebuffer(): PixelFramebuffer {
     const buffer = new PixelFramebuffer();
@@ -56,18 +57,30 @@ describe("PixelFramebuffer", () => {
         expect(mixRgb(0x000000, 0xFFFFFF, 1)).toBe(0xFFFFFF);
     });
 
-    test("a transparent frame keeps the background colour at zero alpha, and drawing over it is opaque", () => {
+    test("a transparent frame keeps the background colour at zero alpha, a write over it is opaque and a blend keeps its own alpha", () => {
         const buffer = new PixelFramebuffer();
         buffer.beginFrame(SIZE, BACKGROUND_RGB, PIXELS_PER_UNIT_X, TRANSPARENT_ALPHA);
         buffer.writeRgb(0, NEAR, RED_RGB);
         buffer.blendRgb(1, NEAR, BLUE_RGB, HALF);
         const rgba = buffer.toPixelFrame().rgba;
         expect(Array.from(rgba.subarray(0, 4))).toEqual([0xFF, 0x00, 0x00, OPAQUE_ALPHA]);
-        expect(Array.from(rgba.subarray(4, 8))).toEqual([0x08, 0x10, 0x98, OPAQUE_ALPHA]);
+        expect(Array.from(rgba.subarray(4, 8))).toEqual([0x00, 0x00, 0xFF, HALF_ALPHA]);
         expect(Array.from(rgba.subarray(rgba.length - 4))).toEqual([0x10, 0x20, 0x30, TRANSPARENT_ALPHA]);
         expect(buffer.rgbAt(3, 2)).toBe(BACKGROUND_RGB);
         buffer.beginFrame(SIZE, BACKGROUND_RGB, PIXELS_PER_UNIT_X);
         expect(rgba[rgba.length - 1]).toBe(OPAQUE_ALPHA);
+    });
+
+    test("blending over a translucent pixel composites colour and alpha like source-over", () => {
+        const buffer = new PixelFramebuffer();
+        buffer.beginFrame(SIZE, BACKGROUND_RGB, PIXELS_PER_UNIT_X, TRANSPARENT_ALPHA);
+        buffer.blendRgb(0, NEAR, RED_RGB, HALF);
+        buffer.blendRgb(0, NEAR, BLUE_RGB, HALF);
+        const blendedAlpha = HALF + (HALF_ALPHA / OPAQUE_ALPHA) * (1 - HALF);
+        expect(buffer.alphaAt(0, 0)).toBe(Math.round(blendedAlpha * OPAQUE_ALPHA));
+        expect(buffer.rgbAt(0, 0)).toBe(mixRgb(RED_RGB, BLUE_RGB, HALF / blendedAlpha));
+        buffer.blendRgb(0, NEAR, RED_RGB, 1);
+        expect([buffer.rgbAt(0, 0), buffer.alphaAt(0, 0)]).toEqual([RED_RGB, OPAQUE_ALPHA]);
     });
 
     test("a new size reallocates, the same size reuses the buffer", () => {

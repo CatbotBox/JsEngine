@@ -44,6 +44,11 @@ export const START_MESSAGE_ACTION_HOOK = "data-start-message-action";
 export const RECENT_PROJECT_HOOK = "data-recent-project";
 export const EDITOR_TITLE_HOOK = "data-editor-title";
 export const EDITOR_VIEWPORT_HOOK = "data-editor-viewport";
+export const SCENE_OVERLAY_HOOK = "data-scene-overlay";
+export const SCENE_FRAMES_HOOK = "data-scene-frames";
+export const SCENE_CAMERA_HOOK = "data-scene-camera";
+export const SCENE_VIEWS_HOOK = "data-scene-views";
+export const SCENE_VIEWS_SEPARATOR = " ";
 
 export type EditorMenuId = "file" | "edit" | "assets" | "entity" | "window" | "help";
 export type DropdownId = "snapSteps" | "gameTarget" | "gameViewAspect";
@@ -57,12 +62,9 @@ export type DataAssetsAction = "save" | "revert" | "refresh";
 export type FieldInputKind = "number" | "textLines";
 export type StartAction = "open" | "sample";
 export type StartMessageAction = "createProject" | "retry" | "back";
-export type EditorViewportId = "scene" | "game";
-export type DockPanelId = "hierarchy" | "inspector" | "scene" | "game" | "project" | "console" | "history" | "settings" | "assets";
 
 export const MAIN_DOCK_WINDOW = "main";
 export const EDITOR_MENU_IDS: readonly EditorMenuId[] = ["file", "edit", "assets", "entity", "window", "help"];
-export const DOCK_PANEL_IDS: readonly DockPanelId[] = ["hierarchy", "inspector", "scene", "game", "project", "console", "history", "settings", "assets"];
 
 const ESCAPED_SELECTOR_CHARACTERS = /["\\]/g;
 

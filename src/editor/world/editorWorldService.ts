@@ -83,6 +83,7 @@ import {
 import {duplicateEntities, setParent} from "./hierarchyEditing";
 import {EditorViews} from "./editorViews";
 import type {SceneViewPresenter} from "./editorViews";
+import type {SceneViewId} from "../project/dockPanelIds";
 import {PrefabLibrary} from "./prefabEditing";
 import {ConsoleForwarder} from "./consoleForwarding";
 import {exportWorldSnapshot, importedEditSnapshot, snapInterpolatedTransforms} from "./editorSnapshots";
@@ -201,8 +202,16 @@ export class EditorWorldService {
         return this.tickCounter.ticks;
     }
 
-    public showSceneView(view: SceneViewPresenter): void {
-        if (this.attached) this.views.showScene(view);
+    public showSceneView(view: SceneViewId, presenter: SceneViewPresenter): void {
+        if (this.attached) this.views.showScene(view, presenter);
+    }
+
+    public closeSceneView(view: SceneViewId): void {
+        if (this.attached) this.views.closeScene(view);
+    }
+
+    public sceneCameraOf(view: SceneViewId): Entity | undefined {
+        return this.views.editorCameraOf(view);
     }
 
     public get sceneCamera(): Entity | undefined {
@@ -417,8 +426,8 @@ export class EditorWorldService {
             case "pickEntities":
                 return {entities: this.views.pick(request.x, request.y, request.view)};
             case "setEditorCamera":
-                this.views.setEditorCamera(request.position, request.rotation, request.fieldOfViewDegrees);
-                return this.views.viewInfo("scene", NO_ENTITIES);
+                this.views.setEditorCamera(request.view, request.position, request.rotation, request.fieldOfViewDegrees);
+                return this.views.viewInfo(request.view, NO_ENTITIES);
             case "getViewInfo":
                 return this.views.viewInfo(request.view, request.entities ?? NO_ENTITIES);
             case "saveScene":

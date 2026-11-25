@@ -2,7 +2,7 @@ import {Resource} from "../core/resource";
 import type {System, SystemCtor} from "../core/system";
 import type {World} from "../core/world";
 
-export type RenderPassKind = "meshes" | "sprites" | "hudSprites" | "hudText" | "worldText";
+export type RenderPassKind = "meshes" | "sprites" | "hudSprites" | "hudText" | "worldText" | "ui";
 
 export type RenderPassCtor = SystemCtor<System> & {readonly renderPass: RenderPassKind};
 

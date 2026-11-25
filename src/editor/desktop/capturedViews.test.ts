@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {BITMAP_BYTES_PER_PIXEL, bitmapWidthPx, drawnPixelsIn, scaledRect} from "./capturedViews";
+import {BITMAP_BYTES_PER_PIXEL, bitmapWidthPx, drawnPixelsIn, pixelHashIn, scaledRect} from "./capturedViews";
 
 const WIDTH_PX = 4;
 const HEIGHT_PX = 3;
@@ -25,5 +25,16 @@ describe("captured views", () => {
         expect(bitmapWidthPx(8 * 6 * BITMAP_BYTES_PER_PIXEL, {width: 4, height: 3})).toBe(8);
         expect(bitmapWidthPx(0, {width: 4, height: 3})).toBe(0);
         expect(scaledRect({left: 1, top: 2, width: 3, height: 4}, 2)).toEqual({left: 2, top: 4, width: 6, height: 8});
+    });
+});
+
+describe("captured view hashes", () => {
+    test("a region's hash follows its colours and its clip, so equal regions hash equal and changed ones differ", () => {
+        const region = {left: 0, top: 0, width: WIDTH_PX, height: HEIGHT_PX};
+        const painted = pixelHashIn(bitmapWithPainted([[1, 1]]), WIDTH_PX, region);
+        expect(pixelHashIn(bitmapWithPainted([[1, 1]]), WIDTH_PX, region)).toBe(painted);
+        expect(pixelHashIn(bitmapWithPainted([[2, 1]]), WIDTH_PX, region)).not.toBe(painted);
+        expect(pixelHashIn(bitmapWithPainted([[1, 1]]), WIDTH_PX, {left: 0, top: 0, width: 2, height: 2})).not.toBe(painted);
+        expect(pixelHashIn(bitmapWithPainted([[1, 1]]), WIDTH_PX, {left: 9, top: 9, width: 2, height: 2})).toBe(pixelHashIn(bitmapWithPainted([]), WIDTH_PX, {left: 9, top: 0, width: 1, height: 1}));
     });
 });

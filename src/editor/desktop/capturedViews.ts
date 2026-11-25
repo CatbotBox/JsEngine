@@ -23,6 +23,9 @@ const RED = 0, GREEN = 1, BLUE = 2;
 const RED_SHIFT = 16, GREEN_SHIFT = 8;
 const NO_PIXELS = 0;
 const NO_COUNT = 0;
+const FNV_OFFSET_BASIS = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
+const UNSIGNED = 0;
 
 export function bitmapWidthPx(byteLength: number, size: CapturedSize): number {
     const pixels = byteLength / BITMAP_BYTES_PER_PIXEL;
@@ -62,4 +65,16 @@ export function drawnPixelsIn(bitmap: Uint8Array, widthPx: number, rect: Capture
 
 export function scaledRect(rect: CapturedRect, pxPerCssPx: number): CapturedRect {
     return {left: rect.left * pxPerCssPx, top: rect.top * pxPerCssPx, width: rect.width * pxPerCssPx, height: rect.height * pxPerCssPx};
+}
+
+export function pixelHashIn(bitmap: Uint8Array, widthPx: number, rect: CapturedRect): number {
+    const span = spanOf(bitmap, widthPx, rect);
+    if (span === undefined) return FNV_OFFSET_BASIS;
+    let hash = FNV_OFFSET_BASIS;
+    for (let y = span.top; y < span.bottom; y++) {
+        for (let x = span.left; x < span.right; x++) {
+            hash = Math.imul(hash ^ rgbAt(bitmap, (y * widthPx + x) * BITMAP_BYTES_PER_PIXEL), FNV_PRIME) >>> UNSIGNED;
+        }
+    }
+    return hash;
 }

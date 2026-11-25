@@ -21,6 +21,7 @@ declare const inputActionBrand: unique symbol;
 export type InputAction = number & {readonly [inputActionBrand]: true};
 
 const NO_BUTTONS = 0;
+const NO_WHEEL_DELTA = 0;
 const NO_ACTIONS: readonly InputAction[] = [];
 
 interface CompiledAction {
@@ -45,6 +46,13 @@ function chordMatchesKeyDown(chord: KeyChord, event: KeyDownEvent): boolean {
 
 function copiedChord(chord: KeyChord): KeyChord {
     return {key: chord.key, ctrl: chord.ctrl, alt: chord.alt, shift: chord.shift, meta: chord.meta};
+}
+
+function refreshTransition(held: boolean[], pressed: boolean[], released: boolean[], action: InputAction, nowHeld: boolean): void {
+    if (nowHeld === held[action]) return;
+    held[action] = nowHeld;
+    if (nowHeld) pressed[action] = true;
+    else released[action] = true;
 }
 
 function buttonMaskOf(buttons: readonly PointerButton[]): number {
@@ -83,6 +91,8 @@ export class Input extends Resource implements InputEventSink {
     private _pointerY = 0;
     private _wheelDelta = 0;
     private _focused = true;
+    private _pointerClaimed = false;
+    private readonly focusLossReleases = new Set<InputEvent>();
 
     private inputMap: InputMap | undefined;
     private boundActions: readonly InputMapAction[] | undefined;
@@ -91,6 +101,9 @@ export class Input extends Resource implements InputEventSink {
     private readonly actionsHeld: boolean[] = [];
     private readonly actionsPressed: boolean[] = [];
     private readonly actionsReleased: boolean[] = [];
+    private readonly keyActionsHeld: boolean[] = [];
+    private readonly keyActionsPressed: boolean[] = [];
+    private readonly keyActionsReleased: boolean[] = [];
     private readonly actionsByKey = new Map<Key, InputAction[]>();
     private readonly actionsByButton: InputAction[][] = POINTER_BUTTONS.map(() => []);
 
@@ -107,11 +120,23 @@ export class Input extends Resource implements InputEventSink {
     }
 
     public get wheelDelta(): number {
-        return this._wheelDelta;
+        return this._pointerClaimed ? NO_WHEEL_DELTA : this._wheelDelta;
     }
 
     public get focused(): boolean {
         return this._focused;
+    }
+
+    public get pointerClaimed(): boolean {
+        return this._pointerClaimed;
+    }
+
+    public claimPointer(): void {
+        this._pointerClaimed = true;
+    }
+
+    public releasedByFocusLoss(event: InputEvent): boolean {
+        return this.focusLossReleases.has(event);
     }
 
     public enqueue(event: InputEvent): void {
@@ -140,15 +165,15 @@ export class Input extends Resource implements InputEventSink {
     }
 
     public buttonHeld(button: PointerButton): boolean {
-        return (this.buttonsHeld & buttonBit(button)) !== NO_BUTTONS;
+        return !this._pointerClaimed && (this.buttonsHeld & buttonBit(button)) !== NO_BUTTONS;
     }
 
     public buttonPressed(button: PointerButton): boolean {
-        return (this.buttonsPressed & buttonBit(button)) !== NO_BUTTONS;
+        return !this._pointerClaimed && (this.buttonsPressed & buttonBit(button)) !== NO_BUTTONS;
     }
 
     public buttonReleased(button: PointerButton): boolean {
-        return (this.buttonsReleased & buttonBit(button)) !== NO_BUTTONS;
+        return !this._pointerClaimed && (this.buttonsReleased & buttonBit(button)) !== NO_BUTTONS;
     }
 
     public useInputMap(map: InputMap | undefined): void {
@@ -176,15 +201,18 @@ export class Input extends Resource implements InputEventSink {
     }
 
     public actionHeld(action: InputAction): boolean {
-        return this.actionsHeld[this.requireAction(action)];
+        const index = this.requireAction(action);
+        return this._pointerClaimed ? this.keyActionsHeld[index] : this.actionsHeld[index];
     }
 
     public actionPressed(action: InputAction): boolean {
-        return this.actionsPressed[this.requireAction(action)];
+        const index = this.requireAction(action);
+        return this._pointerClaimed ? this.keyActionsPressed[index] : this.actionsPressed[index];
     }
 
     public actionReleased(action: InputAction): boolean {
-        return this.actionsReleased[this.requireAction(action)];
+        const index = this.requireAction(action);
+        return this._pointerClaimed ? this.keyActionsReleased[index] : this.actionsReleased[index];
     }
 
     public actionName(action: InputAction): string {
@@ -228,6 +256,9 @@ export class Input extends Resource implements InputEventSink {
         this.actionsHeld[action] = this.computeHeld(compiled);
         this.actionsPressed[action] = false;
         this.actionsReleased[action] = false;
+        this.keyActionsHeld[action] = this.computeKeyHeld(compiled);
+        this.keyActionsPressed[action] = false;
+        this.keyActionsReleased[action] = false;
     }
 
     private listenToKey(key: Key, action: InputAction): void {
@@ -251,7 +282,10 @@ export class Input extends Resource implements InputEventSink {
     }
 
     private computeHeld(compiled: CompiledAction): boolean {
-        if ((compiled.buttonMask & this.buttonsHeld) !== NO_BUTTONS) return true;
+        return (compiled.buttonMask & this.buttonsHeld) !== NO_BUTTONS || this.computeKeyHeld(compiled);
+    }
+
+    private computeKeyHeld(compiled: CompiledAction): boolean {
         for (let i = 0; i < compiled.keys.length; i++) if (this.keysHeld.has(compiled.keys[i])) return true;
         for (let i = 0; i < compiled.chordsHeld.length; i++) if (compiled.chordsHeld[i]) return true;
         return false;
@@ -260,11 +294,9 @@ export class Input extends Resource implements InputEventSink {
     private refreshActions(actions: readonly InputAction[]): void {
         for (let i = 0; i < actions.length; i++) {
             const action = actions[i];
-            const held = this.computeHeld(this.compiledActions[action]);
-            if (held === this.actionsHeld[action]) continue;
-            this.actionsHeld[action] = held;
-            if (held) this.actionsPressed[action] = true;
-            else this.actionsReleased[action] = true;
+            const compiled = this.compiledActions[action];
+            refreshTransition(this.actionsHeld, this.actionsPressed, this.actionsReleased, action, this.computeHeld(compiled));
+            refreshTransition(this.keyActionsHeld, this.keyActionsPressed, this.keyActionsReleased, action, this.computeKeyHeld(compiled));
         }
     }
 
@@ -292,9 +324,13 @@ export class Input extends Resource implements InputEventSink {
         this.keysReleased.clear();
         this.buttonsPressed = NO_BUTTONS;
         this.buttonsReleased = NO_BUTTONS;
-        this._wheelDelta = 0;
+        this._wheelDelta = NO_WHEEL_DELTA;
+        this._pointerClaimed = false;
+        this.focusLossReleases.clear();
         this.actionsPressed.fill(false);
         this.actionsReleased.fill(false);
+        this.keyActionsPressed.fill(false);
+        this.keyActionsReleased.fill(false);
     }
 
     private apply(event: InputEvent): void {
@@ -395,12 +431,17 @@ export class Input extends Resource implements InputEventSink {
     private releaseEverything(): void {
         for (const key of [...this.keysHeld]) {
             this.releaseKey(key);
-            this.frameEvents.push({type: "keyUp", key, ...NO_MODIFIERS});
+            this.pushFocusLossRelease({type: "keyUp", key, ...NO_MODIFIERS});
         }
         for (const button of POINTER_BUTTONS) {
             if ((this.buttonsHeld & buttonBit(button)) === NO_BUTTONS) continue;
             this.releaseButton(button);
-            this.frameEvents.push({type: "pointerUp", button, x: this._pointerX, y: this._pointerY, ...NO_MODIFIERS});
+            this.pushFocusLossRelease({type: "pointerUp", button, x: this._pointerX, y: this._pointerY, ...NO_MODIFIERS});
         }
+    }
+
+    private pushFocusLossRelease(event: InputEvent): void {
+        this.focusLossReleases.add(event);
+        this.frameEvents.push(event);
     }
 }

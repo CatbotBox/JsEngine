@@ -63,6 +63,17 @@ const NUMBER_SIGN_ROWS = [
     "........",
 ];
 
+const HORIZONTAL_ELLIPSIS_ROWS = [
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "##.##.##",
+    "##.##.##",
+    "........",
+];
+
 const HOLLOW_BOX_ROWS = [
     "........",
     ".######.",
@@ -122,6 +133,10 @@ describe("ASCII_PIXEL_FONT", () => {
         expect(litShare(ASCII_PIXEL_FONT, "░".codePointAt(0)!)).toBe(QUARTER);
         expect(litShare(ASCII_PIXEL_FONT, "▒".codePointAt(0)!)).toBe(HALF);
         expect(litShare(ASCII_PIXEL_FONT, "▓".codePointAt(0)!)).toBe(THREE_QUARTERS);
+    });
+
+    test("the horizontal ellipsis is three dots on the baseline with every row doubled", () => {
+        expect(renderedRows(ASCII_PIXEL_FONT, "…".codePointAt(0)!)).toEqual(doubledRows(HORIZONTAL_ELLIPSIS_ROWS));
     });
 
     test("rows outside the glyph are blank", () => {

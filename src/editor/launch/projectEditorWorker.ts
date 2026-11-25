@@ -154,7 +154,8 @@ async function startProjectWorld(
     sceneView.attach({
         backend,
         ...(installed?.canvasPresenter === undefined ? {} : {canvasPresenter: installed.canvasPresenter}),
-        show: view => service.showSceneView(view),
+        open: (view, presenter) => service.showSceneView(view, presenter),
+        close: view => service.closeSceneView(view),
     });
 }
 

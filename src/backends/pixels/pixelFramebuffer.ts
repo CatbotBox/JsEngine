@@ -126,7 +126,19 @@ export class PixelFramebuffer extends Resource {
     public blendRgb(index: number, depth: number, rgb: number, alpha: number): void {
         if (alpha <= 0 || this._depth[index] < depth) return;
         this._depth[index] = depth;
-        this._pixels[index] = pixelOfRgb(alpha >= 1 ? rgb : mixRgb(rgbOfPixel(this._pixels[index]), rgb, alpha));
+        const below = this._pixels[index];
+        const belowAlpha = (below >>> PIXEL_ALPHA_SHIFT) / CHANNEL_MAX;
+        if (alpha >= 1 || belowAlpha >= 1) {
+            this._pixels[index] = pixelOfRgb(alpha >= 1 ? rgb : mixRgb(rgbOfPixel(below), rgb, alpha));
+            return;
+        }
+        const blendedAlpha = alpha + belowAlpha * (1 - alpha);
+        const blendedRgb = mixRgb(rgbOfPixel(below), rgb, alpha / blendedAlpha);
+        this._pixels[index] = (pixelOfRgb(blendedRgb) & PIXEL_RGB_BITS) | (clampToByte(blendedAlpha * CHANNEL_MAX) << PIXEL_ALPHA_SHIFT);
+    }
+
+    public alphaAt(x: number, y: number): number {
+        return this._pixels[y * this._widthPx + x] >>> PIXEL_ALPHA_SHIFT;
     }
 
     public toPixelFrame(): PixelFrame {

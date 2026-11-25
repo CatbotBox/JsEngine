@@ -1,5 +1,7 @@
 import type {Entity} from "../engine/core";
 import type {ComponentPersistence, NumberFieldOptions, PlainFieldKind, SceneJsonObject, SceneJsonValue, SceneLoadReport, SceneSaveReport} from "../engine/scene";
+import {GAME_VIEW_ID, isSceneViewId} from "./project/dockPanelIds";
+import type {EditorViewportId, SceneViewId} from "./project/dockPanelIds";
 
 export const EDITOR_MESSAGE_TYPE = "jsengine-editor";
 
@@ -15,9 +17,9 @@ export type EditorMode = "edit" | "play" | "paused";
 
 export const EDITOR_MODES: readonly EditorMode[] = ["edit", "play", "paused"];
 
-export type EditorView = "scene" | "game";
+export type EditorView = EditorViewportId;
 
-export const EDITOR_VIEWS: readonly EditorView[] = ["scene", "game"];
+export const GAME_VIEW = GAME_VIEW_ID;
 
 export type EditorProjection = "orthographic" | "perspective";
 
@@ -170,6 +172,7 @@ export interface PickEntitiesRequest {
 
 export interface SetEditorCameraRequest {
     readonly op: "setEditorCamera";
+    readonly view: SceneViewId;
     readonly position: EditorVec3;
     readonly rotation: EditorQuaternion;
     readonly fieldOfViewDegrees?: number;
@@ -556,6 +559,8 @@ export interface EditorViewInfo {
     readonly screenHeight: number;
     readonly camera: EditorCameraPose;
     readonly bounds: readonly EditorEntityBounds[];
+    readonly sceneViews: readonly SceneViewId[];
+    readonly presentedFrames?: number;
 }
 
 export interface SaveSceneResult {
@@ -731,7 +736,7 @@ function isEditorMode(value: unknown): value is EditorMode {
 }
 
 function isEditorView(value: unknown): value is EditorView {
-    return EDITOR_VIEWS.some(view => view === value);
+    return value === GAME_VIEW || isSceneViewId(value);
 }
 
 function isConsoleLevel(value: unknown): value is EditorConsoleLevel {
@@ -840,7 +845,8 @@ export function isEditorRequest(value: unknown): value is EditorRequest {
         case "pickEntities":
             return isFiniteNumber(value.x) && isFiniteNumber(value.y) && isEditorView(value.view);
         case "setEditorCamera":
-            return isFiniteTuple(value.position, VEC3_LENGTH)
+            return isSceneViewId(value.view)
+                && isFiniteTuple(value.position, VEC3_LENGTH)
                 && isFiniteTuple(value.rotation, QUATERNION_LENGTH)
                 && isAbsentOr(value.fieldOfViewDegrees, isFieldOfViewDegrees);
         case "getViewInfo":

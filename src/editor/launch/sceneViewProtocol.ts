@@ -4,53 +4,57 @@ import {isPixelFrame} from "../../backends/pixels/pixelFrame";
 import type {PixelFrame} from "../../backends/pixels/pixelFrame";
 import {isSurfaceSize} from "../../hosts/web/worldWorkerProtocol";
 import type {SurfaceSize} from "../../hosts/web/worldWorkerProtocol";
+import {isSceneViewId} from "../project/dockPanelIds";
+import type {SceneViewId} from "../project/dockPanelIds";
 
 export const SCENE_VIEW_MESSAGE_TYPE = "jsengine-scene-view";
 
 type SceneViewType = typeof SCENE_VIEW_MESSAGE_TYPE;
 
-export interface SceneViewOpenMessage {
+interface SceneViewMessage {
     readonly type: SceneViewType;
+    readonly view: SceneViewId;
+}
+
+export interface SceneViewOpenMessage extends SceneViewMessage {
     readonly kind: "open";
     readonly surface: SurfaceSize;
     readonly canvas?: OffscreenCanvas;
 }
 
-export interface SceneViewResizeMessage {
-    readonly type: SceneViewType;
+export interface SceneViewResizeMessage extends SceneViewMessage {
     readonly kind: "resize";
     readonly surface: SurfaceSize;
 }
 
-export interface SceneViewPresentedMessage {
-    readonly type: SceneViewType;
+export interface SceneViewPresentedMessage extends SceneViewMessage {
     readonly kind: "presented";
     readonly returnedBuffer?: ArrayBuffer;
 }
 
-export type SceneViewPageMessage = SceneViewOpenMessage | SceneViewResizeMessage | SceneViewPresentedMessage;
+export interface SceneViewCloseMessage extends SceneViewMessage {
+    readonly kind: "close";
+}
 
-export interface SceneViewCellFrameMessage {
-    readonly type: SceneViewType;
+export type SceneViewPageMessage = SceneViewOpenMessage | SceneViewResizeMessage | SceneViewPresentedMessage | SceneViewCloseMessage;
+
+export interface SceneViewCellFrameMessage extends SceneViewMessage {
     readonly kind: "frame";
     readonly frame: CellFrame;
 }
 
-export interface SceneViewPixelFrameMessage {
-    readonly type: SceneViewType;
+export interface SceneViewPixelFrameMessage extends SceneViewMessage {
     readonly kind: "pixelFrame";
     readonly frame: PixelFrame;
 }
 
-export interface SceneViewScreenUnitMessage {
-    readonly type: SceneViewType;
+export interface SceneViewScreenUnitMessage extends SceneViewMessage {
     readonly kind: "screenUnit";
     readonly pixelsPerScreenUnitX: number;
     readonly pixelsPerScreenUnitY: number;
 }
 
-export interface SceneViewErrorMessage {
-    readonly type: SceneViewType;
+export interface SceneViewErrorMessage extends SceneViewMessage {
     readonly kind: "error";
     readonly message: string;
 }
@@ -60,7 +64,7 @@ export type SceneViewWorkerMessage = SceneViewCellFrameMessage | SceneViewPixelF
 function sceneViewFields(value: unknown): Record<string, unknown> | undefined {
     if (typeof value !== "object" || value === null) return undefined;
     const fields = value as Record<string, unknown>;
-    return fields.type === SCENE_VIEW_MESSAGE_TYPE ? fields : undefined;
+    return fields.type === SCENE_VIEW_MESSAGE_TYPE && isSceneViewId(fields.view) ? fields : undefined;
 }
 
 function isOffscreenCanvas(value: unknown): value is OffscreenCanvas {
@@ -81,6 +85,8 @@ export function isSceneViewPageMessage(value: unknown): value is SceneViewPageMe
             return isSurfaceSize(fields.surface);
         case "presented":
             return fields.returnedBuffer === undefined || fields.returnedBuffer instanceof ArrayBuffer;
+        case "close":
+            return true;
         default:
             return false;
     }

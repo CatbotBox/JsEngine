@@ -3,12 +3,16 @@ import {startingStatus} from "../../hosts/web/worldWorkerPage";
 import type {GpuWorldDisplay, PageTransferable, WorldDisplay} from "../../hosts/web/worldWorkerPage";
 import {isWorldToPageMessage} from "../../hosts/web/worldWorkerProtocol";
 import type {SurfaceSize} from "../../hosts/web/worldWorkerProtocol";
+import type {SceneViewId} from "../project/dockPanelIds";
 import {isSceneViewWorkerMessage, SCENE_VIEW_MESSAGE_TYPE} from "./sceneViewProtocol";
 import type {SceneViewPageMessage} from "./sceneViewProtocol";
 
+type WorkerMessageListener = (event: {readonly data: unknown}) => void;
+
 export interface SceneViewWorker {
     postMessage(message: SceneViewPageMessage, transfer: PageTransferable[]): void;
-    addEventListener(type: "message", listener: (event: {readonly data: unknown}) => void): void;
+    addEventListener(type: "message", listener: WorkerMessageListener): void;
+    removeEventListener(type: "message", listener: WorkerMessageListener): void;
 }
 
 export interface SceneViewConnection {
@@ -16,8 +20,13 @@ export interface SceneViewConnection {
     close(): void;
 }
 
+export interface SceneViewConnectionOptions {
+    readonly view: SceneViewId;
+    readonly name: string;
+    readonly shown: boolean;
+}
+
 const READY_MESSAGE = "ready";
-const SHOWN = true;
 const NOTHING = 0;
 
 function isGpuDisplay(display: WorldDisplay): display is GpuWorldDisplay {
@@ -36,25 +45,27 @@ export function sceneViewFailureMessage(name: string, reason: string): string {
     return `The Scene view of ${name} could not start: ${reason}`;
 }
 
-export function connectSceneView(display: WorldDisplay, worker: SceneViewWorker, name: string): SceneViewConnection {
+export function connectSceneView(display: WorldDisplay, worker: SceneViewWorker, options: SceneViewConnectionOptions): SceneViewConnection {
+    const {view, name} = options;
     let closed = false;
-    let shown = SHOWN;
+    let shown = options.shown;
     const post = (message: SceneViewPageMessage, transfer: PageTransferable[] = []): void => {
         if (!closed) worker.postMessage(message, transfer);
     };
-    const acknowledge = (): void => post({type: SCENE_VIEW_MESSAGE_TYPE, kind: "presented"});
+    const acknowledge = (): void => post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "presented"});
     const acknowledgeReturningBufferOf = (frame: PixelFrame) => (): void => {
         const returnedBuffer = frame.rgba.buffer as ArrayBuffer;
-        post({type: SCENE_VIEW_MESSAGE_TYPE, kind: "presented", returnedBuffer}, [returnedBuffer]);
+        post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "presented", returnedBuffer}, [returnedBuffer]);
     };
 
-    worker.addEventListener("message", event => {
+    const receive = (event: {readonly data: unknown}): void => {
         const message = event.data;
         if (closed) return;
         if (!isSceneViewWorkerMessage(message)) {
             if (isWorldToPageMessage(message) && message.type === READY_MESSAGE) display.hideStatus();
             return;
         }
+        if (message.view !== view) return;
         switch (message.kind) {
             case "frame":
                 if ("presentCells" in display) display.presentCells(message.frame, acknowledge);
@@ -71,20 +82,21 @@ export function connectSceneView(display: WorldDisplay, worker: SceneViewWorker,
                 display.showError(sceneViewFailureMessage(name, message.message));
                 break;
         }
-    });
+    };
+    worker.addEventListener("message", receive);
 
     display.showStatus(startingStatus(name));
-    const surface = display.surfaceSize();
+    const shownSurface = (): SurfaceSize => {
+        const current = display.surfaceSize();
+        return shown ? current : emptySurfaceLike(current);
+    };
     if (isGpuDisplay(display)) {
         const canvas = display.transferCanvas();
-        post({type: SCENE_VIEW_MESSAGE_TYPE, kind: "open", surface, canvas}, [canvas]);
+        post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface: shownSurface(), canvas}, [canvas]);
     } else {
-        post({type: SCENE_VIEW_MESSAGE_TYPE, kind: "open", surface});
+        post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "open", surface: shownSurface()});
     }
-    const postSurface = (): void => {
-        const current = display.surfaceSize();
-        post({type: SCENE_VIEW_MESSAGE_TYPE, kind: "resize", surface: shown ? current : emptySurfaceLike(current)});
-    };
+    const postSurface = (): void => post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "resize", surface: shownSurface()});
     const stopWatchingResize = display.onResize(() => {
         if (shown) postSurface();
     });
@@ -96,8 +108,11 @@ export function connectSceneView(display: WorldDisplay, worker: SceneViewWorker,
             postSurface();
         },
         close: () => {
+            if (closed) return;
+            post({type: SCENE_VIEW_MESSAGE_TYPE, view, kind: "close"});
             closed = true;
             stopWatchingResize();
+            worker.removeEventListener("message", receive);
         },
     };
 }
