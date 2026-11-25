@@ -5,7 +5,7 @@ import {Input, inputMapOf, Key, NO_MODIFIERS} from "@jsengine/engine/input";
 import {GpuRenderBackend} from "@jsengine/engine/rendering";
 import {RenderMesh} from "@jsengine/engine/rendering/3d";
 import {LocalPosition} from "@jsengine/engine/translation";
-import {GpuMeshPassSettings, GpuShadowSettings} from "@jsengine/backends/gpu";
+import {GpuMeshPassSettings, GpuPostProcessSettings, GpuShadowSettings, REINHARD_TONE_MAPPING} from "@jsengine/backends/gpu";
 import {Demo3dConfig, GroundPlaneConfig} from "../../config";
 import {Demo3dGpuControlsSystem} from "./demo3dGpuControlsSystem";
 import {Demo3dGroundSystem, GROUND_ENTITY_NAME, groundPlaneMesh} from "./demo3dGroundSystem";
@@ -14,6 +14,7 @@ const GROUND_HALF_SIZE = 12;
 const GROUND_HEIGHT = -3.5;
 const GROUND_COLOR = 0x808070;
 const TUNED_STRENGTH = 0.4;
+const TUNED_EXPOSURE = 1.6;
 const STEPS_FOR_COMMANDS = 2;
 const UP: readonly number[] = [0, 1, 0];
 const VEC3_FLOATS = 3;
@@ -40,6 +41,7 @@ function demoWorld(gpuBackend: boolean): World {
         toggleTextureFiltering: {keys: [Key.M]},
         cycleSurfaceShader: {keys: [Key.O]},
         toggleShadows: {keys: [Key.U]},
+        togglePostProcessing: {keys: [Key.C]},
     }));
     return world;
 }
@@ -117,5 +119,31 @@ describe("Demo3dGpuControlsSystem shadow toggle", () => {
         step(world);
         tap(world, Key.U);
         expect(world.entityManager.getComponent<GpuShadowSettings>(settings, GpuShadowSettings)?.mapSize).toBe(new GpuShadowSettings().mapSize);
+    });
+});
+
+describe("Demo3dGpuControlsSystem post-processing toggle", () => {
+    test("the post-processing key takes GpuPostProcessSettings off the settings entity, and puts the same tuning back on the next press", () => {
+        const world = demoWorld(true);
+        const tuning = Object.assign(new GpuPostProcessSettings(), {exposure: TUNED_EXPOSURE, toneMapping: REINHARD_TONE_MAPPING});
+        const settings = world.entityManager.createEntity("settings", [new GpuMeshPassSettings(), new GpuShadowSettings(), tuning]);
+        world.getOrCreateSystem(Demo3dGpuControlsSystem);
+        step(world);
+        tap(world, Key.C);
+        expect(world.entityManager.getComponent(settings, GpuPostProcessSettings)).toBe(undefined);
+        expect(world.entityManager.getComponent(settings, GpuShadowSettings)).not.toBe(undefined);
+        tap(world, Key.C);
+        const restored = world.entityManager.getComponent<GpuPostProcessSettings>(settings, GpuPostProcessSettings);
+        expect([restored?.exposure, restored?.toneMapping]).toEqual([TUNED_EXPOSURE, REINHARD_TONE_MAPPING]);
+    });
+
+    test("pressed with no post-processing settings anywhere, the key adds default settings to the gpu settings entity", () => {
+        const world = demoWorld(true);
+        const settings = world.entityManager.createEntity("settings", [new GpuMeshPassSettings()]);
+        world.getOrCreateSystem(Demo3dGpuControlsSystem);
+        step(world);
+        tap(world, Key.C);
+        expect(world.entityManager.getComponent<GpuPostProcessSettings>(settings, GpuPostProcessSettings)?.bloomMipLevels).toBe(new GpuPostProcessSettings().bloomMipLevels);
+        expect(world.entityManager.getComponent(settings, GpuShadowSettings)).toBe(undefined);
     });
 });

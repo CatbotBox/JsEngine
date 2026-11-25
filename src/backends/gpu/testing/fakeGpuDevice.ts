@@ -48,7 +48,7 @@ export class FakeGpuError {
 }
 
 export class FakeGpuTextureView {
-    public constructor(public readonly texture: FakeGpuTexture) {
+    public constructor(public readonly texture: FakeGpuTexture, public readonly descriptor: GPUTextureViewDescriptor = {}) {
     }
 }
 
@@ -58,8 +58,8 @@ export class FakeGpuTexture {
     public constructor(public readonly descriptor: GPUTextureDescriptor) {
     }
 
-    public createView(): GPUTextureView {
-        return new FakeGpuTextureView(this) as unknown as GPUTextureView;
+    public createView(descriptor: GPUTextureViewDescriptor = {}): GPUTextureView {
+        return new FakeGpuTextureView(this, descriptor) as unknown as GPUTextureView;
     }
 
     public destroy(): undefined {

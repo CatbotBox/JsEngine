@@ -1,0 +1,37 @@
+{
+  "format": "jsengine-scene",
+  "version": 3,
+  "entities": [
+    {
+      "id": 1,
+      "name": "showcase rect light",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            -3.2,
+            1.2,
+            -3
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0.1221538856625557,
+            0.3939908742904663,
+            -0.05292097106575966,
+            0.9094223380088806
+          ]
+        },
+        "RectAreaLight": {
+          "range": 9,
+          "width": 2.5,
+          "height": 1.5,
+          "color": "#f4f0ff",
+          "intensity": 2,
+          "castsShadows": true
+        },
+        "LocalToWorld": {}
+      }
+    }
+  ]
+}

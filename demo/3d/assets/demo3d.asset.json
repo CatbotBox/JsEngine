@@ -126,6 +126,23 @@
       "heightUnits": -4.5,
       "color": "#8c8678"
     },
+    "showcaseLights": [
+      {
+        "path": "prefabs/lights/spot.prefab.json"
+      },
+      {
+        "path": "prefabs/lights/sphere.prefab.json"
+      },
+      {
+        "path": "prefabs/lights/tube.prefab.json"
+      },
+      {
+        "path": "prefabs/lights/rect.prefab.json"
+      },
+      {
+        "path": "prefabs/lights/hemisphere.prefab.json"
+      }
+    ],
     "hud": {
       "rateWindowMs": 500,
       "rateDecimals": 1,

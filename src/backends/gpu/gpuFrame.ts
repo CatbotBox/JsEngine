@@ -5,8 +5,13 @@ import {GPU_TEXTURE_USAGE} from "./gpuTypes";
 import type {GpuCanvasContext, GpuCanvasSurface, GpuDevice} from "./gpuTypes";
 import {GpuOverlayPass} from "./gpuOverlayPass";
 import {effectiveRenderScale, MIN_RENDER_SCALE, renderTargetPx, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
+import {bloomLevelCountFor, GpuHdrTargets} from "./gpuHdrTargets";
+import type {GpuHdrSceneComposer} from "./gpuHdrTargets";
+import {HDR_SCENE_FORMAT} from "./gpuSceneOutput";
+import {linearClearColorOf} from "./gpuColorSpace";
 
 export const DEPTH_FORMAT: GPUTextureFormat = "depth32float";
+export const COMPOSE_WITHOUT_HDR_SCENE = "GpuFrame.composeHdrScene needs beginHdrScene earlier in the same frame";
 const REVERSED_DEPTH_CLEAR = 0;
 const OPAQUE_CLEAR_ALPHA = 1;
 const CLEARED_CANVAS: GPUColor = {r: 0, g: 0, b: 0, a: OPAQUE_CLEAR_ALPHA};
@@ -27,6 +32,7 @@ interface SceneTargets {
     readonly widthPx: number;
     readonly heightPx: number;
     readonly sampleCount: number;
+    readonly colorFormat: GPUTextureFormat;
     readonly depth: GPUTexture;
     readonly depthView: GPUTextureView;
     readonly multisampled: GPUTexture | undefined;
@@ -39,7 +45,9 @@ export class GpuFrame {
     private encoder: GPUCommandEncoder | undefined;
     private canvasTexture: GPUTexture | undefined;
     private sceneDrawn = false;
+    private hdrSceneEncoded = false;
     private targets: SceneTargets | undefined;
+    private hdrTargets: GpuHdrTargets | undefined;
     private renderScale = MIN_RENDER_SCALE;
     private _framesInFlight = 0;
     private readonly presentedListeners = new Set<() => void>();
@@ -71,29 +79,33 @@ export class GpuFrame {
     }
 
     public beginScene(clearRgb: number, sampleCount: number, framebufferWidthPx: number, framebufferHeightPx: number, renderScale: number): GPURenderPassEncoder {
-        this.renderScale = renderScale;
-        if (this.sizeCanvasFor(framebufferWidthPx, framebufferHeightPx)) this.abandonFrame();
+        this.releaseHdrTargets();
+        this.sizeCanvas(framebufferWidthPx, framebufferHeightPx, renderScale);
         const canvasView = this.currentCanvasTexture().createView();
-        const targets = this.sceneTargets(this.canvas.width, this.canvas.height, sampleCount);
-        const multisampledView = targets.multisampledView;
-        const pass = this.currentEncoder().beginRenderPass({
-            label: "scene",
-            colorAttachments: [{
-                view: multisampledView ?? canvasView,
-                resolveTarget: multisampledView === undefined ? undefined : canvasView,
-                clearValue: clearColorOf(clearRgb),
-                loadOp: "clear",
-                storeOp: multisampledView === undefined ? "store" : "discard",
-            }],
-            depthStencilAttachment: {
-                view: targets.depthView,
-                depthClearValue: REVERSED_DEPTH_CLEAR,
-                depthLoadOp: "clear",
-                depthStoreOp: "discard",
-            },
-        });
+        const targets = this.sceneTargets(this.canvas.width, this.canvas.height, sampleCount, this.format);
+        const pass = this.beginScenePass(targets, canvasView, clearColorOf(clearRgb));
         this.sceneDrawn = true;
         return pass;
+    }
+
+    public beginHdrScene(
+        clearRgb: number, sampleCount: number, framebufferWidthPx: number, framebufferHeightPx: number, renderScale: number, requestedBloomLevels: number,
+    ): GPURenderPassEncoder {
+        this.sizeCanvas(framebufferWidthPx, framebufferHeightPx, renderScale);
+        const widthPx = this.canvas.width, heightPx = this.canvas.height;
+        const hdr = this.hdrTargets ??= new GpuHdrTargets(this.device);
+        hdr.ensure(widthPx, heightPx, bloomLevelCountFor(requestedBloomLevels, widthPx, heightPx));
+        const targets = this.sceneTargets(widthPx, heightPx, sampleCount, HDR_SCENE_FORMAT);
+        const pass = this.beginScenePass(targets, hdr.sceneView, linearClearColorOf(clearRgb));
+        this.hdrSceneEncoded = true;
+        return pass;
+    }
+
+    public composeHdrScene(composer: GpuHdrSceneComposer): void {
+        const hdr = this.hdrTargets;
+        if (!this.hdrSceneEncoded || hdr === undefined) throw new Error(COMPOSE_WITHOUT_HDR_SCENE);
+        composer.compose(this.currentEncoder(), hdr, this.currentCanvasTexture().createView(), this.format);
+        this.sceneDrawn = true;
     }
 
     public finish(frame: PixelFrame): void {
@@ -125,8 +137,39 @@ export class GpuFrame {
     public dispose(): void {
         this.abandonFrame();
         this.destroyTargets();
+        this.releaseHdrTargets();
         this.overlay.dispose();
         this.release();
+    }
+
+    private sizeCanvas(framebufferWidthPx: number, framebufferHeightPx: number, renderScale: number): void {
+        this.renderScale = renderScale;
+        if (this.sizeCanvasFor(framebufferWidthPx, framebufferHeightPx)) this.abandonFrame();
+    }
+
+    private beginScenePass(targets: SceneTargets, resolvedView: GPUTextureView, clearValue: GPUColor): GPURenderPassEncoder {
+        const multisampledView = targets.multisampledView;
+        return this.currentEncoder().beginRenderPass({
+            label: "scene",
+            colorAttachments: [{
+                view: multisampledView ?? resolvedView,
+                resolveTarget: multisampledView === undefined ? undefined : resolvedView,
+                clearValue,
+                loadOp: "clear",
+                storeOp: multisampledView === undefined ? "store" : "discard",
+            }],
+            depthStencilAttachment: {
+                view: targets.depthView,
+                depthClearValue: REVERSED_DEPTH_CLEAR,
+                depthLoadOp: "clear",
+                depthStoreOp: "discard",
+            },
+        });
+    }
+
+    private releaseHdrTargets(): void {
+        this.hdrTargets?.dispose();
+        this.hdrTargets = undefined;
     }
 
     private sizeCanvasFor(framebufferWidthPx: number, framebufferHeightPx: number): boolean {
@@ -150,19 +193,21 @@ export class GpuFrame {
         this.encoder = undefined;
         this.canvasTexture = undefined;
         this.sceneDrawn = false;
+        this.hdrSceneEncoded = false;
     }
 
-    private sceneTargets(widthPx: number, heightPx: number, sampleCount: number): SceneTargets {
+    private sceneTargets(widthPx: number, heightPx: number, sampleCount: number, colorFormat: GPUTextureFormat): SceneTargets {
         const current = this.targets;
-        if (current !== undefined && current.widthPx === widthPx && current.heightPx === heightPx && current.sampleCount === sampleCount) return current;
+        if (current !== undefined && current.widthPx === widthPx && current.heightPx === heightPx && current.sampleCount === sampleCount
+            && current.colorFormat === colorFormat) return current;
         this.destroyTargets();
         const size = {width: widthPx, height: heightPx};
         const depth = this.device.createTexture({label: "scene depth", size, format: DEPTH_FORMAT, sampleCount, usage: GPU_TEXTURE_USAGE.RENDER_ATTACHMENT});
         const multisampled = sampleCount > SINGLE_SAMPLE_COUNT
-            ? this.device.createTexture({label: "scene colour", size, format: this.format, sampleCount, usage: GPU_TEXTURE_USAGE.RENDER_ATTACHMENT})
+            ? this.device.createTexture({label: "scene colour", size, format: colorFormat, sampleCount, usage: GPU_TEXTURE_USAGE.RENDER_ATTACHMENT})
             : undefined;
         const targets: SceneTargets = {
-            widthPx, heightPx, sampleCount,
+            widthPx, heightPx, sampleCount, colorFormat,
             depth,
             depthView: depth.createView(),
             multisampled,

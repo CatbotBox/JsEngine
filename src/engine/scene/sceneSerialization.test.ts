@@ -33,6 +33,11 @@ import {Mesh} from "../rendering/3d/mesh";
 import {AmbientLight} from "../rendering/3d/lighting/ambientLight";
 import {DirectionalLight} from "../rendering/3d/lighting/directionalLight";
 import {PointLight} from "../rendering/3d/lighting/pointLight";
+import {SpotLight} from "../rendering/3d/lighting/spotLight";
+import {SphereAreaLight} from "../rendering/3d/lighting/sphereAreaLight";
+import {TubeAreaLight} from "../rendering/3d/lighting/tubeAreaLight";
+import {RectAreaLight} from "../rendering/3d/lighting/rectAreaLight";
+import {HemisphereLight} from "../rendering/3d/lighting/hemisphereLight";
 import {Lifetime} from "../motion/lifetime";
 import {Velocity} from "../motion/velocity";
 import {PanCamera} from "../cameraControllers/2d/panCamera";
@@ -165,9 +170,12 @@ function buildEveryComponentWorld(world: World, platform: MemoryPlatform): Every
     sunRotation.xyzw = Quaternions.eulerToQuat(Vec3.alloc(0.7, -0.6, 0));
     const sunAngles = new EulerAngles();
     sunAngles.radians = Vec3.alloc(0.7, -0.6, 0);
-    const sun = em.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalPosition(), sunRotation, new LocalToWorld(), sunAngles]);
+    const sun = em.createEntity("sun", [new DirectionalLight(0xFFF4E0, 0.9), new LocalPosition(), sunRotation, new LocalToWorld(), sunAngles, new HemisphereLight(0x9EC8FF, 0x5A4030, 0.4)]);
     const lampSprite = new Sprite(spritePatternImage(LAMP_PATTERN_ROWS, [new SpritePatternColor("#", LAMP_PATTERN_RGB)]));
-    em.createEntity("lamp", [new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld(), lampSprite]);
+    em.createEntity("lamp", [
+        new PointLight(14, 0x4FA3F7, 1.2), new LocalPosition(3, 2, -4), new LocalToWorld(), lampSprite,
+        new SpotLight(12, 0.25, 0.5, 0xFFD9A0, 2), new SphereAreaLight(8, 0.5, 0xFF8040, 1.5), new TubeAreaLight(9, 4, 0.125, 0x60D0FF, 1.25), new RectAreaLight(7, 3, 1.5, 0xF0F0FF, 0.75),
+    ]);
     const frameLoop = new FrameLoopSettings();
     frameLoop.renderRate = UNCAPPED_RENDER_RATE;
     frameLoop.maxCatchUpTicks = CATCH_UP_TICKS;

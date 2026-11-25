@@ -6,7 +6,7 @@ import {FLY_CAMERA_SCHEMA_ENTRY} from "@jsengine/engine/cameraControllers/3d";
 import {FRAME_LOOP_SETTINGS_SCHEMA_ENTRY} from "@jsengine/engine/core";
 import {INPUT_MAP_SCHEMA_ENTRY} from "@jsengine/engine/input";
 import {CAMERA_SCHEMA_ENTRY, HUD_ELEMENT_SCHEMA_ENTRY, RENDER_BOUNDS_SCHEMA_ENTRY, SCREEN_ANCHOR_SCHEMA_ENTRY, SHADER_ASSET_TYPE_ENTRY, TEXT_SPRITE_SCHEMA_ENTRY} from "@jsengine/engine/rendering";
-import {AMBIENT_LIGHT_SCHEMA_ENTRY, DIRECTIONAL_LIGHT_SCHEMA_ENTRY, FIELD_OF_VIEW_SCHEMA_ENTRY, MESH_ASSET_TYPE_ENTRY, MESH_RENDER_SETTINGS_SCHEMA_ENTRY, POINT_LIGHT_SCHEMA_ENTRY, RENDER_MESH_SCHEMA_ENTRY} from "@jsengine/engine/rendering/3d";
+import {AMBIENT_LIGHT_SCHEMA_ENTRY, DIRECTIONAL_LIGHT_SCHEMA_ENTRY, FIELD_OF_VIEW_SCHEMA_ENTRY, HEMISPHERE_LIGHT_SCHEMA_ENTRY, MESH_ASSET_TYPE_ENTRY, MESH_RENDER_SETTINGS_SCHEMA_ENTRY, POINT_LIGHT_SCHEMA_ENTRY, RECT_AREA_LIGHT_SCHEMA_ENTRY, RENDER_MESH_SCHEMA_ENTRY, SPHERE_AREA_LIGHT_SCHEMA_ENTRY, SPOT_LIGHT_SCHEMA_ENTRY, TUBE_AREA_LIGHT_SCHEMA_ENTRY} from "@jsengine/engine/rendering/3d";
 import {PREFAB_ASSET_TYPE_ENTRY, PREFAB_INSTANCE_SCHEMA_ENTRY} from "@jsengine/engine/scene";
 import {EULER_ANGLES_SCHEMA_ENTRY, LOCAL_POSITION_SCHEMA_ENTRY, LOCAL_ROTATION_SCHEMA_ENTRY, LOCAL_SCALE_SCHEMA_ENTRY, LOCAL_TO_WORLD_SCHEMA_ENTRY} from "@jsengine/engine/translation";
 
@@ -28,6 +28,11 @@ export const generatedSchemas: readonly SchemaEntry[] = [
     DIRECTIONAL_LIGHT_SCHEMA_ENTRY,
     POINT_LIGHT_SCHEMA_ENTRY,
     AMBIENT_LIGHT_SCHEMA_ENTRY,
+    SPOT_LIGHT_SCHEMA_ENTRY,
+    SPHERE_AREA_LIGHT_SCHEMA_ENTRY,
+    TUBE_AREA_LIGHT_SCHEMA_ENTRY,
+    RECT_AREA_LIGHT_SCHEMA_ENTRY,
+    HEMISPHERE_LIGHT_SCHEMA_ENTRY,
     PREFAB_INSTANCE_SCHEMA_ENTRY,
     LOCAL_TO_WORLD_SCHEMA_ENTRY,
     RENDER_BOUNDS_SCHEMA_ENTRY,
@@ -81,6 +86,7 @@ export const generatedSchemas: readonly SchemaEntry[] = [
             {key: "heightUnits", kind: "number"},
             {key: "color", kind: "rgb"},
         ]},
+        {key: "showcaseLights", kind: "list", element: {kind: "asset", assetType: "prefab"}},
         {key: "hud", kind: "struct", typeName: "Demo3dHudConfig", create: () => new Demo3dHudConfig(), fields: [
             {key: "rateWindowMs", kind: "number"},
             {key: "rateDecimals", kind: "integer"},

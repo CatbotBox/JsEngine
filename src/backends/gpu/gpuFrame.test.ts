@@ -2,7 +2,12 @@ import {describe, expect, test} from "../../engine/testing/harness";
 import {RGBA_BYTES_PER_PIXEL} from "../pixels/pixelFrame";
 import type {PixelFrame} from "../pixels/pixelFrame";
 import {MemoryPixelPresenter} from "../pixels/memoryPixelPresenter";
-import {clearColorOf, DEPTH_FORMAT, GpuFrame} from "./gpuFrame";
+import {clearColorOf, COMPOSE_WITHOUT_HDR_SCENE, DEPTH_FORMAT, GpuFrame} from "./gpuFrame";
+import {linearClearColorOf} from "./gpuColorSpace";
+import {HDR_SCENE_FORMAT} from "./gpuSceneOutput";
+import {BLOOM_LEVEL_LABEL, bloomLevelPx, HDR_SCENE_LABEL} from "./gpuHdrTargets";
+import type {GpuHdrSceneComposer, GpuHdrTargets} from "./gpuHdrTargets";
+import {GPU_TEXTURE_USAGE} from "./gpuTypes";
 import {GpuDeviceResource} from "./gpuDeviceResource";
 import {GpuCanvasPixelPresenter, MAX_GPU_FRAMES_IN_FLIGHT} from "./gpuCanvasPixelPresenter";
 import {MIN_RENDER_SCALE, MULTISAMPLE_COUNT, SINGLE_SAMPLE_COUNT} from "./gpuMeshPassSettings";
@@ -18,6 +23,46 @@ const BACKGROUND = 0x102030;
 const UNIT_X = 8, UNIT_Y = 16;
 const UNSCALED = MIN_RENDER_SCALE;
 const DEVICE_RENDER_SCALE = 2;
+const BLOOM_LEVELS = 3;
+const FEWER_BLOOM_LEVELS = 2;
+const NO_BLOOM = 0;
+const TINY_WIDTH = 4, TINY_HEIGHT = 2;
+const LEVELS_FITTING_TINY = 1;
+const MANY_BLOOM_LEVELS = 6;
+const COMPOSED_PASS_LABEL = "composed";
+
+interface Composition {
+    readonly targets: GpuHdrTargets;
+    readonly canvasView: GPUTextureView;
+    readonly canvasFormat: GPUTextureFormat;
+}
+
+class RecordingComposer implements GpuHdrSceneComposer {
+    public readonly compositions: Composition[] = [];
+
+    public compose(encoder: GPUCommandEncoder, targets: GpuHdrTargets, canvasView: GPUTextureView, canvasFormat: GPUTextureFormat): void {
+        this.compositions.push({targets, canvasView, canvasFormat});
+        encoder.beginRenderPass({label: COMPOSED_PASS_LABEL, colorAttachments: [{view: canvasView, loadOp: "clear", storeOp: "store"}]}).end();
+    }
+}
+
+function hdrFrame(frame: GpuFrame, composer: GpuHdrSceneComposer, widthPx: number = WIDTH, heightPx: number = HEIGHT, bloomLevels: number = BLOOM_LEVELS): void {
+    frame.beginHdrScene(BACKGROUND, MULTISAMPLE_COUNT, widthPx, heightPx, UNSCALED, bloomLevels).end();
+    frame.composeHdrScene(composer);
+    frame.finish(pixelFrame(widthPx, heightPx));
+}
+
+function hdrTextures(device: FakeGpuDevice): FakeGpuTexture[] {
+    return device.textures.filter(texture => texture.descriptor.label === HDR_SCENE_LABEL || texture.descriptor.label === BLOOM_LEVEL_LABEL);
+}
+
+function liveHdrSizes(device: FakeGpuDevice): GPUExtent3D[] {
+    return hdrTextures(device).filter(texture => !texture.destroyed).map(texture => texture.descriptor.size);
+}
+
+function chainSizes(widthPx: number, heightPx: number, levels: number): GPUExtent3D[] {
+    return [{width: widthPx, height: heightPx}, ...Array.from({length: levels}, (_, level) => ({width: bloomLevelPx(widthPx, level), height: bloomLevelPx(heightPx, level)}))];
+}
 
 interface Rig {
     readonly device: FakeGpuDevice;
@@ -140,6 +185,71 @@ describe("GpuFrame", () => {
         frame.beginScene(BACKGROUND, SINGLE_SAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED).end();
         frame.finish(pixelFrame());
         expect([canvas.width, canvas.height]).toEqual([WIDTH, HEIGHT]);
+    });
+
+    test("an HDR scene renders into a float target resolved from its multisamples, clears to the background in linear light, and is composed into the canvas before the overlay", () => {
+        const {device, context, frame} = rig();
+        const composer = new RecordingComposer();
+        hdrFrame(frame, composer);
+        const passes = device.submittedPasses;
+        expect(passes.map(pass => pass.descriptor.label)).toEqual(["scene", COMPOSED_PASS_LABEL, "overlay"]);
+        expect(device.queue.submissions.length).toBe(1);
+        const sceneColor = colorAttachment(passes[0]);
+        expect(sceneColor.clearValue).toEqual(linearClearColorOf(BACKGROUND));
+        expect([textureOf(sceneColor.view)?.descriptor.format, textureOf(sceneColor.view)?.descriptor.sampleCount, sceneColor.storeOp]).toEqual([HDR_SCENE_FORMAT, MULTISAMPLE_COUNT, "discard"]);
+        const resolved = textureOf(sceneColor.resolveTarget)!;
+        expect([resolved.descriptor.label, resolved.descriptor.format, resolved.descriptor.size, resolved.descriptor.usage])
+            .toEqual([HDR_SCENE_LABEL, HDR_SCENE_FORMAT, {width: WIDTH, height: HEIGHT}, GPU_TEXTURE_USAGE.RENDER_ATTACHMENT | GPU_TEXTURE_USAGE.TEXTURE_BINDING]);
+        const [composition] = composer.compositions;
+        expect([textureOf(composition.canvasView), composition.canvasFormat, composition.targets.sceneView]).toEqual([context.currentTextures[0], FORMAT, sceneColor.resolveTarget]);
+        expect(composition.targets.bloomLevelCount).toBe(BLOOM_LEVELS);
+        expect(liveHdrSizes(device)).toEqual(chainSizes(WIDTH, HEIGHT, BLOOM_LEVELS));
+        expect(colorAttachment(passes[2]).loadOp).toBe("load");
+        expect(overlayPipelineLabel(device, passes[2])).toBe("overlay blended");
+        expect(context.currentTextures.length).toBe(1);
+    });
+
+    test("a single-sample HDR scene draws straight into the float target", () => {
+        const {device, frame} = rig();
+        frame.beginHdrScene(BACKGROUND, SINGLE_SAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED, NO_BLOOM).end();
+        frame.composeHdrScene(new RecordingComposer());
+        frame.finish(pixelFrame());
+        const sceneColor = colorAttachment(device.submittedPasses[0]);
+        expect([textureOf(sceneColor.view)?.descriptor.label, sceneColor.resolveTarget, sceneColor.storeOp]).toEqual([HDR_SCENE_LABEL, undefined, "store"]);
+        expect(liveHdrSizes(device)).toEqual(chainSizes(WIDTH, HEIGHT, NO_BLOOM));
+    });
+
+    test("HDR targets are kept while the size and bloom levels hold, made again when either changes, capped by size, released by a display scene and by dispose", () => {
+        const {device, frame} = rig();
+        const composer = new RecordingComposer();
+        hdrFrame(frame, composer);
+        hdrFrame(frame, composer);
+        expect(hdrTextures(device).length).toBe(1 + BLOOM_LEVELS);
+        hdrFrame(frame, composer, WIDTH, HEIGHT, FEWER_BLOOM_LEVELS);
+        expect(hdrTextures(device).filter(texture => texture.descriptor.label === HDR_SCENE_LABEL).length).toBe(1);
+        expect(liveHdrSizes(device)).toEqual(chainSizes(WIDTH, HEIGHT, FEWER_BLOOM_LEVELS));
+        hdrFrame(frame, composer, RESIZED_WIDTH, RESIZED_HEIGHT, FEWER_BLOOM_LEVELS);
+        expect(liveHdrSizes(device)).toEqual(chainSizes(RESIZED_WIDTH, RESIZED_HEIGHT, FEWER_BLOOM_LEVELS));
+        hdrFrame(frame, composer, TINY_WIDTH, TINY_HEIGHT, MANY_BLOOM_LEVELS);
+        expect(liveHdrSizes(device)).toEqual(chainSizes(TINY_WIDTH, TINY_HEIGHT, LEVELS_FITTING_TINY));
+        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, TINY_WIDTH, TINY_HEIGHT, UNSCALED).end();
+        frame.finish(pixelFrame(TINY_WIDTH, TINY_HEIGHT));
+        expect(liveHdrSizes(device)).toEqual([]);
+        expect(device.liveTextures().map(texture => texture.descriptor.format).sort()).toEqual([FORMAT, DEPTH_FORMAT, OVERLAY_TEXTURE_FORMAT].sort());
+        hdrFrame(frame, composer);
+        frame.dispose();
+        expect(device.liveTextures().length).toBe(0);
+    });
+
+    test("composing needs an HDR scene begun in the same frame", () => {
+        const {frame} = rig();
+        const composer = new RecordingComposer();
+        expect(() => frame.composeHdrScene(composer)).toThrow(COMPOSE_WITHOUT_HDR_SCENE);
+        hdrFrame(frame, composer);
+        expect(() => frame.composeHdrScene(composer)).toThrow(COMPOSE_WITHOUT_HDR_SCENE);
+        frame.beginScene(BACKGROUND, MULTISAMPLE_COUNT, WIDTH, HEIGHT, UNSCALED).end();
+        expect(() => frame.composeHdrScene(composer)).toThrow(COMPOSE_WITHOUT_HDR_SCENE);
+        expect(composer.compositions.length).toBe(1);
     });
 
     test("an empty frame submits nothing", () => {

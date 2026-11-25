@@ -12,6 +12,11 @@ const NEAR_MARGIN_RADII = 0.01;
 const AFFINE_W = 1;
 const RADIUS_QUANTUM_BITS = 8;
 
+export const BASIS_RIGHT_OFFSET = 0;
+export const BASIS_UP_OFFSET = 3;
+export const BASIS_FORWARD_OFFSET = 6;
+export const BASIS_FLOATS = 9;
+
 export interface GpuShadowView {
     readonly cameraMatrix: ArrayLike<number>;
     readonly fieldOfViewRadians: number | undefined;
@@ -39,6 +44,7 @@ export class GpuShadowFit {
 
     private readonly camera = new Float64Array(MAT4_FLOATS);
     private readonly worldToLight = new Float64Array(MAT4_FLOATS);
+    private readonly basis = new Float64Array(BASIS_FLOATS);
     private viewCenterDepth = 0;
     private sphereNearZ = 0;
     private rightX = 0;
@@ -158,25 +164,39 @@ export class GpuShadowFit {
     }
 
     private chooseLightBasis(forwardX: number, forwardY: number, forwardZ: number): void {
-        const upReferenceIsY = Math.abs(forwardY) <= UP_REFERENCE_MAX_COSINE;
-        const referenceY = upReferenceIsY ? 1 : 0, referenceZ = upReferenceIsY ? 0 : 1;
-        let rightX = referenceY * forwardZ - referenceZ * forwardY;
-        let rightY = referenceZ * forwardX;
-        let rightZ = -referenceY * forwardX;
-        const rightLength = Math.hypot(rightX, rightY, rightZ);
-        rightX /= rightLength;
-        rightY /= rightLength;
-        rightZ /= rightLength;
-        this.rightX = rightX;
-        this.rightY = rightY;
-        this.rightZ = rightZ;
-        this.upX = forwardY * rightZ - forwardZ * rightY;
-        this.upY = forwardZ * rightX - forwardX * rightZ;
-        this.upZ = forwardX * rightY - forwardY * rightX;
+        const basis = this.basis;
+        writeLightBasis(basis, forwardX, forwardY, forwardZ);
+        this.rightX = basis[BASIS_RIGHT_OFFSET];
+        this.rightY = basis[BASIS_RIGHT_OFFSET + 1];
+        this.rightZ = basis[BASIS_RIGHT_OFFSET + 2];
+        this.upX = basis[BASIS_UP_OFFSET];
+        this.upY = basis[BASIS_UP_OFFSET + 1];
+        this.upZ = basis[BASIS_UP_OFFSET + 2];
         this.forwardX = forwardX;
         this.forwardY = forwardY;
         this.forwardZ = forwardZ;
     }
+}
+
+export function writeLightBasis(out: Float64Array, forwardX: number, forwardY: number, forwardZ: number): void {
+    const upReferenceIsY = Math.abs(forwardY) <= UP_REFERENCE_MAX_COSINE;
+    const referenceY = upReferenceIsY ? 1 : 0, referenceZ = upReferenceIsY ? 0 : 1;
+    let rightX = referenceY * forwardZ - referenceZ * forwardY;
+    let rightY = referenceZ * forwardX;
+    let rightZ = -referenceY * forwardX;
+    const rightLength = Math.hypot(rightX, rightY, rightZ);
+    rightX /= rightLength;
+    rightY /= rightLength;
+    rightZ /= rightLength;
+    out[BASIS_RIGHT_OFFSET] = rightX;
+    out[BASIS_RIGHT_OFFSET + 1] = rightY;
+    out[BASIS_RIGHT_OFFSET + 2] = rightZ;
+    out[BASIS_UP_OFFSET] = forwardY * rightZ - forwardZ * rightY;
+    out[BASIS_UP_OFFSET + 1] = forwardZ * rightX - forwardX * rightZ;
+    out[BASIS_UP_OFFSET + 2] = forwardX * rightY - forwardY * rightX;
+    out[BASIS_FORWARD_OFFSET] = forwardX;
+    out[BASIS_FORWARD_OFFSET + 1] = forwardY;
+    out[BASIS_FORWARD_OFFSET + 2] = forwardZ;
 }
 
 function stableRadiusOf(radius: number): number {
@@ -184,7 +204,7 @@ function stableRadiusOf(radius: number): number {
     return Math.ceil(radius / step) * step;
 }
 
-function largestAxisScaleOf(m: Float64Array): number {
+export function largestAxisScaleOf(m: Float64Array): number {
     return Math.max(
         Math.hypot(m[MAT4_ELEMENT.m00], m[MAT4_ELEMENT.m10], m[MAT4_ELEMENT.m20]),
         Math.hypot(m[MAT4_ELEMENT.m01], m[MAT4_ELEMENT.m11], m[MAT4_ELEMENT.m21]),
@@ -192,7 +212,7 @@ function largestAxisScaleOf(m: Float64Array): number {
     );
 }
 
-function multiplyInto(out: Float32Array, a: Float64Array, b: Float64Array): void {
+export function multiplyInto(out: Float32Array, a: Float64Array, b: Float64Array): void {
     for (let column = 0; column < MAT4_SIDE; column++) {
         for (let row = 0; row < MAT4_SIDE; row++) {
             let sum = 0;

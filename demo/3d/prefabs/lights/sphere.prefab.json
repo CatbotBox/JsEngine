@@ -1,0 +1,36 @@
+{
+  "format": "jsengine-scene",
+  "version": 3,
+  "entities": [
+    {
+      "id": 1,
+      "name": "showcase sphere light",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            2.2,
+            1.2,
+            -2.2
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "SphereAreaLight": {
+          "range": 7,
+          "radius": 0.35,
+          "color": "#ff8a3c",
+          "intensity": 2,
+          "castsShadows": true
+        },
+        "LocalToWorld": {}
+      }
+    }
+  ]
+}

@@ -245,6 +245,14 @@
         "buttons": []
       },
       {
+        "name": "togglePostProcessing",
+        "keys": [
+          "C"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
         "name": "toggleHalfBlock",
         "keys": [
           "B"
@@ -328,6 +336,14 @@
         "name": "toggleLamp",
         "keys": [
           "P"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "cycleShowcaseLight",
+        "keys": [
+          "Semicolon"
         ],
         "chords": [],
         "buttons": []

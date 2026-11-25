@@ -1,5 +1,5 @@
 recorded with bun 1.4.4
-demo/2d terminal cells main: 199 modules, 246655 bytes minified
+demo/2d terminal cells main: 199 modules, 246686 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/color.ts
   demo/2d/components.ts
@@ -230,7 +230,7 @@ demo/2d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web cells worker: 195 modules, 240322 bytes minified
+demo/2d web cells worker: 195 modules, 240353 bytes minified
   demo/2d/backend/cells/demo2dCellsControlsSystem.ts
   demo/2d/color.ts
   demo/2d/components.ts
@@ -444,7 +444,7 @@ demo/2d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web pixels worker: 196 modules, 239836 bytes minified
+demo/2d web pixels worker: 196 modules, 239867 bytes minified
   demo/2d/color.ts
   demo/2d/components.ts
   demo/2d/config.ts
@@ -659,7 +659,7 @@ demo/2d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/2d web gpu worker: 217 modules, 266566 bytes minified
+demo/2d web gpu worker: 225 modules, 290706 bytes minified
   demo/2d/color.ts
   demo/2d/components.ts
   demo/2d/config.ts
@@ -676,21 +676,28 @@ demo/2d web gpu worker: 217 modules, 266566 bytes minified
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts
   src/backends/gpu/gpuCanvasPixelPresenter.ts
+  src/backends/gpu/gpuColorSpace.ts
   src/backends/gpu/gpuDeviceResource.ts
   src/backends/gpu/gpuFrame.ts
+  src/backends/gpu/gpuHdrTargets.ts
   src/backends/gpu/gpuInstanceBatcher.ts
   src/backends/gpu/gpuLightPacking.ts
   src/backends/gpu/gpuMeshPacking.ts
   src/backends/gpu/gpuMeshPassSettings.ts
   src/backends/gpu/gpuOverlayPass.ts
   src/backends/gpu/gpuOverlayUploadPlan.ts
+  src/backends/gpu/gpuPostProcessSettings.ts
+  src/backends/gpu/gpuSceneOutput.ts
   src/backends/gpu/gpuShadowPacking.ts
   src/backends/gpu/gpuShadowPass.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
   src/backends/gpu/shaders/basicLitShader.ts
+  src/backends/gpu/shaders/colorSpaceShader.ts
   src/backends/gpu/shaders/overlayShader.ts
+  src/backends/gpu/shaders/postProcessLayout.ts
+  src/backends/gpu/shaders/postProcessShader.ts
   src/backends/gpu/shaders/shadowCasterShader.ts
   src/backends/gpu/shaders/wgsl.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
@@ -792,6 +799,7 @@ demo/2d web gpu worker: 217 modules, 266566 bytes minified
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
+  src/engine/rendering/3d/lighting/shapedLights.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
   src/engine/rendering/3d/software/rasterWorkerPool.ts
   src/engine/rendering/3d/software/textureStore.ts
@@ -877,7 +885,7 @@ demo/2d web gpu worker: 217 modules, 266566 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d terminal cells main: 224 modules, 316373 bytes minified
+demo/3d terminal cells main: 231 modules, 328849 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/config.ts
@@ -991,11 +999,18 @@ demo/3d terminal cells main: 224 modules, 316373 bytes minified
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/ambientLight.ts
   src/engine/rendering/3d/lighting/directionalLight.ts
+  src/engine/rendering/3d/lighting/hemisphereLight.ts
   src/engine/rendering/3d/lighting/light.ts
   src/engine/rendering/3d/lighting/pointLight.ts
+  src/engine/rendering/3d/lighting/rangedLight.ts
+  src/engine/rendering/3d/lighting/rectAreaLight.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/lighting/schemas.ts
+  src/engine/rendering/3d/lighting/shapedLights.ts
+  src/engine/rendering/3d/lighting/sphereAreaLight.ts
+  src/engine/rendering/3d/lighting/spotLight.ts
+  src/engine/rendering/3d/lighting/tubeAreaLight.ts
   src/engine/rendering/3d/lighting/vertexLighting.ts
   src/engine/rendering/3d/material.ts
   src/engine/rendering/3d/mesh.ts
@@ -1133,7 +1148,7 @@ demo/3d web cells page: 19 modules, 25065 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web cells worker: 220 modules, 309817 bytes minified
+demo/3d web cells worker: 227 modules, 322293 bytes minified
   demo/3d/backend/cells/demo3dCellsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/config.ts
@@ -1245,11 +1260,18 @@ demo/3d web cells worker: 220 modules, 309817 bytes minified
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/ambientLight.ts
   src/engine/rendering/3d/lighting/directionalLight.ts
+  src/engine/rendering/3d/lighting/hemisphereLight.ts
   src/engine/rendering/3d/lighting/light.ts
   src/engine/rendering/3d/lighting/pointLight.ts
+  src/engine/rendering/3d/lighting/rangedLight.ts
+  src/engine/rendering/3d/lighting/rectAreaLight.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/lighting/schemas.ts
+  src/engine/rendering/3d/lighting/shapedLights.ts
+  src/engine/rendering/3d/lighting/sphereAreaLight.ts
+  src/engine/rendering/3d/lighting/spotLight.ts
+  src/engine/rendering/3d/lighting/tubeAreaLight.ts
   src/engine/rendering/3d/lighting/vertexLighting.ts
   src/engine/rendering/3d/material.ts
   src/engine/rendering/3d/mesh.ts
@@ -1372,7 +1394,7 @@ demo/3d web pixels page: 17 modules, 17216 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web pixels worker: 221 modules, 310517 bytes minified
+demo/3d web pixels worker: 228 modules, 322993 bytes minified
   demo/3d/backend/pixels/demo3dPixelsControlsSystem.ts
   demo/3d/components.ts
   demo/3d/config.ts
@@ -1485,11 +1507,18 @@ demo/3d web pixels worker: 221 modules, 310517 bytes minified
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/ambientLight.ts
   src/engine/rendering/3d/lighting/directionalLight.ts
+  src/engine/rendering/3d/lighting/hemisphereLight.ts
   src/engine/rendering/3d/lighting/light.ts
   src/engine/rendering/3d/lighting/pointLight.ts
+  src/engine/rendering/3d/lighting/rangedLight.ts
+  src/engine/rendering/3d/lighting/rectAreaLight.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/lighting/schemas.ts
+  src/engine/rendering/3d/lighting/shapedLights.ts
+  src/engine/rendering/3d/lighting/sphereAreaLight.ts
+  src/engine/rendering/3d/lighting/spotLight.ts
+  src/engine/rendering/3d/lighting/tubeAreaLight.ts
   src/engine/rendering/3d/lighting/vertexLighting.ts
   src/engine/rendering/3d/material.ts
   src/engine/rendering/3d/mesh.ts
@@ -1612,7 +1641,7 @@ demo/3d web gpu page: 17 modules, 16756 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/3d web gpu worker: 244 modules, 347688 bytes minified
+demo/3d web gpu worker: 263 modules, 400452 bytes minified
   demo/3d/backend/gpu/demo3dGpuControlsSystem.ts
   demo/3d/backend/gpu/demo3dGroundSystem.ts
   demo/3d/backend/gpu/gpuSurfaceShaders.ts
@@ -1635,8 +1664,10 @@ demo/3d web gpu worker: 244 modules, 347688 bytes minified
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts
   src/backends/gpu/gpuCanvasPixelPresenter.ts
+  src/backends/gpu/gpuColorSpace.ts
   src/backends/gpu/gpuDeviceResource.ts
   src/backends/gpu/gpuFrame.ts
+  src/backends/gpu/gpuHdrTargets.ts
   src/backends/gpu/gpuInstanceBatcher.ts
   src/backends/gpu/gpuLightPacking.ts
   src/backends/gpu/gpuMaterialCache.ts
@@ -1649,18 +1680,28 @@ demo/3d web gpu worker: 244 modules, 347688 bytes minified
   src/backends/gpu/gpuOverlayPass.ts
   src/backends/gpu/gpuOverlayUploadPlan.ts
   src/backends/gpu/gpuPipelineCache.ts
+  src/backends/gpu/gpuPostProcessPass.ts
+  src/backends/gpu/gpuPostProcessPipelineCache.ts
+  src/backends/gpu/gpuPostProcessSettings.ts
+  src/backends/gpu/gpuSceneOutput.ts
   src/backends/gpu/gpuShaderLibrary.ts
   src/backends/gpu/gpuShadowFit.ts
+  src/backends/gpu/gpuShadowFrustum.ts
+  src/backends/gpu/gpuShadowMapArray.ts
   src/backends/gpu/gpuShadowPacking.ts
   src/backends/gpu/gpuShadowPass.ts
   src/backends/gpu/gpuShadowPipelineCache.ts
+  src/backends/gpu/gpuShadowSelection.ts
   src/backends/gpu/gpuShadowSettings.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
   src/backends/gpu/schemas.ts
   src/backends/gpu/shaders/basicLitShader.ts
+  src/backends/gpu/shaders/colorSpaceShader.ts
   src/backends/gpu/shaders/overlayShader.ts
+  src/backends/gpu/shaders/postProcessLayout.ts
+  src/backends/gpu/shaders/postProcessShader.ts
   src/backends/gpu/shaders/shadowCasterShader.ts
   src/backends/gpu/shaders/wgsl.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
@@ -1752,11 +1793,18 @@ demo/3d web gpu worker: 244 modules, 347688 bytes minified
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/ambientLight.ts
   src/engine/rendering/3d/lighting/directionalLight.ts
+  src/engine/rendering/3d/lighting/hemisphereLight.ts
   src/engine/rendering/3d/lighting/light.ts
   src/engine/rendering/3d/lighting/pointLight.ts
+  src/engine/rendering/3d/lighting/rangedLight.ts
+  src/engine/rendering/3d/lighting/rectAreaLight.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
   src/engine/rendering/3d/lighting/schemas.ts
+  src/engine/rendering/3d/lighting/shapedLights.ts
+  src/engine/rendering/3d/lighting/sphereAreaLight.ts
+  src/engine/rendering/3d/lighting/spotLight.ts
+  src/engine/rendering/3d/lighting/tubeAreaLight.ts
   src/engine/rendering/3d/material.ts
   src/engine/rendering/3d/mesh.ts
   src/engine/rendering/3d/meshAssetType.ts
@@ -1857,7 +1905,7 @@ demo/3d web gpu worker: 244 modules, 347688 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 203 modules, 264657 bytes minified
+demo/swarm terminal cells main: 203 modules, 264688 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2092,7 +2140,7 @@ demo/swarm web cells page: 19 modules, 25057 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 199 modules, 258337 bytes minified
+demo/swarm web cells worker: 199 modules, 258368 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2310,7 +2358,7 @@ demo/swarm web pixels page: 17 modules, 17208 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 201 modules, 258378 bytes minified
+demo/swarm web pixels worker: 201 modules, 258409 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2530,7 +2578,7 @@ demo/swarm web gpu page: 17 modules, 16748 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 223 modules, 285344 bytes minified
+demo/swarm web gpu worker: 231 modules, 309484 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2553,21 +2601,28 @@ demo/swarm web gpu worker: 223 modules, 285344 bytes minified
   src/backends/gpu/gpuBackend.ts
   src/backends/gpu/gpuCamera.ts
   src/backends/gpu/gpuCanvasPixelPresenter.ts
+  src/backends/gpu/gpuColorSpace.ts
   src/backends/gpu/gpuDeviceResource.ts
   src/backends/gpu/gpuFrame.ts
+  src/backends/gpu/gpuHdrTargets.ts
   src/backends/gpu/gpuInstanceBatcher.ts
   src/backends/gpu/gpuLightPacking.ts
   src/backends/gpu/gpuMeshPacking.ts
   src/backends/gpu/gpuMeshPassSettings.ts
   src/backends/gpu/gpuOverlayPass.ts
   src/backends/gpu/gpuOverlayUploadPlan.ts
+  src/backends/gpu/gpuPostProcessSettings.ts
+  src/backends/gpu/gpuSceneOutput.ts
   src/backends/gpu/gpuShadowPacking.ts
   src/backends/gpu/gpuShadowPass.ts
   src/backends/gpu/gpuSurfaceShader.ts
   src/backends/gpu/gpuTextureCache.ts
   src/backends/gpu/gpuTypes.ts
   src/backends/gpu/shaders/basicLitShader.ts
+  src/backends/gpu/shaders/colorSpaceShader.ts
   src/backends/gpu/shaders/overlayShader.ts
+  src/backends/gpu/shaders/postProcessLayout.ts
+  src/backends/gpu/shaders/postProcessShader.ts
   src/backends/gpu/shaders/shadowCasterShader.ts
   src/backends/gpu/shaders/wgsl.ts
   src/backends/pixels/2d/hudSpritePixelPassSystem.ts
@@ -2668,6 +2723,7 @@ demo/swarm web gpu worker: 223 modules, 285344 bytes minified
   src/engine/rendering/3d/fieldOfView.ts
   src/engine/rendering/3d/lighting/sceneLights.ts
   src/engine/rendering/3d/lighting/sceneLightsGatherSystem.ts
+  src/engine/rendering/3d/lighting/shapedLights.ts
   src/engine/rendering/3d/software/meshRasterizer.ts
   src/engine/rendering/3d/software/rasterWorkerPool.ts
   src/engine/rendering/3d/software/textureStore.ts

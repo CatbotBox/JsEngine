@@ -1,0 +1,37 @@
+{
+  "format": "jsengine-scene",
+  "version": 3,
+  "entities": [
+    {
+      "id": 1,
+      "name": "showcase tube light",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            2.2,
+            -1.8
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "TubeAreaLight": {
+          "range": 7,
+          "length": 4,
+          "radius": 0.06,
+          "color": "#6ad4ff",
+          "intensity": 1.8,
+          "castsShadows": true
+        },
+        "LocalToWorld": {}
+      }
+    }
+  ]
+}

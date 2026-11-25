@@ -9,7 +9,7 @@ import {Input} from "../src/engine/input";
 import {Ansi, AnsiCellPresenter} from "../src/hosts/terminal";
 import {TerminalInput} from "../src/hosts/terminalInput";
 import {Camera} from "../src/engine/rendering";
-import {FieldOfView, MeshRenderStats} from "../src/engine/rendering/3d";
+import {FieldOfView, LIGHT_KIND_RECT, LIGHT_KIND_SPHERE, LIGHT_KIND_SPOT, LIGHT_KIND_TUBE, MeshRenderStats, SceneLights} from "../src/engine/rendering/3d";
 import {LocalRotation} from "../src/engine/translation";
 import {Vec} from "../src/engine/math/types/vec";
 import {consoleOverride} from "../src/engine/debugging";
@@ -37,6 +37,12 @@ const KEY_RELEASE_WAIT_MS = 150;
 const BYTES_PER_MB = 1024 * 1024;
 const PROMPT_ROWS = 1;
 const MIN_SCENE_CELL_DIVISOR = 50;
+const SHOWCASE_LIGHT_KEY = ";";
+const SHOWCASE_SETTLE_STEPS = 2;
+const SHOWCASE_CYCLE: readonly string[] = ["spot", "sphere", "tube", "rect", "hemisphere", "none"];
+const SHOWCASE_KIND_NAMES: ReadonlyMap<number, string> = new Map([
+    [LIGHT_KIND_SPOT, "spot"], [LIGHT_KIND_SPHERE, "sphere"], [LIGHT_KIND_TUBE, "tube"], [LIGHT_KIND_RECT, "rect"],
+]);
 
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 
@@ -182,6 +188,19 @@ async function main(): Promise<void> {
     expect(pngs.length === 0 || inflateCalls >= pngs.length, `PNG textures inflated by the hand-written inflate (${inflateCalls} call(s), ${pngs.length} PNG(s))`);
     expect(sharedBuffersAllocated === 0, `no SharedArrayBuffer allocated: the raster stayed single-threaded (${sharedBuffersAllocated})`);
     expect(errors.length === 0, `no errors logged${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
+
+    const lights = world.resources.get(SceneLights);
+    const sceneLightKinds = Array.from(lights.kind.subarray(0, lights.count));
+    const showcase: string[] = [];
+    for (let press = 0; press < SHOWCASE_CYCLE.length; press++) {
+        await sleep(KEY_RELEASE_WAIT_MS);
+        gameTerminal.feed(SHOWCASE_LIGHT_KEY);
+        for (let step = 0; step < SHOWCASE_SETTLE_STEPS; step++) world.step(FRAME_MS);
+        const added = Array.from(lights.kind.subarray(0, lights.count)).filter(kind => !sceneLightKinds.includes(kind));
+        showcase.push(lights.hasHemisphere ? "hemisphere" : added.map(kind => SHOWCASE_KIND_NAMES.get(kind) ?? String(kind)).join("+") || "none");
+    }
+    expect(showcase.join(",") === SHOWCASE_CYCLE.join(","), `the showcase light key cycles ${showcase.join(" -> ")}`);
+    expect(errors.length === 0, `no errors logged while cycling showcase lights${errors.length > 0 ? ": " + errors.join(" | ") : ""}`);
 
     const cameraQuery = new EntityQuery(world, [Camera, FieldOfView, LocalRotation]);
     const cameraView = () => {

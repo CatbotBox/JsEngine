@@ -1,4 +1,4 @@
-import {EntityCommandBufferSystem, FrameLoopSettings, System} from "@jsengine/engine/core";
+import {EntityCommandBufferSystem, FrameLoopSettings, NULL_ENTITY, System} from "@jsengine/engine/core";
 import type {Component, ComponentCtor, EntityCommandBuffer, EntityQuery, World} from "@jsengine/engine/core";
 import {Input, resolveInputActions} from "@jsengine/engine/input";
 import type {InputAction, ResolvedInputActions} from "@jsengine/engine/input";
@@ -15,7 +15,7 @@ import {ModelGrid} from "./components";
 import {assetModelFiles, ModelCatalog} from "./modelCatalog";
 import type {CatalogModel} from "./modelCatalog";
 import {PlacedModels} from "./placedModels";
-import {Demo3dSession, sessionOf} from "./session";
+import {Demo3dSession, NO_SHOWCASE_LIGHT, sessionOf} from "./session";
 import {Demo3dConfig} from "./config";
 import {ENTITIES_INCLUDING_DISABLED, INCLUDING_DISABLED} from "./worldAccess";
 
@@ -52,6 +52,7 @@ const Demo3dAction = {
     CycleRenderPacing: "cycleRenderPacing",
     ToggleLights: "toggleLights",
     ToggleLamp: "toggleLamp",
+    CycleShowcaseLight: "cycleShowcaseLight",
     Quit: "quit",
 } as const;
 
@@ -142,6 +143,7 @@ export class Demo3dControlsSystem extends System {
             {action: actions.CycleRenderPacing, run: () => this.cycleRenderPacing()},
             {action: actions.ToggleLights, run: () => this.toggleLights()},
             {action: actions.ToggleLamp, run: () => this.toggleLamp()},
+            {action: actions.CycleShowcaseLight, run: () => this.cycleShowcaseLight()},
         ];
     }
 
@@ -310,6 +312,18 @@ export class Demo3dControlsSystem extends System {
         const session = sessionOf(this.world);
         session.lampOn = !session.lampOn;
         this.applyLightEnabledState(session);
+    }
+
+    private cycleShowcaseLight(): void {
+        const session = sessionOf(this.world);
+        const buffer = commandBufferOf(this.world);
+        if (session.showcaseLight !== NULL_ENTITY && this.world.entityManager.exists(session.showcaseLight)) buffer.destroyEntity(session.showcaseLight);
+        session.showcaseLight = NULL_ENTITY;
+        const prefabs = this.config().showcaseLights;
+        const next = session.showcaseLightIndex + NEXT_INDEX_STEP;
+        session.showcaseLightIndex = next < prefabs.length ? next : NO_SHOWCASE_LIGHT;
+        const prefab = prefabs[session.showcaseLightIndex];
+        if (prefab !== undefined) session.showcaseLight = requirePrefabSpawner(this.world).spawn(buffer, prefab).root;
     }
 
     private applyLightEnabledState(session: Demo3dSession): void {

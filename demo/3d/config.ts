@@ -70,5 +70,6 @@ export class Demo3dConfig extends Resource {
     public supersample: SupersamplePreset[] = [];
     public surfaceShaders: SurfaceShaderChoice[] = [];
     public groundPlane = new GroundPlaneConfig();
+    public showcaseLights: PrefabAsset[] = [];
     public hud = new Demo3dHudConfig();
 }

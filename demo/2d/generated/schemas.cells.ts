@@ -4,5 +4,5 @@ import {SPRITE_CELL_PASS_SETTINGS_SCHEMA_ENTRY} from "@jsengine/backends/cells/2
 
 export const generatedCellsSchemas: readonly SchemaEntry[] = [
     SPRITE_CELL_PASS_SETTINGS_SCHEMA_ENTRY,
-    {kind: "otherBackendTypes", names: ["GpuMeshPassSettings", "GpuShadowSettings", "GpuSurfaceShader", "MeshPixelPassSettings", "PixelRenderSettings", "SpritePixelPassSettings"]},
+    {kind: "otherBackendTypes", names: ["GpuMeshPassSettings", "GpuPostProcessSettings", "GpuShadowSettings", "GpuSurfaceShader", "MeshPixelPassSettings", "PixelRenderSettings", "SpritePixelPassSettings"]},
 ];

@@ -1,18 +1,23 @@
+import {MAT4_FLOATS} from "../../../engine/math/mat4Layout";
 import {GPU_SHADER_STAGE} from "../gpuTypes";
 import {FLOAT_BYTES, VEC4_FLOATS} from "../gpuLightPacking";
 import {MESH_POSITION_OFFSET, MESH_VERTEX_FLOATS} from "../gpuMeshPacking";
 import {INSTANCE_FLOATS, INSTANCE_MATRIX_OFFSET} from "../gpuInstanceBatcher";
 import {INSTANCE_MATRIX_COLUMNS, INSTANCE_MATRIX_FIRST_LOCATION, POSITION_LOCATION} from "./basicLitShader";
 
+const UNIFORM_BUFFER_OFFSET_ALIGNMENT_BYTES = 256;
+
 export const SHADOW_CASTER_SHADER_NAME = "shadow caster";
 export const SHADOW_CASTER_VERTEX_ENTRY_POINT = "casterVertexMain";
 export const SHADOW_CASTER_BIND_GROUP = 0;
 export const SHADOW_CASTER_UNIFORMS_BINDING = 0;
+export const SHADOW_CASTER_UNIFORM_BYTES = MAT4_FLOATS * FLOAT_BYTES;
+export const SHADOW_CASTER_UNIFORM_STRIDE_BYTES = UNIFORM_BUFFER_OFFSET_ALIGNMENT_BYTES;
 
 export const SHADOW_CASTER_BIND_GROUP_LAYOUT: GPUBindGroupLayoutDescriptor = {
     label: SHADOW_CASTER_SHADER_NAME,
     entries: [
-        {binding: SHADOW_CASTER_UNIFORMS_BINDING, visibility: GPU_SHADER_STAGE.VERTEX, buffer: {type: "uniform"}},
+        {binding: SHADOW_CASTER_UNIFORMS_BINDING, visibility: GPU_SHADER_STAGE.VERTEX, buffer: {type: "uniform", hasDynamicOffset: true, minBindingSize: SHADOW_CASTER_UNIFORM_BYTES}},
     ],
 };
 
