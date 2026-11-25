@@ -19,6 +19,8 @@ const ROWS_KEY = "rows";
 const PALETTE_KEY = "palette";
 const CHAR_KEY = "char";
 const RGB_KEY = "rgb";
+const FILE_TEXT_INDENT_SPACES = 2;
+const FILE_TEXT_END = "\n";
 
 export type SpritePatternErrorOf = (key: string, expectation: string, actual: unknown) => Error;
 
@@ -87,7 +89,15 @@ function fileError(path: string | undefined, key: string, expectation: string, a
     return new Error(`${fileLabel(path)}: ${key} must be ${expectation}, got ${describeJson(actual)}`);
 }
 
-export function parseSpritePatternFile(source: unknown, path?: string): SpritePatternSource {
+export function spritePatternFileJson(pattern: SpritePatternSource): SceneJsonObject {
+    return {format: SPRITE_PATTERN_FILE_FORMAT, version: SPRITE_PATTERN_FILE_VERSION, ...encodeSpritePatternJson(pattern)};
+}
+
+export function spritePatternFileText(document: SceneJsonObject): string {
+    return JSON.stringify(document, null, FILE_TEXT_INDENT_SPACES) + FILE_TEXT_END;
+}
+
+export function migrateSpritePatternJson(source: unknown, path?: string): SceneJsonObject {
     let value: unknown;
     try {
         value = typeof source === "string" ? JSON.parse(source) as unknown : source;
@@ -98,6 +108,10 @@ export function parseSpritePatternFile(source: unknown, path?: string): SpritePa
     if (value.format !== SPRITE_PATTERN_FILE_FORMAT) throw fileError(path, "format", JSON.stringify(SPRITE_PATTERN_FILE_FORMAT), value.format);
     const version = value.version;
     if (typeof version !== "number" || !Number.isSafeInteger(version)) throw fileError(path, "version", "a whole number", version);
-    const migrated = migrateDocumentJson(value, version, SPRITE_PATTERN_FILE_MIGRATIONS, fileLabel(path));
+    return migrateDocumentJson(value, version, SPRITE_PATTERN_FILE_MIGRATIONS, fileLabel(path));
+}
+
+export function parseSpritePatternFile(source: unknown, path?: string): SpritePatternSource {
+    const migrated = migrateSpritePatternJson(source, path);
     return decodeSpritePatternJson(migrated, (key, expectation, actual) => fileError(path, key, expectation, actual));
 }

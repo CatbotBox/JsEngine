@@ -1,6 +1,6 @@
 import type {CommandRegistry, RegisteredCommand} from "./commandRegistry";
 import {COMMAND_HOOK, COMMAND_PALETTE_HOOK, COMMAND_PALETTE_SEARCH_HOOK} from "../project/editorUiHooks";
-import {createElement} from "./dom";
+import {createElement, isDomNode, isHtmlElement} from "./dom";
 import {closePopupMenu} from "./popupMenu";
 
 export interface PaletteEntry {
@@ -130,10 +130,10 @@ export function showCommandPalette(document: Document, registry: CommandRegistry
         openPalettes.delete(document);
         palette.remove();
         document.removeEventListener("pointerdown", onOutside, true);
-        if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+        if (isHtmlElement(previousFocus) && previousFocus.isConnected) previousFocus.focus();
     };
     const onOutside = (event: Event): void => {
-        if (event.target instanceof Node && palette.contains(event.target)) return;
+        if (isDomNode(event.target) && palette.contains(event.target)) return;
         close();
     };
     const choose = (entry: PaletteEntry): void => {

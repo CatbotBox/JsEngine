@@ -10,7 +10,8 @@ import type {FieldEditor, FieldEditorServices} from "./fieldEditorBase";
 import {workspaceFieldServices} from "./fieldEditorServices";
 import {createFieldEditor} from "./fieldEditors";
 import {entityLabel} from "./fieldValueText";
-import type {InlineImageTarget} from "./imageExtraction";
+import type {ImageFieldTarget} from "./imageExtraction";
+import type {Command} from "./commandRegistry";
 import {fieldValuesOf, missingInSome, sharedBoolean, sharedComponents} from "./multiSelection";
 import type {SharedComponent} from "./multiSelection";
 import {isComponentOverridden, overriddenFieldKeys, pathWithinInstance} from "./prefabInstancePaths";
@@ -128,7 +129,7 @@ class ComponentView {
     private openMenu(event: MouseEvent): void {
         const resettable = this.schema !== undefined && requiredEntityFields(this.schema).length === 0;
         const target = {entities: this.entities, typeName: this.typeName, first: this.shared?.perEntity[0], resettable};
-        showCommandMenu(this.inspector.document, event.clientX, event.clientY, componentMenu(this.inspector.commands, target));
+        showCommandMenu(this.element.ownerDocument, event.clientX, event.clientY, componentMenu(this.inspector.commands, target));
     }
 }
 
@@ -158,7 +159,11 @@ export class InspectorView {
     public constructor(private readonly container: HTMLElement, public readonly workspace: EditorWorkspace, public readonly rotations: RotationEulerCache, public readonly commands: EditorCommands) {
         const document = container.ownerDocument;
         this.document = document;
-        this.fieldServices = {...workspaceFieldServices(workspace, rotations), extractInlineImage: target => this.extractInlineImage(target)};
+        this.fieldServices = {
+            ...workspaceFieldServices(workspace, rotations),
+            extractInlineImage: target => this.runFieldCommand(commands.component.extractImage, target),
+            inlinePatternFile: target => this.runFieldCommand(commands.component.inlinePattern, target),
+        };
         this.placeholder = createElement(document, "p", "inspector-placeholder", NO_SELECTION_TEXT);
         this.root = createElement(document, "div", "entity-inspector");
         const header = createElement(document, "header", "entity-header");
@@ -278,12 +283,12 @@ export class InspectorView {
 
     private showHeader(details: readonly EditorEntityDetails[], prefabPath: string | undefined): void {
         const enabled = sharedBoolean(details.map(entry => entry.enabled));
-        if (this.document.activeElement !== this.enabled) {
+        if (this.enabled.ownerDocument.activeElement !== this.enabled) {
             this.enabled.indeterminate = enabled === undefined;
             this.enabled.checked = enabled === true;
         }
         this.root.classList.toggle("disabled", enabled === false);
-        if (this.document.activeElement !== this.nameInput) {
+        if (this.nameInput.ownerDocument.activeElement !== this.nameInput) {
             const names = new Set(details.map(entry => entry.name));
             const single = details.length === 1 ? details[0] : undefined;
             this.nameInput.value = names.size === 1 ? [...names][0] ?? "" : "";
@@ -333,8 +338,7 @@ export class InspectorView {
         for (const entity of entities) void this.workspace.rename(entity, text.length === 0 ? null : text);
     }
 
-    private extractInlineImage(target: InlineImageTarget): void {
-        const command = this.commands.component.extractImage;
+    private runFieldCommand(command: Command<ImageFieldTarget>, target: ImageFieldTarget): void {
         if (command.runWith(target)) return;
         const reason = command.stateOf(target).reason;
         if (reason !== undefined) this.workspace.notice("warn", reason);
@@ -362,7 +366,7 @@ export class InspectorView {
             return;
         }
         if (performance.now() - this.popupClosedAtMs < POPUP_REOPEN_GUARD_MS) return;
-        const popup = new AddComponentPopup(this.document, () => this.workspace.schemas.values(), this.presentInAll(), {
+        const popup = new AddComponentPopup(this.addHost.ownerDocument, () => this.workspace.schemas.values(), this.presentInAll(), {
             choose: typeName => this.chooseComponent(typeName),
             closed: () => {
                 if (this.popup !== popup) return;

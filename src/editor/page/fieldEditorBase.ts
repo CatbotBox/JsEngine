@@ -4,7 +4,7 @@ import type {EditorEntitySummary, EditorFieldDescription, EditorFieldValue} from
 import {capturePointer, createElement} from "./dom";
 import {numberOfWire} from "./fieldValueText";
 import type {ParsedFieldText} from "./fieldValueText";
-import type {InlineImageTarget} from "./imageExtraction";
+import type {ImageFieldTarget} from "./imageExtraction";
 import {LatestOnly} from "./latestOnly";
 import {fieldValuesEqual} from "./multiSelection";
 import type {ProjectFileKind} from "./projectFiles";
@@ -46,7 +46,9 @@ export interface FieldEditorServices {
 
     isReadOnly(): boolean;
 
-    extractInlineImage?(target: InlineImageTarget): void;
+    extractInlineImage?(target: ImageFieldTarget): void;
+
+    inlinePatternFile?(target: ImageFieldTarget): void;
 }
 
 export interface FieldEditorContext {
@@ -380,7 +382,7 @@ export abstract class FieldEditorBase implements FieldEditor {
     }
 
     protected hasFocus(): boolean {
-        const active = this.document.activeElement;
+        const active = this.element.ownerDocument.activeElement;
         return active !== null && this.element.contains(active);
     }
 

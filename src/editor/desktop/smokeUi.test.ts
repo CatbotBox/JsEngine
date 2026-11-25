@@ -60,8 +60,11 @@ class FakeDocument {
         return this.bySelector.get(selector) ?? [];
     }
 
-    public elementFromPoint(): FakeElement | null {
-        return this.hit;
+    public elementFromPoint(x: number, y: number): FakeElement | null {
+        return this.hit ?? [...this.bySelector.values()].flat().find(element => {
+            const bounds = element.bounds;
+            return x >= bounds.left && x < bounds.left + bounds.width && y >= bounds.top && y < bounds.top + bounds.height;
+        }) ?? null;
     }
 }
 
@@ -174,6 +177,47 @@ describe("SmokeUi clicks", () => {
         const hidden = fixture();
         button(hidden.document).visible = false;
         expect(await failureOf(hidden.ui.click(BUTTON, "Save"))).toBe(`timed out after ${WAIT_TIMEOUT_MS} ms waiting for Save to be clickable: no visible element matches`);
+    });
+});
+
+describe("SmokeUi drags", () => {
+    test("a drag goes from the centre of one element to the centre of another, scaled by the page zoom", async () => {
+        const {document, page, ui} = fixture();
+        document.bySelector.set(".tab", [new FakeElement("tab", "Console", {left: 0, top: 0, width: 20, height: 10})]);
+        document.bySelector.set(".target", [new FakeElement("target", "Hierarchy", {left: 100, top: 40, width: 20, height: 10})]);
+        page.zoom = 2;
+        await ui.drag(".tab", ".target", "the tab");
+        const points = page.sent.map(event => [event.type, "x" in event ? event.x : undefined, "y" in event ? event.y : undefined]);
+        expect(points[0]).toEqual(["mouseMove", 20, 10]);
+        expect(points[1]).toEqual(["mouseDown", 20, 10]);
+        expect(points[points.length - 1]).toEqual(["mouseUp", 220, 90]);
+    });
+
+    test("a drag whose end cannot be reached sends nothing", async () => {
+        const {document, page, ui} = fixture();
+        document.bySelector.set(".tab", [new FakeElement("tab", "Console", {left: 0, top: 0, width: 20, height: 10})]);
+        expect(await failureOf(ui.drag(".tab", ".missing", "the tab"))).toBe(`timed out after ${WAIT_TIMEOUT_MS} ms waiting for the end of the tab to be clickable: no visible element matches`);
+        expect(page.sent).toEqual([]);
+    });
+
+    test("a drag out of the window ends past its left edge, level with where it started", async () => {
+        const {document, page, ui} = fixture();
+        document.bySelector.set(".tab", [new FakeElement("tab", "Console", {left: 0, top: 0, width: 20, height: 10})]);
+        page.zoom = 2;
+        await ui.dragOutside(".tab", "the tab");
+        const points = page.sent.map(event => [event.type, "x" in event ? event.x : undefined, "y" in event ? event.y : undefined]);
+        expect(points[1]).toEqual(["mouseDown", 20, 10]);
+        const [type, x, y] = points[points.length - 1];
+        expect([type, (x as number) < 0, y]).toEqual(["mouseUp", true, 10]);
+    });
+});
+
+describe("SmokeUi on another window", () => {
+    test("another window's page shares the flow's clock and time budget", async () => {
+        const {clock, ui} = fixture();
+        const other = new FakePage(new FakeDocument());
+        expect(await failureOf(ui.onPage(other).waitForVisible(".missing", "the floating panel"))).toBe(`timed out after ${WAIT_TIMEOUT_MS} ms waiting for the floating panel to be visible`);
+        expect(clock.nowMs).toBe(WAIT_TIMEOUT_MS);
     });
 });
 

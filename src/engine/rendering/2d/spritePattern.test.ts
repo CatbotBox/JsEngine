@@ -5,7 +5,14 @@ import {platformSceneAssetLoader} from "../../scene/sceneAssets";
 import {SpriteImage} from "./spriteImage";
 import {SPRITE_IMAGE_ASSET_TYPE} from "./spriteImageAssetType";
 import {SpritePatternColor, spritePatternImage} from "./spritePattern";
-import {parseSpritePatternFile, SPRITE_PATTERN_FILE_FORMAT, SPRITE_PATTERN_FILE_SUFFIX, SPRITE_PATTERN_FILE_VERSION} from "./spritePatternFile";
+import {
+    parseSpritePatternFile,
+    SPRITE_PATTERN_FILE_FORMAT,
+    SPRITE_PATTERN_FILE_SUFFIX,
+    SPRITE_PATTERN_FILE_VERSION,
+    spritePatternFileJson,
+    spritePatternFileText,
+} from "./spritePatternFile";
 
 const SHIP_ROWS = ["  #  ", " #o# ", "#####", "#   #"];
 const HULL_RGB = 0x40E0FF;
@@ -61,6 +68,14 @@ describe("sprite pattern files", () => {
         expect(pattern.rows).toEqual(SHIP_ROWS);
         expect(pattern.palette).toEqual(colors(["#", HULL_RGB], ["o", COCKPIT_RGB]));
         expect(parseSpritePatternFile(patternFile({rows: [], palette: []})).rows).toEqual([]);
+    });
+
+    test("a pattern written as a file reads back to the same rows and palette", () => {
+        const pattern = parseSpritePatternFile(SHIP_FILE_TEXT, PATTERN_PATH);
+        const text = spritePatternFileText(spritePatternFileJson(pattern));
+        expect(JSON.parse(text)).toEqual(JSON.parse(SHIP_FILE_TEXT));
+        expect(text.endsWith("}\n")).toBe(true);
+        expect(parseSpritePatternFile(text, PATTERN_PATH)).toEqual(pattern);
     });
 
     test("a malformed pattern file throws naming the file and the key at fault", () => {

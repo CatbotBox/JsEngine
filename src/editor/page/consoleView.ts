@@ -167,7 +167,7 @@ export class ConsoleView {
         row.stack.setAttribute(CONSOLE_STACK_HOOK, "");
         element.append(row.expander, row.time, row.text, row.repeat, row.stack);
         element.addEventListener("click", () => {
-            if (row.shown?.stack === undefined || document.getSelection()?.isCollapsed === false) return;
+            if (row.shown?.stack === undefined || element.ownerDocument.getSelection()?.isCollapsed === false) return;
             this.toggleStack(key);
         });
         this.rows.set(key, row);

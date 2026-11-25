@@ -1,6 +1,6 @@
 import {describe, expect, test} from "../../engine/testing/harness";
 import {WINDOW_ZOOM_PATH, ZOOM_FACTORS, zoomSettingsText} from "../project/windowZoom";
-import {uiScaleChoices, windowUiScale} from "./uiScale";
+import {appliedPageUiScale, applyPageUiScale, uiScaleChoices, windowUiScale} from "./uiScale";
 import type {UiScaleFetch, UiScaleResponse} from "./uiScale";
 
 const HTML_FALLBACK = "<!doctype html><title>editor</title>";
@@ -46,5 +46,21 @@ describe("UI scale", () => {
         let refused: unknown;
         await scale?.set(2).catch(error => refused = error);
         expect(refused instanceof Error).toBe(true);
+    });
+
+    test("the page scale applied to one root reads back, so a floating window can copy it", () => {
+        const properties = new Map<string, string>();
+        const root = {
+            style: {
+                getPropertyValue: (name: string) => properties.get(name) ?? "",
+                setProperty: (name: string, value: string) => properties.set(name, value),
+                removeProperty: (name: string) => properties.delete(name),
+            },
+        } as unknown as HTMLElement;
+        expect(appliedPageUiScale(root)).toBe(1);
+        applyPageUiScale(root, 1.25);
+        expect(appliedPageUiScale(root)).toBe(1.25);
+        applyPageUiScale(root, 1);
+        expect([appliedPageUiScale(root), properties.size]).toEqual([1, 0]);
     });
 });

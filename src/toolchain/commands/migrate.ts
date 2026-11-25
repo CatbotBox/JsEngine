@@ -6,7 +6,7 @@ import type {MigratedDocument} from "../projectMigration";
 import {PROJECT_OPTION} from "../targets";
 import type {CommandResult} from "./command";
 
-const UP_TO_DATE_TEXT = "every scene, prefab and data asset is at the current version";
+const UP_TO_DATE_TEXT = "every scene, prefab, data asset and sprite pattern is at the current version";
 
 const OPTIONS = {
     project: PROJECT_OPTION,

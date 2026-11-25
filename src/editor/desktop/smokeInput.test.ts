@@ -1,5 +1,5 @@
 import {describe, expect, test} from "../../engine/testing/harness";
-import {keyEventsOfChord, mouseEventOfHover, mouseEventsOfClick} from "./smokeInput";
+import {keyEventsOfChord, mouseEventOfHover, mouseEventsOfClick, mouseEventsOfDrag} from "./smokeInput";
 
 describe("keyEventsOfChord", () => {
     test("a shortcut presses its modifiers with the key and types nothing", () => {
@@ -42,5 +42,14 @@ describe("mouse events", () => {
 
     test("a hover only moves", () => {
         expect(mouseEventOfHover(3.5, 4.2)).toEqual({type: "mouseMove", x: 4, y: 4, button: "left", clickCount: 0, modifiers: []});
+    });
+
+    test("a drag presses at the start, moves in steps with the left button held, and releases at the end", () => {
+        const events = mouseEventsOfDrag(10, 20, 90, 60);
+        expect(events.map(event => event.type)).toEqual(["mouseMove", "mouseDown", ...Array.from({length: 8}, () => "mouseMove"), "mouseUp"]);
+        expect(events[1]).toEqual({type: "mouseDown", x: 10, y: 20, button: "left", clickCount: 1, modifiers: []});
+        expect(events[2]).toEqual({type: "mouseMove", x: 20, y: 25, button: "left", clickCount: 0, modifiers: ["leftbuttondown"]});
+        expect(events[events.length - 2]).toEqual({type: "mouseMove", x: 90, y: 60, button: "left", clickCount: 0, modifiers: ["leftbuttondown"]});
+        expect(events[events.length - 1]).toEqual({type: "mouseUp", x: 90, y: 60, button: "left", clickCount: 1, modifiers: []});
     });
 });

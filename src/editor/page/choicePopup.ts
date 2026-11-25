@@ -1,4 +1,4 @@
-import {createElement, errorText, visualScaleOf} from "./dom";
+import {createElement, errorText, isDomNode, visualScaleOf} from "./dom";
 import {CHOICE_POPUP_HOOK, CHOICE_VALUE_HOOK} from "../project/editorUiHooks";
 
 export interface Choice<V> {
@@ -56,7 +56,7 @@ export function showChoicePopup<V>(document: Document, anchor: HTMLElement, opti
         if (openPopups.get(document) === close) openPopups.delete(document);
     };
     const onOutside = (event: Event): void => {
-        if (event.target instanceof Node && (popup.contains(event.target) || anchor.contains(event.target))) return;
+        if (isDomNode(event.target) && (popup.contains(event.target) || anchor.contains(event.target))) return;
         close();
     };
     const choose = (choice: Choice<V>): void => {

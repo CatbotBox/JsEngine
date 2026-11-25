@@ -1,5 +1,16 @@
 import {SmokeUi} from "./smokeUi";
 import type {SmokeClock, SmokePage} from "./smokeUi";
+import type {ScreenBounds} from "../project/dockWindows";
+
+export interface SmokeWindowPage extends SmokePage {
+    readonly id: number;
+
+    bounds(): ScreenBounds;
+
+    setBounds(bounds: ScreenBounds): void;
+
+    close(): void;
+}
 
 export interface SmokeHost {
     createTempFolder(): Promise<string>;
@@ -9,6 +20,10 @@ export interface SmokeHost {
     fileExists(path: string): Promise<boolean>;
 
     writeFile(path: string, text: string): Promise<void>;
+
+    floatingWindows(): readonly SmokeWindowPage[];
+
+    reloadPage(): Promise<void>;
 }
 
 export interface SmokeFlowContext {

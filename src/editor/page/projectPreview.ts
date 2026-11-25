@@ -1,13 +1,14 @@
-import type {DecodedImage} from "../../engine/assets/image/decodedImage";
 import {parseSceneDocument} from "../../engine/scene/sceneDocument";
 import type {ProjectEntry} from "../project/projectFileSystem";
 import {groupOutline, outlineCode} from "./codeOutline";
 import type {OutlineGroup, OutlineSymbol} from "./codeOutline";
 import {createElement, errorText} from "./dom";
 import type {EditorWorkspace} from "./editorWorkspace";
+import {MeshOrbitPreview, meshFacts, paintImage} from "./meshPreview";
 import {documentRootCount} from "./prefabInstancePaths";
 import {baseNameOf, PROJECT_FILE_KIND_TITLES, projectFileKind} from "./projectFiles";
 import {canDecodeProjectImage, decodeProjectImage} from "./projectImages";
+import {EMPTY_MESH_REASON, MAX_MESH_THUMBNAIL_BYTES, parseObjBytes} from "./projectThumbnails";
 import type {ProjectFileKind} from "./projectFiles";
 
 type Fact = readonly [label: string, value: string];
@@ -19,7 +20,7 @@ interface PreviewContent {
 
 export const EXTERNAL_EDITOR_UNAVAILABLE_TEXT = "Opening files in an external editor needs the desktop app or the dev server";
 
-const TEXT_EXCERPT_KINDS: ReadonlySet<ProjectFileKind> = new Set(["mesh", "dataAsset", "other"]);
+const TEXT_EXCERPT_KINDS: ReadonlySet<ProjectFileKind> = new Set(["dataAsset", "other"]);
 const BYTES_PER_KILOBYTE = 1024;
 const SIZE_UNITS: readonly string[] = ["KB", "MB", "GB"];
 const SIZE_DECIMALS = 1;
@@ -140,12 +141,21 @@ export class ProjectFilePreview {
     private async contentOf(document: Document, entry: ProjectEntry, kind: ProjectFileKind): Promise<PreviewContent> {
         const files = this.workspace.session.files;
         switch (kind) {
-            case "image": {
+            case "image":
+            case "pattern": {
                 if (entry.size > MAX_IMAGE_PREVIEW_BYTES) return {facts: [], body: [createElement(document, "p", "project-preview-empty", tooLargeText(MAX_IMAGE_PREVIEW_BYTES))]};
                 if (!canDecodeProjectImage(entry.path)) return {facts: [], body: []};
                 const image = decodeProjectImage(entry.path, await files.read(entry.path));
                 if (image === undefined) return {facts: [], body: []};
-                return {facts: [["Dimensions", `${image.width} × ${image.height}`]], body: [this.imageCanvas(document, image)]};
+                const canvas = createElement(document, "canvas", "project-preview-image");
+                paintImage(canvas, image);
+                return {facts: [["Dimensions", `${image.width} × ${image.height}`]], body: [canvas]};
+            }
+            case "mesh": {
+                if (entry.size > MAX_MESH_THUMBNAIL_BYTES) return {facts: [], body: [createElement(document, "p", "project-preview-empty", tooLargeText(MAX_MESH_THUMBNAIL_BYTES))]};
+                const mesh = parseObjBytes(await files.read(entry.path));
+                if (mesh.triangleCount === 0) return {facts: meshFacts(mesh), body: [createElement(document, "p", "project-preview-empty", EMPTY_MESH_REASON)]};
+                return {facts: meshFacts(mesh), body: [new MeshOrbitPreview(document, mesh.vertices.raw, mesh.triangles.raw).element]};
             }
             case "code": {
                 if (entry.size > MAX_OUTLINE_BYTES) return {facts: [], body: [createElement(document, "p", "project-preview-empty", tooLargeText(MAX_OUTLINE_BYTES))]};
@@ -160,19 +170,6 @@ export class ProjectFilePreview {
             default:
                 return TEXT_EXCERPT_KINDS.has(kind) && entry.size <= MAX_TEXT_EXCERPT_BYTES ? {facts: [], body: this.textExcerpt(document, await files.readText(entry.path))} : {facts: [], body: []};
         }
-    }
-
-    private imageCanvas(document: Document, image: DecodedImage): HTMLElement {
-        const canvas = createElement(document, "canvas", "project-preview-image");
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const context = canvas.getContext("2d");
-        if (context !== null && image.width > 0 && image.height > 0) {
-            const pixels = context.createImageData(image.width, image.height);
-            pixels.data.set(image.rgba);
-            context.putImageData(pixels, 0, 0);
-        }
-        return canvas;
     }
 
     private outlineGroup(document: Document, group: OutlineGroup): HTMLElement {

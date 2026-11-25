@@ -59,7 +59,7 @@ export interface ProjectViewOptions {
     readonly rebuildsOnCodeChange: boolean;
 }
 
-const ICON_TEXT: Readonly<Record<ProjectItemKind, string>> = {folder: "DIR", scene: "SCN", prefab: "PFB", dataAsset: "DATA", mesh: "OBJ", image: "IMG", code: "CODE", other: "FILE"};
+const ICON_TEXT: Readonly<Record<ProjectItemKind, string>> = {folder: "DIR", scene: "SCN", prefab: "PFB", dataAsset: "DATA", mesh: "OBJ", image: "IMG", pattern: "PAT", code: "CODE", other: "FILE"};
 const DRAG_TEXT_TYPE = "text/plain";
 const DROP_TARGET_CLASS = "drop-target";
 const SELECTED_CLASS = "selected";

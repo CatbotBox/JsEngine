@@ -9,6 +9,8 @@ import {
     fileNameProblem,
     findFolder,
     isAncestorFolder,
+    isAssetKind,
+    isImageKind,
     joinProjectPath,
     normalizeProjectPath,
     opensInEditor,
@@ -30,7 +32,7 @@ function folder(path: string): ProjectEntry {
 }
 
 describe("project file typing", () => {
-    test("scenes, prefabs, data assets, meshes, images and code are told apart by extension, case-insensitively", () => {
+    test("scenes, prefabs, data assets, meshes, images, sprite patterns and code are told apart by extension, case-insensitively", () => {
         expect(projectFileKind("scenes/Main.scene.json")).toBe("scene");
         expect(projectFileKind("prefabs/Ship.PREFAB.JSON")).toBe("prefab");
         expect(projectFileKind("assets/swarm.tuning.Asset.Json")).toBe("dataAsset");
@@ -38,6 +40,8 @@ describe("project file typing", () => {
         expect(projectFileKind("art/a.png")).toBe("image");
         expect(projectFileKind("art/b.JPEG")).toBe("image");
         expect(projectFileKind("art/c.ppm")).toBe("image");
+        expect(projectFileKind("art/ship.Pattern.JSON")).toBe("pattern");
+        expect([isImageKind("pattern"), isAssetKind("pattern"), isImageKind("mesh")]).toEqual([true, true, false]);
         expect(projectFileKind("project.ts")).toBe("code");
         expect(projectFileKind("src/Hud.TSX")).toBe("code");
         expect(projectFileKind("src/legacy.js")).toBe("code");
@@ -46,10 +50,11 @@ describe("project file typing", () => {
         expect(projectFileKind("models/cube.mtl")).toBe("other");
     });
 
-    test("stems drop compound scene, prefab and data asset extensions", () => {
+    test("stems drop compound scene, prefab, data asset and sprite pattern extensions", () => {
         expect(stemOf("scenes/Main.scene.json")).toBe("Main");
         expect(stemOf("prefabs/Ship.prefab.json")).toBe("Ship");
         expect(stemOf("assets/swarm.tuning.asset.json")).toBe("swarm.tuning");
+        expect(stemOf("art/ship.pattern.json")).toBe("ship");
         expect(stemOf("models/cube.obj")).toBe("cube");
         expect(stemOf("README")).toBe("README");
         expect(extensionOf(".hidden")).toBe("");

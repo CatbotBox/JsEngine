@@ -24,11 +24,12 @@ import {
     entityLabel,
     entityOptionValue,
     inlineImageSize,
-    isInlineAssetSummary,
     NO_ENTITY_OPTION_VALUE,
     parseAssetPathText,
     parseEntityOptionValue,
 } from "./fieldValueText";
+import {imageFileFormatOf, patternFilePathOf} from "./imageExtraction";
+import type {ImageFieldTarget} from "./imageExtraction";
 import {mixedValueOf} from "./multiSelection";
 
 const NO_ENTITY_LABEL = "(none)";
@@ -39,6 +40,7 @@ const PICK_ASSET_TEXT = "…";
 const OPEN_DATA_ASSET_TEXT = "Open";
 const CREATE_DATA_ASSET_TEXT = "New";
 const EXTRACT_IMAGE_TEXT = "Extract…";
+const INLINE_PATTERN_TEXT = "Inline";
 const EDITABLE_INLINE_TEXT = "(inline)";
 const INLINE_FORM_CLASS = "inline-form";
 const ARMED_CLASS = "armed";
@@ -103,7 +105,7 @@ export class EntityFieldEditor extends FieldEditorBase {
     }
 
     protected override hasFocus(): boolean {
-        return this.document.activeElement === this.select;
+        return this.select.ownerDocument.activeElement === this.select;
     }
 
     private draggedEntity(): Entity | undefined {
@@ -144,6 +146,7 @@ export class AssetFieldEditor extends FieldEditorBase {
     private readonly inlineForm: FieldEditor | undefined;
     private readonly openButton: HTMLButtonElement | undefined;
     private readonly extractButton: HTMLButtonElement | undefined;
+    private readonly inlineButton: HTMLButtonElement | undefined;
 
     public constructor(context: FieldEditorContext, document: Document, asset: AssetFieldDescription, createEditor: FieldEditorFactory) {
         super(context, document);
@@ -161,14 +164,24 @@ export class AssetFieldEditor extends FieldEditorBase {
             onClick: () => this.openPicker(),
         });
         this.element.append(this.input, this.inline, pick);
+        const target: ImageFieldTarget = {entities: context.entities, typeName: context.typeName, key: context.field.key};
         if (this.services.extractInlineImage !== undefined) {
             this.extractButton = createButton(document, {
                 className: "field-pick",
                 text: EXTRACT_IMAGE_TEXT,
-                title: `Extract the inline image of ${this.fieldLabel} to a PNG file in the project and use that file`,
-                onClick: () => this.services.extractInlineImage?.({entities: context.entities, typeName: context.typeName, key: context.field.key}),
+                title: `Extract the inline image of ${this.fieldLabel} to a file in the project (a PNG, or a sprite pattern file for a pattern) and use that file`,
+                onClick: () => this.services.extractInlineImage?.(target),
             });
             this.element.append(this.extractButton);
+        }
+        if (this.services.inlinePatternFile !== undefined) {
+            this.inlineButton = createButton(document, {
+                className: "field-pick",
+                text: INLINE_PATTERN_TEXT,
+                title: `Copy the sprite pattern file of ${this.fieldLabel} into the field so its rows and palette can be edited here`,
+                onClick: () => this.services.inlinePatternFile?.(target),
+            });
+            this.element.append(this.inlineButton);
         }
         if (this.services.isDataAssetType(assetType)) {
             this.openButton = createButton(document, {
@@ -210,7 +223,8 @@ export class AssetFieldEditor extends FieldEditorBase {
             this.inlineForm.element.hidden = !editableInline;
             if (editableInline) this.inlineForm.show(values);
         }
-        if (this.extractButton !== undefined) this.extractButton.hidden = value === undefined || !isInlineAssetSummary(value);
+        if (this.extractButton !== undefined) this.extractButton.hidden = value === undefined || imageFileFormatOf(value) === undefined;
+        if (this.inlineButton !== undefined) this.inlineButton.hidden = value === undefined || patternFilePathOf(value) === undefined;
         if (this.openButton !== undefined) this.openButton.disabled = assetPathOf(value) === undefined;
     }
 
@@ -233,7 +247,7 @@ export class AssetFieldEditor extends FieldEditorBase {
     }
 
     protected override hasFocus(): boolean {
-        return this.document.activeElement === this.input;
+        return this.input.ownerDocument.activeElement === this.input;
     }
 
     private droppablePath(): string | undefined {
@@ -243,7 +257,7 @@ export class AssetFieldEditor extends FieldEditorBase {
     }
 
     private openPicker(): void {
-        showChoicePopup<SceneJsonValue>(this.document, this.element, {
+        showChoicePopup<SceneJsonValue>(this.element.ownerDocument, this.element, {
             ariaLabel: `Choose ${this.fieldLabel}`,
             searchPlaceholder: "Search files",
             emptyText: `No ${this.assetType} files in the project`,

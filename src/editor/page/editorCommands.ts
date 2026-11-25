@@ -2,8 +2,8 @@ import type {Entity} from "../../engine/core";
 import type {EditorComponentDetails, EditorView} from "../editorProtocol";
 import type {Command, CommandRegistry, CommandSpec, VoidCommandSpec} from "./commandRegistry";
 import type {DataAssetsView} from "./dataAssetsView";
-import {BOTTOM_TAB_LABELS, BOTTOM_TABS} from "./editorPanels";
-import type {BottomTab} from "./editorPanels";
+import type {DockPanelId} from "./dockLayout";
+import {canFloatPanel, DOCK_PANEL_TITLES, MAIN_WINDOW_PANEL_REASON} from "./editorPanels";
 import {EDITOR_TOOLS} from "./editorTools";
 import type {EditorTool} from "./editorTools";
 import type {EditorWorkspace} from "./editorWorkspace";
@@ -14,9 +14,8 @@ import {handleRotationProblem, withHandlePositionToggled, withHandleRotationTogg
 import {GAME_VIEW_OPTION_LABELS, GAME_VIEW_OPTIONS} from "./gameViewOptions";
 import type {GameViewOption} from "./gameViewOptions";
 import type {HierarchyView} from "./hierarchyView";
-import type {InlineImageTarget} from "./imageExtraction";
+import type {ImageFieldTarget} from "./imageExtraction";
 import {UNPARENT_TARGET} from "./hierarchyDrop";
-import type {LayoutPanel} from "./panelSizes";
 import {normalizeProjectPath, opensInEditor, projectFileKind, ROOT_FOLDER_PATH} from "./projectFiles";
 import type {ProjectFileKind} from "./projectFiles";
 import {LAST_LOADED_SCENE_REASON, PREFAB_TAB_SCENES_REASON} from "./sceneDocuments";
@@ -27,6 +26,7 @@ import type {ProjectView} from "./projectView";
 import type {SceneView} from "./sceneView";
 import {SNAP_KIND_LABELS, snapStepChoices, snapStepText} from "./snapSteps";
 import type {SnapStepChoice} from "./snapSteps";
+import {DOCK_PANEL_IDS} from "../project/editorUiHooks";
 
 export interface EditorCommandViews {
     readonly workspace: EditorWorkspace;
@@ -41,15 +41,27 @@ export interface EditorCommandHost {
 
     views(): EditorCommandViews | undefined;
 
-    bottomTab(): BottomTab;
+    showPanel(panel: DockPanelId): void;
 
-    showBottomTab(tab: BottomTab): void;
+    panelOpen(panel: DockPanelId): boolean;
+
+    closePanel(panel: DockPanelId): void;
+
+    panelMaximized(panel: DockPanelId): boolean;
+
+    toggleMaximized(panel: DockPanelId): void;
+
+    addPanelBeside(panel: DockPanelId, besidePanel: DockPanelId): void;
+
+    panelFloating(panel: DockPanelId): boolean;
+
+    panelHasOwnWindow(panel: DockPanelId): boolean;
+
+    floatPanel(panel: DockPanelId): void;
+
+    dockPanel(panel: DockPanelId): void;
 
     resetLayout(): void;
-
-    panelShown(panel: LayoutPanel): boolean;
-
-    togglePanel(panel: LayoutPanel): void;
 
     gameViewAspect(): string;
 
@@ -79,6 +91,11 @@ export interface EditorCommandHost {
 export interface DataAssetCreation {
     readonly folder: string;
     readonly typeName: string;
+}
+
+export interface DockPanelAddition {
+    readonly panel: DockPanelId;
+    readonly beside: DockPanelId;
 }
 
 export interface ProjectItem {
@@ -181,10 +198,12 @@ export interface ViewCommands {
 }
 
 export interface WindowCommands {
-    readonly bottomTabs: Readonly<Record<BottomTab, Command<void>>>;
-    readonly toggleHierarchy: Command<void>;
-    readonly toggleInspector: Command<void>;
-    readonly toggleBottomPanel: Command<void>;
+    readonly panels: Readonly<Record<DockPanelId, Command<void>>>;
+    readonly closePanel: Command<DockPanelId>;
+    readonly maximizePanel: Command<DockPanelId>;
+    readonly addPanel: Command<DockPanelAddition>;
+    readonly floatPanel: Command<DockPanelId>;
+    readonly dockPanel: Command<DockPanelId>;
     readonly resetLayout: Command<void>;
 }
 
@@ -198,7 +217,8 @@ export interface ComponentCommands {
     readonly remove: Command<ComponentTarget>;
     readonly copyValues: Command<ComponentTarget>;
     readonly pasteValues: Command<ComponentTarget>;
-    readonly extractImage: Command<InlineImageTarget>;
+    readonly extractImage: Command<ImageFieldTarget>;
+    readonly inlinePattern: Command<ImageFieldTarget>;
 }
 
 export interface EditorCommands {
@@ -242,6 +262,11 @@ export const PREFAB_START_SCENE_REASON = "A prefab cannot be the start scene";
 export const ALREADY_START_SCENE_REASON = "Already the start scene";
 export const LAST_TAB_REASON = "The last tab stays open";
 export const EXTRACT_ONE_ENTITY_REASON = "Select one entity; each inline image is extracted to its own file";
+export const INLINE_ONE_ENTITY_REASON = "Select one entity; a pattern file is inlined into one entity at a time";
+export const PANEL_CLOSED_REASON = "The panel is closed";
+export const PANEL_ALREADY_OPEN_REASON = "The panel is already open";
+export const PANEL_HAS_OWN_WINDOW_REASON = "The tab already has a window of its own";
+export const PANEL_DOCKED_REASON = "The tab is already in the main window";
 
 const SAVE_WHILE_PLAYING_REASON = "The scene can only be saved while editing; stop the game first";
 const UNDO_WHILE_PLAYING_REASON = "Undo is not available while the game runs; stop it first";
@@ -258,7 +283,7 @@ const NO_COMPONENT_VALUES_REASON = "Nothing to copy yet";
 const NO_COPIED_VALUES_REASON = "No component values copied";
 const UNDO_LABEL = "Undo";
 const REDO_LABEL = "Redo";
-const HISTORY_TAB: BottomTab = "history";
+const HISTORY_PANEL: DockPanelId = "history";
 const PLAY_LABEL = "Play";
 const STOP_LABEL = "Stop";
 const OPEN_LABEL = "Open";
@@ -274,7 +299,6 @@ const VIEW_LABELS: Readonly<Record<EditorView, string>> = {scene: "Focus Scene V
 const VIEW_ORDER: readonly EditorView[] = ["scene", "game"];
 const TOOL_LABELS: Readonly<Record<EditorTool, string>> = {hand: "Hand", move: "Move", rotate: "Rotate", scale: "Scale"};
 const TOOL_SHORTCUTS: Readonly<Record<EditorTool, string>> = {hand: "Q", move: "W", rotate: "E", scale: "R"};
-const PANEL_LABELS: Readonly<Record<LayoutPanel, string>> = {hierarchy: "Hierarchy", inspector: "Inspector", bottom: "Bottom Panel"};
 
 function recordOf<K extends string, V>(keys: readonly K[], valueOf: (key: K) => V): Record<K, V> {
     return Object.fromEntries(keys.map(key => [key, valueOf(key)])) as Record<K, V>;
@@ -494,7 +518,7 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             disabledReason: whenOpen(({workspace}) => !workspace.recording ? REDO_WHILE_PLAYING_REASON : workspace.undo.canRedo ? undefined : NOTHING_TO_REDO_REASON),
             explainsWhenDisabled: playing,
         }),
-        undoHistory: registry.add({id: "edit.undoHistory", category: EDIT_CATEGORY, label: "Undo History", run: () => host.showBottomTab(HISTORY_TAB)}),
+        undoHistory: registry.add({id: "edit.undoHistory", category: EDIT_CATEGORY, label: "Undo History", run: () => host.showPanel(HISTORY_PANEL)}),
         cut: registry.addTargeted<readonly Entity[]>({
             id: "edit.cut", category: EDIT_CATEGORY, label: "Cut", shortcuts: ["Ctrl+X"], target: selection,
             disabledReason: entities => blocked() ?? selectionProblem(entities),
@@ -685,24 +709,44 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
         })),
     };
 
-    const panelToggle = (id: string, panel: LayoutPanel): Command<void> => registry.add({
-        id,
-        category: WINDOW_CATEGORY,
-        label: PANEL_LABELS[panel],
-        checked: () => host.panelShown(panel),
-        run: () => host.togglePanel(panel),
-    });
+    const openPanelProblem = (panel: DockPanelId): string | undefined => host.panelOpen(panel) ? undefined : PANEL_CLOSED_REASON;
     const windowCommands: WindowCommands = {
-        bottomTabs: recordOf(BOTTOM_TABS, tab => registry.add({
-            id: `window.${tab}`,
+        panels: recordOf(DOCK_PANEL_IDS, panel => registry.add({
+            id: `window.${panel}`,
             category: WINDOW_CATEGORY,
-            label: BOTTOM_TAB_LABELS[tab],
-            checked: () => host.bottomTab() === tab,
-            run: () => host.showBottomTab(tab),
+            label: DOCK_PANEL_TITLES[panel],
+            run: () => host.showPanel(panel),
         })),
-        toggleHierarchy: panelToggle("window.toggleHierarchy", "hierarchy"),
-        toggleInspector: panelToggle("window.toggleInspector", "inspector"),
-        toggleBottomPanel: panelToggle("window.toggleBottomPanel", "bottom"),
+        closePanel: registry.addTargeted<DockPanelId>({
+            id: "window.closeTab", category: WINDOW_CATEGORY, label: "Close Tab",
+            disabledReason: openPanelProblem,
+            run: panel => host.closePanel(panel),
+        }),
+        maximizePanel: registry.addTargeted<DockPanelId>({
+            id: "window.maximize", category: WINDOW_CATEGORY, label: "Maximize",
+            checked: panel => host.panelMaximized(panel),
+            disabledReason: openPanelProblem,
+            run: panel => host.toggleMaximized(panel),
+        }),
+        addPanel: registry.addTargeted<DockPanelAddition>({
+            id: "window.addTab", category: WINDOW_CATEGORY, label: "Add Tab",
+            labelFor: addition => DOCK_PANEL_TITLES[addition.panel],
+            disabledReason: addition => host.panelOpen(addition.panel) ? PANEL_ALREADY_OPEN_REASON : openPanelProblem(addition.beside),
+            run: addition => host.addPanelBeside(addition.panel, addition.beside),
+        }),
+        floatPanel: registry.addTargeted<DockPanelId>({
+            id: "window.floatTab", category: WINDOW_CATEGORY, label: "Float Tab",
+            disabledReason: panel => {
+                if (!canFloatPanel(panel)) return MAIN_WINDOW_PANEL_REASON;
+                return openPanelProblem(panel) ?? (host.panelHasOwnWindow(panel) ? PANEL_HAS_OWN_WINDOW_REASON : undefined);
+            },
+            run: panel => host.floatPanel(panel),
+        }),
+        dockPanel: registry.addTargeted<DockPanelId>({
+            id: "window.dockTab", category: WINDOW_CATEGORY, label: "Dock Tab",
+            disabledReason: panel => openPanelProblem(panel) ?? (host.panelFloating(panel) ? undefined : PANEL_DOCKED_REASON),
+            run: panel => host.dockPanel(panel),
+        }),
         resetLayout: registry.add({id: "window.resetLayout", category: WINDOW_CATEGORY, label: "Reset Layout", run: () => host.resetLayout()}),
     };
 
@@ -739,11 +783,17 @@ export function registerEditorCommands(registry: CommandRegistry, host: EditorCo
             },
             run: target => void mounted().workspace.pasteComponentValues(target.entities, target.typeName),
         }),
-        extractImage: registry.addTargeted<InlineImageTarget>({
+        extractImage: registry.addTargeted<ImageFieldTarget>({
             id: "component.extractImage", category: COMPONENT_CATEGORY, label: "Extract to File…",
             labelFor: target => `Extract ${target.key} to File…`,
             disabledReason: target => blocked() ?? editingProblem(mounted().workspace) ?? (target.entities.length === 1 ? undefined : EXTRACT_ONE_ENTITY_REASON),
             run: target => void mounted().workspace.extractInlineImage(target.entities[0], target.typeName, target.key),
+        }),
+        inlinePattern: registry.addTargeted<ImageFieldTarget>({
+            id: "component.inlinePattern", category: COMPONENT_CATEGORY, label: "Inline Pattern File",
+            labelFor: target => `Inline ${target.key} Pattern File`,
+            disabledReason: target => blocked() ?? editingProblem(mounted().workspace) ?? (target.entities.length === 1 ? undefined : INLINE_ONE_ENTITY_REASON),
+            run: target => void mounted().workspace.inlinePatternFile(target.entities[0], target.typeName, target.key),
         }),
     };
 

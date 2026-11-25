@@ -197,7 +197,7 @@ class NumberFieldEditor extends FieldEditorBase {
     }
 
     protected override hasFocus(): boolean {
-        const active = this.document.activeElement;
+        const active = this.input.ownerDocument.activeElement;
         return active === this.input || (this.slider !== undefined && active === this.slider);
     }
 
