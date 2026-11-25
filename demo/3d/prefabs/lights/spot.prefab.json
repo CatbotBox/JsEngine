@@ -1,0 +1,37 @@
+{
+  "format": "jsengine-scene",
+  "version": 3,
+  "entities": [
+    {
+      "id": 1,
+      "name": "showcase spot light",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            4,
+            -2.5
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0.525731086730957,
+            0,
+            0,
+            0.8506507873535156
+          ]
+        },
+        "SpotLight": {
+          "range": 14,
+          "innerConeAngle": 0.3,
+          "outerConeAngle": 0.5,
+          "color": "#ffd9a0",
+          "intensity": 2.5,
+          "castsShadows": true
+        },
+        "LocalToWorld": {}
+      }
+    }
+  ]
+}

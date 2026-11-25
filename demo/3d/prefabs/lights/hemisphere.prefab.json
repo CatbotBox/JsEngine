@@ -1,0 +1,34 @@
+{
+  "format": "jsengine-scene",
+  "version": 3,
+  "entities": [
+    {
+      "id": 1,
+      "name": "showcase hemisphere light",
+      "enabled": true,
+      "components": {
+        "LocalPosition": {
+          "xyz": [
+            0,
+            0,
+            0
+          ]
+        },
+        "LocalRotation": {
+          "xyzw": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "HemisphereLight": {
+          "skyColor": "#8fb8ff",
+          "groundColor": "#6b4a2a",
+          "intensity": 0.6
+        },
+        "LocalToWorld": {}
+      }
+    }
+  ]
+}

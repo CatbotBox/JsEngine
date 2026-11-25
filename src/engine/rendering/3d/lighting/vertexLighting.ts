@@ -2,7 +2,26 @@ import {asFloat32Array, ReadonlyVec16} from "../../../math/types/vec";
 import {DeepReadonly} from "../../../util/tokenUtils";
 import {Texture} from "../texture";
 import {ViewSpaceMesh} from "../viewSpaceMesh";
-import {LIGHT_KIND_DIRECTIONAL, SceneLights} from "./sceneLights";
+import {
+    HEMISPHERE_BLUE_OFFSET,
+    HEMISPHERE_GRADIENT_FLOATS,
+    HEMISPHERE_GREEN_OFFSET,
+    HEMISPHERE_RED_OFFSET,
+    LIGHT_KIND_DIRECTIONAL,
+    LIGHT_KIND_POINT,
+    SceneLights,
+    VEC3_FLOATS,
+} from "./sceneLights";
+import {
+    isShapedLightKind,
+    roughnessOfShininess,
+    SHAPED_DIFFUSE,
+    SHAPED_HIGHLIGHT_ATTENUATION,
+    SHAPED_HIGHLIGHT_X,
+    SHAPED_HIGHLIGHT_Y,
+    SHAPED_HIGHLIGHT_Z,
+    ShapedLights,
+} from "./shapedLights";
 import {WHITE_RGB, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../../packedRgb";
 
 const NEGLIGIBLE_SPECULAR = 0.005;
@@ -22,11 +41,16 @@ export class VertexLighting {
     private vector: Float64Array = new Float64Array(0);
     private color: Float64Array = new Float64Array(0);
     private rangeSquared: Float64Array = new Float64Array(0);
+    private hasShapedLights: boolean = false;
+    private hasHemisphere: boolean = false;
+    private readonly hemisphereGradient: Float64Array = new Float64Array(HEMISPHERE_GRADIENT_FLOATS);
+    private readonly shapedLights = new ShapedLights();
     private readonly shading: {diffuseRgb: Float64Array, specularRgb: Float64Array, hasSpecular: boolean} = {diffuseRgb: new Float64Array(0), specularRgb: new Float64Array(0), hasSpecular: false};
     private materialAlbedo: Float64Array = new Float64Array(3);
     private materialSpecular: Float64Array = new Float64Array(3);
     private materialEmissive: Float64Array = new Float64Array(3);
     private materialShininess: Float64Array = new Float64Array(1);
+    private materialRoughness: Float64Array = new Float64Array(1);
     private materialSpecularCutoff: Float64Array = new Float64Array(1);
     private readonly materialSpecularTexture: (DeepReadonly<Texture> | undefined)[] = [];
 
@@ -46,9 +70,20 @@ export class VertexLighting {
             this.vector = new Float64Array(count * 3);
             this.color = new Float64Array(count * 3);
             this.rangeSquared = new Float64Array(count);
+            this.shapedLights.reserve(count);
         }
 
         const m = asFloat32Array(viewMatrix);
+        this.hasHemisphere = sceneLights.hasHemisphere;
+        if (this.hasHemisphere) {
+            for (let g = 0; g < HEMISPHERE_GRADIENT_FLOATS; g += VEC3_FLOATS) {
+                const gx = sceneLights.hemisphereGradient[g], gy = sceneLights.hemisphereGradient[g + 1], gz = sceneLights.hemisphereGradient[g + 2];
+                this.hemisphereGradient[g] = m[0] * gx + m[4] * gy + m[8] * gz;
+                this.hemisphereGradient[g + 1] = m[1] * gx + m[5] * gy + m[9] * gz;
+                this.hemisphereGradient[g + 2] = m[2] * gx + m[6] * gy + m[10] * gz;
+            }
+        }
+        this.hasShapedLights = false;
         for (let i = 0, j = 0; i < count; i++, j += 3) {
             const kind = sceneLights.kind[i];
             this.kind[i] = kind;
@@ -67,6 +102,10 @@ export class VertexLighting {
                 this.vector[j + 2] = m[2] * px + m[6] * py + m[10] * pz + m[14];
                 const range = sceneLights.range[i];
                 this.rangeSquared[i] = range * range;
+            }
+            if (isShapedLightKind(kind)) {
+                this.hasShapedLights = true;
+                this.shapedLights.load(sceneLights, i, m);
             }
         }
     }
@@ -91,6 +130,9 @@ export class VertexLighting {
         const ambientR = this.ambient[0], ambientG = this.ambient[1], ambientB = this.ambient[2];
         const lightCount = this.lightCount;
         const kind = this.kind, vector = this.vector, color = this.color, rangeSquared = this.rangeSquared;
+        const hasHemisphere = this.hasHemisphere, hemisphereGradient = this.hemisphereGradient;
+        const hasShapedLights = this.hasShapedLights, shapedLights = this.shapedLights, shaped = shapedLights.result;
+        const roughnessByMaterial = this.materialRoughness;
 
         for (let j = 0, vertex = 0; j < floatCount; j += 3, vertex++) {
             const material = vertexMaterial === undefined ? 0 : vertexMaterial[vertex];
@@ -116,17 +158,31 @@ export class VertexLighting {
                 }
             }
             let r = ambientR, g = ambientG, b = ambientB;
+            if (hasHemisphere) {
+                r += hemisphereGradient[HEMISPHERE_RED_OFFSET] * nx + hemisphereGradient[HEMISPHERE_RED_OFFSET + 1] * ny + hemisphereGradient[HEMISPHERE_RED_OFFSET + 2] * nz;
+                g += hemisphereGradient[HEMISPHERE_GREEN_OFFSET] * nx + hemisphereGradient[HEMISPHERE_GREEN_OFFSET + 1] * ny + hemisphereGradient[HEMISPHERE_GREEN_OFFSET + 2] * nz;
+                b += hemisphereGradient[HEMISPHERE_BLUE_OFFSET] * nx + hemisphereGradient[HEMISPHERE_BLUE_OFFSET + 1] * ny + hemisphereGradient[HEMISPHERE_BLUE_OFFSET + 2] * nz;
+            }
             let specularR = 0, specularG = 0, specularB = 0;
+            if (hasShapedLights) shapedLights.beginVertex(positions[j], positions[j + 1], positions[j + 2], nx, ny, nz, hasSpecular, viewX, viewY, viewZ, roughnessByMaterial[material]);
 
             for (let i = 0, l = 0; i < lightCount; i++, l += 3) {
                 let diffuse: number;
                 let lightX = 0, lightY = 0, lightZ = 0;
                 let attenuation = 1;
-                if (kind[i] === LIGHT_KIND_DIRECTIONAL) {
+                const lightKind = kind[i];
+                if (lightKind === LIGHT_KIND_DIRECTIONAL) {
                     lightX = vector[l];
                     lightY = vector[l + 1];
                     lightZ = vector[l + 2];
                     diffuse = nx * lightX + ny * lightY + nz * lightZ;
+                } else if (lightKind !== LIGHT_KIND_POINT) {
+                    if (!shapedLights.shade(lightKind, i, vector[l], vector[l + 1], vector[l + 2], rangeSquared[i])) continue;
+                    diffuse = shaped[SHAPED_DIFFUSE];
+                    lightX = shaped[SHAPED_HIGHLIGHT_X];
+                    lightY = shaped[SHAPED_HIGHLIGHT_Y];
+                    lightZ = shaped[SHAPED_HIGHLIGHT_Z];
+                    attenuation = shaped[SHAPED_HIGHLIGHT_ATTENUATION];
                 } else {
                     const dx = vector[l] - positions[j], dy = vector[l + 1] - positions[j + 1], dz = vector[l + 2] - positions[j + 2];
                     const distanceSquared = dx * dx + dy * dy + dz * dz;
@@ -177,6 +233,7 @@ export class VertexLighting {
             this.materialSpecular = new Float64Array(materialCount * 3);
             this.materialEmissive = new Float64Array(materialCount * 3);
             this.materialShininess = new Float64Array(materialCount);
+            this.materialRoughness = new Float64Array(materialCount);
             this.materialSpecularCutoff = new Float64Array(materialCount);
         }
         this.materialSpecularTexture.length = materialCount;
@@ -190,6 +247,7 @@ export class VertexLighting {
             writeTintedRgb(this.materialSpecular, j, specularColor, tintR, tintG, tintB);
             writeTintedRgb(this.materialEmissive, j, material?.emissiveColor ?? 0, tintR, tintG, tintB);
             this.materialShininess[i] = shininess;
+            this.materialRoughness[i] = roughnessOfShininess(shininess);
             this.materialSpecularCutoff[i] = specularColor === 0 ? NO_SPECULAR_CUTOFF : Math.pow(NEGLIGIBLE_SPECULAR, 1 / shininess);
             this.materialSpecularTexture[i] = material?.specularTexture;
             if (specularColor !== 0) anySpecular = true;

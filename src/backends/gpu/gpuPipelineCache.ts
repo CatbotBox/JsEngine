@@ -1,7 +1,9 @@
 import {FaceCulling} from "../../engine/rendering/3d/faceCulling";
 import type {GpuDevice, GpuShader} from "./gpuTypes";
 import {DEPTH_FORMAT} from "./gpuFrame";
-import {BASIC_LIT, BASIC_LIT_VERTEX_BUFFERS} from "./shaders/basicLitShader";
+import {DISPLAY_SCENE_OUTPUT, OVERRIDE_ENABLED} from "./gpuSceneOutput";
+import type {GpuSceneOutput} from "./gpuSceneOutput";
+import {BASIC_LIT, BASIC_LIT_VERTEX_BUFFERS, HDR_SCENE_OUTPUT_OVERRIDE} from "./shaders/basicLitShader";
 
 export const SOFTWARE_FRONT_FACE: GPUFrontFace = "cw";
 const NEARER_IS_GREATER_DEPTH: GPUCompareFunction = "greater";
@@ -62,8 +64,13 @@ function messageOf(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function pipelineKey(culling: FaceCulling, format: GPUTextureFormat, sampleCount: number): string {
-    return `${culling}|${format}|${sampleCount}`;
+function pipelineKey(culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, output: GpuSceneOutput): string {
+    const displayKey = `${culling}|${format}|${sampleCount}`;
+    return output === DISPLAY_SCENE_OUTPUT ? displayKey : `${displayKey}|${output}`;
+}
+
+function fragmentConstantsOf(output: GpuSceneOutput): Pick<GPUFragmentState, "constants"> {
+    return output === DISPLAY_SCENE_OUTPUT ? {} : {constants: {[HDR_SCENE_OUTPUT_OVERRIDE]: OVERRIDE_ENABLED}};
 }
 
 function isStale(entry: FrameStamped, frame: number, maxUnusedFrames: number): boolean {
@@ -96,16 +103,18 @@ export class GpuPipelineCache {
         return size;
     }
 
-    public pipelineFor(shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline | undefined {
-        if (shader === this.fallback) return this.fallbackPipelineFor(culling, format, sampleCount, frame);
+    public pipelineFor(
+        shader: GpuShader, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number, output: GpuSceneOutput = DISPLAY_SCENE_OUTPUT,
+    ): GPURenderPipeline | undefined {
+        if (shader === this.fallback) return this.fallbackPipelineFor(culling, format, sampleCount, output, frame);
         const entry = this.customEntryFor(shader, frame);
         switch (entry.state) {
             case SHADER_FAILED:
-                return this.fallbackPipelineFor(culling, format, sampleCount, frame);
+                return this.fallbackPipelineFor(culling, format, sampleCount, output, frame);
             case SHADER_COMPILING:
                 return undefined;
             case SHADER_READY:
-                return this.customPipelineFor(entry, culling, format, sampleCount, frame);
+                return this.customPipelineFor(entry, culling, format, sampleCount, output, frame);
         }
     }
 
@@ -117,12 +126,12 @@ export class GpuPipelineCache {
         }
     }
 
-    private fallbackPipelineFor(culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline {
-        const key = pipelineKey(culling, format, sampleCount);
+    private fallbackPipelineFor(culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, output: GpuSceneOutput, frame: number): GPURenderPipeline {
+        const key = pipelineKey(culling, format, sampleCount, output);
         let fallback = this.fallbackPipelines.get(key);
         if (fallback === undefined) {
             this.fallbackModule ??= this.device.createShaderModule({label: this.fallback.name, code: this.fallback.code});
-            const pipeline = this.device.createRenderPipeline(this.descriptorFor(this.fallback, this.fallbackModule, key, culling, format, sampleCount));
+            const pipeline = this.device.createRenderPipeline(this.descriptorFor(this.fallback, this.fallbackModule, key, culling, format, sampleCount, output));
             fallback = {pipeline, lastUsedFrame: frame};
             this.fallbackPipelines.set(key, fallback);
         }
@@ -130,13 +139,15 @@ export class GpuPipelineCache {
         return fallback.pipeline;
     }
 
-    private customPipelineFor(entry: CustomShaderEntry, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, frame: number): GPURenderPipeline | undefined {
-        const key = pipelineKey(culling, format, sampleCount);
+    private customPipelineFor(
+        entry: CustomShaderEntry, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, output: GpuSceneOutput, frame: number,
+    ): GPURenderPipeline | undefined {
+        const key = pipelineKey(culling, format, sampleCount, output);
         let custom = entry.pipelines.get(key);
         if (custom === undefined) {
             const created: CustomPipeline = {pipeline: undefined, lastUsedFrame: frame};
             entry.pipelines.set(key, created);
-            this.device.createRenderPipelineAsync(this.descriptorFor(entry.shader, entry.module, key, culling, format, sampleCount)).then(
+            this.device.createRenderPipelineAsync(this.descriptorFor(entry.shader, entry.module, key, culling, format, sampleCount, output)).then(
                 pipeline => created.pipeline = pipeline,
                 error => this.fail(entry, `its pipeline could not be created: ${messageOf(error)}`),
             );
@@ -175,12 +186,14 @@ export class GpuPipelineCache {
         if (this.customShaders.get(entry.shader.name) === entry) console.error(surfaceShaderFailureMessage(entry.shader.name, reason));
     }
 
-    private descriptorFor(shader: GpuShader, module: GPUShaderModule, key: string, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number): GPURenderPipelineDescriptor {
+    private descriptorFor(
+        shader: GpuShader, module: GPUShaderModule, key: string, culling: FaceCulling, format: GPUTextureFormat, sampleCount: number, output: GpuSceneOutput,
+    ): GPURenderPipelineDescriptor {
         return {
             label: `${shader.name}|${key}`,
             layout: this.layout,
             vertex: {module, entryPoint: shader.vertexEntryPoint, buffers: BASIC_LIT_VERTEX_BUFFERS},
-            fragment: {module, entryPoint: shader.fragmentEntryPoint, targets: [{format}]},
+            fragment: {module, entryPoint: shader.fragmentEntryPoint, targets: [{format}], ...fragmentConstantsOf(output)},
             primitive: {topology: "triangle-list", cullMode: cullModeOf(culling), frontFace: SOFTWARE_FRONT_FACE},
             depthStencil: {format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: NEARER_IS_GREATER_DEPTH},
             multisample: {count: sampleCount},

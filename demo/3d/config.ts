@@ -1,6 +1,7 @@
 import {Resource} from "@jsengine/engine/core";
 import type {ShaderSource} from "@jsengine/engine/rendering";
-import type {Int, PrefabAsset, TextLines} from "@jsengine/engine/scene";
+import {WHITE_RGB} from "@jsengine/engine/rendering";
+import type {Int, PrefabAsset, Rgb, TextLines} from "@jsengine/engine/scene";
 
 const UNSCALED = 1;
 
@@ -34,6 +35,12 @@ export class SurfaceShaderChoice {
     public instancePhaseStepSeconds = 0;
 }
 
+export class GroundPlaneConfig {
+    public halfSizeUnits = 0;
+    public heightUnits = 0;
+    public color: Rgb = WHITE_RGB;
+}
+
 export class Demo3dHudConfig {
     public rateWindowMs = 0;
     public rateDecimals: Int = 0;
@@ -62,5 +69,7 @@ export class Demo3dConfig extends Resource {
     public renderPacing: RenderPacingPreset[] = [];
     public supersample: SupersamplePreset[] = [];
     public surfaceShaders: SurfaceShaderChoice[] = [];
+    public groundPlane = new GroundPlaneConfig();
+    public showcaseLights: PrefabAsset[] = [];
     public hud = new Demo3dHudConfig();
 }

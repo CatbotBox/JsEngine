@@ -57,6 +57,25 @@
           "orthographicDepthRange": 1000,
           "evictUnusedAfterFrames": 600,
           "lodTrianglesPerPixel": 0.25
+        },
+        "GpuShadowSettings": {
+          "mapSize": 2048,
+          "maxDistance": 30,
+          "fadeFraction": 0.1,
+          "depthBiasTexels": 0.5,
+          "normalBiasTexels": 1.5,
+          "slopeBias": 1,
+          "filterRadiusTexels": 1,
+          "strength": 1
+        },
+        "GpuPostProcessSettings": {
+          "exposure": 1,
+          "toneMapping": "aces",
+          "bloomEnabled": true,
+          "bloomThreshold": 1,
+          "bloomKnee": 0.5,
+          "bloomIntensity": 0.08,
+          "bloomMipLevels": 6
         }
       }
     },
@@ -151,7 +170,8 @@
         "PointLight": {
           "range": 14,
           "color": "#4fa3f7",
-          "intensity": 1.2
+          "intensity": 1.2,
+          "castsShadows": true
         },
         "LocalToWorld": {}
       }

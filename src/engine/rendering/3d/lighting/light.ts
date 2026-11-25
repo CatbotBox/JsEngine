@@ -26,9 +26,13 @@ export abstract class Light extends Component {
     }
 
     public writeScaledRgb(out: Float32Array, offset: number): void {
-        const scale = this._intensity / CHANNEL_MAX;
-        out[offset] = ((this._color >> RED_SHIFT) & CHANNEL_MASK) * scale;
-        out[offset + 1] = ((this._color >> GREEN_SHIFT) & CHANNEL_MASK) * scale;
-        out[offset + 2] = (this._color & CHANNEL_MASK) * scale;
+        writeScaledPackedRgb(this._color, this._intensity, out, offset);
     }
+}
+
+export function writeScaledPackedRgb(packedRgb: number, intensity: number, out: Float32Array, offset: number): void {
+    const scale = intensity / CHANNEL_MAX;
+    out[offset] = ((packedRgb >> RED_SHIFT) & CHANNEL_MASK) * scale;
+    out[offset + 1] = ((packedRgb >> GREEN_SHIFT) & CHANNEL_MASK) * scale;
+    out[offset + 2] = (packedRgb & CHANNEL_MASK) * scale;
 }

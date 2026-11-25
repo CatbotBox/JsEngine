@@ -2,12 +2,14 @@
 import type {System, SystemCtor} from "@jsengine/engine/core";
 import type {RenderPassCtor} from "@jsengine/engine/rendering";
 import {Demo3dGpuControlsSystem} from "../backend/gpu/demo3dGpuControlsSystem";
+import {Demo3dGroundSystem} from "../backend/gpu/demo3dGroundSystem";
 import {DemoSurfaceShaderSystem} from "../backend/gpu/gpuSurfaceShaders";
 import {GPU_MESH_PASSES} from "@jsengine/backends/gpu";
 import {PIXELS_HUD_TEXT_PASSES, PIXELS_WORLD_TEXT_PASSES} from "@jsengine/backends/pixels";
 
 export const generatedGpuSystems: readonly SystemCtor<System>[] = [
     Demo3dGpuControlsSystem,
+    Demo3dGroundSystem,
     DemoSurfaceShaderSystem,
 ];
 
