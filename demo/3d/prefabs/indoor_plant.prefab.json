@@ -4,7 +4,7 @@
   "entities": [
     {
       "id": 1,
-      "name": "cube",
+      "name": "indoor plant",
       "enabled": true,
       "components": {
         "LocalPosition": {
@@ -31,7 +31,7 @@
         },
         "RenderMesh": {
           "mesh": {
-            "path": "cube.obj"
+            "path": "models/indoor_plant/indoor plant_02.obj"
           },
           "color": "#ffffff",
           "faceCulling": "BackFaces"

@@ -4,7 +4,7 @@
   "entities": [
     {
       "id": 1,
-      "name": "bugatti",
+      "name": "cube",
       "enabled": true,
       "components": {
         "LocalPosition": {
@@ -31,10 +31,10 @@
         },
         "RenderMesh": {
           "mesh": {
-            "path": "bugatti.obj"
+            "path": "models/cube/cube.obj"
           },
-          "color": "#4fa3f7",
-          "faceCulling": "None"
+          "color": "#ffffff",
+          "faceCulling": "BackFaces"
         },
         "LocalToWorld": {},
         "RenderBounds": {},

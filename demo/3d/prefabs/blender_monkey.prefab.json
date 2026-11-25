@@ -31,7 +31,7 @@
         },
         "RenderMesh": {
           "mesh": {
-            "path": "blender_monkey.obj"
+            "path": "models/blender_monkey/blender_monkey.obj"
           },
           "color": "#f7a44f",
           "faceCulling": "BackFaces"

@@ -41,7 +41,7 @@ describe("SpriteImage", () => {
     });
 
     test("fromFile decodes once per path and returns the cached instance", () => {
-        const path = "./demo/3d/checker.png";
+        const path = "./demo/3d/models/cube/checker.png";
         const first = SpriteImage.fromFile(path, disk);
         const second = SpriteImage.fromFile(path, disk);
         expect(first === second).toBe(true);

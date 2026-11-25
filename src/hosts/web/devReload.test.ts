@@ -10,7 +10,7 @@ import {
 } from "./devReload";
 import type {DevDataAssetsChange} from "./devReload";
 
-const CHANGE: DevDataAssetsChange = {paths: ["/2d/assets/demo2d.asset.json", "/3d/assets/demo3d.asset.json"]};
+const CHANGE: DevDataAssetsChange = {paths: ["/2d/assets/config.asset.json", "/3d/assets/config.asset.json"]};
 
 describe("dev data asset changes on game pages", () => {
     test("the event data is a JSON object with a list of string paths; anything else is rejected", () => {
@@ -58,7 +58,7 @@ describe("dev data asset changes on game pages", () => {
     });
 
     test("site paths under the page's folder become project paths; other projects' are dropped", () => {
-        expect(projectPathsIn("/2d/", [...CHANGE.paths, "/2d/"])).toEqual(["assets/demo2d.asset.json"]);
+        expect(projectPathsIn("/2d/", [...CHANGE.paths, "/2d/"])).toEqual(["assets/config.asset.json"]);
         expect(projectPathsIn("/swarm/", CHANGE.paths)).toEqual([]);
     });
 });

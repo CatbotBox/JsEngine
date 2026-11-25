@@ -269,13 +269,13 @@
         },
         "RenderMesh": {
           "mesh": {
-            "path": "cube.obj"
+            "path": "models/cube/cube.obj"
           },
           "color": "#ffffff",
           "faceCulling": "BackFaces"
         },
         "PrefabInstance": {
-          "sourcePath": "prefabs/models/cube.prefab.json",
+          "sourcePath": "prefabs/cube.prefab.json",
           "overrides": []
         },
         "LocalToWorld": {},

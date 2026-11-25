@@ -31,7 +31,7 @@
         },
         "RenderMesh": {
           "mesh": {
-            "path": "12221_Cat_v1_l3.obj"
+            "path": "models/cat/12221_Cat_v1_l3.obj"
           },
           "color": "#ffffff",
           "faceCulling": "BackFaces"

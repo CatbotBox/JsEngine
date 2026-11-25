@@ -3,7 +3,7 @@ import {TextColor} from "@jsengine/engine/rendering";
 import type {Int, PrefabAsset, Rgb, TextLines} from "@jsengine/engine/scene";
 
 export const MS_PER_SECOND = 1000;
-export const SWARM_CONFIG_FILE = "assets/swarm.config.asset.json";
+export const SWARM_CONFIG_FILE = "assets/config.asset.json";
 
 const UNCAPPED = Number.POSITIVE_INFINITY;
 

@@ -24,6 +24,6 @@ for (let y = 0; y < SIZE_PIXELS; y++) {
 }
 
 const fs = require("fs") as typeof FileSystem;
-fs.writeFileSync("demo/3d/checker.png", encodePng(SIZE_PIXELS, SIZE_PIXELS, rgba, nodeDeflate));
-fs.writeFileSync("demo/3d/cube.mtl", "newmtl Material\nKd 1.0 1.0 1.0\nKs 0.6 0.6 0.6\nNs 24\nmap_Kd checker.png\n");
-console.log(`wrote demo/3d/checker.png (${SIZE_PIXELS}x${SIZE_PIXELS}) and demo/3d/cube.mtl`);
+fs.writeFileSync("demo/3d/models/cube/checker.png", encodePng(SIZE_PIXELS, SIZE_PIXELS, rgba, nodeDeflate));
+fs.writeFileSync("demo/3d/models/cube/cube.mtl", "newmtl Material\nKd 1.0 1.0 1.0\nKs 0.6 0.6 0.6\nNs 24\nmap_Kd checker.png\n");
+console.log(`wrote demo/3d/models/cube/checker.png (${SIZE_PIXELS}x${SIZE_PIXELS}) and demo/3d/models/cube/cube.mtl`);

@@ -4,7 +4,7 @@
   "entities": [
     {
       "id": 1,
-      "name": "indoor plant",
+      "name": "bugatti",
       "enabled": true,
       "components": {
         "LocalPosition": {
@@ -31,10 +31,10 @@
         },
         "RenderMesh": {
           "mesh": {
-            "path": "indoor plant_02.obj"
+            "path": "models/bugatti/bugatti.obj"
           },
-          "color": "#ffffff",
-          "faceCulling": "BackFaces"
+          "color": "#4fa3f7",
+          "faceCulling": "None"
         },
         "LocalToWorld": {},
         "RenderBounds": {},

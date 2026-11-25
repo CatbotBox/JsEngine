@@ -378,10 +378,10 @@ describe("world worker protocol", () => {
     });
 
     test("a data asset reload carries the project paths, each a string", () => {
-        expect(isPageToWorldMessage({type: "reloadDataAssets", paths: ["assets/demo2d.asset.json"]})).toBe(true);
+        expect(isPageToWorldMessage({type: "reloadDataAssets", paths: ["assets/config.asset.json"]})).toBe(true);
         expect(isPageToWorldMessage({type: "reloadDataAssets", paths: []})).toBe(true);
         expect(isPageToWorldMessage({type: "reloadDataAssets"})).toBe(false);
-        expect(isPageToWorldMessage({type: "reloadDataAssets", paths: "assets/demo2d.asset.json"})).toBe(false);
+        expect(isPageToWorldMessage({type: "reloadDataAssets", paths: "assets/config.asset.json"})).toBe(false);
         expect(isPageToWorldMessage({type: "reloadDataAssets", paths: [7]})).toBe(false);
         expect(isWorldToPageMessage({type: "reloadDataAssets", paths: []})).toBe(false);
     });
@@ -539,10 +539,10 @@ describe("PageConnection (the world worker's platform)", () => {
         const page = await openConnection(scope);
         const received: (readonly string[])[] = [];
         const stop = page.onReloadDataAssets(paths => received.push(paths));
-        scope.send({type: "reloadDataAssets", paths: ["assets/demo2d.asset.json"]});
+        scope.send({type: "reloadDataAssets", paths: ["assets/config.asset.json"]});
         stop();
         scope.send({type: "reloadDataAssets", paths: ["assets/input.asset.json"]});
-        expect(received).toEqual([["assets/demo2d.asset.json"]]);
+        expect(received).toEqual([["assets/config.asset.json"]]);
     });
 
     test("each presented frame is posted at once as its own copy, with every buffer transferred", async () => {
@@ -980,11 +980,11 @@ describe("connectWorldWorker (the page's end)", () => {
     test("data asset reloads are posted while the worker runs; an empty list posts nothing and a closed page cannot deliver", () => {
         const worker = new FakeWorldWorker();
         const page = connectWorldWorker(new FakeDisplay(), worker, {name: "the demo"});
-        expect(page.reloadDataAssets(["assets/demo2d.asset.json"])).toBe(true);
+        expect(page.reloadDataAssets(["assets/config.asset.json"])).toBe(true);
         expect(page.reloadDataAssets([])).toBe(true);
         worker.emit({type: "error", message: "bad tuning"});
-        expect(page.reloadDataAssets(["assets/demo2d.asset.json"])).toBe(false);
-        expect(worker.posted.filter(message => message.type === "reloadDataAssets")).toEqual([{type: "reloadDataAssets", paths: ["assets/demo2d.asset.json"]}]);
+        expect(page.reloadDataAssets(["assets/config.asset.json"])).toBe(false);
+        expect(worker.posted.filter(message => message.type === "reloadDataAssets")).toEqual([{type: "reloadDataAssets", paths: ["assets/config.asset.json"]}]);
     });
 
     test("quit runs onQuit once, after the stopped status; an error does not", () => {

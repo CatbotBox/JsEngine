@@ -6,31 +6,31 @@
     "models": [
       {
         "prefab": {
-          "path": "prefabs/models/cube.prefab.json"
+          "path": "prefabs/cube.prefab.json"
         },
         "loadOnDemand": false
       },
       {
         "prefab": {
-          "path": "prefabs/models/blender_monkey.prefab.json"
+          "path": "prefabs/blender_monkey.prefab.json"
         },
         "loadOnDemand": false
       },
       {
         "prefab": {
-          "path": "prefabs/models/bugatti.prefab.json"
+          "path": "prefabs/bugatti.prefab.json"
         },
         "loadOnDemand": true
       },
       {
         "prefab": {
-          "path": "prefabs/models/cat.prefab.json"
+          "path": "prefabs/cat.prefab.json"
         },
         "loadOnDemand": false
       },
       {
         "prefab": {
-          "path": "prefabs/models/indoor_plant.prefab.json"
+          "path": "prefabs/indoor_plant.prefab.json"
         },
         "loadOnDemand": false
       }
@@ -140,7 +140,7 @@
       "lodLevelSeparator": "/",
       "singleThreadedRasterText": "none (single-threaded)",
       "nextModelFormat": "Next: {model}  [spawned: {spawned}] ",
-      "noModelsFormat": "no models listed: add a model prefab to models in assets/demo3d.asset.json and press r  [spawned: {spawned}] ",
+      "noModelsFormat": "no models listed: add a model prefab to models in assets/config.asset.json and press r  [spawned: {spawned}] ",
       "downloadFormat": "Loading {model}... {loaded} / {total} MB{queued} ",
       "queuedSpawnsFormat": ", {queued} to spawn",
       "downloadFailedFormat": "Could not load {model}: {failure} ",

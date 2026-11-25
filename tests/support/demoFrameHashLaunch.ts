@@ -22,7 +22,7 @@ export interface DemoFrameHashLaunch {
 }
 
 export const SWARM_FRAME_HASH_SEED = 20261116;
-export const DEMO_3D_FRAME_HASH_MODEL_PREFABS: readonly string[] = ["prefabs/models/cube.prefab.json", "prefabs/models/blender_monkey.prefab.json"];
+export const DEMO_3D_FRAME_HASH_MODEL_PREFABS: readonly string[] = ["prefabs/cube.prefab.json", "prefabs/blender_monkey.prefab.json"];
 
 interface ModelEntryJson {
     readonly prefab?: {readonly path?: unknown} | null;

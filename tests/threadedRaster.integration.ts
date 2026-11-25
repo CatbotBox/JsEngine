@@ -23,8 +23,8 @@ const WIDTH = 240, HEIGHT = 64, FRAMES = 60;
 const WORKERS = 3;
 const BOOT_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 5;
-const HEAVY_MESH_PATH = "./demo/3d/indoor plant_02.obj";
-const FALLBACK_MESH_PATH = "./demo/3d/blender_monkey.obj";
+const HEAVY_MESH_PATH = "./demo/3d/models/indoor_plant/indoor plant_02.obj";
+const FALLBACK_MESH_PATH = "./demo/3d/models/blender_monkey/blender_monkey.obj";
 const HALF_FOV_RAD = Math.PI / 6;
 const CELL_ASPECT_RATIO = 2;
 const SHADE_RGB = 0xF7A44F;
@@ -55,7 +55,7 @@ vertexLighting.beginFrame(sceneLights, invCam);
 const viewSpaceMesh = new ViewSpaceMesh();
 const normalMatrix = new Float32Array(9);
 
-const checker = Texture.fromFile("./demo/3d/checker.png", nodePlatform());
+const checker = Texture.fromFile("./demo/3d/models/cube/checker.png", nodePlatform());
 for (const material of mesh.materials) material.diffuseTexture = checker;
 
 interface PassConfig {

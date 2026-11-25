@@ -199,7 +199,7 @@ f 1//1 2 3//1
     });
 
     test("blender's flat-shaded cube.obj becomes 24 corners with axis-aligned normals and per-corner uvs", () => {
-        const mesh = Mesh.fromFile("./demo/3d/cube.obj", disk);
+        const mesh = Mesh.fromFile("./demo/3d/models/cube/cube.obj", disk);
         expect(mesh.vertCount).toBe(24);
         expect(mesh.triangleCount).toBe(12);
         expectOutwardNormals(mesh);

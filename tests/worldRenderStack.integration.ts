@@ -44,7 +44,7 @@ const buffer = world.getOrCreateSystem(EntityCommandBufferSystem).getEntityComma
 
 buffer.createEntity("camera", [new Camera(), new LocalToWorld(), new LocalPosition(), new RenderBounds(), new LocalRotation(), new FieldOfView()]);
 
-const meshEntity = buffer.createEntity("mesh", [new RenderMesh(Mesh.fromFile("./demo/3d/blender_monkey.obj", nodeHost)), new LocalToWorld(), new LocalScale()]);
+const meshEntity = buffer.createEntity("mesh", [new RenderMesh(Mesh.fromFile("./demo/3d/models/blender_monkey/blender_monkey.obj", nodeHost)), new LocalToWorld(), new LocalScale()]);
 buffer.addTrackedComponent(meshEntity, new LocalPosition(0, 0, 8));
 const rotation = buffer.addTrackedComponent(meshEntity, new LocalRotation());
 
@@ -131,7 +131,7 @@ expect(litRotDelta > 0, `rotating a lit mesh produced output (${litRotDelta} byt
 
 tick();
 const lenBeforeCube = output.length;
-const cubeMesh = Mesh.fromFile("./demo/3d/cube.obj", nodeHost);
+const cubeMesh = Mesh.fromFile("./demo/3d/models/cube/cube.obj", nodeHost);
 expect(cubeMesh.materials[0].diffuseTexture !== undefined, "cube.obj loaded its checker texture");
 buffer.createEntity("textured-cube", [
     new RenderMesh(cubeMesh),

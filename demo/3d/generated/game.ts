@@ -9,7 +9,7 @@ import type {ProjectHost, ProjectResourceBinding, StartedGame} from "@jsengine/e
 
 export const projectResources: readonly ProjectResourceBinding[] = [
     {type: "InputMap", path: "assets/input.asset.json"},
-    {type: "Demo3dConfig", path: "assets/demo3d.asset.json"},
+    {type: "Demo3dConfig", path: "assets/config.asset.json"},
 ];
 
 export const projectStartScene: string | undefined = "scenes/main.scene.json";

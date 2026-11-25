@@ -12,7 +12,7 @@ import {SwarmPhase, SwarmState} from "./resources";
 import {commandBufferOf, HALF, simulationStepMs, SwarmArena} from "./simulation";
 import {SwarmConfig} from "./config";
 
-const STATE_FILE = "assets/swarm.state.asset.json";
+const STATE_FILE = "assets/state.asset.json";
 const GAMEPLAY_SCENE_FILE = "scenes/main.scene.json";
 
 function startNewGame(world: World, state: SwarmState): void {

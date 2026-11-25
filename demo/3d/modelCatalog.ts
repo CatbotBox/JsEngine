@@ -4,7 +4,7 @@ import {PARENT_COMPONENT_NAME} from "@jsengine/engine/scene";
 import type {PrefabAsset, PrefabSpawner, PrefabTemplate} from "@jsengine/engine/scene";
 import type {ModelEntry} from "./config";
 
-export const DEMO_3D_CONFIG_FILE = "assets/demo3d.asset.json";
+export const DEMO_3D_CONFIG_FILE = "assets/config.asset.json";
 
 export type ModelLoadProgressListener = (loadedBytes: number, totalBytes: number) => void;
 

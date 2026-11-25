@@ -8,7 +8,7 @@
     },
     {
       "type": "Demo2dConfig",
-      "path": "assets/demo2d.asset.json"
+      "path": "assets/config.asset.json"
     }
   ]
 }

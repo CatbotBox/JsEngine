@@ -18,7 +18,7 @@ import {AnsiCellEncoder, nodePlatform} from "../src/hosts/terminal";
 const ROOT = resolve(__dirname, "..");
 const BASELINE_PATH = join(__dirname, "frameHashes.baseline.txt");
 const UPDATE_BASELINE = process.argv.includes("--update-baseline");
-const MESH_PATH = join(ROOT, "demo", "3d", "blender_monkey.obj");
+const MESH_PATH = join(ROOT, "demo", "3d", "models", "blender_monkey", "blender_monkey.obj");
 
 const WIDTH = 200, HEIGHT = 60, FRAMES = 30;
 const HALF_FOV_RAD = Math.PI / 6;

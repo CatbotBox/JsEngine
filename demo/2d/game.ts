@@ -16,7 +16,7 @@ import {Demo2dConfig} from "./config";
 import {commandBufferOf, ENTITIES_INCLUDING_DISABLED, INCLUDING_DISABLED} from "./worldAccess";
 
 const DEMO_NAME = "The 2D demo";
-const CONFIG_FILE = "assets/demo2d.asset.json";
+const CONFIG_FILE = "assets/config.asset.json";
 const HALF = 0.5;
 const NO_STEP = 0;
 const NO_OFFSET = 0;

@@ -8,11 +8,11 @@
     },
     {
       "type": "SwarmConfig",
-      "path": "assets/swarm.config.asset.json"
+      "path": "assets/config.asset.json"
     },
     {
       "type": "SwarmState",
-      "path": "assets/swarm.state.asset.json"
+      "path": "assets/state.asset.json"
     }
   ],
   "schemas": {
