@@ -1905,7 +1905,7 @@ demo/3d web gpu worker: 263 modules, 400452 bytes minified
   src/hosts/web/worldWorker.ts
   src/hosts/web/worldWorkerPlatform.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm terminal cells main: 203 modules, 264688 bytes minified
+demo/swarm terminal cells main: 241 modules, 319247 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -1921,6 +1921,8 @@ demo/swarm terminal cells main: 203 modules, 264688 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
+  demo/swarm/settingPath.ts
+  demo/swarm/settingsMenu.ts
   demo/swarm/ship.ts
   demo/swarm/simulation.ts
   demo/swarm/waves.ts
@@ -1941,7 +1943,9 @@ demo/swarm terminal cells main: 203 modules, 264688 bytes minified
   src/backends/cells/cellRenderSystemGroup.ts
   src/backends/cells/cellsBackend.ts
   src/backends/cells/cellsHudTextPasses.ts
+  src/backends/cells/cellsUiPasses.ts
   src/backends/cells/hudTextSpriteCellPassSystem.ts
+  src/backends/cells/uiCellPassSystem.ts
   src/engine/assets/image/decodedImage.ts
   src/engine/assets/image/inflate.ts
   src/engine/assets/image/jpeg.ts
@@ -2095,6 +2099,40 @@ demo/swarm terminal cells main: 203 modules, 264688 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/ui/layout/flexAxis.ts
+  src/engine/ui/layout/flexLayout.ts
+  src/engine/ui/layout/flexScrollbars.ts
+  src/engine/ui/layout/flexStyle.ts
+  src/engine/ui/layout/scrollbarGeometry.ts
+  src/engine/ui/schemas.ts
+  src/engine/ui/text/textColumns.ts
+  src/engine/ui/text/wrapTextLines.ts
+  src/engine/ui/uiBox.ts
+  src/engine/ui/uiDrawList.ts
+  src/engine/ui/uiDrawListSystem.ts
+  src/engine/ui/uiEvents.ts
+  src/engine/ui/uiInputSystemGroup.ts
+  src/engine/ui/uiInteractable.ts
+  src/engine/ui/uiLaidOutScroll.ts
+  src/engine/ui/uiLayout.ts
+  src/engine/ui/uiLayoutSystem.ts
+  src/engine/ui/uiNodeComponent.ts
+  src/engine/ui/uiOffset.ts
+  src/engine/ui/uiPointerNodes.ts
+  src/engine/ui/uiPointerScrollbars.ts
+  src/engine/ui/uiPointerSystem.ts
+  src/engine/ui/uiRect.ts
+  src/engine/ui/uiRoot.ts
+  src/engine/ui/uiScaleSnapping.ts
+  src/engine/ui/uiScroll.ts
+  src/engine/ui/uiScrollSystem.ts
+  src/engine/ui/uiScrollbarDraw.ts
+  src/engine/ui/uiSize.ts
+  src/engine/ui/uiSnapping.ts
+  src/engine/ui/uiState.ts
+  src/engine/ui/uiSystemPriorities.ts
+  src/engine/ui/uiText.ts
+  src/engine/ui/uiTreeIndex.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/terminal/ansi/ansiCellEncoder.ts
@@ -2140,7 +2178,7 @@ demo/swarm web cells page: 19 modules, 25057 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web cells worker: 199 modules, 258368 bytes minified
+demo/swarm web cells worker: 237 modules, 312859 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2156,6 +2194,8 @@ demo/swarm web cells worker: 199 modules, 258368 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
+  demo/swarm/settingPath.ts
+  demo/swarm/settingsMenu.ts
   demo/swarm/ship.ts
   demo/swarm/simulation.ts
   demo/swarm/waves.ts
@@ -2176,7 +2216,9 @@ demo/swarm web cells worker: 199 modules, 258368 bytes minified
   src/backends/cells/cellRenderSystemGroup.ts
   src/backends/cells/cellsBackend.ts
   src/backends/cells/cellsHudTextPasses.ts
+  src/backends/cells/cellsUiPasses.ts
   src/backends/cells/hudTextSpriteCellPassSystem.ts
+  src/backends/cells/uiCellPassSystem.ts
   src/backends/pixels/pixelFrame.ts
   src/engine/assets/image/decodedImage.ts
   src/engine/assets/image/inflate.ts
@@ -2328,6 +2370,40 @@ demo/swarm web cells worker: 199 modules, 258368 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/ui/layout/flexAxis.ts
+  src/engine/ui/layout/flexLayout.ts
+  src/engine/ui/layout/flexScrollbars.ts
+  src/engine/ui/layout/flexStyle.ts
+  src/engine/ui/layout/scrollbarGeometry.ts
+  src/engine/ui/schemas.ts
+  src/engine/ui/text/textColumns.ts
+  src/engine/ui/text/wrapTextLines.ts
+  src/engine/ui/uiBox.ts
+  src/engine/ui/uiDrawList.ts
+  src/engine/ui/uiDrawListSystem.ts
+  src/engine/ui/uiEvents.ts
+  src/engine/ui/uiInputSystemGroup.ts
+  src/engine/ui/uiInteractable.ts
+  src/engine/ui/uiLaidOutScroll.ts
+  src/engine/ui/uiLayout.ts
+  src/engine/ui/uiLayoutSystem.ts
+  src/engine/ui/uiNodeComponent.ts
+  src/engine/ui/uiOffset.ts
+  src/engine/ui/uiPointerNodes.ts
+  src/engine/ui/uiPointerScrollbars.ts
+  src/engine/ui/uiPointerSystem.ts
+  src/engine/ui/uiRect.ts
+  src/engine/ui/uiRoot.ts
+  src/engine/ui/uiScaleSnapping.ts
+  src/engine/ui/uiScroll.ts
+  src/engine/ui/uiScrollSystem.ts
+  src/engine/ui/uiScrollbarDraw.ts
+  src/engine/ui/uiSize.ts
+  src/engine/ui/uiSnapping.ts
+  src/engine/ui/uiState.ts
+  src/engine/ui/uiSystemPriorities.ts
+  src/engine/ui/uiText.ts
+  src/engine/ui/uiTreeIndex.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/web/animationFrameScheduler.ts
@@ -2358,7 +2434,7 @@ demo/swarm web pixels page: 17 modules, 17208 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web pixels worker: 201 modules, 258409 bytes minified
+demo/swarm web pixels worker: 242 modules, 314281 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2374,6 +2450,8 @@ demo/swarm web pixels worker: 201 modules, 258409 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
+  demo/swarm/settingPath.ts
+  demo/swarm/settingsMenu.ts
   demo/swarm/ship.ts
   demo/swarm/simulation.ts
   demo/swarm/waves.ts
@@ -2396,8 +2474,11 @@ demo/swarm web pixels worker: 201 modules, 258409 bytes minified
   src/backends/pixels/pixelTextRasterizer.ts
   src/backends/pixels/pixelsBackend.ts
   src/backends/pixels/pixelsHudTextPasses.ts
+  src/backends/pixels/pixelsUiPasses.ts
   src/backends/pixels/pixelsWorldTextPasses.ts
   src/backends/pixels/textSpritePixelPassSystem.ts
+  src/backends/pixels/uiPixelPassSystem.ts
+  src/backends/pixels/uiPixelScaleSnappingSystem.ts
   src/engine/assets/image/decodedImage.ts
   src/engine/assets/image/inflate.ts
   src/engine/assets/image/jpeg.ts
@@ -2495,9 +2576,11 @@ demo/swarm web pixels worker: 201 modules, 258409 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/glyphSource.ts
   src/engine/rendering/text/hudLabel.ts
   src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
+  src/engine/rendering/text/pixelFontGlyphSource.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
@@ -2548,6 +2631,40 @@ demo/swarm web pixels worker: 201 modules, 258409 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/ui/layout/flexAxis.ts
+  src/engine/ui/layout/flexLayout.ts
+  src/engine/ui/layout/flexScrollbars.ts
+  src/engine/ui/layout/flexStyle.ts
+  src/engine/ui/layout/scrollbarGeometry.ts
+  src/engine/ui/schemas.ts
+  src/engine/ui/text/textColumns.ts
+  src/engine/ui/text/wrapTextLines.ts
+  src/engine/ui/uiBox.ts
+  src/engine/ui/uiDrawList.ts
+  src/engine/ui/uiDrawListSystem.ts
+  src/engine/ui/uiEvents.ts
+  src/engine/ui/uiInputSystemGroup.ts
+  src/engine/ui/uiInteractable.ts
+  src/engine/ui/uiLaidOutScroll.ts
+  src/engine/ui/uiLayout.ts
+  src/engine/ui/uiLayoutSystem.ts
+  src/engine/ui/uiNodeComponent.ts
+  src/engine/ui/uiOffset.ts
+  src/engine/ui/uiPointerNodes.ts
+  src/engine/ui/uiPointerScrollbars.ts
+  src/engine/ui/uiPointerSystem.ts
+  src/engine/ui/uiRect.ts
+  src/engine/ui/uiRoot.ts
+  src/engine/ui/uiScaleSnapping.ts
+  src/engine/ui/uiScroll.ts
+  src/engine/ui/uiScrollSystem.ts
+  src/engine/ui/uiScrollbarDraw.ts
+  src/engine/ui/uiSize.ts
+  src/engine/ui/uiSnapping.ts
+  src/engine/ui/uiState.ts
+  src/engine/ui/uiSystemPriorities.ts
+  src/engine/ui/uiText.ts
+  src/engine/ui/uiTreeIndex.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/web/animationFrameScheduler.ts
@@ -2578,7 +2695,7 @@ demo/swarm web gpu page: 17 modules, 16748 bytes minified
   src/hosts/web/worldPage.ts
   src/hosts/web/worldWorkerPage.ts
   src/hosts/web/worldWorkerProtocol.ts
-demo/swarm web gpu worker: 231 modules, 309484 bytes minified
+demo/swarm web gpu worker: 272 modules, 365470 bytes minified
   demo/swarm/actions.ts
   demo/swarm/combat.ts
   demo/swarm/components.ts
@@ -2594,6 +2711,8 @@ demo/swarm web gpu worker: 231 modules, 309484 bytes minified
   demo/swarm/generated/systems.ts
   demo/swarm/hud.ts
   demo/swarm/resources.ts
+  demo/swarm/settingPath.ts
+  demo/swarm/settingsMenu.ts
   demo/swarm/ship.ts
   demo/swarm/simulation.ts
   demo/swarm/waves.ts
@@ -2642,8 +2761,11 @@ demo/swarm web gpu worker: 231 modules, 309484 bytes minified
   src/backends/pixels/pixelRenderSystemGroup.ts
   src/backends/pixels/pixelTextRasterizer.ts
   src/backends/pixels/pixelsHudTextPasses.ts
+  src/backends/pixels/pixelsUiPasses.ts
   src/backends/pixels/pixelsWorldTextPasses.ts
   src/backends/pixels/textSpritePixelPassSystem.ts
+  src/backends/pixels/uiPixelPassSystem.ts
+  src/backends/pixels/uiPixelScaleSnappingSystem.ts
   src/engine/assets/image/decodedImage.ts
   src/engine/assets/image/inflate.ts
   src/engine/assets/image/jpeg.ts
@@ -2744,9 +2866,11 @@ demo/swarm web gpu worker: 231 modules, 309484 bytes minified
   src/engine/rendering/screenSize.ts
   src/engine/rendering/screenUnits.ts
   src/engine/rendering/text/asciiPixelFont.ts
+  src/engine/rendering/text/glyphSource.ts
   src/engine/rendering/text/hudLabel.ts
   src/engine/rendering/text/hudText.ts
   src/engine/rendering/text/pixelFont.ts
+  src/engine/rendering/text/pixelFontGlyphSource.ts
   src/engine/rendering/textColor.ts
   src/engine/rendering/textColorPalette.ts
   src/engine/rendering/textSprite.ts
@@ -2797,6 +2921,40 @@ demo/swarm web gpu worker: 231 modules, 309484 bytes minified
   src/engine/translation/parentTransformSyncSystem.ts
   src/engine/translation/schemas.ts
   src/engine/translation/translationSystemGroup.ts
+  src/engine/ui/layout/flexAxis.ts
+  src/engine/ui/layout/flexLayout.ts
+  src/engine/ui/layout/flexScrollbars.ts
+  src/engine/ui/layout/flexStyle.ts
+  src/engine/ui/layout/scrollbarGeometry.ts
+  src/engine/ui/schemas.ts
+  src/engine/ui/text/textColumns.ts
+  src/engine/ui/text/wrapTextLines.ts
+  src/engine/ui/uiBox.ts
+  src/engine/ui/uiDrawList.ts
+  src/engine/ui/uiDrawListSystem.ts
+  src/engine/ui/uiEvents.ts
+  src/engine/ui/uiInputSystemGroup.ts
+  src/engine/ui/uiInteractable.ts
+  src/engine/ui/uiLaidOutScroll.ts
+  src/engine/ui/uiLayout.ts
+  src/engine/ui/uiLayoutSystem.ts
+  src/engine/ui/uiNodeComponent.ts
+  src/engine/ui/uiOffset.ts
+  src/engine/ui/uiPointerNodes.ts
+  src/engine/ui/uiPointerScrollbars.ts
+  src/engine/ui/uiPointerSystem.ts
+  src/engine/ui/uiRect.ts
+  src/engine/ui/uiRoot.ts
+  src/engine/ui/uiScaleSnapping.ts
+  src/engine/ui/uiScroll.ts
+  src/engine/ui/uiScrollSystem.ts
+  src/engine/ui/uiScrollbarDraw.ts
+  src/engine/ui/uiSize.ts
+  src/engine/ui/uiSnapping.ts
+  src/engine/ui/uiState.ts
+  src/engine/ui/uiSystemPriorities.ts
+  src/engine/ui/uiText.ts
+  src/engine/ui/uiTreeIndex.ts
   src/engine/util/event.ts
   src/engine/util/tokenUtils.ts
   src/hosts/web/animationFrameScheduler.ts
