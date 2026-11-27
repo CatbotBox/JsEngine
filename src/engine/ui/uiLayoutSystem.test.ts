@@ -224,4 +224,22 @@ describe("UiLayoutSystem", () => {
         const clip = component(entityManager, items[0], UiRect);
         expect([clip.clipTop, clip.clipBottom]).toEqual([4, 6]);
     });
+
+    test("a screen that grows shrinks the overflow, pulls the scroll offset back and writes it to UiScroll", () => {
+        const list = entityManager.createEntity("list", [new UiScroll(), new UiSize()]);
+        component(entityManager, list, UiSize).heightMode = "fill";
+        const items: Entity[] = [];
+        for (let i = 0; i < SCREEN_HEIGHT; i++) items.push(entityManager.createEntity("item", [text(`item ${i}`)]));
+        attach(entityManager, root, [title, group, footer, list]);
+        attach(entityManager, list, items);
+        component(entityManager, list, UiScroll).scrollY = SCREEN_HEIGHT;
+        world.step();
+        const fixedRows = 4;
+        const scroll = component(entityManager, list, UiScroll);
+        expect(scroll.scrollY).toBe(fixedRows);
+        component(entityManager, camera, ScreenSize).y = SCREEN_HEIGHT + 1;
+        world.step();
+        expect(scroll.scrollY).toBe(fixedRows - 1);
+        expect(rectOf(entityManager, items[SCREEN_HEIGHT - 1]).y).toBe(SCREEN_HEIGHT);
+    });
 });

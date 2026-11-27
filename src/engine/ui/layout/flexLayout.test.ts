@@ -32,14 +32,25 @@ interface LaidOutClip {
     readonly bottom: number;
 }
 
+interface LaidOutScrollbar {
+    readonly x: number;
+    readonly y: number;
+    readonly length: number;
+    readonly thumbStart: number;
+    readonly thumbLength: number;
+}
+
 interface LaidOutTree {
     rect(name: string): LaidOutRect;
     clip(name: string): LaidOutClip;
     scroll(name: string): {readonly x: number, readonly y: number, readonly contentWidth: number, readonly contentHeight: number};
+    verticalScrollbar(name: string): LaidOutScrollbar;
+    horizontalScrollbar(name: string): LaidOutScrollbar;
 }
 
 const NO_OFFSET: FlexOffsetStyle = {x: 0, y: 0, anchorX: 0, anchorY: 0};
-const NO_SCROLL: FlexScrollStyle = {scrollX: 0, scrollY: 0, axes: "vertical"};
+const NO_SCROLL: FlexScrollStyle = {scrollX: 0, scrollY: 0, axes: "vertical", scrollbar: "never"};
+const HIDDEN_SCROLLBAR: LaidOutScrollbar = {x: 0, y: 0, length: 0, thumbStart: 0, thumbLength: 0};
 
 function treeOf(root: NodeSpec): {tree: FlexLayoutTree, indexOf: Map<string, number>} {
     const indexOf = new Map<string, number>();
@@ -89,6 +100,26 @@ function layOut(root: NodeSpec, width: number = SCREEN_WIDTH, height: number = S
             const node = nodeOf(name);
             return {x: layout.scrollX[node], y: layout.scrollY[node], contentWidth: layout.contentWidth[node], contentHeight: layout.contentHeight[node]};
         },
+        verticalScrollbar: name => {
+            const node = nodeOf(name), bars = layout.scrollbars;
+            return {
+                x: bars.verticalTrackX[node],
+                y: bars.verticalTrackY[node],
+                length: bars.verticalTrackLength[node],
+                thumbStart: bars.verticalThumbStart[node],
+                thumbLength: bars.verticalThumbLength[node],
+            };
+        },
+        horizontalScrollbar: name => {
+            const node = nodeOf(name), bars = layout.scrollbars;
+            return {
+                x: bars.horizontalTrackX[node],
+                y: bars.horizontalTrackY[node],
+                length: bars.horizontalTrackLength[node],
+                thumbStart: bars.horizontalThumbStart[node],
+                thumbLength: bars.horizontalThumbLength[node],
+            };
+        },
     };
 }
 
@@ -98,6 +129,16 @@ function fixed(width: number, height: number): Partial<FlexSizeStyle> {
 
 function box(name: string, width: number, height: number): NodeSpec {
     return {name, size: fixed(width, height)};
+}
+
+function textRows(count: number): NodeSpec[] {
+    const rows: NodeSpec[] = [];
+    for (let i = 0; i < count; i++) rows.push({name: `row${i}`, text: `item ${i}`});
+    return rows;
+}
+
+function scrollList(scroll: Partial<FlexScrollStyle>, children: readonly NodeSpec[], size: Partial<FlexSizeStyle> = fixed(10, 4)): LaidOutTree {
+    return layOut({name: "root", container: {align: "start"}, children: [{name: "list", size, scroll, children}]}, 20, 20);
 }
 
 describe("flex layout", () => {
@@ -504,5 +545,62 @@ describe("flex layout", () => {
         const large = treeOf({name: "root", container: {align: "start"}, children: rows});
         layout.layout(large.tree, 0, 10, 100);
         expect(layout.y[large.indexOf.get("row39")!]).toBe(39);
+    });
+
+    test("auto reserves a scrollbar column only when the content overflows, and the children and their clip give it up", () => {
+        const fits = scrollList({scrollbar: "auto"}, textRows(2));
+        expect(fits.rect("row0").width).toBe(10);
+        expect(fits.clip("row0").right).toBe(10);
+        expect(fits.verticalScrollbar("list")).toEqual(HIDDEN_SCROLLBAR);
+
+        const overflows = scrollList({scrollbar: "auto"}, textRows(10));
+        expect(overflows.rect("row0").width).toBe(9);
+        expect(overflows.clip("row0")).toEqual({left: 0, top: 0, right: 9, bottom: 4});
+        expect(overflows.verticalScrollbar("list")).toEqual({x: 9, y: 0, length: 4, thumbStart: 0, thumbLength: 2});
+        expect(overflows.horizontalScrollbar("list")).toEqual(HIDDEN_SCROLLBAR);
+        expect(overflows.scroll("list")).toEqual({x: 0, y: 0, contentWidth: 10, contentHeight: 10});
+    });
+
+    test("always reserves the column without overflow, and a fit scroll node grows by it like a border", () => {
+        const fixedList = scrollList({scrollbar: "always"}, textRows(2));
+        expect(fixedList.rect("row0").width).toBe(9);
+        expect(fixedList.verticalScrollbar("list")).toEqual({x: 9, y: 0, length: 4, thumbStart: 0, thumbLength: 4});
+
+        const fitList = scrollList({scrollbar: "always"}, [{name: "a", text: "abc"}, {name: "b", text: "de"}], {});
+        expect(fitList.rect("list")).toEqual({x: 0, y: 0, width: 4, height: 2});
+        expect(fitList.rect("a").width).toBe(3);
+        expect(fitList.verticalScrollbar("list")).toEqual({x: 3, y: 0, length: 2, thumbStart: 0, thumbLength: 2});
+    });
+
+    test("never reserves nothing, even when the content overflows", () => {
+        const laidOut = scrollList({scrollbar: "never"}, textRows(10));
+        expect(laidOut.rect("row0").width).toBe(10);
+        expect(laidOut.verticalScrollbar("list")).toEqual(HIDDEN_SCROLLBAR);
+        expect(laidOut.scroll("list").contentHeight).toBe(10);
+    });
+
+    test("an overflowing auto scroll node arranges its children once more at the narrower width, so wrapped text rewraps", () => {
+        const laidOut = scrollList({scrollbar: "auto"}, [{name: "wrapped", text: "aaaaa bbbb", wrap: "word"}, ...textRows(3)], fixed(10, 3));
+        expect(laidOut.rect("wrapped")).toEqual({x: 0, y: 0, width: 9, height: 2});
+        expect(laidOut.rect("row0").y).toBe(2);
+        expect(laidOut.scroll("list").contentHeight).toBe(5);
+        expect(laidOut.verticalScrollbar("list").length).toBe(3);
+    });
+
+    test("the thumb follows the clamped offset along the track", () => {
+        expect(scrollList({scrollbar: "auto", scrollY: 3}, textRows(10)).verticalScrollbar("list").thumbStart).toBe(1);
+        expect(scrollList({scrollbar: "auto", scrollY: 50}, textRows(10)).verticalScrollbar("list").thumbStart).toBe(2);
+    });
+
+    test("a bordered scroll node keeps its tracks inside the border, and with both axes the corner unit stays empty", () => {
+        const laidOut = layOut({
+            name: "root",
+            container: {align: "start"},
+            children: [{name: "list", size: fixed(10, 6), border: "single", scroll: {axes: "both", scrollbar: "auto"}, children: [box("wide", 20, 10)]}],
+        }, 30, 30);
+        expect(laidOut.verticalScrollbar("list")).toEqual({x: 8, y: 1, length: 3, thumbStart: 1, thumbLength: 1});
+        expect(laidOut.horizontalScrollbar("list")).toEqual({x: 1, y: 4, length: 7, thumbStart: 1, thumbLength: 3});
+        expect(laidOut.scroll("list")).toEqual({x: 0, y: 0, contentWidth: 23, contentHeight: 13});
+        expect(laidOut.clip("wide")).toEqual({left: 1, top: 1, right: 8, bottom: 4});
     });
 });

@@ -14,6 +14,7 @@ import {UiBox} from "../../engine/ui/uiBox";
 import {UiLayout} from "../../engine/ui/uiLayout";
 import {UiRoot} from "../../engine/ui/uiRoot";
 import {UiScaleSnapping} from "../../engine/ui/uiScaleSnapping";
+import {UiScroll} from "../../engine/ui/uiScroll";
 import {UiSize} from "../../engine/ui/uiSize";
 import {UiText} from "../../engine/ui/uiText";
 import {CellKind, copyCellFrame} from "./cellFrame";
@@ -142,6 +143,27 @@ function renderPanel(border: UiBorderStyle = "single", requestedScale: number = 
     return {frame: presenter.lastFrame!, world};
 }
 
+function renderScrollList(): CellFrame {
+    const presenter = new FrameKeeper();
+    const world = new World({platform: new MemoryPlatform()});
+    installCellsBackend(world, presenter, [...CELLS_UI_PASSES]);
+    const em = world.entityManager;
+    em.createEntity("camera", [new Camera()]);
+    const rootLayout = new UiLayout();
+    rootLayout.align = "start";
+    const root = em.createEntity("root", [new UiRoot(), rootLayout]);
+    const size = fixedWidth(PANEL_WIDTH);
+    size.heightMode = "fixed";
+    size.height = PANEL_HEIGHT;
+    const list = em.createEntity("list", [new UiScroll(), size]);
+    attach(em, root, [list]);
+    const rows: Entity[] = [];
+    for (let i = 0; i < PANEL_HEIGHT * 2; i++) rows.push(em.createEntity(`row${i}`, [text(`item ${i}`, TextColor.YELLOW)]));
+    attach(em, list, rows);
+    for (let step = 0; step < SETTLE_STEPS; step++) world.step();
+    return presenter.lastFrame!;
+}
+
 describe("UiCellPassSystem", () => {
     test("a single border draws box-drawing corners and edges over the box's background", () => {
         const {frame} = renderPanel();
@@ -199,5 +221,15 @@ describe("UiCellPassSystem", () => {
         expect(world.resources.get(UiScaleSnapping).effectiveScale(REQUESTED_SCALE)).toBe(1);
         expect(rowText(frame, 1, 1, 6)).toBe("Hello");
         expect(cellAt(frame, PANEL_WIDTH - 1, 0).glyph).toBe("┐");
+    });
+
+    test("an overflowing scroll region draws its thumb over its track in its last column, beside its rows", () => {
+        const frame = renderScrollList();
+        const barX = PANEL_WIDTH - 1, thumbRows = PANEL_HEIGHT / 2;
+        const bar = Array.from({length: PANEL_HEIGHT}, (_, y) => cellAt(frame, barX, y).background);
+        expect(bar).toEqual([...Array(thumbRows).fill(TextColor.WHITE), ...Array(PANEL_HEIGHT - thumbRows).fill(TextColor.BRIGHT_BLACK)]);
+        expect(rowText(frame, 0, 0, 6)).toBe("item 0");
+        expect(rowText(frame, PANEL_HEIGHT - 1, 0, 6)).toBe("item 5");
+        expect(cellAt(frame, barX - 1, 0).background).toBe(TextColor.DEFAULT);
     });
 });

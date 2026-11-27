@@ -4,6 +4,7 @@ import type {UiInteractable} from "./uiInteractable";
 import {UI_RECT_CLIP_BOTTOM, UI_RECT_CLIP_LEFT, UI_RECT_CLIP_RIGHT, UI_RECT_CLIP_TOP, UI_RECT_FLOATS, UI_RECT_HEIGHT, UI_RECT_WIDTH, UI_RECT_X, UI_RECT_Y} from "./uiRect";
 import type {UiRect} from "./uiRect";
 import type {UiRoot} from "./uiRoot";
+import {showsScrollbar, UiPointerScrollbars} from "./uiPointerScrollbars";
 import type {UiScaleSnapping} from "./uiScaleSnapping";
 import type {UiScroll} from "./uiScroll";
 import {snappedUiEdge} from "./uiSnapping";
@@ -24,7 +25,9 @@ export const POINTER_NODE_DECLARES_CLICK = 64;
 export const POINTER_NODE_DECLARES_DRAG = 128;
 export const POINTER_NODE_DECLARES_WHEEL = 256;
 export const POINTER_NODE_BLOCKS_GAME_INPUT = 512;
+export const POINTER_NODE_HAS_SCROLLBAR = 1024;
 export const POINTER_NODE_ACCEPTS_PRESS = 160;
+export const POINTER_SCROLLBAR_ACCEPTS = 416;
 
 const INITIAL_CAPACITY_NODES = 16;
 const CAPACITY_GROWTH_FACTOR = 2;
@@ -47,6 +50,7 @@ export function pointerFlagsOf({interactable, scroll, box, text, root}: PointerN
     const draws = (box !== undefined && uiBoxDrawsInAnyState(box)) || (text !== undefined && text.text.length > 0);
     let flags = POINTER_NODE_PRESENT | flagIf(interactive || draws, POINTER_NODE_HITTABLE) | flagIf(interactive, POINTER_NODE_INTERACTIVE);
     flags |= flagIf(root?.blocksGameInput === true, POINTER_NODE_BLOCKS_GAME_INPUT) | flagIf(scroll !== undefined, POINTER_NODE_DECLARES_WHEEL);
+    flags |= flagIf(showsScrollbar(scroll), POINTER_NODE_HAS_SCROLLBAR);
     if (interactable === undefined) return flags;
     flags |= flagIf(interactable.press, POINTER_NODE_DECLARES_PRESS) | flagIf(interactable.click, POINTER_NODE_DECLARES_CLICK);
     flags |= flagIf(interactable.drag, POINTER_NODE_DECLARES_DRAG) | flagIf(interactable.wheel, POINTER_NODE_DECLARES_WHEEL);
@@ -62,6 +66,8 @@ export class UiPointerNodes {
     private _flags = new Uint16Array(INITIAL_CAPACITY_NODES);
     private _rects = new Float64Array(INITIAL_CAPACITY_NODES * UI_RECT_FLOATS);
     private _hitRoot = NO_HIT;
+    private _hitScrollbar = false;
+    private readonly _scrollbars = new UiPointerScrollbars();
 
     public get count(): number {
         return this._count;
@@ -75,13 +81,17 @@ export class UiPointerNodes {
         return this._hitRoot;
     }
 
+    public get hitScrollbar(): boolean {
+        return this._hitScrollbar;
+    }
+
     public reset(count: number): void {
         this.ensureCapacity(count);
         this._count = count;
         this._flags.fill(NO_POINTER_FLAGS, 0, count);
     }
 
-    public setNode(node: number, rect: Readonly<UiRect>, flags: number): void {
+    public setNode(node: number, rect: Readonly<UiRect>, flags: number, scroll: Readonly<UiScroll> | undefined): void {
         const rects = this._rects, base = node * UI_RECT_FLOATS;
         rects[base + UI_RECT_X] = rect.x;
         rects[base + UI_RECT_Y] = rect.y;
@@ -92,6 +102,7 @@ export class UiPointerNodes {
         rects[base + UI_RECT_CLIP_RIGHT] = rect.clipRight;
         rects[base + UI_RECT_CLIP_BOTTOM] = rect.clipBottom;
         this._flags[node] = flags;
+        this._scrollbars.set(node, scroll);
     }
 
     public hitTest(tree: UiTreeIndex, snapping: UiScaleSnapping, screenX: number, screenY: number): number {
@@ -105,11 +116,18 @@ export class UiPointerNodes {
                 if ((flags[node] & POINTER_NODE_HITTABLE) === NO_POINTER_FLAGS) continue;
                 if (!this.covers(node, deviceX, deviceY, unitX, unitY)) continue;
                 this._hitRoot = slot;
+                this._hitScrollbar = (flags[node] & POINTER_NODE_HAS_SCROLLBAR) !== NO_POINTER_FLAGS && this._scrollbars.covers(node, deviceX, deviceY, unitX, unitY);
                 return node;
             }
         }
         this._hitRoot = NO_HIT;
+        this._hitScrollbar = false;
         return NO_HIT;
+    }
+
+    public scrollbarAcceptor(scrollNode: number, declared: number): number {
+        if (scrollNode === NO_HIT || (declared & POINTER_SCROLLBAR_ACCEPTS) === NO_POINTER_FLAGS) return NO_HIT;
+        return (this._flags[scrollNode] & POINTER_NODE_DISABLED) === NO_POINTER_FLAGS ? scrollNode : NO_HIT;
     }
 
     public acceptor(tree: UiTreeIndex, origin: number, declared: number): number {
@@ -140,5 +158,6 @@ export class UiPointerNodes {
         while (capacity < count) capacity *= CAPACITY_GROWTH_FACTOR;
         this._flags = new Uint16Array(capacity);
         this._rects = new Float64Array(capacity * UI_RECT_FLOATS);
+        this._scrollbars.ensureCapacity(capacity);
     }
 }

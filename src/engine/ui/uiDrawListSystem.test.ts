@@ -33,6 +33,7 @@ import {UiInteractable} from "./uiInteractable";
 import {UiLayout} from "./uiLayout";
 import {UiRoot} from "./uiRoot";
 import {REQUESTED_UI_SCALE_RULE, UiScaleSnapping} from "./uiScaleSnapping";
+import {UiScroll} from "./uiScroll";
 import {UiSize} from "./uiSize";
 import {UiText} from "./uiText";
 
@@ -280,5 +281,31 @@ describe("UiDrawListSystem", () => {
         world.resources.get(UiScaleSnapping).use({...REQUESTED_UI_SCALE_RULE, effectiveScale: () => DOUBLE_SCALE});
         world.step();
         expect(world.resources.get(UiDrawList).rootScales).toEqual([DOUBLE_SCALE, DOUBLE_SCALE]);
+    });
+
+    test("a scroll node's track and thumb are fills in its own clip, and its content is clipped short of the track", () => {
+        const size = new UiSize();
+        size.widthMode = "fixed";
+        size.width = PANEL_WIDTH;
+        size.heightMode = "fixed";
+        size.height = PANEL_HEIGHT;
+        const list = entityManager.createEntity("list", [new UiScroll(), size]);
+        const rows: Entity[] = [];
+        for (let i = 0; i < PANEL_HEIGHT * 2; i++) rows.push(entityManager.createEntity(`row${i}`, [uiText(`item ${i}`)]));
+        attach(entityManager, list, rows);
+        attach(entityManager, root, [list]);
+        const commands = drawn();
+        const fills = commands.filter(command => command.kind === UI_DRAW_FILL);
+        const screenClip = [0, 0, SCREEN_WIDTH, SCREEN_HEIGHT];
+        const barX = PANEL_WIDTH - 1;
+        expect(fills.map(fill => [fill.x, fill.y, fill.width, fill.height, fill.color, fill.clip])).toEqual([
+            [barX, 0, 1, PANEL_HEIGHT, TextColor.BRIGHT_BLACK, screenClip],
+            [barX, 0, 1, 2, TextColor.WHITE, screenClip],
+        ]);
+        expect(commands.indexOf(fills[1])).toBe(1);
+        expect(commands.filter(command => command.kind === UI_DRAW_TEXT).every(command => command.clip[2] === barX)).toBe(true);
+        component(entityManager, list, UiScroll).scrollY = PANEL_HEIGHT;
+        const scrolledThumb = drawn().filter(command => command.kind === UI_DRAW_FILL)[1];
+        expect([scrolledThumb.y, scrolledThumb.height]).toEqual([PANEL_HEIGHT - 2, 2]);
     });
 });

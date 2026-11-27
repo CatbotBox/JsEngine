@@ -10,6 +10,7 @@ import {FlexLayout} from "./layout/flexLayout";
 import type {FlexLayoutTree} from "./layout/flexLayout";
 import type {FlexBoxStyle, FlexContainerStyle, FlexOffsetStyle, FlexScrollStyle, FlexSizeStyle, FlexTextContent} from "./layout/flexStyle";
 import {UiBox} from "./uiBox";
+import {storeLaidOutScroll} from "./uiLaidOutScroll";
 import {UiLayout} from "./uiLayout";
 import {UiOffset} from "./uiOffset";
 import {
@@ -277,14 +278,7 @@ export class UiLayoutSystem extends System {
         this._scrolls.stream({write: {scroll: UiScroll}}, {includeEntity: true}).consume(({entity, scroll}) => {
             const node = index.indexOf(entity);
             if (node === NOT_IN_TREE) return Unchanged;
-            const scrollX = layout.scrollX[node], scrollY = layout.scrollY[node];
-            const contentWidth = layout.contentWidth[node], contentHeight = layout.contentHeight[node];
-            if (scroll.scrollX === scrollX && scroll.scrollY === scrollY && scroll.contentWidth === contentWidth && scroll.contentHeight === contentHeight) return Unchanged;
-            scroll.scrollX = scrollX;
-            scroll.scrollY = scrollY;
-            scroll.contentWidth = contentWidth;
-            scroll.contentHeight = contentHeight;
-            return undefined;
+            return storeLaidOutScroll(scroll, layout, node) ? undefined : Unchanged;
         });
     }
 }

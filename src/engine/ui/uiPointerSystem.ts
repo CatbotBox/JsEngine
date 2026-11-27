@@ -28,6 +28,7 @@ import {UiRect} from "./uiRect";
 import {UiRoot} from "./uiRoot";
 import {UiScaleSnapping} from "./uiScaleSnapping";
 import {UiScroll} from "./uiScroll";
+import {UiScrollSystem} from "./uiScrollSystem";
 import {UI_STATE_DISABLED, UI_STATE_HOVERED, UI_STATE_PRESSED, UI_POINTER_STATE_BITS, UiState} from "./uiState";
 import {UI_POINTER_PRIORITY} from "./uiSystemPriorities";
 import {UiText} from "./uiText";
@@ -95,6 +96,7 @@ export class UiPointerSystem extends System {
     private _pointerY = 0;
 
     private _hoverNode = NO_HIT;
+    private _hoverOnScrollbar = false;
     private _hoverOrigin: Entity = NULL_ENTITY;
     private _hoverScale = DEFAULT_SCALE;
     private _overClaimingUi = false;
@@ -138,12 +140,14 @@ export class UiPointerSystem extends System {
         this.world.resources.getOrCreate(Input);
         this.world.resources.getOrCreate(UiEvents);
         this.world.ensureSystemExists(UiLayoutSystem);
+        this.world.ensureSystemExists(UiScrollSystem);
     }
 
     override onEnable(): void {
         this._gatheredVersion = NEVER_GATHERED;
         this._statesDirty = true;
         this._hoverNode = NO_HIT;
+        this._hoverOnScrollbar = false;
         this._hoverOrigin = NULL_ENTITY;
         this._overClaimingUi = false;
         this._hoverPath.length = 0;
@@ -209,7 +213,7 @@ export class UiPointerSystem extends System {
         if (tree !== undefined) {
             this._nodes.stream({read: {rect: UiRect}, optional: GATHERED_COMPONENTS}, {includeEntity: true}).consume(row => {
                 const node = tree.indexOf(row.entity);
-                if (node !== NOT_IN_TREE) nodes.setNode(node, row.rect, pointerFlagsOf(row));
+                if (node !== NOT_IN_TREE) nodes.setNode(node, row.rect, pointerFlagsOf(row), row.scroll);
             });
         }
         this._gatheredVersion = tree?.version ?? NO_TREE_VERSION;
@@ -260,6 +264,7 @@ export class UiPointerSystem extends System {
             nextNodes.reverse();
         }
         this._hoverNode = hit;
+        this._hoverOnScrollbar = hit !== NO_HIT && nodes.hitScrollbar;
         this._hoverOrigin = hit === NO_HIT ? NULL_ENTITY : tree!.entities[hit];
         this._overClaimingUi = claiming;
         this.diffHoverPaths(scale);
@@ -412,7 +417,8 @@ export class UiPointerSystem extends System {
     private acceptorOfHover(declared: number): Entity {
         const tree = this._tree;
         if (tree === undefined) return NULL_ENTITY;
-        const node = this._pointerNodes.acceptor(tree, this._hoverNode, declared);
+        const nodes = this._pointerNodes;
+        const node = this._hoverOnScrollbar ? nodes.scrollbarAcceptor(this._hoverNode, declared) : nodes.acceptor(tree, this._hoverNode, declared);
         return node === NO_HIT ? NULL_ENTITY : tree.entities[node];
     }
 

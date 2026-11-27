@@ -18,6 +18,7 @@ import {UiDrawList} from "../../engine/ui/uiDrawList";
 import {UiLayout} from "../../engine/ui/uiLayout";
 import {UiRoot} from "../../engine/ui/uiRoot";
 import {UiScaleSnapping} from "../../engine/ui/uiScaleSnapping";
+import {UiScroll} from "../../engine/ui/uiScroll";
 import {UiSize} from "../../engine/ui/uiSize";
 import {UiText} from "../../engine/ui/uiText";
 import {MemoryPixelPresenter} from "./memoryPixelPresenter";
@@ -60,6 +61,8 @@ const CYAN_RGB = resolveTextColorRgb(TextColor.CYAN, BACKGROUND_RGB);
 const RED_RGB = resolveTextColorRgb(TextColor.RED, BACKGROUND_RGB);
 const MAGENTA_RGB = resolveTextColorRgb(TextColor.MAGENTA, BACKGROUND_RGB);
 const BORDER_RGB = resolveTextColorRgb(TextColor.BRIGHT_WHITE, BACKGROUND_RGB);
+const THUMB_RGB = resolveTextColorRgb(TextColor.WHITE, BACKGROUND_RGB);
+const TRACK_RGB = resolveTextColorRgb(TextColor.BRIGHT_BLACK, BACKGROUND_RGB);
 
 interface Rendered {
     readonly frame: PixelFrame;
@@ -273,5 +276,27 @@ describe("UiPixelPassSystem", () => {
         world.entityManager.destroyEntity(root!);
         world.step();
         expect(rgbsIn(world.resources.get(PixelFramebuffer).toPixelFrame(), 0, 0, SIZE.widthPx, SIZE.heightPx).has(BLUE_RGB)).toBe(false);
+    });
+
+    test("an overflowing scroll region fills its thumb and track units in its last column", () => {
+        const {frame} = render(em => {
+            const rootLayout = new UiLayout();
+            rootLayout.align = "start";
+            const root = em.createEntity("root", [uiRoot(1), rootLayout]);
+            const size = fixedWidth(PANEL_WIDTH);
+            size.heightMode = "fixed";
+            size.height = PANEL_HEIGHT;
+            const list = em.createEntity("list", [new UiScroll(), size]);
+            attach(em, root, [list]);
+            const rows: Entity[] = [];
+            for (let i = 0; i < PANEL_HEIGHT * 2; i++) rows.push(em.createEntity(`row${i}`, [text(`item ${i}`, TextColor.YELLOW)]));
+            attach(em, list, rows);
+        });
+        const barLeft = (PANEL_WIDTH - 1) * UNIT_WIDTH_PX, thumbBottom = PANEL_HEIGHT / 2 * UNIT_HEIGHT_PX;
+        const barRight = PANEL_WIDTH * UNIT_WIDTH_PX, trackBottom = PANEL_HEIGHT * UNIT_HEIGHT_PX;
+        expect([...rgbsIn(frame, barLeft, 0, barRight, thumbBottom)]).toEqual([THUMB_RGB]);
+        expect([...rgbsIn(frame, barLeft, thumbBottom, barRight, trackBottom)]).toEqual([TRACK_RGB]);
+        expect([...rgbsIn(frame, barLeft - UNIT_WIDTH_PX, 0, barLeft, trackBottom)]).toEqual([BACKGROUND_RGB]);
+        expect(glyphMatchesFont(frame, "i", 0, 0, YELLOW_RGB, BACKGROUND_RGB)).toBe(true);
     });
 });

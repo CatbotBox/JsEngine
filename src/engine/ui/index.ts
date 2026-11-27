@@ -3,7 +3,9 @@ export {UiLayout} from "./uiLayout";
 export {UiSize} from "./uiSize";
 export {UiOffset} from "./uiOffset";
 export {UiText} from "./uiText";
-export {UiScroll} from "./uiScroll";
+export {UiScroll, DEFAULT_WHEEL_STEP_UNITS} from "./uiScroll";
+export {UiScrollSystem} from "./uiScrollSystem";
+export {scrollIntoView} from "./uiScrollIntoView";
 export {UiBox, uiBoxBackground, uiBoxBorderColor, uiBoxDrawsInAnyState} from "./uiBox";
 export {UiInteractable} from "./uiInteractable";
 export {
@@ -35,6 +37,7 @@ export {
     UI_LAYOUT_PRIORITY,
     UI_POINTER_PRIORITY,
     UI_SCALE_SNAPPING_PRIORITY,
+    UI_SCROLL_PRIORITY,
 } from "./uiSystemPriorities";
 export {UiInputSystemGroup} from "./uiInputSystemGroup";
 export {UiPointerSystem, DOUBLE_CLICK_MAX_DISTANCE_UNITS, DOUBLE_CLICK_MAX_INTERVAL_MS} from "./uiPointerSystem";
@@ -79,6 +82,21 @@ export {
 export {UiDrawListSystem, ELLIPSIS_CODE_POINT} from "./uiDrawListSystem";
 export {FlexLayout, DEFAULT_FLEX_CONTAINER, DEFAULT_FLEX_SIZE} from "./layout/flexLayout";
 export type {FlexLayoutTree} from "./layout/flexLayout";
+export {FlexScrollbars} from "./layout/flexScrollbars";
+export {
+    clampScrollOffset,
+    maxScrollOffset,
+    MIN_SCROLLBAR_THUMB_UNITS,
+    NO_SCROLLBAR_UNITS,
+    pagedScrollOffset,
+    revealScrollDelta,
+    SCROLLBAR_THICKNESS_UNITS,
+    scrollbarReservation,
+    scrollbarThumbLength,
+    scrollbarThumbStart,
+    scrollPerThumbUnit,
+    wheelScrollOffset,
+} from "./layout/scrollbarGeometry";
 export {
     UI_ALIGNS,
     UI_BORDER_INSET_UNITS,
@@ -87,10 +105,13 @@ export {
     UI_DIRECTIONS,
     UI_JUSTIFIES,
     UI_SCROLL_AXES,
+    UI_SCROLLBAR_MODES,
     UI_SIZE_MODES,
     UI_TEXT_ALIGNS,
     UI_TEXT_OVERFLOWS,
     UI_TEXT_WRAPS,
+    scrollsHorizontally,
+    scrollsVertically,
 } from "./layout/flexStyle";
 export type {
     FlexBoxStyle,
@@ -104,6 +125,7 @@ export type {
     UiDirection,
     UiJustify,
     UiScrollAxes,
+    UiScrollbarMode,
     UiSizeMode,
     UiTextAlign,
     UiTextOverflow,

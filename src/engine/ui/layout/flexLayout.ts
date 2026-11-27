@@ -1,5 +1,9 @@
+import {AXES, AXIS_X, AXIS_Y, axisArrays, crossOf} from "./flexAxis";
+import type {Axis, AxisArrays} from "./flexAxis";
+import {FlexScrollbars} from "./flexScrollbars";
 import {borderInsetOf} from "./flexStyle";
 import type {FlexBoxStyle, FlexContainerStyle, FlexOffsetStyle, FlexScrollStyle, FlexSizeStyle, FlexTextContent, UiAlign, UiSizeMode} from "./flexStyle";
+import {clampScrollOffset, maxScrollOffset, NO_SCROLLBAR_UNITS, SCROLLBAR_THICKNESS_UNITS, scrollbarReservation, scrollbarThumbLength, scrollbarThumbStart} from "./scrollbarGeometry";
 import {measureTextExtent} from "../text/textColumns";
 import {wrapTextLines} from "../text/wrapTextLines";
 
@@ -14,17 +18,15 @@ export interface FlexLayoutTree {
     readonly boxes: readonly (FlexBoxStyle | undefined)[];
 }
 
-type Axis = 0 | 1;
-type AxisArrays = [Float64Array, Float64Array];
-
-const AXIS_X: Axis = 0;
-const AXIS_Y: Axis = 1;
-const AXES: readonly Axis[] = [AXIS_X, AXIS_Y];
 const HALF = 0.5;
 const INITIAL_CAPACITY_NODES = 16;
 const CAPACITY_GROWTH_FACTOR = 2;
 const NOT_FROZEN = 0;
 const FROZEN = 1;
+const INSET_SIDES_PER_AXIS = 2;
+const OVERFLOW_EPSILON_UNITS = 1e-6;
+const IGNORE_OVERFLOW = false;
+const RESERVE_ON_OVERFLOW = true;
 
 export const DEFAULT_FLEX_CONTAINER: FlexContainerStyle = {
     direction: "column",
@@ -48,10 +50,6 @@ export const DEFAULT_FLEX_SIZE: FlexSizeStyle = {
     minHeight: 0,
     maxHeight: Infinity,
 };
-
-function crossOf(axis: Axis): Axis {
-    return axis === AXIS_X ? AXIS_Y : AXIS_X;
-}
 
 function mainAxisOf(container: FlexContainerStyle): Axis {
     return container.direction === "row" ? AXIS_X : AXIS_Y;
@@ -92,6 +90,10 @@ function scrollOffsetOn(scroll: FlexScrollStyle, axis: Axis): number {
     return axis === AXIS_X ? scroll.scrollX : scroll.scrollY;
 }
 
+function alwaysReservedOn(scroll: FlexScrollStyle | undefined, axis: Axis): number {
+    return scroll !== undefined && scrollsOn(scroll, crossOf(axis)) ? scrollbarReservation(scroll.scrollbar, IGNORE_OVERFLOW) : NO_SCROLLBAR_UNITS;
+}
+
 function anchorOn(offset: FlexOffsetStyle, axis: Axis): number {
     return axis === AXIS_X ? offset.anchorX : offset.anchorY;
 }
@@ -107,10 +109,6 @@ function alignedStart(align: UiAlign, freeSpace: number): number {
     return 0;
 }
 
-function axisArrays(capacity: number): AxisArrays {
-    return [new Float64Array(capacity), new Float64Array(capacity)];
-}
-
 export class FlexLayout {
     private _capacity = 0;
     private _position: AxisArrays = axisArrays(0);
@@ -121,6 +119,8 @@ export class FlexLayout {
     private _content: AxisArrays = axisArrays(0);
     private _fit: AxisArrays = axisArrays(0);
     private _stack: AxisArrays = axisArrays(0);
+    private _reserve: AxisArrays = axisArrays(0);
+    private readonly _scrollbars = new FlexScrollbars();
     private readonly _inFlow: number[] = [];
     private readonly _outOfFlow: number[] = [];
     private readonly _fills: number[] = [];
@@ -177,6 +177,10 @@ export class FlexLayout {
         return this._content[AXIS_Y];
     }
 
+    public get scrollbars(): FlexScrollbars {
+        return this._scrollbars;
+    }
+
     public layout(tree: FlexLayoutTree, rootIndex: number, rootWidth: number, rootHeight: number): void {
         this.ensureCapacity(tree.count);
         const end = tree.subtreeEnd[rootIndex];
@@ -204,6 +208,8 @@ export class FlexLayout {
         this._content = axisArrays(capacity);
         this._fit = axisArrays(capacity);
         this._stack = axisArrays(capacity);
+        this._reserve = axisArrays(capacity);
+        this._scrollbars.allocate(capacity);
     }
 
     private measure(tree: FlexLayoutTree, node: number): void {
@@ -223,12 +229,13 @@ export class FlexLayout {
         this._stack[main][node] = mainSum;
         this._stack[cross][node] = crossMax;
 
+        const scroll = tree.scrolls[node];
         const text = tree.texts[node];
         const textExtent = text === undefined ? undefined : measureTextExtent(text.text);
         for (const axis of AXES) {
             const textSize = textExtent === undefined ? 0 : axis === AXIS_X ? textExtent.columns : textExtent.lines;
             const inner = Math.max(this._stack[axis][node], textSize);
-            const preferred = modeOn(size, axis) === "fixed" ? valueOn(size, axis) : inner + paddingOn(container, inset, axis);
+            const preferred = modeOn(size, axis) === "fixed" ? valueOn(size, axis) : inner + paddingOn(container, inset, axis) + alwaysReservedOn(scroll, axis);
             this._fit[axis][node] = clampOn(size, axis, preferred);
         }
     }
@@ -239,11 +246,31 @@ export class FlexLayout {
         const inset = borderInsetOf(tree.boxes[node]);
         const main = mainAxisOf(container);
         this.collectChildren(tree, node);
+        this.reserveScrollbars(node, scroll, IGNORE_OVERFLOW);
+        this.arrangeChildren(tree, node, container, inset, scroll, main);
+        if (this.reserveScrollbars(node, scroll, RESERVE_ON_OVERFLOW)) this.arrangeChildren(tree, node, container, inset, scroll, main);
+        this.scrollChildren(node, scroll);
+        this.placeScrollbars(node, inset, scroll);
+        this.clipChildren(node, inset, container.clip || scroll !== undefined);
+    }
+
+    private arrangeChildren(tree: FlexLayoutTree, node: number, container: FlexContainerStyle, inset: number, scroll: FlexScrollStyle | undefined, main: Axis): void {
         this.sizeChildren(tree, node, container, inset, scroll, main);
         if (this.rewrapChildren(tree)) this.sizeChildren(tree, node, container, inset, scroll, main);
         this.placeChildren(tree, node, container, inset, main);
-        this.scrollChildren(node, container, inset, scroll);
-        this.clipChildren(node, inset, container.clip || scroll !== undefined);
+        this.measureContent(node, container, inset, scroll);
+    }
+
+    private reserveScrollbars(node: number, scroll: FlexScrollStyle | undefined, onOverflow: boolean): boolean {
+        let changed = false;
+        for (const axis of AXES) {
+            const overflows = onOverflow && this._content[axis][node] > this._extent[axis][node] + OVERFLOW_EPSILON_UNITS;
+            const reserved = scroll !== undefined && scrollsOn(scroll, axis) ? scrollbarReservation(scroll.scrollbar, overflows) : NO_SCROLLBAR_UNITS;
+            const reserve = this._reserve[crossOf(axis)];
+            if (reserve[node] !== reserved) changed = true;
+            reserve[node] = reserved;
+        }
+        return changed;
     }
 
     private collectChildren(tree: FlexLayoutTree, node: number): void {
@@ -257,7 +284,7 @@ export class FlexLayout {
     }
 
     private innerExtent(node: number, container: FlexContainerStyle, inset: number, axis: Axis): number {
-        return Math.max(0, this._extent[axis][node] - paddingOn(container, inset, axis));
+        return Math.max(0, this._extent[axis][node] - paddingOn(container, inset, axis) - this._reserve[axis][node]);
     }
 
     private sizeChildren(tree: FlexLayoutTree, node: number, container: FlexContainerStyle, inset: number, scroll: FlexScrollStyle | undefined, main: Axis): void {
@@ -354,10 +381,11 @@ export class FlexLayout {
             if (text === undefined || text.wrap !== "word" || size.heightMode !== "fit") continue;
             const container = tree.containers[child] ?? DEFAULT_FLEX_CONTAINER;
             const inset = borderInsetOf(tree.boxes[child]);
-            const textWidth = this._extent[AXIS_X][child] - paddingOn(container, inset, AXIS_X);
+            const scroll = tree.scrolls[child];
+            const textWidth = this._extent[AXIS_X][child] - paddingOn(container, inset, AXIS_X) - alwaysReservedOn(scroll, AXIS_X);
             const lines = wrapTextLines(text.text, textWidth).length;
             const inner = Math.max(this._stack[AXIS_Y][child], lines);
-            const wrapped = clampOn(size, AXIS_Y, inner + paddingOn(container, inset, AXIS_Y));
+            const wrapped = clampOn(size, AXIS_Y, inner + paddingOn(container, inset, AXIS_Y) + alwaysReservedOn(scroll, AXIS_Y));
             if (wrapped === this._fit[AXIS_Y][child]) continue;
             this._fit[AXIS_Y][child] = wrapped;
             changed = true;
@@ -394,11 +422,10 @@ export class FlexLayout {
         }
     }
 
-    private scrollChildren(node: number, container: FlexContainerStyle, inset: number, scroll: FlexScrollStyle | undefined): void {
+    private measureContent(node: number, container: FlexContainerStyle, inset: number, scroll: FlexScrollStyle | undefined): void {
         for (const axis of AXES) {
             const position = this._position[axis], extent = this._extent[axis];
             if (scroll === undefined) {
-                this._scroll[axis][node] = 0;
                 this._content[axis][node] = extent[node];
                 continue;
             }
@@ -406,14 +433,36 @@ export class FlexLayout {
             let far = origin + paddingStartOn(container, inset, axis);
             for (const child of this._inFlow) far = Math.max(far, position[child] + extent[child]);
             for (const child of this._outOfFlow) far = Math.max(far, position[child] + extent[child]);
-            const content = far - origin + paddingEndOn(container, inset, axis);
-            const maxScroll = scrollsOn(scroll, axis) ? Math.max(0, content - extent[node]) : 0;
-            const offset = Math.max(0, Math.min(scrollOffsetOn(scroll, axis), maxScroll));
-            this._content[axis][node] = content;
+            this._content[axis][node] = far - origin + paddingEndOn(container, inset, axis) + this._reserve[axis][node];
+        }
+    }
+
+    private scrollChildren(node: number, scroll: FlexScrollStyle | undefined): void {
+        for (const axis of AXES) {
+            const position = this._position[axis];
+            const maxScroll = scroll !== undefined && scrollsOn(scroll, axis) ? maxScrollOffset(this._content[axis][node], this._extent[axis][node]) : 0;
+            const offset = scroll === undefined ? 0 : clampScrollOffset(scrollOffsetOn(scroll, axis), maxScroll);
             this._scroll[axis][node] = offset;
             if (offset === 0) continue;
             for (const child of this._inFlow) position[child] -= offset;
             for (const child of this._outOfFlow) position[child] -= offset;
+        }
+    }
+
+    private placeScrollbars(node: number, inset: number, scroll: FlexScrollStyle | undefined): void {
+        for (const axis of AXES) {
+            const cross = crossOf(axis);
+            if (scroll === undefined || this._reserve[cross][node] === NO_SCROLLBAR_UNITS) {
+                this._scrollbars.hide(axis, node);
+                continue;
+            }
+            const extent = this._extent[axis][node], content = this._content[axis][node];
+            const trackStart = this._position[axis][node] + inset;
+            const trackLength = Math.max(0, extent - INSET_SIDES_PER_AXIS * inset - this._reserve[axis][node]);
+            const trackCross = this._position[cross][node] + this._extent[cross][node] - inset - SCROLLBAR_THICKNESS_UNITS;
+            const thumbLength = scrollbarThumbLength(trackLength, extent, content);
+            const thumbStart = scrollbarThumbStart(trackStart, trackLength, thumbLength, this._scroll[axis][node], maxScrollOffset(content, extent));
+            this._scrollbars.place(axis, node, trackStart, trackCross, trackLength, thumbStart, thumbLength);
         }
     }
 
@@ -424,7 +473,7 @@ export class FlexLayout {
             if (clips) {
                 const position = this._position[axis][node];
                 start = Math.max(start, position + inset);
-                end = Math.max(start, Math.min(end, position + this._extent[axis][node] - inset));
+                end = Math.max(start, Math.min(end, position + this._extent[axis][node] - inset - this._reserve[axis][node]));
             }
             for (const child of this._inFlow) {
                 clipStart[child] = start;

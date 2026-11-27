@@ -2,7 +2,7 @@ import {ENGINE_COMPONENT_CATEGORIES} from "../scene/componentCategories";
 import {componentSchema} from "../scene/componentSchemaBuilder";
 import type {NumberFieldBuildOptions} from "../scene/componentSchemaBuilder";
 import type {SchemaEntry} from "../scene/schemaEntries";
-import {UI_ALIGNS, UI_BORDER_STYLES, UI_DIRECTIONS, UI_JUSTIFIES, UI_SCROLL_AXES, UI_SIZE_MODES, UI_TEXT_ALIGNS, UI_TEXT_OVERFLOWS, UI_TEXT_WRAPS} from "./layout/flexStyle";
+import {UI_ALIGNS, UI_BORDER_STYLES, UI_DIRECTIONS, UI_JUSTIFIES, UI_SCROLL_AXES, UI_SCROLLBAR_MODES, UI_SIZE_MODES, UI_TEXT_ALIGNS, UI_TEXT_OVERFLOWS, UI_TEXT_WRAPS} from "./layout/flexStyle";
 import {UiBox} from "./uiBox";
 import {UiInteractable} from "./uiInteractable";
 import {UiLayout} from "./uiLayout";
@@ -48,7 +48,8 @@ export const UI_TEXT_SCHEMA_ENTRY: SchemaEntry = {
 
 export const UI_SCROLL_SCHEMA_ENTRY: SchemaEntry = {
     kind: "componentSchema",
-    build: () => componentSchema(UiScroll, "UiScroll").number("scrollX").number("scrollY").enum("axes", UI_SCROLL_AXES)
+    build: () => componentSchema(UiScroll, "UiScroll").number("scrollX").number("scrollY").enum("axes", UI_SCROLL_AXES).number("wheelStepUnits")
+        .enum("scrollbar", UI_SCROLLBAR_MODES).textColor("trackColor").textColor("thumbColor")
         .category(ENGINE_COMPONENT_CATEGORIES.ui).build(),
 };
 
