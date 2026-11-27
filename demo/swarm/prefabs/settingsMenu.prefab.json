@@ -1,0 +1,1679 @@
+{
+  "format": "jsengine-scene",
+  "version": 3,
+  "entities": [
+    {
+      "id": 1,
+      "name": "settingsMenu",
+      "enabled": true,
+      "components": {
+        "UiRoot": {
+          "scale": 1,
+          "sortOrder": 10,
+          "blocksGameInput": true
+        },
+        "UiLayout": {
+          "direction": "column",
+          "justify": "center",
+          "align": "center"
+        },
+        "SwarmSettingsMenu": {}
+      }
+    },
+    {
+      "id": 2,
+      "name": "settingsPanel",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 1
+        },
+        "UiLayout": {
+          "direction": "column",
+          "paddingLeft": 1,
+          "paddingRight": 1,
+          "gap": 1,
+          "align": "stretch"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 48
+        },
+        "UiBox": {
+          "background": {
+            "palette": 0
+          },
+          "border": "double",
+          "borderColor": {
+            "palette": 14
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "settingsTitle",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 2
+        },
+        "UiText": {
+          "text": "S E T T I N G S",
+          "foreground": {
+            "palette": 14
+          },
+          "alignX": "center"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "settingsRows",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 2
+        },
+        "UiLayout": {
+          "direction": "column",
+          "align": "stretch"
+        },
+        "UiSize": {
+          "heightMode": "fixed",
+          "height": 8
+        },
+        "UiScroll": {
+          "axes": "vertical",
+          "scrollbar": "auto"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "setting.randomSeed",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "randomSeed",
+          "kind": "Toggle",
+          "step": 0,
+          "min": 0,
+          "max": 0,
+          "decimals": 0,
+          "toggledOnValue": 20261113
+        }
+      }
+    },
+    {
+      "id": 6,
+      "name": "randomSeed.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 5
+        },
+        "UiText": {
+          "text": "fixed seed",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "randomSeed.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 5
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 8,
+      "name": "randomSeed.toggle",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 5
+        },
+        "UiText": {
+          "text": "[toggle]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Toggle"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "name": "setting.ship.startLives",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "ship.startLives",
+          "kind": "Number",
+          "step": 1,
+          "min": 1,
+          "max": 9,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 10,
+      "name": "startLives.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 9
+        },
+        "UiText": {
+          "text": "start lives",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 11,
+      "name": "startLives.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 9
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 12,
+      "name": "startLives.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 9
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "name": "startLives.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 9
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "name": "setting.ship.speedUnitsPerSecond",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "ship.speedUnitsPerSecond",
+          "kind": "Number",
+          "step": 4,
+          "min": 12,
+          "max": 80,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 15,
+      "name": "speedUnitsPerSecond.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 14
+        },
+        "UiText": {
+          "text": "ship speed",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 16,
+      "name": "speedUnitsPerSecond.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 14
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 17,
+      "name": "speedUnitsPerSecond.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 14
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "name": "speedUnitsPerSecond.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 14
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "name": "setting.ship.invulnerabilityMs",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "ship.invulnerabilityMs",
+          "kind": "Number",
+          "step": 250,
+          "min": 0,
+          "max": 5000,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 20,
+      "name": "invulnerabilityMs.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 19
+        },
+        "UiText": {
+          "text": "invulnerable ms",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 21,
+      "name": "invulnerabilityMs.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 19
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 22,
+      "name": "invulnerabilityMs.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 19
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "name": "invulnerabilityMs.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 19
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "name": "setting.weapon.fireRateShotsPerSecond",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "weapon.fireRateShotsPerSecond",
+          "kind": "Number",
+          "step": 1,
+          "min": 1,
+          "max": 30,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 25,
+      "name": "fireRateShotsPerSecond.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 24
+        },
+        "UiText": {
+          "text": "fire rate /s",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 26,
+      "name": "fireRateShotsPerSecond.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 24
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 27,
+      "name": "fireRateShotsPerSecond.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 24
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "name": "fireRateShotsPerSecond.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 24
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "name": "setting.weapon.bulletSpeedUnitsPerSecond",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "weapon.bulletSpeedUnitsPerSecond",
+          "kind": "Number",
+          "step": 10,
+          "min": 30,
+          "max": 200,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 30,
+      "name": "bulletSpeedUnitsPerSecond.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 29
+        },
+        "UiText": {
+          "text": "bullet speed",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 31,
+      "name": "bulletSpeedUnitsPerSecond.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 29
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 32,
+      "name": "bulletSpeedUnitsPerSecond.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 29
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "name": "bulletSpeedUnitsPerSecond.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 29
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "name": "setting.bomb.startBombs",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "bomb.startBombs",
+          "kind": "Number",
+          "step": 1,
+          "min": 0,
+          "max": 9,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 35,
+      "name": "startBombs.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 34
+        },
+        "UiText": {
+          "text": "start bombs",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 36,
+      "name": "startBombs.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 34
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 37,
+      "name": "startBombs.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 34
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 38,
+      "name": "startBombs.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 34
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 39,
+      "name": "setting.bomb.maxBombs",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "bomb.maxBombs",
+          "kind": "Number",
+          "step": 1,
+          "min": 0,
+          "max": 9,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 40,
+      "name": "maxBombs.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 39
+        },
+        "UiText": {
+          "text": "max bombs",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 41,
+      "name": "maxBombs.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 39
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 42,
+      "name": "maxBombs.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 39
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 43,
+      "name": "maxBombs.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 39
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 44,
+      "name": "setting.bomb.radiusUnits",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "bomb.radiusUnits",
+          "kind": "Number",
+          "step": 2,
+          "min": 4,
+          "max": 40,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 45,
+      "name": "radiusUnits.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 44
+        },
+        "UiText": {
+          "text": "bomb radius",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 46,
+      "name": "radiusUnits.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 44
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 47,
+      "name": "radiusUnits.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 44
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 48,
+      "name": "radiusUnits.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 44
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 49,
+      "name": "setting.waves.firstWave",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "waves.firstWave",
+          "kind": "Number",
+          "step": 1,
+          "min": 1,
+          "max": 20,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 50,
+      "name": "firstWave.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 49
+        },
+        "UiText": {
+          "text": "first wave",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 51,
+      "name": "firstWave.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 49
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 52,
+      "name": "firstWave.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 49
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 53,
+      "name": "firstWave.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 49
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 54,
+      "name": "setting.waves.intermissionMs",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "waves.intermissionMs",
+          "kind": "Number",
+          "step": 250,
+          "min": 0,
+          "max": 5000,
+          "decimals": 0,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 55,
+      "name": "intermissionMs.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 54
+        },
+        "UiText": {
+          "text": "intermission ms",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 56,
+      "name": "intermissionMs.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 54
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 57,
+      "name": "intermissionMs.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 54
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 58,
+      "name": "intermissionMs.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 54
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 59,
+      "name": "setting.waves.enemySpeedJitterFraction",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 4
+        },
+        "UiLayout": {
+          "direction": "row",
+          "gap": 2,
+          "align": "start"
+        },
+        "SwarmSetting": {
+          "field": "waves.enemySpeedJitterFraction",
+          "kind": "Number",
+          "step": 0.05,
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
+          "toggledOnValue": 0
+        }
+      }
+    },
+    {
+      "id": 60,
+      "name": "enemySpeedJitterFraction.label",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 59
+        },
+        "UiText": {
+          "text": "speed jitter",
+          "foreground": {
+            "palette": 15
+          }
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 18
+        }
+      }
+    },
+    {
+      "id": 61,
+      "name": "enemySpeedJitterFraction.value",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 59
+        },
+        "UiText": {
+          "text": "",
+          "foreground": {
+            "palette": 11
+          },
+          "alignX": "end"
+        },
+        "UiSize": {
+          "widthMode": "fixed",
+          "width": 8
+        },
+        "SwarmSettingValue": {}
+      }
+    },
+    {
+      "id": 62,
+      "name": "enemySpeedJitterFraction.decrease",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 59
+        },
+        "UiText": {
+          "text": "[-]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Decrease"
+        }
+      }
+    },
+    {
+      "id": 63,
+      "name": "enemySpeedJitterFraction.increase",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 59
+        },
+        "UiText": {
+          "text": "[+]",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": "default",
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Increase"
+        }
+      }
+    },
+    {
+      "id": 64,
+      "name": "settingsFooter",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 2
+        },
+        "UiLayout": {
+          "direction": "row",
+          "justify": "center",
+          "gap": 4
+        }
+      }
+    },
+    {
+      "id": 65,
+      "name": "settingsReset",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 64
+        },
+        "UiText": {
+          "text": " RESET ",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": {
+            "palette": 8
+          },
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Reset"
+        }
+      }
+    },
+    {
+      "id": 66,
+      "name": "settingsClose",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 64
+        },
+        "UiText": {
+          "text": " CLOSE ",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiBox": {
+          "background": {
+            "palette": 8
+          },
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Close"
+        }
+      }
+    }
+  ]
+}

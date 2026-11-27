@@ -1,4 +1,5 @@
 export const ARENA_PRIORITY = -140;
+export const SETTINGS_MENU_PRIORITY = -135;
 export const CONTROL_PRIORITY = -130;
 export const SHIP_PRIORITY = -120;
 export const WEAPON_PRIORITY = -110;

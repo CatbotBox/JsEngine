@@ -6,7 +6,7 @@ import {DataAssets, dataAssetPathOf, SceneLoadCancelledError, SceneLoader} from 
 import {LifetimeSystem, MotionSystem} from "@jsengine/engine/motion";
 import {swarmActionsOf} from "./actions";
 import type {SwarmActions} from "./actions";
-import {Bullet, Enemy, Spark} from "./components";
+import {Bullet, Enemy, Spark, SwarmSettingsMenu} from "./components";
 import {ARENA_PRIORITY, CONTROL_PRIORITY, LIFETIME_PRIORITY, MOTION_PRIORITY} from "./frameOrder";
 import {SwarmPhase, SwarmState} from "./resources";
 import {commandBufferOf, HALF, simulationStepMs, SwarmArena} from "./simulation";
@@ -56,6 +56,7 @@ export class SwarmControlSystem extends System {
     private _enemies = this.createEntityQuery([Enemy]);
     private _bullets = this.createEntityQuery([Bullet]);
     private _sparks = this.createEntityQuery([Spark]);
+    private _settingsMenus = this.createEntityQuery([SwarmSettingsMenu]);
     private _actions!: SwarmActions;
     private _gameplaySceneLoading = false;
 
@@ -72,7 +73,9 @@ export class SwarmControlSystem extends System {
     onUpdate(): void {
         const input = this.world.resources.get(Input);
         const state = this.world.resources.get(SwarmState);
-        if (input.actionPressed(this._actions.Quit)) {
+        const settingsOpen = this._settingsMenus.hasEntity();
+        const settingsClosing = settingsOpen && input.actionPressed(this._actions.CloseSettings);
+        if (!settingsClosing && input.actionPressed(this._actions.Quit)) {
             this.world.requestQuit();
             return;
         }
@@ -82,7 +85,7 @@ export class SwarmControlSystem extends System {
             if (this.gameplaySceneReady()) startNewGame(this.world, state);
             return;
         }
-        if (state.phase === SwarmPhase.Title && input.actionPressed(this._actions.Start)) {
+        if (state.phase === SwarmPhase.Title && !settingsOpen && input.actionPressed(this._actions.Start)) {
             this.clearField(state);
             this.loadGameplayScene();
             return;

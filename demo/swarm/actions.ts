@@ -17,6 +17,8 @@ export const SwarmAction = {
     Restart: "restart",
     Quit: "quit",
     ToggleHud: "toggleHud",
+    OpenSettings: "openSettings",
+    CloseSettings: "closeSettings",
 } as const;
 
 export type SwarmActions = ResolvedInputActions<typeof SwarmAction>;

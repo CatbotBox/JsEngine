@@ -3,6 +3,7 @@ import type {System, SystemCtor} from "@jsengine/engine/core";
 import {BombSystem, BulletHitSystem, EnemyBroadphaseSystem, ShipContactSystem, SparkFadeSystem} from "../combat";
 import {SwarmArenaSystem, SwarmControlSystem, SwarmLifetimeSystem, SwarmMotionSystem} from "../game";
 import {SwarmHudSystem} from "../hud";
+import {SwarmSettingsMenuSystem} from "../settingsMenu";
 import {ShipSystem, ShipWeaponSystem} from "../ship";
 import {EnemySeekSystem, WaveSystem} from "../waves";
 
@@ -17,6 +18,7 @@ export const generatedSystems: readonly SystemCtor<System>[] = [
     SwarmLifetimeSystem,
     SwarmMotionSystem,
     SwarmHudSystem,
+    SwarmSettingsMenuSystem,
     ShipSystem,
     ShipWeaponSystem,
     EnemySeekSystem,

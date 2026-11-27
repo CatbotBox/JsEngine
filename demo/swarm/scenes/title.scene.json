@@ -120,6 +120,63 @@
           "banner": 5
         }
       }
+    },
+    {
+      "id": 7,
+      "name": "settingsButtonRoot",
+      "enabled": true,
+      "components": {
+        "UiRoot": {
+          "scale": 1,
+          "sortOrder": 0,
+          "blocksGameInput": false
+        },
+        "UiLayout": {}
+      }
+    },
+    {
+      "id": 8,
+      "name": "settingsButton",
+      "enabled": true,
+      "components": {
+        "Parent": {
+          "entity": 7
+        },
+        "UiOffset": {
+          "x": 0,
+          "y": -1,
+          "anchorX": 0.5,
+          "anchorY": 1
+        },
+        "UiLayout": {
+          "paddingLeft": 1,
+          "paddingRight": 1
+        },
+        "UiBox": {
+          "border": "single",
+          "borderColor": {
+            "palette": 14
+          },
+          "hoveredBackground": {
+            "palette": 8
+          },
+          "pressedBackground": {
+            "palette": 4
+          }
+        },
+        "UiText": {
+          "text": "SETTINGS",
+          "foreground": {
+            "palette": 14
+          }
+        },
+        "UiInteractable": {
+          "click": true
+        },
+        "SwarmSettingButton": {
+          "action": "Open"
+        }
+      }
     }
   ]
 }

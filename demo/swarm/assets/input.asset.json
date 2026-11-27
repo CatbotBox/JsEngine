@@ -123,6 +123,22 @@
         ],
         "chords": [],
         "buttons": []
+      },
+      {
+        "name": "openSettings",
+        "keys": [
+          "O"
+        ],
+        "chords": [],
+        "buttons": []
+      },
+      {
+        "name": "closeSettings",
+        "keys": [
+          "Escape"
+        ],
+        "chords": [],
+        "buttons": []
       }
     ]
   }

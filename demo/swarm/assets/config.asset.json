@@ -137,6 +137,10 @@
             "effect": "toggle HUD"
           },
           {
+            "keys": "O",
+            "effect": "settings"
+          },
+          {
             "keys": "ESC",
             "effect": "quit"
           }
@@ -173,6 +177,11 @@
         "color": {
           "palette": 9
         }
+      }
+    },
+    "menu": {
+      "settingsPrefab": {
+        "path": "prefabs/settingsMenu.prefab.json"
       }
     }
   }

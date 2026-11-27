@@ -115,6 +115,10 @@ export class SwarmHudConfig {
     public gameOver = new GameOverBanner();
 }
 
+export class SettingsMenuConfig {
+    public settingsPrefab: PrefabAsset | undefined = undefined;
+}
+
 export class SwarmConfig extends Resource {
     public randomSeed: Int | undefined = undefined;
     public maxSimulationStepMs = 0;
@@ -125,4 +129,5 @@ export class SwarmConfig extends Resource {
     public sparks = new SparkConfig();
     public waves = new WaveConfig();
     public hud = new SwarmHudConfig();
+    public menu = new SettingsMenuConfig();
 }
