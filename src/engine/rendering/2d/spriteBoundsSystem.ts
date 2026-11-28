@@ -6,7 +6,6 @@ import {anchorFractionX, anchorFractionY, ScreenAnchor} from "../screenAnchor";
 import {Sprite} from "./sprite";
 import {WorldSpaceRenderBoundsComputeSystem} from "../worldSpaceRenderBoundsComputeSystem";
 import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../../datatypes/aabb";
-import {SPRITE_PIXELS_PER_SCREEN_UNIT_X, SPRITE_PIXELS_PER_SCREEN_UNIT_Y} from "../screenUnits";
 
 const PRIORITY_BEFORE_WORLD_BOUNDS = -20;
 const CENTER_FRACTION = 0.5;
@@ -55,8 +54,8 @@ export class SpriteBoundsSystem extends System {
                 }
 
                 const image = sprite.image;
-                const sizeX = (image?.sizeX ?? 0) / SPRITE_PIXELS_PER_SCREEN_UNIT_X;
-                const sizeY = (image?.sizeY ?? 0) / SPRITE_PIXELS_PER_SCREEN_UNIT_Y;
+                const sizeX = image?.sizeX ?? 0;
+                const sizeY = image?.sizeY ?? 0;
                 const x0 = -ax * sizeX;
                 const y0 = -ay * sizeY;
                 const x1 = x0 + sizeX;

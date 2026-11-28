@@ -19,7 +19,8 @@ export {DEFAULT_TEXT_BACKGROUND_RGB, DEFAULT_TEXT_FOREGROUND_RGB, TEXT_COLOR_PAL
 export {BLACK_RGB, WHITE_RGB, PACKED_RGB_MASK, SIX_BITS_PER_CHANNEL_MASK, ALPHA_SHIFT, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from './packedRgb'
 export {ScreenAnchor, anchorFractionX, anchorFractionY, anchoredStart} from './screenAnchor'
 export type {AnchorPosition} from './screenAnchor'
-export {SCREEN_UNIT_HEIGHT_PER_WIDTH, SPRITE_PIXELS_PER_SCREEN_UNIT_X, SPRITE_PIXELS_PER_SCREEN_UNIT_Y} from './screenUnits'
+export {SCREEN_UNIT_HEIGHT_PER_WIDTH, WorldViewRect, pointerWorldPositionInto, worldViewRectInto} from './screenUnits'
+export type {WorldPosition} from './screenUnits'
 export {TextSpriteBoundsSystem} from './textSpriteBoundsSystem'
 export {ShaderSource, WGSL_FILE_SUFFIX} from './shaderSource'
 export {

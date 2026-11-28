@@ -40,8 +40,8 @@ describe("sprite render bounds", () => {
         const wb = em.getComponent<WorldSpaceRenderBounds>(e, WorldSpaceRenderBounds)!;
         expect(wb.xMin).toBe(10 - 1.5);
         expect(wb.xMax).toBe(10 + 1.5);
-        expect(wb.yMin).toBe(20 - 0.75);
-        expect(wb.yMax).toBe(20 + 0.75);
+        expect(wb.yMin).toBe(20 - 1.5);
+        expect(wb.yMax).toBe(20 + 1.5);
         expect(wb.zMin).toBe(0);
         expect(wb.zMax).toBe(1);
     });
@@ -62,8 +62,8 @@ describe("sprite render bounds", () => {
         const wb = em.getComponent<WorldSpaceRenderBounds>(e, WorldSpaceRenderBounds)!;
         expect(wb.xMin).toBe(14 - 1.5);
         expect(wb.xMax).toBe(14 + 1.5);
-        expect(wb.yMin).toBe(18 - 0.75);
-        expect(wb.yMax).toBe(18 + 0.75);
+        expect(wb.yMin).toBe(18 - 1.5);
+        expect(wb.yMax).toBe(18 + 1.5);
     });
 
     test("an archetype change leaves the world AABB where it was", () => {
@@ -82,8 +82,8 @@ describe("sprite render bounds", () => {
         const wb = em.getComponent<WorldSpaceRenderBounds>(e, WorldSpaceRenderBounds)!;
         expect(wb.xMin).toBe(10 - 1.5);
         expect(wb.xMax).toBe(10 + 1.5);
-        expect(wb.yMin).toBe(20 - 0.75);
-        expect(wb.yMax).toBe(20 + 0.75);
+        expect(wb.yMin).toBe(20 - 1.5);
+        expect(wb.yMax).toBe(20 + 1.5);
     });
 
     test("swapping the image while stationary updates the world AABB", () => {
@@ -101,7 +101,7 @@ describe("sprite render bounds", () => {
         const wb = em.getComponent<WorldSpaceRenderBounds>(e, WorldSpaceRenderBounds)!;
         expect(wb.xMin).toBe(10 - 2.5);
         expect(wb.xMax).toBe(10 + 2.5);
-        expect(wb.yMin).toBe(20 - 0.25);
-        expect(wb.yMax).toBe(20 + 0.25);
+        expect(wb.yMin).toBe(20 - 0.5);
+        expect(wb.yMax).toBe(20 + 0.5);
     });
 });

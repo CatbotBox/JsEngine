@@ -38,7 +38,7 @@
         "RenderBounds": {},
         "PanCamera": {
           "stepXUnits": 1,
-          "stepYUnits": 1
+          "stepYUnits": 2
         }
       }
     },
@@ -88,7 +88,7 @@
         "LocalPosition": {
           "xyz": [
             -5,
-            -5,
+            -10,
             0
           ]
         },
@@ -125,7 +125,7 @@
         "LocalPosition": {
           "xyz": [
             -5,
-            5,
+            10,
             0
           ]
         },
@@ -162,7 +162,7 @@
         "LocalPosition": {
           "xyz": [
             5,
-            -5,
+            -10,
             0
           ]
         },
@@ -199,7 +199,7 @@
         "LocalPosition": {
           "xyz": [
             5,
-            5,
+            10,
             0
           ]
         },

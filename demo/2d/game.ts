@@ -151,8 +151,8 @@ export class Demo2dControlsSystem extends System {
         const originX = origin === undefined ? NO_OFFSET : Vec.x(origin);
         const originY = origin === undefined ? NO_OFFSET : Vec.y(origin);
         for (let i = 0; i < config.pixelsPerSpawn; i++) {
-            const x = (random.next() - HALF) * config.spawnAreaUnits;
-            const y = (random.next() - HALF) * config.spawnAreaUnits;
+            const x = (random.next() - HALF) * config.spawnAreaXUnits;
+            const y = (random.next() - HALF) * config.spawnAreaYUnits;
             const z = random.next();
             const fadeDurationMs = random.next() * config.fadeJitterMs + config.fadeMinMs;
             const rgb = randomRgb(random);

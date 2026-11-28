@@ -16,7 +16,8 @@ export class Demo2dConfig extends Resource {
     public randomSeed: Int | undefined = undefined;
     public pixelPrefab: PrefabAsset | undefined = undefined;
     public pixelsPerSpawn: Int = 0;
-    public spawnAreaUnits = 0;
+    public spawnAreaXUnits = 0;
+    public spawnAreaYUnits = 0;
     public fadeMinMs = 0;
     public fadeJitterMs = 0;
     public playerStepXUnits = 0;

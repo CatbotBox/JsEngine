@@ -6,6 +6,7 @@ import {anchorFractionX, anchorFractionY, ScreenAnchor} from "./screenAnchor";
 import {TextSprite} from "./textSprite";
 import {WorldSpaceRenderBoundsComputeSystem} from "./worldSpaceRenderBoundsComputeSystem";
 import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../datatypes/aabb";
+import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "./screenUnits";
 
 const PRIORITY_BEFORE_WORLD_BOUNDS = -20;
 const CENTER_FRACTION = 0.5;
@@ -53,7 +54,7 @@ export class TextSpriteBoundsSystem extends System {
                     ay = anchorFractionY(anchor.anchorPosition);
                 }
 
-                const sizeX = image.sizeX, sizeY = image.sizeY;
+                const sizeX = image.sizeX, sizeY = image.sizeY * SCREEN_UNIT_HEIGHT_PER_WIDTH;
                 const x0 = -ax * sizeX;
                 const y0 = -ay * sizeY;
                 const x1 = x0 + sizeX;

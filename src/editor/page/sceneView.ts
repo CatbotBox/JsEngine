@@ -1,5 +1,6 @@
 import type {Entity} from "../../engine/core";
 import type {SceneJsonValue} from "../../engine/scene";
+import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../engine/rendering/screenUnits";
 import type {EditorEntityDetails, EditorFieldValue, EditorViewInfo} from "../editorProtocol";
 import {capturePointer, errorText, hasCommandModifier, readStorage, releasePointer, visualScaleOf, writeStorage} from "./dom";
 import {
@@ -691,7 +692,7 @@ export class SceneView {
             const dxUnits = dx / scale.pxPerUnitX;
             const dyUnits = dy / scale.pxPerUnitY;
             if (camera.kind === "2d") {
-                this.changeCamera({...camera, position: panCamera2d(camera.position, dxUnits, dyUnits)});
+                this.changeCamera({...camera, position: panCamera2d(camera.position, dxUnits, dyUnits * SCREEN_UNIT_HEIGHT_PER_WIDTH)});
             } else {
                 const geometry: ViewInfoGeometry = {...info, camera: {...poseOfOrbitCamera(camera.orbit), fieldOfViewDegrees: camera.fieldOfViewDegrees}};
                 this.changeCamera({...camera, orbit: panOrbitCamera(camera.orbit, viewPlaneDelta(geometry, camera.orbit.distance, dxUnits, dyUnits))});

@@ -1,7 +1,7 @@
 import {Vec} from "../../engine/math/types/vec";
 import type {ReadonlyVec16} from "../../engine/math/types/vec";
 import {MAT4_ELEMENT, MAT4_FLOATS, MAT4_TRANSLATION_X, MAT4_TRANSLATION_Y, MAT4_TRANSLATION_Z} from "../../engine/math/mat4Layout";
-import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../engine/rendering/screenUnits";
+import {SCREEN_UNIT_HEIGHT_PER_WIDTH, WorldViewRect, worldViewRectInto} from "../../engine/rendering/screenUnits";
 
 export type Mat4 = number[];
 
@@ -102,9 +102,11 @@ export function focalLengthInScreenRows(screenHeight: number, fieldOfViewRadians
 }
 
 export function orthographicWorldToScreen(cameraPosition: Point3, screenWidth: number, screenHeight: number): Mat4 {
+    const view = worldViewRectInto(new WorldViewRect(), cameraPosition[0], cameraPosition[1], screenWidth, screenHeight);
     const m = identityMat4();
-    m[MAT4_TRANSLATION_X] = screenWidth * HALF - cameraPosition[0];
-    m[MAT4_TRANSLATION_Y] = screenHeight * HALF - cameraPosition[1];
+    m[MAT4_ELEMENT.m11] = 1 / SCREEN_UNIT_HEIGHT_PER_WIDTH;
+    m[MAT4_TRANSLATION_X] = -view.xMin;
+    m[MAT4_TRANSLATION_Y] = -view.yMin / SCREEN_UNIT_HEIGHT_PER_WIDTH;
     return m;
 }
 

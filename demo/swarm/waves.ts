@@ -16,7 +16,6 @@ import {
     requirePrefab,
     simulationStepMs,
     SwarmArena,
-    WIDTH_UNITS_PER_SCREEN_UNIT_Y,
 } from "./simulation";
 import {MS_PER_SECOND, SWARM_CONFIG_FILE, SwarmConfig} from "./config";
 import type {EnemySpawn, WaveConfig} from "./config";
@@ -93,7 +92,7 @@ export class WaveSystem extends System {
         const wavesAfterFirst = state.wave - waves.firstWave;
         const kind = enemySpawnFor(waves.enemies, wavesAfterFirst, random.next());
         const halfWidth = arena.halfWidthUnits + waves.spawnMarginUnits;
-        const halfHeight = arena.halfHeightUnits * WIDTH_UNITS_PER_SCREEN_UNIT_Y + waves.spawnMarginUnits;
+        const halfHeight = arena.halfHeightUnits + waves.spawnMarginUnits;
         const width = fullExtentOf(halfWidth), height = fullExtentOf(halfHeight);
         const topEnd = width, rightEnd = topEnd + height, bottomEnd = rightEnd + width;
         const along = random.next() * (bottomEnd + height);
@@ -121,7 +120,7 @@ export class WaveSystem extends System {
         enemy.steerSin = Math.sin(steer);
         const position = spawned.rootComponent(LocalPosition);
         position.x = x;
-        position.y = y / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+        position.y = y;
     }
 }
 
@@ -143,20 +142,20 @@ export class EnemySeekSystem extends System {
         if (state.phase !== SwarmPhase.Playing) return;
         const stopDistance = this.world.resources.get(SwarmConfig).waves.seekStopDistanceUnits;
         const stepSeconds = simulationStepMs(this.world) / MS_PER_SECOND;
-        const targetX = state.shipX, targetY = state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+        const targetX = state.shipX, targetY = state.shipY;
         this._enemies.stream({read: {enemy: Enemy}, write: {position: LocalPosition}}).consumeSpans(({start, end, cols, stores}) => {
             const positions = cols.position!, enemies = stores.enemy!;
             for (let i = start; i < end; i++) {
                 const enemy = enemies.get(i) as Enemy;
                 const p = i * POSITION_STRIDE;
                 const dx = targetX - positions[p + POSITION_X];
-                const dy = targetY - positions[p + POSITION_Y] * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+                const dy = targetY - positions[p + POSITION_Y];
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance <= stopDistance) continue;
                 const scale = Math.min(enemy.speedUnitsPerSecond * stepSeconds, distance) / distance;
                 const stepX = dx * scale, stepY = dy * scale;
                 positions[p + POSITION_X] += stepX * enemy.steerCos - stepY * enemy.steerSin;
-                positions[p + POSITION_Y] += (stepX * enemy.steerSin + stepY * enemy.steerCos) / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+                positions[p + POSITION_Y] += stepX * enemy.steerSin + stepY * enemy.steerCos;
             }
         });
     }

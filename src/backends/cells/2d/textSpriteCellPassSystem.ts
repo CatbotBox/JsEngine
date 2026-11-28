@@ -11,6 +11,7 @@ import {CellRenderSystemGroup} from "../cellRenderSystemGroup";
 import {TextSpriteBoundsSystem} from "../../../engine/rendering/textSpriteBoundsSystem";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
 import {Vec} from "../../../engine/math/types/vec";
+import {SCREEN_UNIT_HEIGHT_PER_WIDTH, WorldViewRect, worldViewRectInto} from "../../../engine/rendering/screenUnits";
 import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../../../engine/datatypes/aabb";
 import {MAT4_FLOATS_SHIFT, MAT4_TRANSLATION_Z} from "../../../engine/math/mat4Layout";
 
@@ -26,6 +27,8 @@ export class TextSpriteCellPassSystem extends System {
     private _boundsToken = WorldSpaceRenderBounds.type();
     private _imageToken = TextSprite.type();
     private _localToWorldToken = LocalToWorld.type();
+
+    private _view = new WorldViewRect();
 
     override systemGroup() {
         return CellRenderSystemGroup;
@@ -52,13 +55,9 @@ export class TextSpriteCellPassSystem extends System {
 
         const position = cameraEntity.localToWorld.position;
         const screenSize = cameraEntity.screenSize;
-        const cx0 = Vec.x(position) - 0.5 * screenSize.x;
-        const cy0 = Vec.y(position) - 0.5 * screenSize.y;
-        const cx1 = cx0 + screenSize.x;
-        const cy1 = cy0 + screenSize.y;
-
-        const camXMin = Math.min(cx0, cx1), camXMax = Math.max(cx0, cx1);
-        const camYMin = Math.min(cy0, cy1), camYMax = Math.max(cy0, cy1);
+        const view = worldViewRectInto(this._view, Vec.x(position), Vec.y(position), screenSize.x, screenSize.y);
+        const camXMin = view.xMin, camXMax = view.xMax;
+        const camYMin = view.yMin, camYMax = view.yMax;
         const camZMin = -CAMERA_DEPTH_EXTENT, camZMax = CAMERA_DEPTH_EXTENT;
 
         for (const arch of this._objectQuery.archetypes) {
@@ -81,7 +80,7 @@ export class TextSpriteCellPassSystem extends System {
                 screenBuffer.blit(
                     imageCol.get(row) as TextSprite,
                     Math.floor(xMin - camXMin),
-                    Math.floor(yMin - camYMin),
+                    Math.floor((yMin - camYMin) / SCREEN_UNIT_HEIGHT_PER_WIDTH),
                     l2w !== undefined ? l2w[(row << MAT4_FLOATS_SHIFT) + MAT4_TRANSLATION_Z] : 0,
                 );
             }

@@ -1,14 +1,12 @@
 import {EntityCommandBufferSystem, Resource} from "@jsengine/engine/core";
 import type {EntityCommandBuffer, World} from "@jsengine/engine/core";
-import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "@jsengine/engine/rendering";
+import {WorldViewRect} from "@jsengine/engine/rendering";
 import {LocalPosition} from "@jsengine/engine/translation";
 import type {PrefabAsset} from "@jsengine/engine/scene";
 import {Random} from "@jsengine/engine/math";
 import {SWARM_CONFIG_FILE, SwarmConfig} from "./config";
 
 export const HALF = 0.5;
-// Speeds, radii and the grid are in screen-unit widths; scale y by this so motion is isotropic on both backends.
-export const WIDTH_UNITS_PER_SCREEN_UNIT_Y = SCREEN_UNIT_HEIGHT_PER_WIDTH;
 export const POSITION_STRIDE = LocalPosition.f32Width;
 export const POSITION_X = 0;
 export const POSITION_Y = 1;
@@ -18,6 +16,7 @@ export const NO_EXTENT = 0;
 export const ENEMY_PREFAB_FIELD = "waves.enemies[].prefab";
 
 export class SwarmArena extends Resource {
+    public readonly view = new WorldViewRect();
     public halfWidthUnits = 0;
     public halfHeightUnits = 0;
 }

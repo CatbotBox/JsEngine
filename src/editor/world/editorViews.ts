@@ -16,6 +16,7 @@ import {Camera} from "../../engine/rendering/camera";
 import {ScreenSize} from "../../engine/rendering/screenSize";
 import {HudElement} from "../../engine/rendering/hudElement";
 import {WorldSpaceRenderBounds} from "../../engine/rendering/worldSpaceRenderBounds";
+import {pointerWorldPositionInto, WorldViewRect, worldViewRectInto} from "../../engine/rendering/screenUnits";
 import {FieldOfView} from "../../engine/rendering/3d/fieldOfView";
 import {EditorOnly, untrackedComponentOf} from "../../engine/scene";
 import {GAME_VIEW} from "../editorProtocol";
@@ -247,8 +248,8 @@ export class EditorViews {
         const candidates: PickCandidate[] = [];
         if (fieldOfView === undefined) {
             const [cameraX, cameraY] = translationOf(cameraMatrix);
-            const worldX = cameraX - screen.width * HALF + x;
-            const worldY = cameraY - screen.height * HALF + y;
+            const view = worldViewRectInto(new WorldViewRect(), cameraX, cameraY, screen.width, screen.height);
+            const {x: worldX, y: worldY} = pointerWorldPositionInto({x: 0, y: 0}, view, x, y);
             this.forEachPickable((entity, bounds, localToWorld) => {
                 if (worldX < bounds.xMin || worldX > bounds.xMax || worldY < bounds.yMin || worldY > bounds.yMax) return;
                 const depth = localToWorld === undefined ? (bounds.zMin + bounds.zMax) * HALF : Vec.toArray(localToWorld.matrix)[MAT4_TRANSLATION_Z];

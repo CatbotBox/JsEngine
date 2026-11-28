@@ -9,6 +9,7 @@ import {Sprite} from "../../../engine/rendering/2d/sprite";
 import {SpriteBoundsSystem} from "../../../engine/rendering/2d/spriteBoundsSystem";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
 import {Vec} from "../../../engine/math/types/vec";
+import {WorldViewRect, worldViewRectInto} from "../../../engine/rendering/screenUnits";
 import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../../../engine/datatypes/aabb";
 import {MAT4_FLOATS_SHIFT, MAT4_TRANSLATION_Z} from "../../../engine/math/mat4Layout";
 import {PixelFramebuffer} from "../pixelFramebuffer";
@@ -20,7 +21,6 @@ const CAMERA_SPEC = {camera: Camera, screenSize: ScreenSize, localToWorld: Local
 const CAMERA_DEPTH_EXTENT = 1000;
 const NO_WALKS = 0;
 const NOTHING_DRAWN = 0;
-const CENTER_FRACTION = 0.5;
 
 export class SpritePixelPassSystem extends System {
     public static readonly renderPass: RenderPassKind = "sprites";
@@ -34,6 +34,7 @@ export class SpritePixelPassSystem extends System {
     private _localToWorldToken = LocalToWorld.type();
 
     private _rasterizer = new SpritePixelRasterizer();
+    private _view = new WorldViewRect();
 
     private _spritesDrawn = NOTHING_DRAWN;
     private _statsWalk = NO_WALKS;
@@ -79,15 +80,11 @@ export class SpritePixelPassSystem extends System {
 
         const position = cameraEntity.localToWorld.position;
         const screenSize = cameraEntity.screenSize;
-        const cx0 = Vec.x(position) - CENTER_FRACTION * screenSize.x;
-        const cy0 = Vec.y(position) - CENTER_FRACTION * screenSize.y;
-        const cx1 = cx0 + screenSize.x;
-        const cy1 = cy0 + screenSize.y;
-
-        const camXMin = Math.min(cx0, cx1), camXMax = Math.max(cx0, cx1);
-        const camYMin = Math.min(cy0, cy1), camYMax = Math.max(cy0, cy1);
+        const view = worldViewRectInto(this._view, Vec.x(position), Vec.y(position), screenSize.x, screenSize.y);
+        const camXMin = view.xMin, camXMax = view.xMax;
+        const camYMin = view.yMin, camYMax = view.yMax;
         const camZMin = -CAMERA_DEPTH_EXTENT, camZMax = CAMERA_DEPTH_EXTENT;
-        const unitWidthPx = framebuffer.pixelsPerScreenUnitX, unitHeightPx = framebuffer.pixelsPerScreenUnitY;
+        const unitPx = framebuffer.pixelsPerScreenUnitX, screenUnitHeightPx = framebuffer.pixelsPerScreenUnitY;
 
         const rasterizer = this._rasterizer;
         rasterizer.beginFrame(framebuffer, settings.toRasterizerConfig());
@@ -116,10 +113,10 @@ export class SpritePixelPassSystem extends System {
                 this._spritesDrawn++;
                 rasterizer.blitSprite(
                     image,
-                    Math.floor((xMin - camXMin) * unitWidthPx),
-                    Math.floor((yMin - camYMin) * unitHeightPx),
-                    spriteWidthPx(image.sizeX, unitWidthPx),
-                    spriteHeightPx(image.sizeY, unitHeightPx),
+                    Math.floor((xMin - camXMin) * unitPx),
+                    Math.floor((yMin - camYMin) * unitPx),
+                    spriteWidthPx(image.sizeX, unitPx),
+                    spriteHeightPx(image.sizeY, screenUnitHeightPx),
                     l2w !== undefined ? l2w[(row << MAT4_FLOATS_SHIFT) + MAT4_TRANSLATION_Z] : 0,
                     sprite.tint,
                     sprite.opacity,

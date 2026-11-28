@@ -1,4 +1,4 @@
-import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../engine/rendering/screenUnits";
+import {pointerWorldPositionInto, SCREEN_UNIT_HEIGHT_PER_WIDTH, WorldViewRect, worldViewRectInto} from "../../engine/rendering/screenUnits";
 import type {EditorViewInfo} from "../editorProtocol";
 import {addVectors, degreesToRadians, forwardOf, rightOf, rotateVector, scaleVector, upOf} from "./editorCameraMath";
 import type {Vector3} from "./editorCameraMath";
@@ -146,7 +146,7 @@ function perspectiveFocal(info: ViewInfoGeometry): number | undefined {
 
 export function viewPlaneDelta(info: ViewInfoGeometry, depth: number, deltaXUnits: number, deltaYUnits: number): Vector3 {
     const focal = perspectiveFocal(info);
-    if (focal === undefined) return [deltaXUnits, deltaYUnits, 0];
+    if (focal === undefined) return [deltaXUnits, deltaYUnits * SCREEN_UNIT_HEIGHT_PER_WIDTH, 0];
     const rotation = info.camera.rotation;
     const viewX = deltaXUnits * depth / (SCREEN_UNIT_HEIGHT_PER_WIDTH * focal);
     const viewY = -deltaYUnits * depth / focal;
@@ -157,7 +157,9 @@ export function pointOnViewPlane(info: ViewInfoGeometry, screen: ScreenPoint, de
     const focal = perspectiveFocal(info);
     const position = info.camera.position;
     if (focal === undefined) {
-        return [position[0] - info.screenWidth * HALF + screen.x, position[1] - info.screenHeight * HALF + screen.y, 0];
+        const view = worldViewRectInto(new WorldViewRect(), position[0], position[1], info.screenWidth, info.screenHeight);
+        const world = pointerWorldPositionInto({x: 0, y: 0}, view, screen.x, screen.y);
+        return [world.x, world.y, 0];
     }
     const view: Vector3 = [
         (screen.x - info.screenWidth * HALF) / (SCREEN_UNIT_HEIGHT_PER_WIDTH * focal) * depth,

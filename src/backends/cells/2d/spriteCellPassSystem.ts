@@ -13,6 +13,7 @@ import {SpriteCellRasterizer} from "./spriteCellRasterizer";
 import {SpriteBoundsSystem} from "../../../engine/rendering/2d/spriteBoundsSystem";
 import {WorldSpaceRenderBounds} from "../../../engine/rendering/worldSpaceRenderBounds";
 import {Vec} from "../../../engine/math/types/vec";
+import {WorldViewRect, worldViewRectInto} from "../../../engine/rendering/screenUnits";
 import {AABB_STRIDE, AABB_MIN_X, AABB_MIN_Y, AABB_MIN_Z, AABB_MAX_X, AABB_MAX_Y, AABB_MAX_Z} from "../../../engine/datatypes/aabb";
 import {MAT4_FLOATS_SHIFT, MAT4_TRANSLATION_Z} from "../../../engine/math/mat4Layout";
 
@@ -20,7 +21,6 @@ const CAMERA_SPEC = {camera: Camera, screenSize: ScreenSize, localToWorld: Local
 const CAMERA_DEPTH_EXTENT = 1000;
 const NO_WALKS = 0;
 const NOTHING_DRAWN = 0;
-const HALF_ROWS_PER_CELL = 2;
 
 export class SpriteCellPassSystem extends System {
     public static readonly renderPass: RenderPassKind = "sprites";
@@ -34,6 +34,7 @@ export class SpriteCellPassSystem extends System {
     private _localToWorldToken = LocalToWorld.type();
 
     private _rasterizer = new SpriteCellRasterizer();
+    private _view = new WorldViewRect();
 
     private _spritesDrawn = NOTHING_DRAWN;
     private _statsWalk = NO_WALKS;
@@ -81,13 +82,9 @@ export class SpriteCellPassSystem extends System {
         const screenSize = cameraEntity.screenSize;
         const width = screenSize.x | 0;
         const height = screenSize.y | 0;
-        const cx0 = Vec.x(position) - 0.5 * screenSize.x;
-        const cy0 = Vec.y(position) - 0.5 * screenSize.y;
-        const cx1 = cx0 + screenSize.x;
-        const cy1 = cy0 + screenSize.y;
-
-        const camXMin = Math.min(cx0, cx1), camXMax = Math.max(cx0, cx1);
-        const camYMin = Math.min(cy0, cy1), camYMax = Math.max(cy0, cy1);
+        const view = worldViewRectInto(this._view, Vec.x(position), Vec.y(position), screenSize.x, screenSize.y);
+        const camXMin = view.xMin, camXMax = view.xMax;
+        const camYMin = view.yMin, camYMax = view.yMax;
         const camZMin = -CAMERA_DEPTH_EXTENT, camZMax = CAMERA_DEPTH_EXTENT;
 
         const rasterizer = this._rasterizer;
@@ -118,7 +115,7 @@ export class SpriteCellPassSystem extends System {
                 rasterizer.blitSprite(
                     image,
                     Math.floor(xMin - camXMin),
-                    Math.floor((yMin - camYMin) * HALF_ROWS_PER_CELL),
+                    Math.floor(yMin - camYMin),
                     l2w !== undefined ? l2w[(row << MAT4_FLOATS_SHIFT) + MAT4_TRANSLATION_Z] : 0,
                     sprite.tint,
                     sprite.opacity,

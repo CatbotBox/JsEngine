@@ -41,10 +41,10 @@ const PERSPECTIVE: ViewInfoGeometry = {
 };
 
 describe("projecting through worldToScreen", () => {
-    test("the orthographic camera's position is the screen centre, one world unit per screen unit", () => {
+    test("the orthographic camera's position is the screen centre, one world unit per column and two per row", () => {
         const centre = projectPoint(ORTHOGRAPHIC.worldToScreen, [5, 5, 0]);
         expect([centre.x, centre.y, centre.w]).toEqual([10, 5, 1]);
-        expect(projectedBoundsRect(ORTHOGRAPHIC.worldToScreen, [4, 4, 0], [6, 7, 0])).toEqual({left: 9, top: 4, right: 11, bottom: 7});
+        expect(projectedBoundsRect(ORTHOGRAPHIC.worldToScreen, [4, 3, 0], [6, 7, 0])).toEqual({left: 9, top: 4, right: 11, bottom: 6});
     });
 
     test("perspective divides by view depth: 90 degrees of field of view, a two-to-one screen unit", () => {
@@ -90,16 +90,17 @@ describe("overlay pixels and screen units", () => {
 
     test("a world axis projects to overlay pixels per world unit", () => {
         expect(screenAxisPx(ORTHOGRAPHIC.worldToScreen, scale, [0, 0, 0], [1, 0, 0])!.x).toBeCloseTo(8, DIGITS);
-        expect(screenAxisPx(ORTHOGRAPHIC.worldToScreen, scale, [0, 0, 0], [0, 1, 0])!.y).toBeCloseTo(16, DIGITS);
+        expect(screenAxisPx(ORTHOGRAPHIC.worldToScreen, scale, [0, 0, 0], [0, 1, 0])!.y).toBeCloseTo(8, DIGITS);
         expect(amountAlongScreenAxis({x: 8, y: 0}, {x: 16, y: 5})).toBe(2);
         expect(amountAlongScreenAxis({x: 0, y: 0}, {x: 16, y: 5})).toBe(0);
     });
 });
 
 describe("dragging on the view plane", () => {
-    test("orthographic drags move one world unit per screen unit", () => {
-        expect(viewPlaneDelta(ORTHOGRAPHIC, 1, 3, -2)).toEqual([3, -2, 0]);
-        expect(pointOnViewPlane(ORTHOGRAPHIC, {x: 0, y: 0}, 0)).toEqual([-5, 0, 0]);
+    test("orthographic drags move one world unit per column and two per row", () => {
+        expect(viewPlaneDelta(ORTHOGRAPHIC, 1, 3, -2)).toEqual([3, -4, 0]);
+        expect(pointOnViewPlane(ORTHOGRAPHIC, {x: 0, y: 0}, 0)).toEqual([-5, -5, 0]);
+        expect(pointOnViewPlane(ORTHOGRAPHIC, {x: 10, y: 5}, 0)).toEqual([5, 5, 0]);
         expect(viewAxisOf(ORTHOGRAPHIC)).toEqual([0, 0, 1]);
     });
 

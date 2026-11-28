@@ -168,14 +168,14 @@ describe("editor views", () => {
             .toBe('Editor request "setEditorCamera" failed: The editor camera is orthographic (the game camera has no FieldOfView), so it takes no field of view');
     });
 
-    test("2D view info maps world to screen units around the camera, with bounds or a degenerate box per entity", async () => {
+    test("2D view info maps world to screen units around the camera, two world units per row, with bounds or a degenerate box per entity", async () => {
         const scene = {} as Scene2d;
         const harnessed = editorWorld(world => scene2d(world, scene));
         expect(await framesPass(harnessed)).toBe(true);
         await ask(harnessed, {op: "setField", entity: scene.camera, typeName: "LocalPosition", key: "xyz", value: [2, 1, 0]});
         const info = await ask(harnessed, {op: "getViewInfo", view: "game", entities: [scene.small, scene.camera, 999 as Entity]});
         expect([info.projection, info.screenWidth, info.screenHeight]).toEqual(["orthographic", SCREEN_WIDTH, SCREEN_HEIGHT]);
-        const projected = projectToScreen(info.worldToScreen as Mat4, [3, 2, 7]);
+        const projected = projectToScreen(info.worldToScreen as Mat4, [3, 3, 7]);
         expect(rounded([projected.x, projected.y, projected.w])).toEqual([11, 6, 1]);
         expect(info.bounds).toEqual([
             {entity: scene.small, min: [-2, -2, 0], max: [2, 2, 0], pivot: [0, 0, 0], rotation: [0, 0, 0, 1]},
@@ -228,7 +228,8 @@ describe("editor views", () => {
         expect(await framesPass(harnessed)).toBe(true);
         const centre = {x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2};
         expect((await ask(harnessed, {op: "pickEntities", x: centre.x + 1, y: centre.y + 1, view: "game"})).entities).toEqual([scene.small, scene.large]);
-        expect((await ask(harnessed, {op: "pickEntities", x: centre.x + 3, y: centre.y + 3, view: "game"})).entities).toEqual([scene.large]);
+        expect((await ask(harnessed, {op: "pickEntities", x: centre.x + 3, y: centre.y + 1.5, view: "game"})).entities).toEqual([scene.large]);
+        expect((await ask(harnessed, {op: "pickEntities", x: centre.x + 1, y: centre.y + 1.5, view: "game"})).entities).toEqual([scene.large]);
         expect((await ask(harnessed, {op: "pickEntities", x: 0, y: 0, view: "game"})).entities).toEqual([]);
         await ask(harnessed, {op: "setEditorCamera", view: "scene", position: [3, 3, 0], rotation: [0, 0, 0, 1]});
         expect((await ask(harnessed, {op: "pickEntities", x: centre.x, y: centre.y, view: "scene"})).entities).toEqual([scene.large]);

@@ -8,11 +8,12 @@
       "path": "prefabs/pixel.prefab.json"
     },
     "pixelsPerSpawn": 1000,
-    "spawnAreaUnits": 100,
+    "spawnAreaXUnits": 100,
+    "spawnAreaYUnits": 200,
     "fadeMinMs": 5000,
     "fadeJitterMs": 5000,
     "playerStepXUnits": 1,
-    "playerStepYUnits": 0.5,
+    "playerStepYUnits": 1,
     "hud": {
       "fpsAverageFrames": 10,
       "fpsFormat": "FPS: {fps}",

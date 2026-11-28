@@ -1,6 +1,7 @@
 import {System} from "@jsengine/engine/core";
 import {Input} from "@jsengine/engine/input";
-import {SPRITE_PIXELS_PER_SCREEN_UNIT_X, SPRITE_PIXELS_PER_SCREEN_UNIT_Y} from "@jsengine/engine/rendering";
+import {pointerWorldPositionInto} from "@jsengine/engine/rendering";
+import type {WorldPosition} from "@jsengine/engine/rendering";
 import {Sprite} from "@jsengine/engine/rendering/2d";
 import {LocalPosition} from "@jsengine/engine/translation";
 import {PrefabSpawner} from "@jsengine/engine/scene";
@@ -19,7 +20,6 @@ import {
     simulationStepMs,
     SwarmArena,
     VISIBLE_OPACITY,
-    WIDTH_UNITS_PER_SCREEN_UNIT_Y,
 } from "./simulation";
 import {MS_PER_SECOND, SwarmConfig} from "./config";
 import type {ShipConfig} from "./config";
@@ -64,12 +64,12 @@ export class ShipSystem extends System {
         if (right !== 0 || down !== 0) {
             const distance = ship.speedUnitsPerSecond * stepMs / MS_PER_SECOND / Math.hypot(right, down);
             state.shipX += right * distance;
-            state.shipY += down * distance / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+            state.shipY += down * distance;
         }
         const arena = this.world.resources.get(SwarmArena);
         const image = this._ship.tryGetSingleton({sprite: Sprite})?.sprite.image;
-        const halfWidth = (image?.sizeX ?? NO_EXTENT) / SPRITE_PIXELS_PER_SCREEN_UNIT_X * HALF;
-        const halfHeight = (image?.sizeY ?? NO_EXTENT) / SPRITE_PIXELS_PER_SCREEN_UNIT_Y * HALF;
+        const halfWidth = (image?.sizeX ?? NO_EXTENT) * HALF;
+        const halfHeight = (image?.sizeY ?? NO_EXTENT) * HALF;
         const limitX = Math.max(0, arena.halfWidthUnits - halfWidth);
         const limitY = Math.max(0, arena.halfHeightUnits - halfHeight);
         state.shipX = Math.min(limitX, Math.max(-limitX, state.shipX));
@@ -85,6 +85,7 @@ export class ShipSystem extends System {
 
 export class ShipWeaponSystem extends System {
     private _actions!: SwarmActions;
+    private _pointer: WorldPosition = {x: 0, y: 0};
 
     override priority(): number {
         return WEAPON_PRIORITY;
@@ -104,9 +105,9 @@ export class ShipWeaponSystem extends System {
         let right = axis(input, this._actions.FireRight, this._actions.FireLeft);
         let down = axis(input, this._actions.FireDown, this._actions.FireUp);
         if (input.actionHeld(this._actions.FireAtPointer)) {
-            const arena = this.world.resources.get(SwarmArena);
-            right = input.pointerX - arena.halfWidthUnits - state.shipX;
-            down = (input.pointerY - arena.halfHeightUnits - state.shipY) * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+            const pointer = pointerWorldPositionInto(this._pointer, this.world.resources.get(SwarmArena).view, input.pointerX, input.pointerY);
+            right = pointer.x - state.shipX;
+            down = pointer.y - state.shipY;
         }
         state.fireCooldownMs -= simulationStepMs(this.world);
         if (right === 0 && down === 0) {
@@ -122,7 +123,7 @@ export class ShipWeaponSystem extends System {
         const bullet = this.world.resources.get(PrefabSpawner).spawn(commandBufferOf(this.world), requirePrefab(weapon.bullet, "weapon.bullet"));
         const velocity = bullet.rootComponent(Velocity);
         velocity.xUnitsPerSecond = right * speed;
-        velocity.yUnitsPerSecond = down * speed / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+        velocity.yUnitsPerSecond = down * speed;
         const position = bullet.rootComponent(LocalPosition);
         position.x = state.shipX;
         position.y = state.shipY;

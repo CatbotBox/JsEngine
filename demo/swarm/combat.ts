@@ -21,7 +21,6 @@ import {
     randomOf,
     requirePrefab,
     SwarmArena,
-    WIDTH_UNITS_PER_SCREEN_UNIT_Y,
 } from "./simulation";
 import {MS_PER_SECOND, SwarmConfig} from "./config";
 import type {SparkConfig} from "./config";
@@ -40,7 +39,7 @@ function spawnSparks(buffer: EntityCommandBuffer, world: World, sparks: SparkCon
         const spark = spawner.spawn(buffer, prefab);
         const velocity = spark.rootComponent(Velocity);
         velocity.xUnitsPerSecond = Math.cos(angle) * speed;
-        velocity.yUnitsPerSecond = Math.sin(angle) * speed / WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+        velocity.yUnitsPerSecond = Math.sin(angle) * speed;
         const lifetime = spark.rootComponent(Lifetime);
         lifetime.durationMs = lifetimeMs;
         lifetime.remainingMs = lifetimeMs;
@@ -100,13 +99,13 @@ export class EnemyBroadphaseSystem extends System {
         const arenaConfig = this.world.resources.get(SwarmConfig).arena;
         const grid = this.world.resources.get(EnemyGrid);
         const halfWidth = arena.halfWidthUnits + arenaConfig.broadphaseMarginUnits;
-        const halfHeight = arena.halfHeightUnits * WIDTH_UNITS_PER_SCREEN_UNIT_Y + arenaConfig.broadphaseMarginUnits;
+        const halfHeight = arena.halfHeightUnits + arenaConfig.broadphaseMarginUnits;
         grid.begin(-halfWidth, -halfHeight, fullExtentOf(halfWidth), fullExtentOf(halfHeight), arenaConfig.broadphaseCellSizeUnits, this._enemies.enabledEntityCount());
         this._enemies.stream({read: {enemy: Enemy, position: LocalPosition, sprite: Sprite}}).consumeSpans(({start, end, cols, stores, entities}) => {
             const positions = cols.position!, enemies = stores.enemy!, sprites = stores.sprite!;
             for (let i = start; i < end; i++) {
                 const p = i * POSITION_STRIDE;
-                grid.add(positions[p + POSITION_X], positions[p + POSITION_Y] * WIDTH_UNITS_PER_SCREEN_UNIT_Y, entities[i], enemies.get(i) as Enemy, sprites.get(i) as Sprite);
+                grid.add(positions[p + POSITION_X], positions[p + POSITION_Y], entities[i], enemies.get(i) as Enemy, sprites.get(i) as Sprite);
             }
         });
         grid.finish();
@@ -138,7 +137,7 @@ export class BulletHitSystem extends System {
                 const bullet = bullets.get(i) as Bullet;
                 if (bullet.remainingDamage <= 0) continue;
                 const p = i * POSITION_STRIDE;
-                const x = positions[p + POSITION_X], y = positions[p + POSITION_Y] * WIDTH_UNITS_PER_SCREEN_UNIT_Y;
+                const x = positions[p + POSITION_X], y = positions[p + POSITION_Y];
                 const touching = grid.gatherTouching(x, y, bullet.radiusUnits);
                 for (let k = 0; k < touching && bullet.remainingDamage > 0; k++) {
                     const index = grid.candidates[k];
@@ -182,7 +181,7 @@ export class BombSystem extends System {
         const radius = config.bomb.radiusUnits;
         const grid = this.world.resources.get(EnemyGrid);
         const buffer = commandBufferOf(this.world);
-        const touching = grid.gatherTouching(state.shipX, state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y, radius);
+        const touching = grid.gatherTouching(state.shipX, state.shipY, radius);
         for (let k = 0; k < touching; k++) {
             const index = grid.candidates[k];
             scoreEnemyAt(state, grid, index);
@@ -208,7 +207,7 @@ export class ShipContactSystem extends System {
         const grid = this.world.resources.get(EnemyGrid);
         if (state.phase !== SwarmPhase.Playing || state.invulnerableRemainingMs > 0 || grid.count === 0) return;
         const config = this.world.resources.get(SwarmConfig);
-        const touching = grid.gatherTouching(state.shipX, state.shipY * WIDTH_UNITS_PER_SCREEN_UNIT_Y, config.ship.radiusUnits);
+        const touching = grid.gatherTouching(state.shipX, state.shipY, config.ship.radiusUnits);
         if (touching > 0) this.loseLife(state, config, grid, grid.candidates[0]);
     }
 

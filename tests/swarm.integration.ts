@@ -4,7 +4,7 @@ import {MemoryPlatform, MemoryTerminal} from "../src/engine/testing/memoryPlatfo
 import {Input, Key, NO_MODIFIERS} from "../src/engine/input";
 import {consoleOverride} from "../src/engine/debugging";
 import {originalConsole} from "../src/engine/debugging/originalConsole";
-import {GREEN_SHIFT, RED_SHIFT, SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../src/engine/rendering";
+import {GREEN_SHIFT, RED_SHIFT} from "../src/engine/rendering";
 import {LocalPosition} from "../src/engine/translation";
 import {MemoryPixelPresenter, RGBA_BYTES_PER_PIXEL} from "../src/backends/pixels";
 import type {PixelFrame, PixelPresenterSize} from "../src/backends/pixels";
@@ -148,11 +148,11 @@ class SwarmDriver {
     }
 
     public enemyOffsets(): EnemyOffset[] {
-        const shipX = this.state.shipX, shipY = this.state.shipY * SCREEN_UNIT_HEIGHT_PER_WIDTH;
+        const shipX = this.state.shipX, shipY = this.state.shipY;
         const offsets: EnemyOffset[] = [];
         this.queries.enemies.stream({read: {enemy: Enemy, position: LocalPosition}}).forEach(({enemy, position}) => {
             if (enemy.hitPoints <= 0) return;
-            const dx = position.x - shipX, dy = position.y * SCREEN_UNIT_HEIGHT_PER_WIDTH - shipY;
+            const dx = position.x - shipX, dy = position.y - shipY;
             offsets.push({dx, dy, distance: Math.hypot(dx, dy), radius: enemy.radiusUnits});
         });
         return offsets;

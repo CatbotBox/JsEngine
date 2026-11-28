@@ -1,5 +1,5 @@
 import {WHITE_RGB, RED_SHIFT, GREEN_SHIFT, CHANNEL_MASK, CHANNEL_MAX} from "../../../engine/rendering/packedRgb";
-import {SPRITE_PIXELS_PER_SCREEN_UNIT_X, SPRITE_PIXELS_PER_SCREEN_UNIT_Y} from "../../../engine/rendering/screenUnits";
+import {SCREEN_UNIT_HEIGHT_PER_WIDTH} from "../../../engine/rendering/screenUnits";
 import {RGBA_BYTES_PER_PIXEL} from "../pixelFrame";
 import type {PixelFramebuffer} from "../pixelFramebuffer";
 
@@ -18,11 +18,11 @@ export interface SpritePixelSource {
 }
 
 export function spriteWidthPx(sizeX: number, unitWidthPx: number): number {
-    return Math.round(sizeX * unitWidthPx / SPRITE_PIXELS_PER_SCREEN_UNIT_X);
+    return Math.round(sizeX * unitWidthPx);
 }
 
 export function spriteHeightPx(sizeY: number, unitHeightPx: number): number {
-    return Math.round(sizeY * unitHeightPx / SPRITE_PIXELS_PER_SCREEN_UNIT_Y);
+    return Math.round(sizeY * unitHeightPx / SCREEN_UNIT_HEIGHT_PER_WIDTH);
 }
 
 function clampToByte(value: number): number {

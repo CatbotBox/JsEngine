@@ -1,7 +1,9 @@
 import {System} from "@jsengine/engine/core";
 import type {World} from "@jsengine/engine/core";
 import {Input} from "@jsengine/engine/input";
-import {Camera, RenderPasses, ScreenSize} from "@jsengine/engine/rendering";
+import {Camera, RenderPasses, ScreenSize, worldViewRectInto} from "@jsengine/engine/rendering";
+import {LocalToWorld} from "@jsengine/engine/translation";
+import {Vec} from "@jsengine/engine/math";
 import {DataAssets, dataAssetPathOf, SceneLoadCancelledError, SceneLoader} from "@jsengine/engine/scene";
 import {LifetimeSystem, MotionSystem} from "@jsengine/engine/motion";
 import {swarmActionsOf} from "./actions";
@@ -14,6 +16,7 @@ import {SwarmConfig} from "./config";
 
 const STATE_FILE = "assets/state.asset.json";
 const GAMEPLAY_SCENE_FILE = "scenes/main.scene.json";
+const ORIGIN = 0;
 
 function startNewGame(world: World, state: SwarmState): void {
     const path = dataAssetPathOf(state);
@@ -30,7 +33,7 @@ function startNewGame(world: World, state: SwarmState): void {
 }
 
 export class SwarmArenaSystem extends System {
-    private _cameraQuery = this.createEntityQuery([Camera, ScreenSize]);
+    private _cameraQuery = this.createEntityQuery([Camera, ScreenSize, LocalToWorld]);
 
     override priority(): number {
         return ARENA_PRIORITY;
@@ -44,11 +47,15 @@ export class SwarmArenaSystem extends System {
     onUpdate(): void {
         const arena = this.world.resources.get(SwarmArena);
         const fallback = this.world.resources.get(SwarmConfig).arena;
-        const camera = this._cameraQuery.tryGetSingleton({screenSize: ScreenSize});
-        const width = camera !== undefined && camera.screenSize.x > 0 ? camera.screenSize.x : fallback.fallbackWidthUnits;
-        const height = camera !== undefined && camera.screenSize.y > 0 ? camera.screenSize.y : fallback.fallbackHeightUnits;
-        arena.halfWidthUnits = width * HALF;
-        arena.halfHeightUnits = height * HALF;
+        const camera = this._cameraQuery.tryGetSingleton({screenSize: ScreenSize, localToWorld: LocalToWorld});
+        const screenWidth = camera !== undefined && camera.screenSize.x > 0 ? camera.screenSize.x : fallback.fallbackWidthUnits;
+        const screenHeight = camera !== undefined && camera.screenSize.y > 0 ? camera.screenSize.y : fallback.fallbackHeightUnits;
+        const position = camera?.localToWorld.position;
+        const cameraX = position === undefined ? ORIGIN : Vec.x(position);
+        const cameraY = position === undefined ? ORIGIN : Vec.y(position);
+        const view = worldViewRectInto(arena.view, cameraX, cameraY, screenWidth, screenHeight);
+        arena.halfWidthUnits = view.widthUnits * HALF;
+        arena.halfHeightUnits = view.heightUnits * HALF;
     }
 }
 
